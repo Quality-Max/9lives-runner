@@ -1,0 +1,66 @@
+[
+  {
+    "name": "locator drift proposes reviewed tier-1 repair",
+    "request": {
+      "version": 1,
+      "framework": "playwright",
+      "errorMessage": "TimeoutError: waiting for locator('#login-btn')",
+      "failedSelector": "#login-btn",
+      "testCode": "await page.locator('#login-btn').click();",
+      "pageSnapshot": "<button id=\"login-btn-v2\">Sign in</button>",
+      "allowAssertionChange": false
+    },
+    "expected": {
+      "version": 1,
+      "failureType": "locator_not_found",
+      "tier": "tier1_auto",
+      "decision": "propose",
+      "proposedCode": "await page.locator('#login-btn-v2').click();",
+      "changes": ["Re-found via id"],
+      "requiresApproval": true,
+      "apply": false
+    }
+  },
+  {
+    "name": "assertion behavior change is refused",
+    "request": {
+      "version": 1,
+      "framework": "playwright",
+      "errorMessage": "Error: expect(received).toBe(expected) Expected: 5 Received: 4",
+      "testCode": "expect(total).toBe(5);",
+      "allowAssertionChange": false
+    },
+    "expected": {
+      "version": 1,
+      "failureType": "assertion_failed",
+      "tier": "tier3_human",
+      "decision": "refuse",
+      "changes": [],
+      "requiresApproval": false,
+      "apply": false,
+      "reason": "Possible product behavior change; forcing green could mask a bug"
+    }
+  },
+  {
+    "name": "reviewed repair may be explicitly applied",
+    "request": {
+      "version": 1,
+      "framework": "playwright",
+      "errorMessage": "waiting for locator('text=Sign In')",
+      "failedSelector": "text=Sign In",
+      "testCode": "await page.locator('text=Sign In').click();",
+      "pageSnapshot": "button: Sign in",
+      "allowAssertionChange": false
+    },
+    "expected": {
+      "version": 1,
+      "failureType": "locator_timeout",
+      "tier": "tier1_auto",
+      "decision": "applied",
+      "proposedCode": "await page.locator('text=Sign in').click();",
+      "changes": ["Corrected selector case"],
+      "requiresApproval": false,
+      "apply": true
+    }
+  }
+]

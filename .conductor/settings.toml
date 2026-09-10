@@ -1,0 +1,13 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = "go mod download"
+run_mode = "concurrent"
+
+[scripts.run.test]
+command = "go test ./..."
+icon = "test-tube"
+
+[scripts.run.benchmark]
+command = "go test -run '^$' -bench . -benchmem ./internal/runner"
+icon = "gauge"
