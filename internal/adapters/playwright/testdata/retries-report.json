@@ -1,0 +1,66 @@
+{
+  "_comment": "Trimmed from a real @playwright/test 1.61.1 --reporter=json --retries=1 run: one flaky test (failed, then passed on retry), one test.fail() expected failure, one skipped test. Process exit code was 0.",
+  "stats": {
+    "expected": 1,
+    "unexpected": 0,
+    "flaky": 1,
+    "skipped": 1,
+    "duration": 550.973
+  },
+  "suites": [
+    {
+      "title": "tests/zz-flaky.spec.ts",
+      "specs": [
+        {
+          "title": "flaky",
+          "tests": [
+            {
+              "expectedStatus": "passed",
+              "status": "flaky",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "failed"
+                },
+                {
+                  "retry": 1,
+                  "status": "passed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "expected failure",
+          "tests": [
+            {
+              "expectedStatus": "failed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "failed"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "skipped",
+          "tests": [
+            {
+              "expectedStatus": "skipped",
+              "status": "skipped",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "skipped"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

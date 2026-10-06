@@ -42,7 +42,9 @@ func TestPlanRefusesToDownloadMissingPlaywright(t *testing.T) {
 func TestValidateReportAndSchema(t *testing.T) {
 	raw := []byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"results":[{"status":"passed"},{"status":"failed"}]}]}],"suites":[{"specs":[{"tests":[{"results":[{"status":"timedOut"}]}]}]}]}]}`)
 	validation, err := New().Validate(raw)
-	if err != nil || validation.FailureCount != 2 || validation.ExecutedTests != 3 || validation.AssertionCoverage != "unknown" {
+	// Legacy reports without a per-test status are judged by each test's final
+	// attempt: two tests, both ending in failure.
+	if err != nil || validation.FailureCount != 2 || validation.ExecutedTests != 2 || validation.AssertionCoverage != "unknown" {
 		t.Fatalf("validation=%#v err=%v", validation, err)
 	}
 	if _, err := New().Validate([]byte(`{}`)); err == nil {
@@ -54,6 +56,50 @@ func TestValidateRejectsReportsWithoutCompletedTests(t *testing.T) {
 	_, err := New().Validate([]byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"results":[{"status":"skipped"}]}]}]}]}`))
 	if err == nil {
 		t.Fatal("report containing only skipped results must not validate as an executed test run")
+	}
+}
+
+func TestValidateRejectsExecutedOutcomesWithoutCompletedAttempts(t *testing.T) {
+	for _, outcome := range []string{"expected", "flaky", "unexpected"} {
+		for _, results := range []string{"", `"results":[]`, `"results":[{"status":"skipped"}]`} {
+			t.Run(outcome+"/"+results, func(t *testing.T) {
+				separator := ""
+				if results != "" {
+					separator = ","
+				}
+				raw := []byte(`{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{"status":"` + outcome + `"` + separator + results + `}]}]}]}`)
+				if validation, err := New().Validate(raw); err == nil {
+					t.Fatalf("accepted %s without a completed attempt: %#v", outcome, validation)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateCountsTestsNotRetryAttempts(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "retries-report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation, err := New().Validate(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A flaky test that passed on retry and a test.fail() test that failed as
+	// expected are both green outcomes; the run exited 0.
+	if validation.ExecutedTests != 2 || validation.FailureCount != 0 || validation.SkippedTests != 1 || !strings.Contains(validation.Description, "1 flaky") {
+		t.Fatalf("retry attempts were counted as tests: %#v", validation)
+	}
+}
+
+func TestValidateCountsUnexpectedOutcomeAsFailure(t *testing.T) {
+	raw := []byte(`{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{"status":"unexpected","results":[{"status":"failed"},{"status":"failed"}]},{"status":"expected","results":[{"status":"passed"}]}]}]}]}`)
+	validation, err := New().Validate(raw)
+	if err != nil || validation.ExecutedTests != 2 || validation.FailureCount != 1 {
+		t.Fatalf("validation=%#v err=%v", validation, err)
+	}
+	if _, err := New().Validate([]byte(`{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{"status":"expected","results":[{"status":"passed"}]},{"status":"mystery","results":[]}]}]}]}`)); err == nil {
+		t.Fatal("unknown test outcome must not validate")
 	}
 }
 

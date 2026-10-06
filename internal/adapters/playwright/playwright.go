@@ -79,6 +79,9 @@ type suite struct {
 	Suites []suite `json:"suites"`
 	Specs  []struct {
 		Tests []struct {
+			// Status is Playwright's per-test outcome after retries and
+			// test.fail() expectations: expected, unexpected, flaky, skipped.
+			Status  string `json:"status"`
 			Results []struct {
 				Status string `json:"status"`
 			} `json:"results"`
@@ -95,22 +98,42 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		return runner.Validation{}, fmt.Errorf("invalid Playwright JSON report: required stats or suites field is missing")
 	}
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "Playwright JSON report; assertion count unavailable"}
+	unsupported, incomplete, flaky := "", "", 0
 	var walk func(suite)
 	walk = func(current suite) {
 		for _, spec := range current.Specs {
 			for _, test := range spec.Tests {
-				for _, result := range test.Results {
-					switch result.Status {
-					case "passed":
-						validation.ExecutedTests++
-					case "failed", "timedOut":
-						validation.ExecutedTests++
-						validation.FailureCount++
-					case "skipped":
-						validation.SkippedTests++
-					default:
-						validation.Description = "unsupported Playwright result status: " + result.Status
+				// Counts are per test, not per retry attempt. A test that failed
+				// and then passed on retry is flaky, not failed.
+				outcome := test.Status
+				if outcome == "" && len(test.Results) > 0 {
+					outcome = legacyOutcome(test.Results[len(test.Results)-1].Status)
+				}
+				switch outcome {
+				case "expected":
+					if !hasCompletedAttempt(test.Results) {
+						incomplete = "Playwright report contains an executed test without a completed attempt"
+						continue
 					}
+					validation.ExecutedTests++
+				case "flaky":
+					if !hasCompletedAttempt(test.Results) {
+						incomplete = "Playwright report contains an executed test without a completed attempt"
+						continue
+					}
+					validation.ExecutedTests++
+					flaky++
+				case "unexpected":
+					if !hasCompletedAttempt(test.Results) {
+						incomplete = "Playwright report contains an executed test without a completed attempt"
+						continue
+					}
+					validation.ExecutedTests++
+					validation.FailureCount++
+				case "skipped":
+					validation.SkippedTests++
+				default:
+					unsupported = "unsupported Playwright test outcome: " + outcome
 				}
 			}
 		}
@@ -121,11 +144,43 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	for _, current := range parsed.Suites {
 		walk(current)
 	}
+	if incomplete != "" {
+		return runner.Validation{}, fmt.Errorf("%s", incomplete)
+	}
 	if validation.ExecutedTests == 0 {
 		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests")
 	}
-	if strings.HasPrefix(validation.Description, "unsupported ") {
-		return runner.Validation{}, fmt.Errorf("%s", validation.Description)
+	if unsupported != "" {
+		return runner.Validation{}, fmt.Errorf("%s", unsupported)
+	}
+	if flaky > 0 {
+		validation.Description += fmt.Sprintf("; %d flaky test(s) passed on retry", flaky)
 	}
 	return validation, nil
+}
+
+func hasCompletedAttempt(results []struct {
+	Status string `json:"status"`
+}) bool {
+	for _, result := range results {
+		switch result.Status {
+		case "passed", "failed", "timedOut":
+			return true
+		}
+	}
+	return false
+}
+
+// legacyOutcome maps a final attempt status for reports without a per-test
+// status field. It cannot see test.fail() expectations, so it is conservative.
+func legacyOutcome(status string) string {
+	switch status {
+	case "passed":
+		return "expected"
+	case "failed", "timedOut":
+		return "unexpected"
+	case "skipped":
+		return "skipped"
+	}
+	return status
 }

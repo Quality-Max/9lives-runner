@@ -12,7 +12,7 @@ import (
 // writeCanonicalReceipt exports the platform-owned execution-receipt/1.0
 // envelope beside the legacy local receipt. The legacy file remains the local
 // CLI contract; this is an additive, portable evidence export.
-func writeCanonicalReceipt(root string, receipt Receipt) error {
+func writeCanonicalReceipt(root string, receipt Receipt) (string, error) {
 	availability := "available"
 	verdict := "unknown"
 	failure := any(nil)
@@ -86,10 +86,10 @@ func writeCanonicalReceipt(root string, receipt Receipt) error {
 	}
 	raw, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, _, err = writeAtomic(filepath.Join(root, receipt.RunID, receipt.JobID, receipt.AttemptID), "execution-receipt-1.0.json", append(raw, '\n'))
-	return err
+	path, _, err := writeAtomic(filepath.Join(root, receipt.RunID, receipt.JobID, receipt.AttemptID), "execution-receipt-1.0.json", append(raw, '\n'))
+	return path, err
 }
 
 func boundedRevision(value string, limit int) string {

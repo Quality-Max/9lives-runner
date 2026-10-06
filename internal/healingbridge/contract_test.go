@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/qualitymax/9lives-runner/internal/contracttest"
 )
 
 func TestPythonCompatibilityFixtures(t *testing.T) {
@@ -33,13 +35,10 @@ func TestPythonCompatibilityFixtures(t *testing.T) {
 	}
 }
 
+// TestPinnedNineLivesOfflineTierOneCompatibility drives the real Python healer
+// offline and maps its actual output through FromUpstream, the production seam.
 func TestPinnedNineLivesOfflineTierOneCompatibility(t *testing.T) {
-	_, source, _, _ := runtime.Caller(0)
-	runnerRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "../.."))
-	python := os.Getenv("NINELIVES_CONTRACT_PYTHON")
-	if python == "" {
-		python = "python3"
-	}
+	python := contracttest.Python(t)
 	program := `
 import asyncio
 import json
@@ -49,57 +48,64 @@ source_root = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(source_root))
 import ninelives
 assert Path(ninelives.__file__).resolve().is_relative_to(source_root)
-from ninelives.healing.strategy import FailureType, HealingStrategySelector, HealingTier, TestFailure
+from ninelives.healing.strategy import FailureType, HealingStrategySelector, TestFailure
 from ninelives.healing.tier1 import Tier1LocatorHealer
 selector = HealingStrategySelector()
-assert selector.classify_failure("locator not found: #save") == FailureType.LOCATOR_NOT_FOUND
-assert selector.classify_failure("AssertionError: expected 2 received 3") == FailureType.ASSERTION_FAILED
-assert selector.select_strategy(TestFailure(failure_type=FailureType.ASSERTION_FAILED, error_message="AssertionError")) == HealingTier.TIER3_HUMAN
-failure = TestFailure(failure_type=FailureType.LOCATOR_NOT_FOUND, error_message="locator not found", failed_selector="#save", test_code="await page.locator('#save').click()", page_html='<button id="save-new">Save</button>')
-proposal = asyncio.run(Tier1LocatorHealer().heal(failure))
-assert proposal.success and proposal.healed_code and "#save-new" in proposal.healed_code
-assert not proposal.requires_approval
-print(json.dumps({"failure_type": "locator_not_found", "proposal": proposal.healed_code, "assertion_tier": selector.select_strategy(TestFailure(failure_type=FailureType.ASSERTION_FAILED, error_message="AssertionError")).value}))
+locator = selector.classify_failure("locator not found: #save")
+assertion = selector.classify_failure("AssertionError: expected 2 received 3")
+failure = TestFailure(failure_type=locator, error_message="locator not found", failed_selector="#save", test_code="await page.locator('#save').click()", page_html='<button id="save-new">Save</button>')
+result = asyncio.run(Tier1LocatorHealer().heal(failure))
+print(json.dumps({
+    "locator_failure_type": locator.value,
+    "locator_result": {**result.to_dict(), "healed_code": result.healed_code},
+    "assertion_failure_type": assertion.value,
+    "assertion_tier": selector.select_strategy(TestFailure(failure_type=assertion, error_message="AssertionError")).value,
+}))
 `
-	for _, fixture := range []struct{ name, checkout, localRelative string }{
-		{"ninelives-0.1.3", "ninelives-0.1.3", "9lives-python-0.1.3/src"},
-		{"ninelives-0.2.1", "ninelives-0.2.1", "9lives-python/src"},
-	} {
-		t.Run(fixture.name, func(t *testing.T) {
-			sourceRoot := filepath.Join(runnerRoot, "testdata", "upstream", fixture.checkout, "src")
-			if _, err := os.Stat(sourceRoot); err != nil {
-				// Developer-only fallback; CI checks out the exact public revisions above.
-				platformRoot := filepath.Clean(filepath.Join(runnerRoot, "../.."))
-				sourceRoot = filepath.Join(platformRoot, ".context", fixture.localRelative)
-				if _, localErr := os.Stat(sourceRoot); localErr != nil {
-					t.Fatalf("pinned offline fixture source is required: checkout=%v local=%v", err, localErr)
-				}
-			}
-			command := exec.Command(python, "-c", program, sourceRoot)
-			output, err := command.CombinedOutput()
+	for _, checkout := range []string{"ninelives-0.1.3", "ninelives-0.2.1"} {
+		t.Run(checkout, func(t *testing.T) {
+			source := contracttest.UpstreamSource(t, checkout)
+			output, err := exec.Command(python, "-c", program, source).Output()
 			if err != nil {
-				t.Fatalf("actual %s offline healing fixture failed: %v: %s", fixture.name, err, strings.TrimSpace(string(output)))
+				t.Fatalf("actual %s offline healing fixture failed: %v", checkout, err)
 			}
 			var actual struct {
-				FailureType   string `json:"failure_type"`
-				Proposal      string `json:"proposal"`
-				AssertionTier string `json:"assertion_tier"`
+				LocatorFailureType   string         `json:"locator_failure_type"`
+				LocatorResult        UpstreamResult `json:"locator_result"`
+				AssertionFailureType string         `json:"assertion_failure_type"`
+				AssertionTier        string         `json:"assertion_tier"`
 			}
 			if err := json.Unmarshal(output, &actual); err != nil {
-				t.Fatalf("actual %s fixture did not produce a bridge payload: %v: %s", fixture.name, err, output)
+				t.Fatalf("%s did not produce a healing result: %v: %s", checkout, err, output)
 			}
-			proposal := Response{Version: Version, FailureType: actual.FailureType, Tier: "tier1_auto", Decision: "propose", ProposedCode: actual.Proposal, Changes: []string{"offline locator proposal"}, RequiresApproval: true, Apply: false}
-			if err := Validate(Request{Version: Version}, proposal); err != nil {
-				t.Fatalf("%s proposal was not safely mapped to the bridge: %v", fixture.name, err)
+			if actual.LocatorFailureType != "locator_not_found" || actual.AssertionFailureType != "assertion_failed" || actual.AssertionTier != "tier3_human" {
+				t.Fatalf("%s classification changed: %+v", checkout, actual)
 			}
-			refusal := Response{Version: Version, FailureType: "assertion_failed", Tier: actual.AssertionTier, Decision: "refuse", RequiresApproval: true, Apply: false}
-			if err := Validate(Request{Version: Version, AllowAssertionChange: false}, refusal); err != nil {
-				t.Fatalf("%s assertion refusal was not preserved: %v", fixture.name, err)
+			// Upstream Tier 1 would auto-apply; the bridge must still require approval.
+			if !actual.LocatorResult.Success || actual.LocatorResult.RequiresApproval || actual.LocatorResult.HealedCode == nil || !strings.Contains(*actual.LocatorResult.HealedCode, "#save-new") {
+				t.Fatalf("%s Tier 1 result changed shape; revisit FromUpstream: %+v", checkout, actual.LocatorResult)
 			}
-			if actual.AssertionTier != "tier3_human" {
-				t.Fatalf("%s assertion tier changed: %s", fixture.name, actual.AssertionTier)
+			request := Request{Version: Version, Framework: "playwright", AllowAssertionChange: false}
+			proposal, err := FromUpstream(request, actual.LocatorFailureType, actual.LocatorResult)
+			if err != nil {
+				t.Fatalf("%s locator result was not mapped safely: %v", checkout, err)
+			}
+			if proposal.Decision != "propose" || !proposal.RequiresApproval || proposal.Apply || proposal.ProposedCode != *actual.LocatorResult.HealedCode {
+				t.Fatalf("%s proposal lost review semantics: %+v", checkout, proposal)
+			}
+			// Even a successful upstream repair of an assertion must be refused.
+			refusal, err := FromUpstream(request, actual.AssertionFailureType, UpstreamResult{Tier: actual.AssertionTier, Success: true, HealedCode: actual.LocatorResult.HealedCode})
+			if err != nil || refusal.Decision != "refuse" || refusal.ProposedCode != "" || refusal.Apply {
+				t.Fatalf("%s assertion refusal was not preserved: %+v err=%v", checkout, refusal, err)
 			}
 		})
+	}
+}
+
+func TestFromUpstreamRefusesEmptyRepair(t *testing.T) {
+	response, err := FromUpstream(Request{Version: Version}, "locator_not_found", UpstreamResult{Tier: "tier1_auto", Success: false})
+	if err != nil || response.Decision != "refuse" || response.RequiresApproval {
+		t.Fatalf("failed upstream heal must be a refusal: %+v err=%v", response, err)
 	}
 }
 

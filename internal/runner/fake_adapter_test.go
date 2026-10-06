@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/qualitymax/9lives-runner/internal/contracttest"
 )
 
 type fakeAdapter struct{}
@@ -151,24 +153,11 @@ func TestCanonicalReceiptMatchesPlatformModelOffline(t *testing.T) {
 
 func validateCanonicalReceiptSnapshot(t *testing.T, receipt string) {
 	t.Helper()
-	runnerRoot, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for filepath.Dir(runnerRoot) != runnerRoot {
-		if _, err := os.Stat(filepath.Join(runnerRoot, "testdata", "contracts", "execution-receipt", "execution_receipt.py")); err == nil {
-			break
-		}
-		runnerRoot = filepath.Dir(runnerRoot)
-	}
-	contract := filepath.Join(runnerRoot, "testdata", "contracts", "execution-receipt")
+	contract := filepath.Join(contracttest.RunnerRoot(), "testdata", "contracts", "execution-receipt")
 	if _, err := os.Stat(filepath.Join(contract, "execution_receipt.py")); err != nil {
 		t.Fatalf("contract snapshot is required: %v", err)
 	}
-	python := os.Getenv("NINELIVES_CONTRACT_PYTHON")
-	if python == "" {
-		python = "python3"
-	}
+	python := contracttest.Python(t, "pydantic", "jsonschema")
 	program := `import importlib.util,json,sys,jsonschema
 p=sys.argv[1]
 s=importlib.util.spec_from_file_location("execution_receipt",p+"/execution_receipt.py")
@@ -198,7 +187,7 @@ else:
     raise AssertionError("model accepted negative duration")`
 
 	command := exec.Command(python, "-c", program, contract, receipt)
-	command.Dir = runnerRoot
+	command.Dir = contracttest.RunnerRoot()
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("canonical receipt rejected by pinned platform model/schema: %v: %s", err, output)
 	}

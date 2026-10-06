@@ -54,7 +54,7 @@ func usage(w io.Writer) {
 
 Usage:
   9l plan <spec-or-glob>... [--format text|json] [--max-jobs N]
-  9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D]
+  9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
@@ -77,7 +77,10 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for evidence receipts")
+	var passEnv envNames
+	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	normalized := flagsFirst(args, map[string]bool{
+		"-pass-env": true, "--pass-env": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
 		"-workers": true, "--workers": true,
@@ -124,7 +127,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
-		Workers: *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, ReceiptDir: *receiptDir, Adapters: availableAdapters,
+		Workers: *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters,
 	})
 	executionFailed := err != nil
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
@@ -214,7 +217,7 @@ func printPlan(w io.Writer, plan runner.Plan, format string) int {
 }
 
 func printResult(w io.Writer, result runner.RunSummary) {
-	fmt.Fprintf(w, "run %s: %d passed, %d failed, %d canceled, %d errors (%s)\n", result.RunID, result.Passed, result.Failed, result.Canceled, result.Errors, time.Duration(result.DurationMS)*time.Millisecond)
+	fmt.Fprintf(w, "run %s: %d passed, %d failed, %d canceled, %d timed out, %d errors (%s)\n", result.RunID, result.Passed, result.Failed, result.Canceled, result.TimedOut, result.Errors, time.Duration(result.DurationMS)*time.Millisecond)
 	for _, receipt := range result.Receipts {
 		fmt.Fprintf(w, "  %-8s %s", strings.ToUpper(string(receipt.Status)), receipt.Spec)
 		if receipt.ReceiptPath != "" {
@@ -236,6 +239,23 @@ func bridgePython(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	return code
+}
+
+// envNames collects --pass-env values. Only names are accepted; values are
+// read from the caller's environment so they never appear in argv or receipts.
+type envNames []string
+
+func (names *envNames) String() string { return strings.Join(*names, ",") }
+
+func (names *envNames) Set(value string) error {
+	for _, name := range strings.Split(value, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" || strings.ContainsAny(name, "= \t\x00") {
+			return fmt.Errorf("invalid environment variable name %q", name)
+		}
+		*names = append(*names, name)
+	}
+	return nil
 }
 
 // The standard flag package stops at the first positional argument. Moving

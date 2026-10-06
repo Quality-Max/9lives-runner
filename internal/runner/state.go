@@ -18,6 +18,21 @@ var ErrRunNotFound = errors.New("run not found")
 // rather than truncating preserves identity binding across local and portable receipts.
 const canonicalIdentifierLimit = 160
 
+// A live runner rewrites its heartbeat every heartbeatInterval, including
+// while it terminates process groups after a deadline or cancellation. The
+// stale threshold leaves room for a loaded host (many browsers) to delay a
+// beat without reporting a live run as interrupted.
+const (
+	heartbeatInterval   = time.Second
+	heartbeatStaleAfter = 10 * heartbeatInterval
+)
+
+// heartbeatStore is optional: a Store that cannot prove liveness is simply
+// judged by its last progress event.
+type heartbeatStore interface {
+	Heartbeat() error
+}
+
 var validRunID = regexp.MustCompile(`^run-[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var validComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
@@ -76,17 +91,29 @@ func (store *runStore) AppendEvent(event ProgressEvent) error {
 	return file.Close()
 }
 
+// Heartbeat overwrites a single liveness file instead of appending events, so
+// a long run does not grow events.jsonl by one line per second.
+func (store *runStore) Heartbeat() error {
+	_, _, err := writeAtomic(store.directory(), "heartbeat", []byte(time.Now().UTC().Format(time.RFC3339Nano)+"\n"))
+	return err
+}
+
+// PersistAttempt writes the canonical export before the legacy receipt.
+// receipt.json is the commit point for an attempt: if it cannot be written the
+// canonical export is removed, so the two files never disagree on disk.
 func (store *runStore) PersistAttempt(receipt Receipt, stdout, stderr []byte) (Receipt, error) {
 	evidence, err := writeEvidence(store.root, receipt, stdout, stderr)
 	if err != nil {
 		return receipt, err
 	}
 	receipt.Evidence = evidence
-	path, err := writeReceipt(store.root, receipt)
+	canonical, err := writeCanonicalReceipt(store.root, receipt)
 	if err != nil {
 		return receipt, err
 	}
-	if err := writeCanonicalReceipt(store.root, receipt); err != nil {
+	path, err := writeReceipt(store.root, receipt)
+	if err != nil {
+		_ = os.Remove(canonical)
 		return receipt, err
 	}
 	receipt.ReceiptPath = path
@@ -151,13 +178,27 @@ func LoadStatus(root, runID string) (RunStatus, error) {
 	if status.Result == nil {
 		if _, err := os.Stat(filepath.Join(directory, "cancel")); err == nil {
 			status.State = "canceling"
-		} else if status.LastEvent == nil || time.Since(status.LastEvent.Timestamp) > 2*time.Second {
-			// There is no recovery protocol for a local process. A stale or absent
+		} else if time.Since(lastSignOfLife(directory, status.LastEvent)) > heartbeatStaleAfter {
+			// There is no recovery protocol for a local process. A stale
 			// heartbeat is therefore reported honestly instead of "running" forever.
 			status.State = "interrupted"
 		}
 	}
 	return status, nil
+}
+
+func lastSignOfLife(directory string, lastEvent *ProgressEvent) time.Time {
+	var latest time.Time
+	if lastEvent != nil {
+		latest = lastEvent.Timestamp
+	}
+	// plan.json covers the instant between Initialize and the first beat.
+	for _, name := range []string{"heartbeat", "plan.json"} {
+		if info, err := os.Stat(filepath.Join(directory, name)); err == nil && info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
 }
 
 func LoadResult(root, runID string) (RunSummary, error) {

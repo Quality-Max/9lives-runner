@@ -26,8 +26,17 @@ models or apply a proposed repair without the Python package's approval path.
   run from another terminal using its persisted run ID.
 - Execution receipts: legacy `receipt.json` plus additive strict
   `execution-receipt-1.0.json`, with redacted stdout/stderr evidence under
-  `.9lives/receipts/<run-id>/<job-id>/<attempt-id>/`. A stale local run is
-  reported as interrupted; local receipt persistence does not claim recovery.
+  `.9lives/receipts/<run-id>/<job-id>/<attempt-id>/`. `receipt.json` is the
+  commit point: if it cannot be written, the canonical export is removed too.
+  A run whose heartbeat is more than 10 seconds stale is reported as
+  interrupted; local receipt persistence does not claim recovery.
+- Controlled environment: test processes inherit only what a browser test
+  runner needs to start and reach the network (`PATH`, `HOME`, temp and locale
+  variables, `DISPLAY`/`WAYLAND_DISPLAY`, `XDG_*`, `PLAYWRIGHT_BROWSERS_PATH`,
+  proxy and CA-certificate variables). Application settings and credentials
+  are forwarded only when named: `9l run tests/ --pass-env BASE_URL,TEST_USER`.
+  Values are read from the caller's environment and never written to the plan
+  or receipts.
 - Honest completeness: execution and report validation are separate; skipped,
   canceled, failed, or unvalidated jobs prevent an overall green result.
 - `9l heal`: compatibility bridge to `python3 -m ninelives.cli heal`.
@@ -59,7 +68,7 @@ recursively; shell-style globs use Go's `filepath.Glob` rules.
 
 ```bash
 ./9l plan --max-jobs 20 tests/
-./9l run tests/ --receipt-dir .9lives/receipts
+./9l run tests/ --receipt-dir .9lives/receipts --pass-env BASE_URL
 ./9l status <run-id>
 ./9l cancel <run-id>
 ./9l result <run-id> --format json
@@ -77,8 +86,8 @@ NINELIVES_PYTHON=.venv/bin/python ./9l heal tests/login.spec.ts --yes
 go test -race ./...
 go vet ./...
 go test -run '^$' -bench . -benchmem -benchtime=200x ./internal/runner
-# Native ARM64 contract validation against the pinned platform snapshots:
-NINELIVES_CONTRACT_PYTHON=<LOCAL_CHECKOUT>/scripts/conductor-python go test ./internal/runner -run TestCanonicalReceiptMatchesPlatformModelOffline -count=1
+# Offline contract tests, failing instead of skipping when the toolchain is missing:
+NINELIVES_REQUIRE_CONTRACT=1 NINELIVES_CONTRACT_PYTHON=/path/to/python3 go test ./...
 # Browser-free CLI startup, planning, execution evidence, and active cancellation:
 python3 scripts/benchmark.py
 ```
@@ -87,8 +96,18 @@ The canonical receipt snapshot is copied from platform commit
 `767d634ba664f090db15cb99a4de19ef1c4de922` under
 `testdata/contracts/execution-receipt/`. CI installs Python 3.11 with
 `pydantic==2.11.7` and `jsonschema==4.26.0`, then validates the snapshot without
-requiring an adjacent platform checkout. Local Apple Silicon runs use the
-absolute `NINELIVES_CONTRACT_PYTHON` command above; CI defaults to `python3`.
+requiring an adjacent platform checkout.
+
+The healing compatibility test runs the real Python Tier 1 healer from the
+pinned `9lives` revisions, checked out by CI under `testdata/upstream/`
+(`ninelives-0.1.3/` and `ninelives-0.2.1/`; override the parent directory with
+`NINELIVES_UPSTREAM_DIR`). Its output is mapped through
+`healingbridge.FromUpstream`, which always requires approval for a proposal
+even though the Python Tier 1 healer marks locator repairs as auto-applicable.
+
+Without the Python validators (`pydantic`, `jsonschema`) or the upstream
+sources these contract tests are skipped locally. CI sets
+`NINELIVES_REQUIRE_CONTRACT=1`, so there they fail instead.
 
 ## Design notes
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -18,10 +19,13 @@ type ExecuteOptions struct {
 	RunDeadline    time.Duration
 	MaxAttempts    int
 	MaxOutputBytes int
-	ReceiptDir     string
-	Adapters       []Adapter
-	Store          Store
-	Executor       ProcessExecutor
+	// PassEnv names caller variables forwarded to test processes in addition
+	// to the inherited runtime environment.
+	PassEnv    []string
+	ReceiptDir string
+	Adapters   []Adapter
+	Store      Store
+	Executor   ProcessExecutor
 }
 
 func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, error) {
@@ -98,27 +102,39 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 		runCtx, cancelDeadline = context.WithTimeout(runCtx, opts.RunDeadline)
 		defer cancelDeadline()
 	}
-	watchDone := make(chan struct{})
+	// The heartbeat outlives runCtx: after a deadline or cancellation the
+	// runner is still terminating process groups and persisting receipts, and
+	// must not look interrupted to `9l status` while it does.
+	beat := func() {}
+	if heartbeats, ok := store.(heartbeatStore); ok {
+		beat = func() { _ = heartbeats.Heartbeat() }
+	}
+	beat()
+	watchDone, stopWatch := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(watchDone)
 		ticker := time.NewTicker(50 * time.Millisecond)
-		heartbeat := time.NewTicker(time.Second)
+		heartbeat := time.NewTicker(heartbeatInterval)
 		defer ticker.Stop()
 		defer heartbeat.Stop()
 		for {
 			select {
-			case <-runCtx.Done():
+			case <-stopWatch:
 				return
 			case <-ticker.C:
-				if store.CancellationRequested() {
+				if runCtx.Err() == nil && store.CancellationRequested() {
 					_ = store.AppendEvent(ProgressEvent{Type: "cancellation_observed"})
 					cancelRun()
-					return
 				}
 			case <-heartbeat.C:
-				_ = store.AppendEvent(ProgressEvent{Type: "run_heartbeat"})
+				beat()
 			}
 		}
+	}()
+	defer func() {
+		cancelRun()
+		close(stopWatch)
+		<-watchDone
 	}()
 
 	// Dependency plans are deliberately serial. A failed prerequisite produces
@@ -126,6 +142,14 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	if hasDependencies {
 		completed := map[string]Receipt{}
 		for _, job := range orderedJobs {
+			if runCtx.Err() != nil {
+				// A canceled or expired run reports descendants as canceled or
+				// timed out, not as blocked by the prerequisite it interrupted.
+				receipt := executeJob(runCtx, plan.RunID, job, opts, store, executor)
+				completed[job.ID] = receipt
+				summary.Receipts = append(summary.Receipts, receipt)
+				continue
+			}
 			blocked := ""
 			for _, dependency := range job.DependsOn {
 				if completed[dependency].Status != StatusPassed {
@@ -199,8 +223,6 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	_ = store.AppendEvent(ProgressEvent{Type: "run_finished"})
 	finalErr := runCtx.Err()
-	cancelRun()
-	<-watchDone
 	return summary, finalErr
 }
 
@@ -291,7 +313,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		return persistAttempt(receipt, store, nil, nil)
 	}
 	if parent.Err() != nil {
-		receipt.Status, receipt.Error = StatusCanceled, parent.Err().Error()
+		receipt.Status, receipt.Error = statusFor(parent.Err()), parent.Err().Error()
 		receipt.Termination = terminationFor(parent.Err())
 		return persistAttempt(receipt, store, nil, nil)
 	}
@@ -299,19 +321,14 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 
 	ctx, cancel := context.WithTimeout(parent, opts.Timeout)
 	defer cancel()
-	job.Env = mergeMaps(job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
+	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
 	receipt.Executed, receipt.ExitCode = output.Executed, output.ExitCode
 	// Keep actual cleanup attempts as local evidence even when the leader
 	// exited normally before its owned descendants were reaped.
 	receipt.Termination = output.Termination
 	if ctx.Err() != nil {
-		receipt.Error = ctx.Err().Error()
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			receipt.Status = StatusTimedOut
-		} else {
-			receipt.Status = StatusCanceled
-		}
+		receipt.Status, receipt.Error = statusFor(ctx.Err()), ctx.Err().Error()
 		if receipt.Termination == nil {
 			receipt.Termination = terminationFor(ctx.Err())
 		}
@@ -369,6 +386,15 @@ func validateValidation(validation Validation) error {
 		return errors.New("structured report has negative verified assertions")
 	}
 	return nil
+}
+
+// statusFor distinguishes a per-job or run-wide deadline from a user
+// cancellation, including for queued jobs that never started.
+func statusFor(err error) ReceiptStatus {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return StatusTimedOut
+	}
+	return StatusCanceled
 }
 
 func terminationFor(err error) *Termination {
@@ -462,14 +488,58 @@ func (buffer *limitedBuffer) Write(payload []byte) (int, error) {
 
 func (buffer *limitedBuffer) Bytes() []byte { return buffer.data }
 
+// inheritedEnvironment is what a browser test runner needs to start, find its
+// browsers, render, and reach the network. Application settings and
+// credentials (BASE_URL, TEST_PASSWORD, ...) are not inherited implicitly;
+// callers name them with ExecuteOptions.PassEnv (`9l run --pass-env NAME`).
+var inheritedEnvironment = map[string]bool{
+	"HOME": true, "PATH": true, "TMPDIR": true, "TEMP": true, "TMP": true,
+	"SYSTEMROOT": true, "WINDIR": true, "COMSPEC": true, "PATHEXT": true,
+	"USER": true, "LOGNAME": true, "SHELL": true, "TERM": true, "TZ": true,
+	"LANG": true, "LANGUAGE": true,
+	"DISPLAY": true, "WAYLAND_DISPLAY": true, "XAUTHORITY": true,
+	"PLAYWRIGHT_BROWSERS_PATH": true,
+	"HTTP_PROXY":               true, "HTTPS_PROXY": true, "NO_PROXY": true, "ALL_PROXY": true,
+	"NODE_EXTRA_CA_CERTS": true, "SSL_CERT_FILE": true, "SSL_CERT_DIR": true,
+}
+
+var inheritedEnvironmentPrefixes = []string{"LC_", "XDG_"}
+
+func inherited(key string) bool {
+	// Proxy variables are conventionally lower-case on Unix; Windows variable
+	// names are case-insensitive (Path, SystemRoot).
+	upper := strings.ToUpper(key)
+	if upper != key && runtime.GOOS != "windows" && !strings.HasSuffix(upper, "_PROXY") {
+		return false
+	}
+	if inheritedEnvironment[upper] {
+		return true
+	}
+	for _, prefix := range inheritedEnvironmentPrefixes {
+		if strings.HasPrefix(upper, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// passedEnvironment reads the variables a caller explicitly forwarded. Values
+// stay in memory; Job.Env is never persisted in the plan or receipts.
+func passedEnvironment(names []string) map[string]string {
+	values := map[string]string{}
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok {
+			values[name] = value
+		}
+	}
+	return values
+}
+
 func controlledEnvironment(base []string, overlays ...map[string]string) []string {
-	allowed := map[string]bool{"HOME": true, "PATH": true, "TMPDIR": true, "TEMP": true, "TMP": true, "SYSTEMROOT": true, "WINDIR": true, "COMSPEC": true, "LANG": true, "LC_ALL": true}
 	values := map[string]string{}
 	for _, item := range base {
-		if key, value, ok := strings.Cut(item, "="); ok {
-			if allowed[key] {
-				values[key] = value
-			}
+		if key, value, ok := strings.Cut(item, "="); ok && key != "" && inherited(key) {
+			values[key] = value
 		}
 	}
 	for _, overlay := range overlays {
