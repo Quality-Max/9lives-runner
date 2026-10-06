@@ -28,7 +28,12 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	started := time.Now().UTC()
 	summary := RunSummary{RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, Receipts: []Receipt{}}
 	if err := validateRunID(plan.RunID); err != nil {
+		summary.Complete = false
 		return summary, err
+	}
+	if plan.Limits.MaxJobs > 0 && len(plan.Jobs) > plan.Limits.MaxJobs {
+		summary.Complete = false
+		return summary, fmt.Errorf("planned jobs (%d) exceed run-wide job budget (%d)", len(plan.Jobs), plan.Limits.MaxJobs)
 	}
 	orderedJobs, hasDependencies, err := orderJobs(plan.Jobs)
 	if err != nil {
@@ -48,6 +53,10 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	if plan.Limits.MaxAttempts > 0 && opts.MaxAttempts > plan.Limits.MaxAttempts {
 		opts.MaxAttempts = plan.Limits.MaxAttempts
+	}
+	if err := validateCanonicalPlanIdentifiers(plan, opts.MaxAttempts); err != nil {
+		summary.Complete = false
+		return summary, err
 	}
 	if opts.MaxOutputBytes < 1 {
 		opts.MaxOutputBytes = max(1024, plan.Limits.MaxOutputBytes)
@@ -93,7 +102,9 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	go func() {
 		defer close(watchDone)
 		ticker := time.NewTicker(50 * time.Millisecond)
+		heartbeat := time.NewTicker(time.Second)
 		defer ticker.Stop()
+		defer heartbeat.Stop()
 		for {
 			select {
 			case <-runCtx.Done():
@@ -104,33 +115,60 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 					cancelRun()
 					return
 				}
+			case <-heartbeat.C:
+				_ = store.AppendEvent(ProgressEvent{Type: "run_heartbeat"})
 			}
 		}
 	}()
 
-	// Queue every reserved job. Cancellation therefore produces terminal
-	// canceled receipts for jobs that had not started yet instead of dropping
-	// them from the accounting.
-	jobs := make(chan Job, len(orderedJobs))
-	for _, job := range orderedJobs {
-		jobs <- job
-	}
-	close(jobs)
-	receipts := make(chan Receipt, len(plan.Jobs))
-
-	var workers sync.WaitGroup
-	for range min(opts.Workers, max(1, len(plan.Jobs))) {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for job := range jobs {
-				receipts <- executeJob(runCtx, plan.RunID, job, opts, store, executor)
+	// Dependency plans are deliberately serial. A failed prerequisite produces
+	// a durable blocked receipt for descendants rather than running them.
+	if hasDependencies {
+		completed := map[string]Receipt{}
+		for _, job := range orderedJobs {
+			blocked := ""
+			for _, dependency := range job.DependsOn {
+				if completed[dependency].Status != StatusPassed {
+					blocked = dependency
+					break
+				}
 			}
-		}()
-	}
-	go func() { workers.Wait(); close(receipts) }()
-	for receipt := range receipts {
-		summary.Receipts = append(summary.Receipts, receipt)
+			if blocked != "" {
+				receipt := Receipt{Version: 1, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: "blocked by unsuccessful dependency " + blocked, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
+				receipt = persistAttempt(receipt, store, nil, nil)
+				completed[job.ID] = receipt
+				summary.Receipts = append(summary.Receipts, receipt)
+				continue
+			}
+			receipt := executeJob(runCtx, plan.RunID, job, opts, store, executor)
+			completed[job.ID] = receipt
+			summary.Receipts = append(summary.Receipts, receipt)
+		}
+	} else {
+		// Queue every reserved job. Cancellation therefore produces terminal
+		// canceled receipts for jobs that had not started yet instead of dropping
+		// them from the accounting.
+		jobs := make(chan Job, len(orderedJobs))
+		for _, job := range orderedJobs {
+			jobs <- job
+		}
+		close(jobs)
+		receipts := make(chan Receipt, len(plan.Jobs))
+
+		var workers sync.WaitGroup
+		for range min(opts.Workers, max(1, len(plan.Jobs))) {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				for job := range jobs {
+					receipts <- executeJob(runCtx, plan.RunID, job, opts, store, executor)
+				}
+			}()
+		}
+		go func() { workers.Wait(); close(receipts) }()
+		for receipt := range receipts {
+			summary.Receipts = append(summary.Receipts, receipt)
+		}
 	}
 
 	sort.Slice(summary.Receipts, func(i, j int) bool { return summary.Receipts[i].JobID < summary.Receipts[j].JobID })
@@ -142,6 +180,8 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 			summary.Failed++
 		case StatusCanceled:
 			summary.Canceled++
+		case StatusTimedOut:
+			summary.TimedOut++
 		case StatusError:
 			summary.Errors++
 		}
@@ -162,6 +202,22 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	cancelRun()
 	<-watchDone
 	return summary, finalErr
+}
+
+func validateCanonicalPlanIdentifiers(plan Plan, maxAttempts int) error {
+	for _, job := range plan.Jobs {
+		if len(job.ID) > canonicalIdentifierLimit {
+			return fmt.Errorf("job ID exceeds canonical identifier limit (%d): %q", canonicalIdentifierLimit, job.ID)
+		}
+		attemptID := fmt.Sprintf("%s-attempt-%03d", job.ID, maxAttempts)
+		if len(attemptID) > canonicalIdentifierLimit {
+			return fmt.Errorf("attempt ID exceeds canonical identifier limit (%d) for job %q", canonicalIdentifierLimit, job.ID)
+		}
+		if len(job.Adapter) > canonicalIdentifierLimit {
+			return fmt.Errorf("adapter revision exceeds canonical identifier limit (%d): %q", canonicalIdentifierLimit, job.Adapter)
+		}
+	}
+	return nil
 }
 
 func orderJobs(jobs []Job) ([]Job, bool, error) {
@@ -246,9 +302,19 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	job.Env = mergeMaps(job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
 	receipt.Executed, receipt.ExitCode = output.Executed, output.ExitCode
+	// Keep actual cleanup attempts as local evidence even when the leader
+	// exited normally before its owned descendants were reaped.
+	receipt.Termination = output.Termination
 	if ctx.Err() != nil {
-		receipt.Status, receipt.Error = StatusCanceled, ctx.Err().Error()
-		receipt.Termination = terminationFor(ctx.Err())
+		receipt.Error = ctx.Err().Error()
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			receipt.Status = StatusTimedOut
+		} else {
+			receipt.Status = StatusCanceled
+		}
+		if receipt.Termination == nil {
+			receipt.Termination = terminationFor(ctx.Err())
+		}
 	} else if output.Err != nil && output.ExitCode < 0 {
 		receipt.Status, receipt.Error = StatusError, output.Err.Error()
 	}
@@ -261,14 +327,17 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			validation, validationErr := adapter.Validate(output.Stdout)
 			if validationErr != nil {
 				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), "missing or invalid structured report"
+			} else if err := validateValidation(validation); err != nil {
+				receipt.Status, receipt.Error, receipt.Validation = StatusError, err.Error(), "missing or invalid structured report"
 			} else {
 				receipt.Validated = true
 				receipt.FailureCount = validation.FailureCount
 				receipt.ExecutedTests = validation.ExecutedTests
+				receipt.SkippedTests = validation.SkippedTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.AssertionCoverage = validation.AssertionCoverage
 				receipt.Validation = validation.Description
-				if receipt.ExitCode == 0 && validation.FailureCount == 0 {
+				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
 				} else if receipt.ExitCode != 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusError
@@ -286,11 +355,27 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	return receipt
 }
 
+func validateValidation(validation Validation) error {
+	if validation.ExecutedTests <= 0 {
+		return errors.New("structured report contains no executed tests")
+	}
+	if validation.FailureCount < 0 || validation.SkippedTests < 0 || validation.FailureCount > validation.ExecutedTests {
+		return errors.New("structured report has inconsistent test counts")
+	}
+	if validation.ExecutedTests > int(^uint(0)>>1)-validation.SkippedTests {
+		return errors.New("structured report test counts overflow")
+	}
+	if validation.VerifiedAssertions < 0 {
+		return errors.New("structured report has negative verified assertions")
+	}
+	return nil
+}
+
 func terminationFor(err error) *Termination {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return &Termination{Kind: "timeout", Detail: err.Error(), Signal: "SIGTERM", EscalationSignal: "SIGKILL", EscalationAfterMS: 2000}
+		return &Termination{Kind: "timeout", Detail: err.Error()}
 	}
-	return &Termination{Kind: "canceled", Detail: err.Error(), Signal: "SIGTERM", EscalationSignal: "SIGKILL", EscalationAfterMS: 2000}
+	return &Termination{Kind: "canceled", Detail: err.Error()}
 }
 
 func persistAttempt(receipt Receipt, store Store, stdout, stderr []byte) Receipt {
@@ -300,6 +385,11 @@ func persistAttempt(receipt Receipt, store Store, stdout, stderr []byte) Receipt
 	if err != nil {
 		receipt.Error = joinError(receipt.Error, "could not persist attempt: "+err.Error())
 		receipt.Status = StatusError
+		return receipt
+	}
+	if persisted.RunID != receipt.RunID || persisted.JobID != receipt.JobID || persisted.AttemptID != receipt.AttemptID || persisted.Attempt != receipt.Attempt {
+		receipt.Status = StatusError
+		receipt.Error = joinError(receipt.Error, "store returned a receipt with an unreserved identity")
 		return receipt
 	}
 	return persisted
@@ -321,11 +411,12 @@ func (localProcessExecutor) Run(ctx context.Context, job Job, outputLimit int) P
 	command.Env = controlledEnvironment(os.Environ(), job.Env)
 	stdout, stderr := newLimitedBuffer(outputLimit), newLimitedBuffer(outputLimit)
 	command.Stdout, command.Stderr = stdout, stderr
-	err := startAndWait(ctx, command)
+	err, termination := startAndWait(ctx, command)
 	result.Executed = command.Process != nil
 	result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
 	result.StdoutTruncated, result.StderrTruncated = stdout.truncated, stderr.truncated
 	result.Err = err
+	result.Termination = termination
 	if err == nil {
 		result.ExitCode = 0
 	} else {
@@ -372,10 +463,13 @@ func (buffer *limitedBuffer) Write(payload []byte) (int, error) {
 func (buffer *limitedBuffer) Bytes() []byte { return buffer.data }
 
 func controlledEnvironment(base []string, overlays ...map[string]string) []string {
+	allowed := map[string]bool{"HOME": true, "PATH": true, "TMPDIR": true, "TEMP": true, "TMP": true, "SYSTEMROOT": true, "WINDIR": true, "COMSPEC": true, "LANG": true, "LC_ALL": true}
 	values := map[string]string{}
 	for _, item := range base {
 		if key, value, ok := strings.Cut(item, "="); ok {
-			values[key] = value
+			if allowed[key] {
+				values[key] = value
+			}
 		}
 	}
 	for _, overlay := range overlays {

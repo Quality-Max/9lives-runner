@@ -13,8 +13,12 @@ import (
 // Evidence redaction is intentionally conservative and best-effort. The runner
 // never claims arbitrary process output is safe to publish.
 var commonSecret = regexp.MustCompile(`(?i)(["']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)["']?\s*[:=]\s*["']?)([^\s"',}]+)`)
+var URLCredentials = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^\s/@:]+:)([^\s@/]+)(@)`)
 
-func redact(raw []byte) []byte { return commonSecret.ReplaceAll(raw, []byte("${1}[REDACTED]")) }
+func redact(raw []byte) []byte {
+	redacted := commonSecret.ReplaceAll(raw, []byte("${1}[REDACTED]"))
+	return URLCredentials.ReplaceAll(redacted, []byte("${1}[REDACTED]${3}"))
+}
 
 func redactArguments(arguments []string) []string {
 	redacted := make([]string, len(arguments))

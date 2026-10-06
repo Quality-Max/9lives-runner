@@ -13,10 +13,18 @@ import (
 )
 
 var ErrRunNotFound = errors.New("run not found")
+
+// execution-receipt/1.0 identifiers are capped at 160 characters. Rejecting
+// rather than truncating preserves identity binding across local and portable receipts.
+const canonicalIdentifierLimit = 160
+
 var validRunID = regexp.MustCompile(`^run-[A-Za-z0-9][A-Za-z0-9._-]*$`)
 var validComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 func validateRunID(runID string) error {
+	if len(runID) > canonicalIdentifierLimit {
+		return fmt.Errorf("run ID exceeds canonical identifier limit (%d): %q", canonicalIdentifierLimit, runID)
+	}
 	if !validRunID.MatchString(runID) {
 		return fmt.Errorf("invalid run ID %q", runID)
 	}
@@ -76,6 +84,9 @@ func (store *runStore) PersistAttempt(receipt Receipt, stdout, stderr []byte) (R
 	receipt.Evidence = evidence
 	path, err := writeReceipt(store.root, receipt)
 	if err != nil {
+		return receipt, err
+	}
+	if err := writeCanonicalReceipt(store.root, receipt); err != nil {
 		return receipt, err
 	}
 	receipt.ReceiptPath = path
@@ -140,6 +151,10 @@ func LoadStatus(root, runID string) (RunStatus, error) {
 	if status.Result == nil {
 		if _, err := os.Stat(filepath.Join(directory, "cancel")); err == nil {
 			status.State = "canceling"
+		} else if status.LastEvent == nil || time.Since(status.LastEvent.Timestamp) > 2*time.Second {
+			// There is no recovery protocol for a local process. A stale or absent
+			// heartbeat is therefore reported honestly instead of "running" forever.
+			status.State = "interrupted"
 		}
 	}
 	return status, nil

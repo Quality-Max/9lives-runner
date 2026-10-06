@@ -42,7 +42,7 @@
     }
   },
   {
-    "name": "reviewed repair may be explicitly applied",
+    "name": "locator timeout remains a proposal until a separate approval",
     "request": {
       "version": 1,
       "framework": "playwright",
@@ -54,13 +54,13 @@
     },
     "expected": {
       "version": 1,
-      "failureType": "locator_timeout",
+      "failureType": "locator_not_found",
       "tier": "tier1_auto",
-      "decision": "applied",
+      "decision": "propose",
       "proposedCode": "await page.locator('text=Sign in').click();",
       "changes": ["Corrected selector case"],
-      "requiresApproval": false,
-      "apply": true
+      "requiresApproval": true,
+      "apply": false
     }
   }
 ]

@@ -3,3 +3,5 @@
 *.prof
 node_modules/
 test-results/
+__pycache__/
+*.py[cod]

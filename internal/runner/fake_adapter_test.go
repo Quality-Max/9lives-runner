@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,6 +62,12 @@ func TestFakeAdapterContractOutcomes(t *testing.T) {
 			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != test.want || summary.Receipts[0].Validated != test.validated {
 				t.Fatalf("unexpected result: %#v", summary)
 			}
+			if test.mode == "success" {
+				canonical := filepath.Join(filepath.Dir(summary.Receipts[0].ReceiptPath), "execution-receipt-1.0.json")
+				if _, err := os.Stat(canonical); err != nil {
+					t.Fatalf("canonical receipt missing: %v", err)
+				}
+			}
 		})
 	}
 }
@@ -88,10 +95,112 @@ func TestFakeAdapterTimeoutAndCancellation(t *testing.T) {
 			if time.Since(started) > time.Second {
 				t.Fatal("cancellation did not terminate child promptly")
 			}
-			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != StatusCanceled || summary.Receipts[0].Termination == nil || summary.Receipts[0].Termination.Kind != test.kind {
+			want := StatusCanceled
+			if test.kind == "timeout" {
+				want = StatusTimedOut
+			}
+			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != want || summary.Receipts[0].Termination == nil || summary.Receipts[0].Termination.Kind != test.kind {
 				t.Fatalf("unexpected termination: %#v", summary)
 			}
 		})
+	}
+}
+
+func TestRunDeadlineIsNotReportedAsUserCancellation(t *testing.T) {
+	plan := Plan{Version: 1, RunID: "run-deadline-not-cancel", Jobs: []Job{fakeJob("job-001", "sleep", 5000)}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{
+		Workers: 1, Timeout: 10 * time.Second, RunDeadline: 50 * time.Millisecond,
+		ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}},
+	})
+	if len(summary.Receipts) != 1 || summary.Receipts[0].Status == StatusCanceled {
+		t.Fatalf("run deadline must not be reported as user cancellation: %#v", summary)
+	}
+}
+
+func TestCanonicalReceiptMatchesPlatformModelOffline(t *testing.T) {
+	cases := []struct {
+		name, mode string
+		timeout    time.Duration
+		cancel     bool
+	}{
+		{name: "success", mode: "success", timeout: time.Second},
+		{name: "test-failure", mode: "test-failure", timeout: time.Second},
+		{name: "infrastructure", mode: "infrastructure", timeout: time.Second},
+		{name: "malformed", mode: "malformed", timeout: time.Second},
+		{name: "missing-artifact", mode: "missing-artifact", timeout: time.Second},
+		{name: "timeout", mode: "sleep", timeout: 25 * time.Millisecond},
+		{name: "cancelled", mode: "sleep", timeout: time.Second, cancel: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if test.cancel {
+				go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+			}
+			root := t.TempDir()
+			plan := Plan{Version: 1, RunID: "run-canonical-" + test.name, Jobs: []Job{fakeJob("job-001", test.mode, 5000)}}
+			summary, _ := Execute(ctx, plan, ExecuteOptions{Workers: 1, Timeout: test.timeout, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
+			if len(summary.Receipts) != 1 {
+				t.Fatalf("expected one terminal receipt: %#v", summary)
+			}
+			validateCanonicalReceiptSnapshot(t, filepath.Join(filepath.Dir(summary.Receipts[0].ReceiptPath), "execution-receipt-1.0.json"))
+		})
+	}
+}
+
+func validateCanonicalReceiptSnapshot(t *testing.T, receipt string) {
+	t.Helper()
+	runnerRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for filepath.Dir(runnerRoot) != runnerRoot {
+		if _, err := os.Stat(filepath.Join(runnerRoot, "testdata", "contracts", "execution-receipt", "execution_receipt.py")); err == nil {
+			break
+		}
+		runnerRoot = filepath.Dir(runnerRoot)
+	}
+	contract := filepath.Join(runnerRoot, "testdata", "contracts", "execution-receipt")
+	if _, err := os.Stat(filepath.Join(contract, "execution_receipt.py")); err != nil {
+		t.Fatalf("contract snapshot is required: %v", err)
+	}
+	python := os.Getenv("NINELIVES_CONTRACT_PYTHON")
+	if python == "" {
+		python = "python3"
+	}
+	program := `import importlib.util,json,sys,jsonschema
+p=sys.argv[1]
+s=importlib.util.spec_from_file_location("execution_receipt",p+"/execution_receipt.py")
+m=importlib.util.module_from_spec(s)
+sys.modules[s.name]=m
+s.loader.exec_module(m)
+payload=json.load(open(sys.argv[2]))
+schema=json.load(open(p+"/1.0.schema.json"))
+m.ExecutionReceipt.model_validate(payload)
+jsonschema.validate(payload,schema)
+bad=dict(payload)
+bad["schema_version"]="9.9"
+try:
+    jsonschema.validate(bad,schema)
+except jsonschema.ValidationError:
+    pass
+else:
+    raise AssertionError("schema accepted invalid version")
+bad=dict(payload)
+bad["terminal"]=dict(payload["terminal"])
+bad["terminal"]["duration_seconds"]=-1
+try:
+    m.ExecutionReceipt.model_validate(bad)
+except Exception:
+    pass
+else:
+    raise AssertionError("model accepted negative duration")`
+
+	command := exec.Command(python, "-c", program, contract, receipt)
+	command.Dir = runnerRoot
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("canonical receipt rejected by pinned platform model/schema: %v: %s", err, output)
 	}
 }
 

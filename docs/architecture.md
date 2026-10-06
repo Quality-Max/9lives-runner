@@ -15,9 +15,10 @@ Distributed leases, recovery, and a concurrent DAG scheduler remain QUA-1925.
 
 ## qmax-code evaluation
 
-The terminal-neutral package produced by QUA-1913 was reviewed. Its public
-contract executes `codex exec`, resumes validated Codex thread IDs, and manages
-agent rollout continuity. Those are useful primitives for a future agent-backed
+The terminal-neutral package produced by QUA-1913 was reviewed at
+`5eb8cbef2158022b940131473b547852b0994153`. Its public contract executes
+`codex exec`, resumes validated Codex thread IDs, and manages agent rollout
+continuity. Those are useful primitives for a future agent-backed
 healing adapter, but ordinary test execution must not depend on an agent. The
 initial runner therefore does not import `qmax-code/codexrunner`.
 

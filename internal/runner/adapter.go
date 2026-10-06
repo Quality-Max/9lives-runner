@@ -10,6 +10,7 @@ type Adapter interface {
 type Validation struct {
 	FailureCount       int
 	ExecutedTests      int
+	SkippedTests       int
 	VerifiedAssertions int
 	AssertionCoverage  string
 	Description        string

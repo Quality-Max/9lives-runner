@@ -100,9 +100,16 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		for _, spec := range current.Specs {
 			for _, test := range spec.Tests {
 				for _, result := range test.Results {
-					validation.ExecutedTests++
-					if result.Status == "failed" || result.Status == "timedOut" {
+					switch result.Status {
+					case "passed":
+						validation.ExecutedTests++
+					case "failed", "timedOut":
+						validation.ExecutedTests++
 						validation.FailureCount++
+					case "skipped":
+						validation.SkippedTests++
+					default:
+						validation.Description = "unsupported Playwright result status: " + result.Status
 					}
 				}
 			}
@@ -113,6 +120,12 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	}
 	for _, current := range parsed.Suites {
 		walk(current)
+	}
+	if validation.ExecutedTests == 0 {
+		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests")
+	}
+	if strings.HasPrefix(validation.Description, "unsupported ") {
+		return runner.Validation{}, fmt.Errorf("%s", validation.Description)
 	}
 	return validation, nil
 }

@@ -11,6 +11,11 @@ parallel execution, cancellation, completeness accounting, and local evidence
 receipts. Healing remains in the Python `9lives` package until the compatibility
 contract is proven and migrated explicitly.
 
+Compatibility fixtures are reviewed against the offline Python `9lives` source:
+release `0.1.3` (`8a40d8d5c83f27f84384f060aeed74a3ded7ab77`) and current source
+(`568c7a6882441c13cdb9bfe8c0190ca0bf7d8240`). They do not invoke hosted
+models or apply a proposed repair without the Python package's approval path.
+
 ## Current scope
 
 - `9l plan`: resolve Playwright specs before launching any process and explain
@@ -19,8 +24,10 @@ contract is proven and migrated explicitly.
   attempt limits, per-job/shared deadlines, and process-tree cancellation.
 - `9l status`, `9l result`, and `9l cancel`: inspect or control a foreground
   run from another terminal using its persisted run ID.
-- Execution receipts: atomic JSON receipts plus redacted stdout/stderr evidence
-  under `.9lives/receipts/<run-id>/<job-id>/<attempt-id>/`.
+- Execution receipts: legacy `receipt.json` plus additive strict
+  `execution-receipt-1.0.json`, with redacted stdout/stderr evidence under
+  `.9lives/receipts/<run-id>/<job-id>/<attempt-id>/`. A stale local run is
+  reported as interrupted; local receipt persistence does not claim recovery.
 - Honest completeness: execution and report validation are separate; skipped,
   canceled, failed, or unvalidated jobs prevent an overall green result.
 - `9l heal`: compatibility bridge to `python3 -m ninelives.cli heal`.
@@ -69,8 +76,19 @@ NINELIVES_PYTHON=.venv/bin/python ./9l heal tests/login.spec.ts --yes
 ```bash
 go test -race ./...
 go vet ./...
-go test -run '^$' -bench . -benchmem ./internal/runner
+go test -run '^$' -bench . -benchmem -benchtime=200x ./internal/runner
+# Native ARM64 contract validation against the pinned platform snapshots:
+NINELIVES_CONTRACT_PYTHON=<LOCAL_CHECKOUT>/scripts/conductor-python go test ./internal/runner -run TestCanonicalReceiptMatchesPlatformModelOffline -count=1
+# Browser-free CLI startup, planning, execution evidence, and active cancellation:
+python3 scripts/benchmark.py
 ```
+
+The canonical receipt snapshot is copied from platform commit
+`767d634ba664f090db15cb99a4de19ef1c4de922` under
+`testdata/contracts/execution-receipt/`. CI installs Python 3.11 with
+`pydantic==2.11.7` and `jsonschema==4.26.0`, then validates the snapshot without
+requiring an adjacent platform checkout. Local Apple Silicon runs use the
+absolute `NINELIVES_CONTRACT_PYTHON` command above; CI defaults to `python3`.
 
 ## Design notes
 

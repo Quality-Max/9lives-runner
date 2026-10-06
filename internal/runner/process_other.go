@@ -7,17 +7,25 @@ import (
 	"os/exec"
 )
 
-func startAndWait(ctx context.Context, command *exec.Cmd) error {
+func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) {
 	if err := command.Start(); err != nil {
-		return err
+		return err, nil
 	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	select {
 	case err := <-done:
-		return err
+		return err, nil
 	case <-ctx.Done():
-		_ = command.Process.Kill()
-		return <-done
+		termination := &Termination{Detail: ctx.Err().Error()}
+		if ctx.Err() == context.DeadlineExceeded {
+			termination.Kind = "timeout"
+		} else {
+			termination.Kind = "canceled"
+		}
+		if err := command.Process.Kill(); err == nil {
+			termination.Signal = "SIGKILL"
+		}
+		return <-done, termination
 	}
 }

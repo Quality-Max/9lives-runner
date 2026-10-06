@@ -42,6 +42,7 @@ const (
 	StatusPassed   ReceiptStatus = "passed"
 	StatusFailed   ReceiptStatus = "failed"
 	StatusCanceled ReceiptStatus = "canceled"
+	StatusTimedOut ReceiptStatus = "timed_out"
 	StatusError    ReceiptStatus = "error"
 )
 
@@ -65,6 +66,7 @@ type Receipt struct {
 	Validation         string        `json:"validation,omitempty"`
 	FailureCount       int           `json:"failureCount"`
 	ExecutedTests      int           `json:"executedTests"`
+	SkippedTests       int           `json:"skippedTests"`
 	VerifiedAssertions int           `json:"verifiedAssertions"`
 	AssertionCoverage  string        `json:"assertionCoverage"`
 	Error              string        `json:"error,omitempty"`
@@ -76,6 +78,7 @@ type Receipt struct {
 type Termination struct {
 	Kind              string `json:"kind"`
 	Detail            string `json:"detail,omitempty"`
+	ObservedSignal    int    `json:"observedSignal,omitempty"`
 	Signal            string `json:"signal,omitempty"`
 	EscalationSignal  string `json:"escalationSignal,omitempty"`
 	EscalationAfterMS int64  `json:"escalationAfterMs,omitempty"`
@@ -121,6 +124,7 @@ type RunSummary struct {
 	Passed     int       `json:"passed"`
 	Failed     int       `json:"failed"`
 	Canceled   int       `json:"canceled"`
+	TimedOut   int       `json:"timedOut"`
 	Errors     int       `json:"errors"`
 	Receipts   []Receipt `json:"receipts"`
 }

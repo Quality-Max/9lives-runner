@@ -28,4 +28,5 @@ type ProcessOutput struct {
 	StdoutTruncated bool
 	StderrTruncated bool
 	Err             error
+	Termination     *Termination
 }

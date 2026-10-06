@@ -1,0 +1,898 @@
+{
+  "$defs": {
+    "Artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "enum": [
+            "opaque",
+            "unverified",
+            "withheld"
+          ],
+          "title": "Access",
+          "type": "string"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "checksum_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checksum Sha256"
+        },
+        "id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "stdout",
+            "stderr",
+            "screenshot",
+            "video",
+            "trace",
+            "report",
+            "device_log",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "provenance": {
+          "enum": [
+            "runner",
+            "local_report",
+            "legacy"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "pattern": "^receipt-artifact:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference"
+        },
+        "retention_until": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retention Until"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "availability",
+        "provenance",
+        "access"
+      ],
+      "title": "Artifact",
+      "type": "object"
+    },
+    "Assertions": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "failed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failed"
+        },
+        "passed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passed"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        }
+      },
+      "title": "Assertions",
+      "type": "object"
+    },
+    "Correlation": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Id"
+        },
+        "attempt_number": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt Number"
+        },
+        "availability": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "parent_receipt_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Receipt Id"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "script_id": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Script Id"
+        },
+        "workflow_id": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow Id"
+        }
+      },
+      "title": "Correlation",
+      "type": "object"
+    },
+    "Counts": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "errors": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Errors"
+        },
+        "failed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failed"
+        },
+        "passed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passed"
+        },
+        "skipped": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        },
+        "unit": {
+          "default": "unknown",
+          "enum": [
+            "tests",
+            "checks",
+            "thresholds",
+            "unknown"
+          ],
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "title": "Counts",
+      "type": "object"
+    },
+    "Decision": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "reason": {
+          "maxLength": 512,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "confidence",
+        "evidence_ids",
+        "reason"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "Failure": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "product",
+            "test",
+            "environment",
+            "dependency",
+            "infrastructure",
+            "policy",
+            "budget",
+            "unknown"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "code": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "category",
+        "code",
+        "confidence",
+        "evidence_ids"
+      ],
+      "title": "Failure",
+      "type": "object"
+    },
+    "Resources": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "cost_amount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Amount"
+        },
+        "cost_currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Currency"
+        },
+        "cpu_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Seconds"
+        },
+        "peak_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Peak Memory Bytes"
+        }
+      },
+      "title": "Resources",
+      "type": "object"
+    },
+    "Revisions": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Adapter"
+        },
+        "availability": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template"
+        }
+      },
+      "title": "Revisions",
+      "type": "object"
+    },
+    "TerminalProof": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "missing",
+            "truncated",
+            "expired",
+            "redacted",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "cancelled": {
+          "default": false,
+          "title": "Cancelled",
+          "type": "boolean"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signal"
+        },
+        "source": {
+          "default": "legacy",
+          "enum": [
+            "runner",
+            "local_report",
+            "legacy"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "timed_out": {
+          "default": false,
+          "title": "Timed Out",
+          "type": "boolean"
+        }
+      },
+      "title": "TerminalProof",
+      "type": "object"
+    }
+  },
+  "$id": "https://qualitymax.io/contracts/execution-receipt/1.0/schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Execution receipt 1.0. JSON shape validation AND the normative semantic profile are required.",
+  "properties": {
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/Artifact"
+      },
+      "maxItems": 64,
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "assertions": {
+      "$ref": "#/$defs/Assertions"
+    },
+    "correlation": {
+      "$ref": "#/$defs/Correlation"
+    },
+    "counts": {
+      "$ref": "#/$defs/Counts"
+    },
+    "decision": {
+      "$ref": "#/$defs/Decision"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Failure"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "framework": {
+      "enum": [
+        "playwright",
+        "pytest",
+        "api",
+        "k6",
+        "selenium",
+        "appium",
+        "limrun",
+        "maven",
+        "gradle",
+        "junit",
+        "unknown"
+      ],
+      "title": "Framework",
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "maxLength": 512,
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "receipt_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Receipt Id",
+      "type": "string"
+    },
+    "resources": {
+      "$ref": "#/$defs/Resources"
+    },
+    "revisions": {
+      "$ref": "#/$defs/Revisions"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage": {
+      "enum": [
+        "queued",
+        "execution",
+        "finished",
+        "unknown"
+      ],
+      "title": "Stage",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "running",
+        "terminal",
+        "unknown"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "terminal": {
+      "$ref": "#/$defs/TerminalProof"
+    },
+    "verdict": {
+      "enum": [
+        "passed",
+        "failed",
+        "timed_out",
+        "cancelled",
+        "unknown"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "framework",
+    "correlation",
+    "revisions",
+    "state",
+    "stage",
+    "verdict",
+    "terminal",
+    "counts",
+    "assertions",
+    "failure",
+    "artifacts",
+    "resources",
+    "decision",
+    "limitations"
+  ],
+  "title": "ExecutionReceipt",
+  "type": "object",
+  "x-semantic-profile": "README.md#semantic-validation"
+}

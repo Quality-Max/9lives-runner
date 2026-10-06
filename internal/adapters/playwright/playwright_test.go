@@ -50,6 +50,13 @@ func TestValidateReportAndSchema(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsReportsWithoutCompletedTests(t *testing.T) {
+	_, err := New().Validate([]byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"results":[{"status":"skipped"}]}]}]}]}`))
+	if err == nil {
+		t.Fatal("report containing only skipped results must not validate as an executed test run")
+	}
+}
+
 func write(t *testing.T, path, contents string, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
