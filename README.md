@@ -30,6 +30,15 @@ The SDK/bridge and bounded natural-language goal loop run locally. Independent
 behavioral verification, verified replay and mobile support remain planned. Replayed and healed tests
 must preserve assertions and recheck the required outcome before they can pass.
 
+`9l assess` provides opt-in advisory assessment from shared requirements and
+syntax-aware Playwright checks. Creation snapshots can also check whether an
+agent's test is assessed and executed in the same workspace, branch, commit
+and source revision. The [QA skill](skills/9lives-qa/SKILL.md) combines our
+available QA skills with this workflow for Codex and Claude. See
+[test assessment](docs/test-assessment.md) for usage, the executed checkout
+control and analysis limits. Passing execution alone does not establish test
+correctness; general semantic review remains planned.
+
 ## Local Playwright SDK
 
 `@9lives/playwright` is a workspace-local package, not yet published. It adds a

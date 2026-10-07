@@ -20,6 +20,7 @@ import (
 
 	"github.com/qualitymax/9lives-runner/internal/adapters/playwright"
 	"github.com/qualitymax/9lives-runner/internal/adapters/playwrightsdk"
+	"github.com/qualitymax/9lives-runner/internal/assessment"
 	"github.com/qualitymax/9lives-runner/internal/goals"
 	"github.com/qualitymax/9lives-runner/internal/healing"
 	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
@@ -53,6 +54,10 @@ func run(args []string, out, errOut io.Writer) int {
 		return nativeHealCommand(args[1:], out, errOut)
 	case "tier1":
 		return tier1Command(args[1:], os.Stdin, out, errOut)
+	case "assess":
+		return assessCommand(args[1:], out, errOut)
+	case "provenance":
+		return provenanceCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -74,10 +79,97 @@ Usage:
   9l heal <args...>  # delegates to the installed Python healing library
   9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
+  9l assess <spec> --requirements <contract.json> [--format text|json]
+  9l provenance <spec> --agent <id>  # creation snapshot JSON
+  # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
 The Go runner currently executes Playwright specs from existing projects.
 It never reports an incomplete run green.
 `)
+}
+
+func assessCommand(args []string, out, errOut io.Writer) int {
+	fs := flag.NewFlagSet("assess", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	requirements := fs.String("requirements", "", "shared reviewed requirement contract")
+	format := fs.String("format", "text", "text or json advisory report")
+	agentRecord := fs.String("agent-provenance", "", "agent creation snapshot JSON")
+	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true})) != nil {
+		return 2
+	}
+	if fs.NArg() != 1 || *requirements == "" || (*format != "json" && *format != "text") {
+		fmt.Fprintln(errOut, "9l: assess requires one spec, --requirements, and text or json format")
+		return 2
+	}
+	read := func(path string, limit int64) ([]byte, error) {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() > limit {
+			return nil, errors.New("assessment input unavailable, non-regular or exceeds limit")
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, errors.New("assessment input unavailable")
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, limit+1))
+		if err != nil || int64(len(data)) > limit {
+			return nil, errors.New("assessment input exceeds limit or cannot be read")
+		}
+		return data, nil
+	}
+	source, err := read(fs.Arg(0), assessment.MaxSource)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
+	contract, err := read(*requirements, 256<<10)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	report, err := assessment.Assess(ctx, source, contract)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
+	if *agentRecord != "" {
+		expected, err := loadAgentProvenance(*agentRecord)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return 2
+		}
+		actual, err := runner.CaptureAgentProvenance(ctx, fs.Arg(0), expected.Agent)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: warning: requested agent provenance could not be captured; provenance remains unknown")
+		} else {
+			if actual.Source != report.SourceSHA256 {
+				fmt.Fprintln(errOut, "9l: source changed during assessment")
+				return 2
+			}
+			report.AgentProvenance = runner.CompareAgentProvenance(expected, actual)
+		}
+	}
+	if *format == "json" {
+		if json.NewEncoder(out).Encode(report) != nil {
+			return 2
+		}
+	} else {
+		fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
+		fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
+		for _, test := range report.Tests {
+			fmt.Fprintf(out, "test at %d:%d: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+			for _, finding := range test.Findings {
+				fmt.Fprintf(out, "  %s [%s] at %d:%d requirement=%s outcome=%s: %s\n", finding.Rule, finding.Classification, finding.Line, finding.Column, finding.Requirement, finding.Outcome, finding.Message)
+			}
+		}
+		for _, limit := range report.Limits {
+			fmt.Fprintln(out, "Limit:", limit)
+		}
+	}
+	// Advice does not gate execution. Invalid or unavailable analysis exits 2.
+	return 0
 }
 
 func nativeRunTimeout() time.Duration {
@@ -367,6 +459,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	sdk := fs.Bool("sdk", false, "use the installed @9lives/playwright engine bridge")
+	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
 	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
 	goalScript := fs.String("goal-script", "", "offline scripted goal decisions JSON (qualification only)")
@@ -385,6 +478,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	fs.Var(&skipPins, "pin-skip", "with --sdk, accept this skipped test: \"<file> › <title>\" (repeatable)")
 	normalized := flagsFirst(args, map[string]bool{
 		"-pass-env": true, "--pass-env": true,
+		"-agent-provenance": true, "--agent-provenance": true,
 		"-pin-skip": true, "--pin-skip": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
@@ -415,6 +509,15 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	var agentProvenance *runner.AgentProvenance
+	if *agentRecord != "" {
+		record, err := loadAgentProvenance(*agentRecord)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return 2
+		}
+		agentProvenance = &record
 	}
 	if *goalModel != "" && *goalProvider == "" {
 		fmt.Fprintln(errOut, "9l: --goal-model requires --goal-provider")
@@ -486,7 +589,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
-		Workers: *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
+		AgentProvenance: agentProvenance,
+		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	executionFailed := err != nil
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {

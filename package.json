@@ -4,8 +4,9 @@
   "workspaces": ["packages/playwright", "testdata/sdk"],
   "scripts": {
     "build": "npm run build --workspace @9lives/playwright",
-    "test": "npm run build && node --test packages/playwright/test/*.test.cjs",
-    "smoke": "npm run build && node scripts/sdk-smoke.cjs"
+    "test": "npm run build && node --test packages/playwright/test/*.test.cjs internal/assessment/analyzer.test.cjs",
+    "smoke": "npm run build && node scripts/sdk-smoke.cjs",
+    "smoke:assessment": "node scripts/assessment-smoke.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

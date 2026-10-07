@@ -9,6 +9,15 @@ The local process and filesystem implementations are defaults behind those
 ports; a future MCP server can call the core without parsing CLI output and a
 durable worker can replace storage and command execution.
 
+[Test assessment](test-assessment.md) uses an owned, bounded TypeScript syntax
+helper without loading tests or configuration. Go validates requirements and
+facts and builds an advisory report with explicit unknowns. Optional creation
+snapshots bind assessment and execution to a selected spec, workspace, branch
+and commit, with pre/post execution checks. The repository QA skill coordinates
+available specialist skills; it adds no cloud or harness dependency to the
+engine. General semantic analysis and authenticated agent attribution remain
+planned. Assessment stays separate from execution outcomes.
+
 The first scheduler runs independent jobs with bounded concurrency. Plans with
 dependencies are topologically sorted and run conservatively in sequence.
 Distributed leases, recovery, and a concurrent DAG scheduler remain QUA-1925.

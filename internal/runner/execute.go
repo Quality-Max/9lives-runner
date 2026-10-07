@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,11 +17,12 @@ import (
 )
 
 type ExecuteOptions struct {
-	Workers        int
-	Timeout        time.Duration
-	RunDeadline    time.Duration
-	MaxAttempts    int
-	MaxOutputBytes int
+	AgentProvenance *AgentProvenance
+	Workers         int
+	Timeout         time.Duration
+	RunDeadline     time.Duration
+	MaxAttempts     int
+	MaxOutputBytes  int
 	// PassEnv names caller variables forwarded to test processes in addition
 	// to the inherited runtime environment.
 	PassEnv    []string
@@ -37,6 +39,13 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	if err := validateRunID(plan.RunID); err != nil {
 		summary.Complete = false
 		return summary, err
+	}
+	if opts.AgentProvenance != nil {
+		raw, _ := json.Marshal(opts.AgentProvenance)
+		if _, err := ParseAgentProvenance(raw); err != nil || len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
+			summary.Complete = false
+			return summary, errors.New("agent provenance requires one exact spec and a valid creation record")
+		}
 	}
 	if plan.Limits.MaxJobs > 0 && len(plan.Jobs) > plan.Limits.MaxJobs {
 		summary.Complete = false
@@ -298,7 +307,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 		receipt = executeAttempt(parent, runID, job, attempt, opts, store, executor)
 		// An interrupted goal may already have changed the application. Never
 		// replay the entire worker automatically after an uncertain effect.
-		if receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed {
+		if receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") {
 			break
 		}
 	}
@@ -334,6 +343,19 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 
 	ctx, cancel := context.WithTimeout(parent, opts.Timeout)
 	defer cancel()
+	if opts.AgentProvenance != nil {
+		unknown := UnknownAgentProvenance()
+		receipt.AgentProvenance = &unknown
+		actual, err := CaptureAgentProvenance(ctx, job.Spec, opts.AgentProvenance.Agent)
+		if err != nil {
+			return infrastructureError("agent branch/source provenance unavailable; execution refused")
+		}
+		checked := CompareAgentProvenance(*opts.AgentProvenance, actual)
+		receipt.AgentProvenance = &checked
+		if checked.Status != "matched" {
+			return infrastructureError("agent creation branch, commit, repository or source differs; execution refused")
+		}
+	}
 	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_JOB_ID": job.ID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
 	var service AttemptService
 	if opts.Services != nil {
@@ -433,6 +455,27 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		receipt.Status, receipt.Error = StatusFailed, "goal invocation failed; see bounded goal evidence"
 	}
 	receipt.Evidence.StderrTruncated = output.StderrTruncated
+	if opts.AgentProvenance != nil {
+		actual, err := CaptureAgentProvenance(parent, job.Spec, opts.AgentProvenance.Agent)
+		if err != nil {
+			unknown := UnknownAgentProvenance()
+			unknown.Expected, unknown.Before = receipt.AgentProvenance.Expected, receipt.AgentProvenance.Before
+			receipt.AgentProvenance = &unknown
+		} else {
+			checked := CompareAgentProvenance(*opts.AgentProvenance, actual)
+			receipt.AgentProvenance.After = &actual
+			receipt.AgentProvenance.Status = checked.Status
+			receipt.AgentProvenance.Branch, receipt.AgentProvenance.Commit = checked.Branch, checked.Commit
+			receipt.AgentProvenance.Source, receipt.AgentProvenance.Repository = checked.Source, checked.Repository
+		}
+		if receipt.AgentProvenance.Status != "matched" {
+			receipt.Validated = false
+			if receipt.Status != StatusCanceled && receipt.Status != StatusTimedOut {
+				receipt.Status = StatusError
+			}
+			receipt.Error = "agent branch/source provenance changed or became unavailable during execution"
+		}
+	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
 		output.Stdout, output.Stderr = sanitizer.SanitizeEvidence(output.Stdout, output.Stderr, receipt.Validated)
 	}

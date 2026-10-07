@@ -1,0 +1,5 @@
+{
+  "name": "9lives-assessment-fixture",
+  "private": true,
+  "devDependencies": { "@playwright/test": "1.61.1" }
+}

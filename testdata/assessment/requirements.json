@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "requirements": [
+    {
+      "id": "checkout-order",
+      "reference": "docs/test-assessment.md#checkout-qualification",
+      "revision": "1",
+      "expectedOutcomes": [
+        { "id": "order-count", "description": "Completing checkout creates exactly one order." },
+        { "id": "order-items", "description": "That order contains the selected items and quantities." }
+      ]
+    },
+    {
+      "id": "confirmation",
+      "reference": "docs/test-assessment.md#checkout-qualification",
+      "revision": "1",
+      "expectedOutcomes": [
+        { "id": "confirmation", "description": "Completing checkout displays a confirmation." }
+      ]
+    }
+  ]
+}

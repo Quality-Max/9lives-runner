@@ -87,5 +87,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Assessment CLI provenance diagnostic
+        run: go test ./cmd/9l -run '^TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured$' -count=1
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
+      - run: npm run smoke:assessment
