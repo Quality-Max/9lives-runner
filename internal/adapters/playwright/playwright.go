@@ -6,11 +6,70 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
+	"github.com/qualitymax/9lives-runner/internal/healing"
 	"github.com/qualitymax/9lives-runner/internal/runner"
 )
+
+// FailureContext extracts bounded failed-test diagnostic text from Playwright's
+// structured reporter output. It deliberately excludes source-code frames: a
+// locator timeout may be followed by an unrelated `expect(...)` line in the
+// stack, which must not turn a locator failure into an assertion failure.
+func FailureContext(raw []byte) string {
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		return ""
+	}
+	var values []string
+	var visit func(any)
+	visit = func(value any) {
+		switch node := value.(type) {
+		case map[string]any:
+			if message, ok := node["message"].(string); ok && message != "" {
+				values = append(values, withoutSourceFrames(message))
+			}
+			for _, child := range node {
+				visit(child)
+			}
+		case []any:
+			for _, child := range node {
+				visit(child)
+			}
+		}
+	}
+	visit(payload)
+	context := strings.TrimSpace(strings.Join(values, "\n"))
+	if len(context) > 3000 {
+		// Classify the complete diagnostics before clipping. Otherwise a long
+		// locator call log can hide a later assertion or infrastructure failure.
+		var summary string
+		switch kind := healing.Classify(context, ""); kind {
+		case "assertion_failed", "navigation_failed", "flow_changed", "syntax_error":
+			summary = "Reported failure: " + strings.ReplaceAll(kind, "_", " ") + "\n"
+		}
+		// Native healing also rejects these even when a locator is mentioned.
+		lower := strings.ToLower(context)
+		for _, unsafe := range []string{"network", "syntax", "navigation", "flow changed"} {
+			if strings.Contains(lower, unsafe) {
+				summary += "Reported failure: " + unsafe + "\n"
+			}
+		}
+		return summary + context[:3000-len(summary)]
+	}
+	return context
+}
+
+var sourceFrame = regexp.MustCompile(`(?m)^\s*(?:>|\|)?\s*\d+\s*\|`)
+
+func withoutSourceFrames(message string) string {
+	if location := sourceFrame.FindStringIndex(message); location != nil {
+		return strings.TrimSpace(message[:location[0]])
+	}
+	return strings.TrimSpace(message)
+}
 
 type Adapter struct{}
 

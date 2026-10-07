@@ -52,6 +52,15 @@ func TestValidateReportAndSchema(t *testing.T) {
 	}
 }
 
+func TestFailureContextIsStructuredAndBounded(t *testing.T) {
+	if got := FailureContext([]byte(`{"suites":[{"specs":[{"tests":[{"results":[{"errors":[{"message":"waiting for locator('#old')\n  12 | await expect(page.locator('#result')).toBeVisible();"}]}]}]}]}]}`)); got != "waiting for locator('#old')" {
+		t.Fatalf("context=%q", got)
+	}
+	if got := FailureContext([]byte("not-json")); got != "" {
+		t.Fatalf("invalid report context=%q", got)
+	}
+}
+
 func TestValidateRejectsReportsWithoutCompletedTests(t *testing.T) {
 	_, err := New().Validate([]byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"results":[{"status":"skipped"}]}]}]}]}`))
 	if err == nil {

@@ -348,6 +348,97 @@ func replaceSelector(code, old, next, framework string) (string, bool) {
 	return code[:m.start] + escapeJSString(next, m.quote) + code[m.end:], true
 }
 
+// ExactLocatorSelectorReplacement proves that candidate differs from source
+// only by the literal selector of one safe failed-locator action. Tier 2 uses
+// this before it executes provider output.
+func ExactLocatorSelectorReplacement(source, candidate, old, framework string) bool {
+	matches, ok := sourceLocators(source, old, framework)
+	if !ok || len(matches) != 1 || assertionOwnsMatch(source, matches[0], framework) || !sourceArgumentContextSafe(matches[0]) || !directActionMatch(source, matches[0]) {
+		return false
+	}
+	m := matches[0]
+	if !strings.HasPrefix(candidate, source[:m.start]) || !strings.HasSuffix(candidate, source[m.end:]) || len(candidate) <= len(source)-len(old) {
+		return false
+	}
+	replacement := candidate[m.start : len(candidate)-len(source[m.end:])]
+	if strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
+		return false
+	}
+	expected, ok := replaceSelector(source, old, replacement, framework)
+	return ok && expected == candidate
+}
+
+func directActionMatch(code string, m literalMatch) bool {
+	tokens := m.tokens
+	if m.call == 0 || tokens[m.call].text != "page" || tokens[m.call-1].text != "await" {
+		return false
+	}
+	// Only an await expression statement can be edited. The preceding token
+	// proves this is not a conditional, return, assignment, or argument.
+	await := m.call - 1
+	if await == 0 || (tokens[await-1].text != "{" && tokens[await-1].text != ";") {
+		return false
+	}
+	// A direct statement cannot be inside a control/grouping parenthesis. This
+	// rejects multi-line `if`/`for` predicates even when semicolons surround it.
+	for i := 0; i < await; i++ {
+		if tokens[i].text == "(" && tokens[i].pair >= await && !functionBodyBetween(tokens, i, await) {
+			return false
+		}
+	}
+	action := m.literal + 2
+	if action+2 >= len(tokens) || tokens[action].text != "." || tokens[action+2].text != "(" || tokens[action+2].pair < 0 {
+		return false
+	}
+	switch tokens[action+1].text {
+	case "click", "fill", "check", "uncheck", "hover", "press", "focus", "dblclick", "selectOption":
+	default:
+		return false
+	}
+	end := tokens[action+2].pair + 1
+	if end < len(tokens) && tokens[end].text == ";" {
+		end++
+	}
+	// ASI can continue an expression on the next physical line (for example
+	// `await action()\n&& assertion`). Require an explicit semicolon or EOF/}
+	// after whitespace, so a replacement cannot short-circuit later behavior.
+	terminated := end > 0 && tokens[end-1].text == ";"
+	if !terminated && (end >= len(tokens) || tokens[end].text != "}") {
+		return false
+	}
+	lineEnd := strings.IndexByte(code[m.lineStart:], '\n')
+	if lineEnd < 0 {
+		lineEnd = len(code)
+	} else {
+		lineEnd += m.lineStart
+	}
+	return end > 0 && tokens[end-1].end <= lineEnd && strings.TrimSpace(code[tokens[end-1].end:lineEnd]) == ""
+}
+
+// functionBodyBetween proves that an enclosing call/group reaches this action
+// through a callback/function body, rather than consuming the action as a
+// predicate, argument, or grouped expression.
+func functionBodyBetween(tokens []sourceToken, open, position int) bool {
+	for i := open + 1; i < position; i++ {
+		if tokens[i].text != "{" || tokens[i].pair < position || i == 0 {
+			continue
+		}
+		if tokens[i-1].text == "=>" {
+			return true
+		}
+		if tokens[i-1].text == ")" {
+			before := tokens[i-1].pair - 1
+			if before > open && tokens[before].text != "function" {
+				before--
+			}
+			if before > open && tokens[before].text == "function" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func sourceArgumentContextSafe(m literalMatch) bool {
 	// A locator passed to an arbitrary callee could belong to an assertion
 	// alias. Do not infer runtime identities. An enclosing proven function body

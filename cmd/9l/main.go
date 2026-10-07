@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/qualitymax/9lives-runner/internal/adapters/playwright"
 	"github.com/qualitymax/9lives-runner/internal/healing"
+	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
 	"github.com/qualitymax/9lives-runner/internal/runner"
 )
 
@@ -45,6 +47,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return stateCommand(args[0], args[1:], out, errOut)
 	case "heal":
 		return bridgePython(args[1:], out, errOut)
+	case "heal-native":
+		return nativeHealCommand(args[1:], out, errOut)
 	case "tier1":
 		return tier1Command(args[1:], os.Stdin, out, errOut)
 	default:
@@ -64,11 +68,146 @@ Usage:
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <args...>  # delegates to the installed Python healing library
+  9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
 
 The Go runner currently executes Playwright specs from existing projects.
 It never reports an incomplete run green.
 `)
+}
+
+func nativeRunTimeout() time.Duration {
+	if raw := strings.TrimSpace(os.Getenv("NINELIVES_RUN_TIMEOUT")); raw != "" {
+		if seconds, err := strconv.Atoi(raw); err == nil && seconds > 0 {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+	return 5 * time.Minute
+}
+
+func nativeHealCommand(args []string, out, errOut io.Writer) int {
+	fs := flag.NewFlagSet("heal-native", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	providerName := fs.String("provider", "", "native provider (claude, codex, opencode, anthropic, openai)")
+	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
+	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
+	yes := fs.Bool("yes", false, "apply verified candidate without interactive approval")
+	maxProposals := fs.Int("max-proposals", 1, "maximum Tier 2 proposals")
+	runTimeout := fs.Duration("run-timeout", nativeRunTimeout(), "per verification run timeout")
+	deadline := fs.Duration("deadline", 0, "session deadline")
+	receipts := fs.String("receipt-dir", ".9lives/healing-receipts", "isolated verification receipts")
+	var passEnv envNames
+	fs.Var(&passEnv, "pass-env", "forward this environment variable only to test processes (repeatable or comma-separated)")
+	normalized := flagsFirst(args, map[string]bool{"--provider": true, "--model": true, "--provider-url": true, "--max-proposals": true, "--run-timeout": true, "--deadline": true, "--receipt-dir": true, "--pass-env": true})
+	if err := fs.Parse(normalized); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 || *maxProposals < 1 || *runTimeout <= 0 || *deadline < 0 {
+		fmt.Fprintln(errOut, "9l: heal-native requires one spec and valid limits")
+		return 2
+	}
+	provider, err := tier2.Resolve(tier2.Options{Name: *providerName, Model: *model, BaseURL: *providerURL})
+	if err != nil {
+		fmt.Fprintln(errOut, "9l: heal-native provider unavailable")
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if *deadline > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *deadline)
+		defer cancel()
+	}
+	runCount := 0
+	runSpec := func(ctx context.Context, spec, label string) tier2.RunResult {
+		runCount++
+		plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{MaxJobs: 1, MaxParallel: 1, MaxAttempts: 1, MaxOutputBytes: 4 << 20, Adapters: []runner.Adapter{playwright.New()}})
+		if err != nil || len(plan.Jobs) != 1 {
+			return tier2.RunResult{Failure: "spec is not an installed Playwright project"}
+		}
+		dir := filepath.Join(*receipts, fmt.Sprintf("%02d-%s", runCount, label))
+		summary, execErr := runner.Execute(ctx, plan, runner.ExecuteOptions{Workers: 1, Timeout: *runTimeout, MaxAttempts: 1, MaxOutputBytes: 4 << 20, PassEnv: passEnv, ReceiptDir: dir, Adapters: []runner.Adapter{playwright.New()}})
+		if execErr != nil || len(summary.Receipts) != 1 {
+			return tier2.RunResult{Failure: "verification did not complete"}
+		}
+		receipt := summary.Receipts[0]
+		failure := string(receipt.Status)
+		if receipt.Evidence.StdoutPath != "" && receipt.Status != runner.StatusPassed {
+			if raw, readErr := os.ReadFile(receipt.Evidence.StdoutPath); readErr == nil {
+				if diagnostic := playwright.FailureContext(raw); diagnostic != "" {
+					failure = diagnostic
+				}
+			}
+		}
+		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath}
+	}
+	result, err := tier2.Heal(ctx, tier2.SessionOptions{Spec: fs.Arg(0), Framework: "playwright", Model: *model, MaxProposals: *maxProposals, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut), Provider: provider, Run: runSpec}, func(source, failure string) (string, bool) {
+		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.ExtractSelector(failure, ""), TestCode: source})
+		return proposal.ProposedCode, proposal.Decision == "propose"
+	})
+	if encodeErr := json.NewEncoder(out).Encode(result); encodeErr != nil {
+		return 1
+	}
+	if err != nil || (!result.Applied && result.SavedPath == "" && result.State != "passed") {
+		return 1
+	}
+	return 0
+}
+
+func terminalApproval(in *os.File, out io.Writer) func(context.Context) bool {
+	if info, err := in.Stat(); err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return nil
+	}
+	return func(ctx context.Context) bool { return readTerminalApproval(ctx, in, out) }
+}
+
+// readTerminalApproval returns as soon as its session is canceled, even if a
+// terminal's blocking read ignores Close. The reader goroutine is command-owned:
+// cancellation causes nativeHealCommand to return and process teardown reclaims
+// it; it never performs approval or source mutation after the select returns.
+func readTerminalApproval(ctx context.Context, in io.Reader, out io.Writer) bool {
+	fmt.Fprint(out, "Apply this verified candidate? [y/yes]: ")
+	type response struct {
+		answer string
+		err    error
+	}
+	read := make(chan response, 1)
+	go func() {
+		var answer string
+		_, err := fmt.Fscanln(in, &answer)
+		read <- response{answer: answer, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return false
+	case result := <-read:
+		if result.err != nil {
+			return false
+		}
+		answer := strings.ToLower(strings.TrimSpace(result.answer))
+		return answer == "y" || answer == "yes"
+	}
+}
+
+func previewDiff(out io.Writer) func(string, string) {
+	return func(original, candidate string) {
+		fmt.Fprintln(out, "--- original")
+		fmt.Fprintln(out, "+++ verified candidate")
+		oldLines, newLines := strings.Split(original, "\n"), strings.Split(candidate, "\n")
+		for i := 0; i < len(oldLines) || i < len(newLines); i++ {
+			var old, next string
+			if i < len(oldLines) {
+				old = oldLines[i]
+			}
+			if i < len(newLines) {
+				next = newLines[i]
+			}
+			if old != next {
+				fmt.Fprintln(out, "-"+old)
+				fmt.Fprintln(out, "+"+next)
+			}
+		}
+	}
 }
 
 func tier1Command(args []string, in io.Reader, out, errOut io.Writer) int {
