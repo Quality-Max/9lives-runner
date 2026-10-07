@@ -204,7 +204,20 @@ async function main() {
   assert.equal(retriedGoal.code, 1);
   assert.equal(fs.readFileSync(counter, 'utf8'), 'click\n');
   assert.equal(retriedGoal.summary.receipts[0].goals.length, 1);
-  console.log('Goals: real Chromium multi-step execution, delayed controls, style drift and policy rejection verified');
+  // Page text reaching the provider: a value padded to straddle the old
+  // 1000-character cut, and one split by whitespace, must both be redacted.
+  const {chromium} = require('@playwright/test');
+  const {observeState, valueRedactor} = require(path.join(root, 'packages/playwright/dist/goal.js'));
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<h1>${' \n'.repeat(490)}Welcome, Fixture Person</h1><p role="status">Order for Fixture\n   Person</p>`);
+    const state = await observeState(page, valueRedactor({name: 'Fixture Person'}));
+    assert.deepEqual(state, ['Welcome, [redacted]', 'Order for [redacted]']);
+  } finally {
+    await browser.close();
+  }
+  console.log('Goals: real Chromium multi-step execution, delayed controls, style drift, policy rejection and state redaction verified');
   await interrupted('timeout');
   await interrupted('cancel');
 }

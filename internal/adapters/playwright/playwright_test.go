@@ -1,8 +1,10 @@
 package playwright
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -119,5 +121,28 @@ func write(t *testing.T, path, contents string, mode os.FileMode) {
 	}
 	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A config or dependency that prints to stdout (dotenv 17 does by default)
+// must not invalidate the run: the JSON report goes to the evidence file.
+func TestConfigStdoutDoesNotCorruptTheReport(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Playwright binary is a POSIX shell script")
+	}
+	project := t.TempDir()
+	write(t, filepath.Join(project, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
+	report := `{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{"results":[{"status":"passed"}]}]}]}]}`
+	write(t, filepath.Join(project, "node_modules", ".bin", "playwright"),
+		"#!/bin/sh\necho '[dotenv@17.2.3] injecting env (0) from .env'\nprintf '%s' '"+report+"' > \"$PLAYWRIGHT_JSON_OUTPUT_FILE\"\n", 0o700)
+	spec := filepath.Join(project, "tests", "a.spec.ts")
+	write(t, spec, "", 0o600)
+	plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, _ := runner.Execute(context.Background(), plan, runner.ExecuteOptions{ReceiptDir: t.TempDir(), Adapters: []runner.Adapter{New()}})
+	if receipt := summary.Receipts[0]; receipt.Status != runner.StatusPassed || !receipt.Validated {
+		t.Fatalf("config stdout invalidated the run: %+v", receipt)
 	}
 }

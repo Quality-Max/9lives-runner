@@ -12,8 +12,10 @@ configuration, project selection, hooks, imports, isolation and retry settings
 remain owned by Playwright. Dependencies may be workspace-hoisted. The explicit
 SDK mode replaces configured reporters with its engine reporter; arbitrary
 reporter output cannot be mixed into the protocol. Without `--sdk`, ordinary
-Playwright JSON reporting remains the default. The fixture requires a supported
-engine identity when `nineLives` is used.
+Playwright JSON reporting remains the default; that report also goes to a
+private per-attempt file (`PLAYWRIGHT_JSON_OUTPUT_FILE`), so output on stdout
+cannot corrupt it. The fixture requires a supported engine identity when
+`nineLives` is used.
 
 ## Contract
 

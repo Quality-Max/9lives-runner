@@ -61,6 +61,21 @@ async function metadata(handle: Target['handle']) {
     return {role, label, policyText, actions, fingerprint: JSON.stringify([tag, type, role, label, href, policyText])};
   });
 }
+/** Redacts the test's parameter values, including whitespace-collapsed forms, then bounds the label. */
+export function valueRedactor(params: Record<string, string>): (text: string) => string {
+  const values = Object.values(params).flatMap(value => [value, value.replace(/\s+/g, ' ').trim()]).filter(Boolean);
+  return text => redactLabel(values.reduce((result, value) => result.split(value).join('[redacted]'), text));
+}
+
+/** Up to eight heading/status labels, redacted before they are cut to size. */
+export async function observeState(page: Page, redact: (text: string) => string): Promise<string[]> {
+  // Collapse whitespace before bounding, and keep enough text that any value
+  // overlapping the 160-byte label lies wholly inside it: parameters are
+  // redacted before the label is cut, never after.
+  const state = await page.locator('h1,h2,[role="status"]').evaluateAll(elements => elements.slice(0, 8).map(element => (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 8192)));
+  return state.map(redact);
+}
+
 async function observe(page: Page, redact: (text: string) => string) {
   const locator = page.locator('button,a[href],input,textarea,select,[role="button"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="radio"],[role="switch"]');
   const handles: Target['handle'][] = [];
@@ -78,12 +93,8 @@ async function observe(page: Page, redact: (text: string) => string) {
       const id = `target-${targets.size + 1}`;
       targets.set(id, {handle, fingerprint: data.fingerprint, control: {id, role: data.role, label: redact(data.label), actions: data.actions, blocked: risky.test(data.policyText)}});
     }
-    // Collapse whitespace before bounding, and keep enough text that any value
-    // overlapping the 160-byte label lies wholly inside it: parameters are
-    // redacted before the label is cut, never after.
-    const state = await page.locator('h1,h2,[role="status"]').evaluateAll(elements => elements.slice(0, 8).map(element => (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 8192)));
-    const redactedState = state.map(redact);
-    return {targets, state: redactedState, dispose: async () => { await Promise.allSettled(handles.map(handle => handle.dispose())); }};
+    const state = await observeState(page, redact);
+    return {targets, state, dispose: async () => { await Promise.allSettled(handles.map(handle => handle.dispose())); }};
   } catch {
     await Promise.allSettled(handles.map(handle => handle.dispose()));
     return fail('observation_failed');
@@ -96,9 +107,7 @@ export async function executeGoal(page: Page, instruction: string, options: Goal
   if (!socketPath) return fail('provider_required; use --goal-provider or --goal-script');
   const params = options.params || {};
   if (typeof instruction !== 'string' || Buffer.byteLength(instruction) > 4096 || !instruction.trim() || Object.keys(params).length > 16 || Object.entries(params).some(([key, value]) => !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) || typeof value !== 'string' || value.length > 4096)) return fail('invalid_options');
-  // Page text may carry a value with its whitespace collapsed; redact both forms.
-  const values = Object.values(params).flatMap(value => [value, value.replace(/\s+/g, ' ').trim()]).filter(Boolean);
-  const redact = (text: string) => redactLabel(values.reduce((result, value) => result.split(value).join('[redacted]'), text));
+  const redact = valueRedactor(params);
   // Only caps the test sets are sent. Go applies them below the CLI budgets;
   // an omitted cap keeps the attempt's, so SDK defaults never override the CLI.
   const limits = Object.fromEntries((['maxActions', 'maxDecisions', 'maxTokens', 'timeoutMs'] as const).filter(key => options[key] !== undefined).map(key => [key, options[key]]));

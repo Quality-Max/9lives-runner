@@ -76,6 +76,11 @@ type Adapter struct{}
 func New() Adapter           { return Adapter{} }
 func (Adapter) Name() string { return "playwright" }
 
+// EvidenceEnv points Playwright's JSON reporter at the runner's private
+// per-attempt file. The report on stdout would share it with configuration,
+// globalSetup and dependencies, and one stray line invalidates the run.
+func (Adapter) EvidenceEnv() string { return "PLAYWRIGHT_JSON_OUTPUT_FILE" }
+
 func (Adapter) Supports(path string) bool {
 	lower := strings.ToLower(filepath.Base(path))
 	for _, suffix := range []string{".spec.js", ".spec.jsx", ".spec.mjs", ".spec.cjs", ".spec.ts", ".spec.tsx", ".test.js", ".test.jsx", ".test.mjs", ".test.cjs", ".test.ts", ".test.tsx"} {
