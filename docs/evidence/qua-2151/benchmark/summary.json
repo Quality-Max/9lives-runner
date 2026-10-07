@@ -1,0 +1,250 @@
+{
+  "scope": "One moved-ID offline proposal per fresh process. Python includes isolated startup, imports, source-only compilation and pinned provenance bootstrap/checks; Go includes startup and native proposal. Build and coordinator identity checks excluded. No browser, provider, verification or language ratio.",
+  "first_invocation_scope": "First recorded invocation per engine; OS/filesystem cache state is uncontrolled. Subsequent samples also use fresh processes.",
+  "started_utc": "2026-10-06T17:02:31.867816+00:00",
+  "completed_utc": "2026-10-06T17:03:19.045407+00:00",
+  "sample_count_per_engine": 30,
+  "seed": 2151,
+  "order": [
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "go_native",
+      "python_0.1.3",
+      "python_0.2.1"
+    ],
+    [
+      "python_0.2.1",
+      "python_0.1.3",
+      "go_native"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "go_native",
+      "python_0.2.1",
+      "python_0.1.3"
+    ],
+    [
+      "go_native",
+      "python_0.1.3",
+      "python_0.2.1"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "go_native",
+      "python_0.1.3",
+      "python_0.2.1"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.1.3",
+      "go_native",
+      "python_0.2.1"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "go_native",
+      "python_0.2.1",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.1.3",
+      "go_native",
+      "python_0.2.1"
+    ],
+    [
+      "python_0.2.1",
+      "python_0.1.3",
+      "go_native"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "go_native",
+      "python_0.1.3",
+      "python_0.2.1"
+    ],
+    [
+      "go_native",
+      "python_0.2.1",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.1.3",
+      "go_native",
+      "python_0.2.1"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.1.3",
+      "python_0.2.1",
+      "go_native"
+    ],
+    [
+      "go_native",
+      "python_0.2.1",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.2.1",
+      "go_native",
+      "python_0.1.3"
+    ],
+    [
+      "python_0.2.1",
+      "python_0.1.3",
+      "go_native"
+    ]
+  ],
+  "request": {
+    "version": 1,
+    "framework": "playwright",
+    "failureType": "locator_not_found",
+    "errorMessage": "TimeoutError: waiting for locator('#save')",
+    "failedSelector": "#save",
+    "testCode": "await page.locator('#save').click();\n",
+    "pageSnapshot": "<button id=\"save-new\">Save</button>"
+  },
+  "platform": {
+    "os": "Darwin",
+    "coordinator_machine": "arm64",
+    "python_runtime": {
+      "machine": "arm64",
+      "version": "3.11.8",
+      "executable": "<LOCAL_CHECKOUT>/.context/venv-arm64/bin/python"
+    },
+    "go_compiler": "go version go1.25.13 darwin/amd64",
+    "target_arch": "arm64",
+    "binary_arch": "arm64"
+  },
+  "build": {
+    "command": [
+      "/usr/local/bin/go",
+      "build",
+      "-trimpath",
+      "-ldflags=-s -w",
+      "-o",
+      "/var/folders/nk/63t416311tx1dg1p62835pjr0000gn/T/tier1-source-bound-tukn456k/9l",
+      "./cmd/9l"
+    ],
+    "GOARCH": "arm64",
+    "CGO_ENABLED": "0",
+    "GOWORK": "off",
+    "GOENV": "off",
+    "metadata": "/var/folders/nk/63t416311tx1dg1p62835pjr0000gn/T/tier1-source-bound-tukn456k/9l: go1.25.13\n\tpath\tgithub.com/qualitymax/9lives-runner/cmd/9l\n\tmod\tgithub.com/qualitymax/9lives-runner\tv0.0.0-20261006094722-75c675b242c0+dirty\t\n\tdep\tgolang.org/x/net\tv0.58.0\th1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=75c675b242c007cce657cd58671ae191646fd18f\n\tbuild\tvcs.time=2026-10-06T09:47:22Z\n\tbuild\tvcs.modified=true\n"
+  },
+  "commands": {
+    "python_0.1.3": [
+      "/tmp/qua2151-python-arm64",
+      "-I",
+      "<LOCAL_CHECKOUT>/.context/9lives-runner-pr2/internal/contracttest/python_oracle.py",
+      "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.1.3/src",
+      "0.1.3"
+    ],
+    "python_0.2.1": [
+      "/tmp/qua2151-python-arm64",
+      "-I",
+      "<LOCAL_CHECKOUT>/.context/9lives-runner-pr2/internal/contracttest/python_oracle.py",
+      "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.2.1/src",
+      "0.2.1"
+    ],
+    "go_native": [
+      "/var/folders/nk/63t416311tx1dg1p62835pjr0000gn/T/tier1-source-bound-tukn456k/9l",
+      "tier1",
+      "--format",
+      "json"
+    ]
+  },
+  "summary": {
+    "python_0.1.3": {
+      "first_invocation_ms": 232.33516700565815,
+      "subsequent_invocations": {
+        "count": 29,
+        "median_ms": 221.74033400369808,
+        "min_ms": 210.77729100943543,
+        "max_ms": 772.5787500094157
+      }
+    },
+    "python_0.2.1": {
+      "first_invocation_ms": 214.73033299844246,
+      "subsequent_invocations": {
+        "count": 29,
+        "median_ms": 232.15999999956694,
+        "min_ms": 213.81020899571013,
+        "max_ms": 568.541707994882
+      }
+    },
+    "go_native": {
+      "first_invocation_ms": 330.6228749861475,
+      "subsequent_invocations": {
+        "count": 29,
+        "median_ms": 5.35449999733828,
+        "min_ms": 4.78366699826438,
+        "max_ms": 6.831417005741969
+      }
+    }
+  },
+  "release_binary_sha256_before": "bbd453dfa621c7697774950a3b66423bba03da0cc9cf74aa2e5ce26fdabc337f",
+  "release_binary_sha256_after": "bbd453dfa621c7697774950a3b66423bba03da0cc9cf74aa2e5ce26fdabc337f"
+}

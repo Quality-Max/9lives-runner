@@ -1,0 +1,2255 @@
+{
+  "engine": "python_0.2.1",
+  "samples": [
+    {
+      "elapsed_ms": 214.73033299844246,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 0,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 217.9990829899907,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 1,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 224.87474999797996,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 2,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 220.43558400764596,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 3,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 218.10745900438633,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 4,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 220.6669589941157,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 5,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 568.541707994882,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 6,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 438.79587500123307,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 7,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 280.6200409977464,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 8,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 237.06304200459272,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 9,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 315.6149170099525,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 10,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 225.4009999887785,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 11,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 243.41458299022634,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 12,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 213.81020899571013,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 13,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 218.31916699011344,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 14,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 219.4081250054296,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 15,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 220.74033299577422,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 16,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 217.53333299420774,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 17,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 219.79408300830983,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 18,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 220.7358750019921,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 19,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 220.68100000615232,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 20,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 337.043999999878,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 21,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 232.15999999956694,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 22,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 235.9152919962071,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 23,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 243.12241601001006,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 24,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 266.9460000033723,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 25,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 241.50737500167452,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 26,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 251.54229199688416,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 27,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 301.13654099113774,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 28,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 236.30200000479817,
+      "raw_stdout": "{\"results\": [{\"classified\": \"locator_not_found\", \"extracted\": \"#save\", \"selectedTier\": \"tier2_ai_suggest\", \"success\": true, \"code\": \"await page.locator('#save-new').click();\\n\", \"confidence\": 0.85, \"metadata\": {\"anchor\": \"id\", \"old_selector\": \"#save\", \"new_selector\": \"#save-new\"}, \"requiresApproval\": false, \"changes\": [\"Re-found via id: replaced '#save' with '#save-new'\"]}], \"provenance\": {\"revision\": \"568c7a6882441c13cdb9bfe8c0190ca0bf7d8240\", \"version\": \"0.2.1\", \"packageVersion\": \"0.2.1\", \"modules\": {\"ninelives\": {\"path\": \"ninelives/__init__.py\", \"sha256\": \"85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec\"}, \"ninelives.healing\": {\"path\": \"ninelives/healing/__init__.py\", \"sha256\": \"025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50\"}, \"ninelives.healing.parse\": {\"path\": \"ninelives/healing/parse.py\", \"sha256\": \"a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920\"}, \"ninelives.healing.patch\": {\"path\": \"ninelives/healing/patch.py\", \"sha256\": \"45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56\"}, \"ninelives.healing.strategy\": {\"path\": \"ninelives/healing/strategy.py\", \"sha256\": \"e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4\"}, \"ninelives.healing.tier1\": {\"path\": \"ninelives/healing/tier1.py\", \"sha256\": \"86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf\"}, \"ninelives.healing.tier2\": {\"path\": \"ninelives/healing/tier2.py\", \"sha256\": \"8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf\"}, \"ninelives.llm\": {\"path\": \"ninelives/llm/__init__.py\", \"sha256\": \"4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241\"}, \"ninelives.llm.agent_cli\": {\"path\": \"ninelives/llm/agent_cli.py\", \"sha256\": \"a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c\"}, \"ninelives.llm.client\": {\"path\": \"ninelives/llm/client.py\", \"sha256\": \"702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec\"}}, \"sourceOnly\": true}}\n",
+      "response": {
+        "results": [
+          {
+            "classified": "locator_not_found",
+            "extracted": "#save",
+            "selectedTier": "tier2_ai_suggest",
+            "success": true,
+            "code": "await page.locator('#save-new').click();\n",
+            "confidence": 0.85,
+            "metadata": {
+              "anchor": "id",
+              "old_selector": "#save",
+              "new_selector": "#save-new"
+            },
+            "requiresApproval": false,
+            "changes": [
+              "Re-found via id: replaced '#save' with '#save-new'"
+            ]
+          }
+        ],
+        "provenance": {
+          "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+          "version": "0.2.1",
+          "packageVersion": "0.2.1",
+          "modules": {
+            "ninelives": {
+              "path": "ninelives/__init__.py",
+              "sha256": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec"
+            },
+            "ninelives.healing": {
+              "path": "ninelives/healing/__init__.py",
+              "sha256": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50"
+            },
+            "ninelives.healing.parse": {
+              "path": "ninelives/healing/parse.py",
+              "sha256": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920"
+            },
+            "ninelives.healing.patch": {
+              "path": "ninelives/healing/patch.py",
+              "sha256": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56"
+            },
+            "ninelives.healing.strategy": {
+              "path": "ninelives/healing/strategy.py",
+              "sha256": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4"
+            },
+            "ninelives.healing.tier1": {
+              "path": "ninelives/healing/tier1.py",
+              "sha256": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf"
+            },
+            "ninelives.healing.tier2": {
+              "path": "ninelives/healing/tier2.py",
+              "sha256": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf"
+            },
+            "ninelives.llm": {
+              "path": "ninelives/llm/__init__.py",
+              "sha256": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241"
+            },
+            "ninelives.llm.agent_cli": {
+              "path": "ninelives/llm/agent_cli.py",
+              "sha256": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c"
+            },
+            "ninelives.llm.client": {
+              "path": "ninelives/llm/client.py",
+              "sha256": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec"
+            }
+          },
+          "sourceOnly": true
+        }
+      },
+      "round": 29,
+      "position": 0
+    }
+  ]
+}

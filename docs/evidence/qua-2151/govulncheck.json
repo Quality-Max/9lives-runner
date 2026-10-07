@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-06T16:56:04.954127+00:00",
+  "command": "GOARCH=arm64 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...",
+  "cwd": "<LOCAL_CHECKOUT>/.context/9lives-runner-pr2",
+  "target": "arm64",
+  "compiler": "go1.25.13 darwin/amd64",
+  "scanner": "govulncheck@v1.7.0",
+  "database": "https://vuln.go.dev",
+  "exit_code": 0,
+  "output": "No vulnerabilities found.",
+  "stderr": "",
+  "frozen_manifest_sha256": "b7a282535ea6d57816fded39fa12f6f07dee85c30be7bfd5d1dcff9d1086cbe5",
+  "all_go_and_module_inputs_sha256": "68c24c2eb270259cfcf75d5e49b095b3a9b742dc34c6c3d4d56f99d86db1569f",
+  "exact_patch_and_untracked_sha256": "b2fe447dff884334f9e9b108f8b543927c07c202b440b5cbffda098e6fe78aa5",
+  "source_and_exact_patch_unchanged": true,
+  "scope": "Known published Go vulnerabilities reached by scanned build; not general correctness or security certification."
+}

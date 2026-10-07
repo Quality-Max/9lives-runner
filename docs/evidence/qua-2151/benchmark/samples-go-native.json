@@ -1,0 +1,845 @@
+{
+  "engine": "go_native",
+  "samples": [
+    {
+      "elapsed_ms": 330.6228749861475,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 0,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 4.9718749942258,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 1,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.252499991911463,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 2,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 4.982999991625547,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 3,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 5.203374996199273,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 4,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 6.469582993304357,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 5,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.35449999733828,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 6,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.41970798803959,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 7,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 5.158749991096556,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 8,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.517542012967169,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 9,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.758708997745998,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 10,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.189749994315207,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 11,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 5.608833002042957,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 12,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 4.93562500923872,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 13,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.1235409919172525,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 14,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 4.78366699826438,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 15,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 4.991832989617251,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 16,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.482207998284139,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 17,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.105958000058308,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 18,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 5.185041998629458,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 19,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.445500006317161,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 20,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.037916998844594,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 21,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.160165994311683,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 22,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 5.4644999909214675,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 23,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 6.831417005741969,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 24,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.42983299237676,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 25,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.3958750067977235,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 26,
+      "position": 2
+    },
+    {
+      "elapsed_ms": 5.4787499975645915,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 27,
+      "position": 0
+    },
+    {
+      "elapsed_ms": 5.6352909887209535,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 28,
+      "position": 1
+    },
+    {
+      "elapsed_ms": 5.841832986334339,
+      "raw_stdout": "{\"version\":1,\"failureType\":\"locator_not_found\",\"failedSelector\":\"#save\",\"selectedTier\":\"tier2_ai_suggest\",\"attemptedTier\":\"tier1_auto\",\"decision\":\"propose\",\"proposedCode\":\"await page.locator('#save-new').click();\\n\",\"changes\":[\"re-found selector\"],\"requiresApproval\":true,\"apply\":false,\"confidence\":0.85,\"metadata\":{\"anchor\":\"id\",\"engine\":\"native-tier1\",\"newSelector\":\"#save-new\",\"oldSelector\":\"#save\",\"provenance\":\"unverified\"}}\n",
+      "response": {
+        "version": 1,
+        "failureType": "locator_not_found",
+        "failedSelector": "#save",
+        "selectedTier": "tier2_ai_suggest",
+        "attemptedTier": "tier1_auto",
+        "decision": "propose",
+        "proposedCode": "await page.locator('#save-new').click();\n",
+        "changes": [
+          "re-found selector"
+        ],
+        "requiresApproval": true,
+        "apply": false,
+        "confidence": 0.85,
+        "metadata": {
+          "anchor": "id",
+          "engine": "native-tier1",
+          "newSelector": "#save-new",
+          "oldSelector": "#save",
+          "provenance": "unverified"
+        }
+      },
+      "round": 29,
+      "position": 2
+    }
+  ]
+}

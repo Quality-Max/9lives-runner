@@ -1,0 +1,156 @@
+{
+  "go_sources": {
+    "cmd/9l/main.go": "f9205290c5c5019c83a397fbf9b7ab444470ed3f8f6b232b6a70c2f67c2f783f",
+    "cmd/9l/main_test.go": "e27b0b17a75079b245caf3d046f1047c5cd38d7f79fb5a0e918914a65e4b12a0",
+    "cmd/9l/passenv_test.go": "76357d42345d686b6243aafeb2e7f98b75efb3629ad0645b077129f821801769",
+    "cmd/9l/tier1_test.go": "5e004625d0eaa79ea49d5f4c8099643d09bfc9ba31250581ee93ece126f3b65f",
+    "internal/adapters/playwright/playwright.go": "471fc87386dbdc172070a2da3ba3a2720046cd60f83ebd73e6a69e12f899e012",
+    "internal/adapters/playwright/playwright_test.go": "9153d52457f6ae9bb88b0917e86971ca1cb83797d98dbee0e24cade39c00144a",
+    "internal/contracttest/contracttest.go": "7f2f6481f2369b9a03c621161e7869bee87f1621d93f4efc269cd979039f3815",
+    "internal/contracttest/python_oracle_test.go": "e582a5444e91b5137f3407fc57751d45ca29d17ebc5ae6069e12a3d36f1b339c",
+    "internal/healing/differential_test.go": "61d18c9dfcf36bc35c8999a563adc3f194a5aa4d0a0c736d4e22ea696e6b5ac1",
+    "internal/healing/healing.go": "4ca59d14435fe2f44dd2541ccd4c9b50fe24452c150e303d60bc861ae6c112d1",
+    "internal/healing/healing_test.go": "6af4660b4e7dca1ac39cb3ea0939acd014f84ef108d38809483ad640c7fa9a9e",
+    "internal/healing/semantic_test.go": "10f90f971427a4b47255ca96adcfa3178be94384dad7a1aa425fe73eb740d8ac",
+    "internal/healing/snapshot.go": "b3a2ac44589604fa4e9e1545f9da2c54b4a315a352800728bb9db8b9757dc37f",
+    "internal/healing/source.go": "e09ab11a21f3351539bd0489ec0d9395d7bfbf431d9b6ac44e145b0549466bbd",
+    "internal/healingbridge/contract.go": "65a8d757de74e8aec4e778bd001b15742c7c99bac5c3cb9341acca13311ce4c7",
+    "internal/healingbridge/contract_test.go": "4e49ee59c6cb577c2272f58ce2fdc5025728a58afc5faf696a9403f6ecbbbd68",
+    "internal/healingbridge/upstream.go": "095908270971f87a3f4db12481af1f261c131f929c04c09be3a8d6c4991c7f97",
+    "internal/runner/adapter.go": "ee2ca16215097d556508ad4cf6fb175685bbd4bdddcc055b2057d90614918c7d",
+    "internal/runner/canonical.go": "955492507201b8b663062fb290944eebeb409b4c7c5539f2b23d68d28452766e",
+    "internal/runner/execute.go": "7fa40bbe96cfe52c9102fca4a95199ff24238e8fec6781e24d0e27921c164cc5",
+    "internal/runner/fake_adapter_test.go": "c6d20adb8966aacbfc64a527f9a943356ca01a8b996db39fe94ac7eaafd58f31",
+    "internal/runner/followup_test.go": "13d1910e29d22d3aac960327167ff79202ca77e0b43a18b161980e6ef05b7cbe",
+    "internal/runner/model.go": "560d8800393fdaf8821f15fcf8f8832d9015e8212f8498bc1f96a2799c825f5f",
+    "internal/runner/plan.go": "ce5326e0fc23ce1a3fc23be59e21ff6ccfa751c28efbf8c5be9791e341b20a71",
+    "internal/runner/ports.go": "f535b77fa46232a03e47025d937822d62d80d21376f38a4ed1236f5723775eb8",
+    "internal/runner/process_other.go": "df06dd027d7d31caf7ed935c275427c8d72f8ba10c21ca15ab89ce1347a29f65",
+    "internal/runner/process_unix.go": "9c050ee53525ec9a26ab50aef8b5616f97436130e0f64f41f50a2de619743b04",
+    "internal/runner/process_unix_test.go": "f8e7d8e97f1575035c0ef310fcbaafc07bdd80dac08142d02f8d6989de4b6351",
+    "internal/runner/python.go": "0359962533b64605c38c7170e30dd0cd960ec98afb434b3b77936362a3c7c3ad",
+    "internal/runner/receipt.go": "d929a4d2522baa52546ac8cb23ef93c99576e758af4643f491294f65370e936e",
+    "internal/runner/runner_bench_test.go": "84a0bcc3e59fcdb3e9b08f999ab8fea08f004ef7a84097acb57ee9f90d034baa",
+    "internal/runner/runner_test.go": "f88a23bb2b870bfa5448e42d014efc050f2af728b4a6fe13e7d3bf4a05503047",
+    "internal/runner/state.go": "f9652c4be5ac1374bd1a2d1ccfdd80c9694bb0234ef7307f2424fb0e89b143dd",
+    "go.mod": "e2bd8eeb8c090f9baf91d6a63284c1d4ed4b1b9246a9e26843090548bfe19e1b",
+    "go.sum": "b59067d9db8cb2654be364ec1c7da3f6a92953f61a561d312ea4c14a7048a46d"
+  },
+  "go_patch": {
+    "head": "75c675b242c007cce657cd58671ae191646fd18f",
+    "tracked_patch_sha256": "87cf46eb17baef9432b1c5fda9da91296928d84fb60a8ffa78e0d3b6a2b1eb3c",
+    "index_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unstaged_patch_sha256": "87cf46eb17baef9432b1c5fda9da91296928d84fb60a8ffa78e0d3b6a2b1eb3c",
+    "status_sha256": "44b480c2851a4f8af30834e2871b4735f2c01df9ee440f23ba1eb032207b1fab",
+    "untracked": {
+      "cmd/9l/tier1_test.go": {
+        "sha256": "5e004625d0eaa79ea49d5f4c8099643d09bfc9ba31250581ee93ece126f3b65f",
+        "mode": 33188
+      },
+      "docs/native-tier1.md": {
+        "sha256": "059aa410682daa3b7e6fb3c5f383c40f77587af69cf1e77abf2bf4a54bbc882e",
+        "mode": 33188
+      },
+      "go.sum": {
+        "sha256": "b59067d9db8cb2654be364ec1c7da3f6a92953f61a561d312ea4c14a7048a46d",
+        "mode": 33188
+      },
+      "internal/contracttest/python_oracle.py": {
+        "sha256": "0bc11a38052bc0ad9bc65e20ef8610fa6c4f54c8bd0d3186ca958ba54119edd0",
+        "mode": 33188
+      },
+      "internal/contracttest/python_oracle_test.go": {
+        "sha256": "e582a5444e91b5137f3407fc57751d45ca29d17ebc5ae6069e12a3d36f1b339c",
+        "mode": 33188
+      },
+      "internal/healing/differential_test.go": {
+        "sha256": "61d18c9dfcf36bc35c8999a563adc3f194a5aa4d0a0c736d4e22ea696e6b5ac1",
+        "mode": 33188
+      },
+      "internal/healing/healing.go": {
+        "sha256": "4ca59d14435fe2f44dd2541ccd4c9b50fe24452c150e303d60bc861ae6c112d1",
+        "mode": 33188
+      },
+      "internal/healing/healing_test.go": {
+        "sha256": "6af4660b4e7dca1ac39cb3ea0939acd014f84ef108d38809483ad640c7fa9a9e",
+        "mode": 33188
+      },
+      "internal/healing/semantic_test.go": {
+        "sha256": "10f90f971427a4b47255ca96adcfa3178be94384dad7a1aa425fe73eb740d8ac",
+        "mode": 33188
+      },
+      "internal/healing/snapshot.go": {
+        "sha256": "b3a2ac44589604fa4e9e1545f9da2c54b4a315a352800728bb9db8b9757dc37f",
+        "mode": 33188
+      },
+      "internal/healing/source.go": {
+        "sha256": "e09ab11a21f3351539bd0489ec0d9395d7bfbf431d9b6ac44e145b0549466bbd",
+        "mode": 33188
+      },
+      "scripts/benchmark_tier1.py": {
+        "sha256": "a6c6791da899136d9ac57d66576f4b1d58450e56d06fb6d5a3d34ad2670854b7",
+        "mode": 33188
+      }
+    },
+    "exact_patch_and_untracked_sha256": "b2fe447dff884334f9e9b108f8b543927c07c202b440b5cbffda098e6fe78aa5"
+  },
+  "python_sources": {
+    "python_0.1.3": {
+      "path": "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.1.3/src",
+      "revision": "8a40d8d5c83f27f84384f060aeed74a3ded7ab77",
+      "tracked_source_manifest": {
+        "src/ninelives/__init__.py": "e343420433bab927b9c73b2c37af569face196c79fd1a7d5e060481aae8e4a76",
+        "src/ninelives/cli.py": "20a7cc3e3bd8b40ea52a0d4ce925a37f08d8dd775813b0c62607115e08bec2ea",
+        "src/ninelives/healing/__init__.py": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50",
+        "src/ninelives/healing/parse.py": "b63bfdabccc8f85ec7192ff70ab1fba69739662fdacc4a30a5edb33524f7168d",
+        "src/ninelives/healing/patch.py": "714e3ddf4dd03abe6a4bd1d889e93235bdf05953be3eb57e2fc114ddb92e94f7",
+        "src/ninelives/healing/strategy.py": "92020651d66c8b16ec96d0a3488f8abd420be436a0e169115852f375e95f7694",
+        "src/ninelives/healing/tier1.py": "e1e2ed61dee0865cc18c5e5c9377cf8bd97fc3ff635076165f661ce23a76cb77",
+        "src/ninelives/healing/tier2.py": "d4bc6115c133d16b1f7a597a60b7908ea77caad44b67dae2af60b96d5b3451fc",
+        "src/ninelives/llm/__init__.py": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241",
+        "src/ninelives/llm/agent_cli.py": "6ff0ccc160a58a98e4f64243084ca36e394b71d7b0a32709894582982c47c6c1",
+        "src/ninelives/llm/client.py": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec",
+        "src/ninelives/report/__init__.py": "683a2db62032cf02dd46486277c638426eaa04ffd41a0873d9a339b3fdfc437c",
+        "src/ninelives/report/github.py": "b9027e23d01813eb76f5ba49c7f9b19ec297dfcd531ae0dc729724374e569dcc",
+        "src/ninelives/runner/__init__.py": "841437555f043bc6efd6dbadd9485a9b8d4c28a842dfd6dc52d533ec252d81a4",
+        "src/ninelives/runner/artifacts.py": "9c8526727f6f06dbc40067403d4f657c02e8f4612d486d17f74a4157721134f1",
+        "src/ninelives/runner/execute.py": "466d69003d98f46bccf24536576f874ffcf4dfe87aaa52868ecd0eb8f1b44706",
+        "src/ninelives/runner/project.py": "8a0d23d5a22d675631458d3bef5c07ad2e00ec2e110396111a5a5a24e814ecbe"
+      }
+    },
+    "python_0.2.1": {
+      "path": "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.2.1/src",
+      "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
+      "tracked_source_manifest": {
+        "src/ninelives/__init__.py": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec",
+        "src/ninelives/cli.py": "e8d01eaa6f9726700bad908b4f33e7789dce75afe6ab913cfa37d9359f856bdb",
+        "src/ninelives/constants.py": "368fe03b3f042860f07aa13407e171f4c0b28a7a266292f9f0ecc20975b6b0fa",
+        "src/ninelives/frameworks/__init__.py": "1cb90ef52d5a4192a4c99f3e906283681fe1e84a0ba91fdc3c4f74cc58357329",
+        "src/ninelives/frameworks/cypress.py": "483d006eb6c562c67b222c81b161be1e55c1b98c5d593949e751535a0da389bf",
+        "src/ninelives/frameworks/playwright.py": "181357fcf05b97d085ba278b4817b0370d35ccd41a9193e2eb108299add2785a",
+        "src/ninelives/frameworks/selenium.py": "37357022bec8eb6cf75c71b09e68b6a32b6642205a79b0e00774b77914563737",
+        "src/ninelives/healing/__init__.py": "025ead191d59bc2d72d261bb68188da1ae84b09d6c23ac6a0db7cbd3259dcc50",
+        "src/ninelives/healing/parse.py": "a55b43bbeda6adabd44c0e8e1878dabed768459e6143e18585964628ec77c920",
+        "src/ninelives/healing/patch.py": "45730b89c0fc01f2fd51d791525b243eaf77d30dbb21a37720a3d61be40c7a56",
+        "src/ninelives/healing/strategy.py": "e6126ef3eddfa01ddac2ae727d197384282e5d8538af2a98809575538e1f9cc4",
+        "src/ninelives/healing/tier1.py": "86e2358ffaeb630e02ce2cc48dfc100d120fa9351d2102bd9cc592524001abcf",
+        "src/ninelives/healing/tier2.py": "8441ba8e5e7c02538222b07825dff1f36d7e247a8c05b3f25bc67b4bed2991cf",
+        "src/ninelives/history.py": "0f96cdb3204cdffc81795161b640b2d1fce79c09a1780f314925777c17769f6c",
+        "src/ninelives/llm/__init__.py": "4875a60bd1794800763a740df02f7c5d7502b3381c83162c67cf95f85f4e9241",
+        "src/ninelives/llm/agent_cli.py": "a7f82f054b58f8e6444f2549d99091c640610f97de9e49e446385c53d92c827c",
+        "src/ninelives/llm/client.py": "702a8515ba3d5cf87bf117a8a52d79cc7b7410d72c3958e68fbd7983ac8dbdec",
+        "src/ninelives/mcp_server.py": "e9da2d1f9ba489dbdcb30430ef615cf4babe3d1e2f35c8fa333b6dc663c9fbb1",
+        "src/ninelives/report/__init__.py": "683a2db62032cf02dd46486277c638426eaa04ffd41a0873d9a339b3fdfc437c",
+        "src/ninelives/report/github.py": "b9027e23d01813eb76f5ba49c7f9b19ec297dfcd531ae0dc729724374e569dcc",
+        "src/ninelives/runner/__init__.py": "841437555f043bc6efd6dbadd9485a9b8d4c28a842dfd6dc52d533ec252d81a4",
+        "src/ninelives/runner/artifacts.py": "9c8526727f6f06dbc40067403d4f657c02e8f4612d486d17f74a4157721134f1",
+        "src/ninelives/runner/execute.py": "977ff5d073125fd2ab00f42d59982c5aa32d90b08d01bdf14e3dbe4e6560cff1",
+        "src/ninelives/runner/project.py": "8a0d23d5a22d675631458d3bef5c07ad2e00ec2e110396111a5a5a24e814ecbe",
+        "src/ninelives/watch.py": "3bc094c4659dbe6c0851c4256196290d381dbb28afdb16bcdff494468bd3d71f"
+      }
+    }
+  },
+  "durable_harness_sha256": "a6c6791da899136d9ac57d66576f4b1d58450e56d06fb6d5a3d34ad2670854b7",
+  "invoked_harness_sha256": "a6c6791da899136d9ac57d66576f4b1d58450e56d06fb6d5a3d34ad2670854b7",
+  "oracle_helper_sha256": "0bc11a38052bc0ad9bc65e20ef8610fa6c4f54c8bd0d3186ca958ba54119edd0"
+}

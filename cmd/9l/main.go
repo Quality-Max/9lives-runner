@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,8 +15,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/qualitymax/9lives-runner/internal/adapters/playwright"
+	"github.com/qualitymax/9lives-runner/internal/healing"
 	"github.com/qualitymax/9lives-runner/internal/runner"
 )
 
@@ -42,6 +45,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return stateCommand(args[0], args[1:], out, errOut)
 	case "heal":
 		return bridgePython(args[1:], out, errOut)
+	case "tier1":
+		return tier1Command(args[1:], os.Stdin, out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -59,10 +64,152 @@ Usage:
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <args...>  # delegates to the installed Python healing library
+  9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
 
 The Go runner currently executes Playwright specs from existing projects.
 It never reports an incomplete run green.
 `)
+}
+
+func tier1Command(args []string, in io.Reader, out, errOut io.Writer) int {
+	fs := flag.NewFlagSet("tier1", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	format := fs.String("format", "", "must be json")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || *format != "json" {
+		fmt.Fprintln(errOut, "9l: tier1 requires --format json and no positional arguments")
+		return 2
+	}
+	const maxInput = 4 << 20
+	limited := io.LimitReader(in, maxInput+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil || len(raw) > maxInput {
+		fmt.Fprintln(errOut, "9l: tier1 request is too large")
+		return 2
+	}
+	request, err := decodeTier1Request(raw)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l: tier1 invalid request")
+		return 2
+	}
+	if err := healing.Validate(request); err != nil {
+		fmt.Fprintln(errOut, "9l: tier1 invalid request")
+		return 2
+	}
+	if err := json.NewEncoder(out).Encode(healing.Heal(request)); err != nil {
+		fmt.Fprintln(errOut, "9l: tier1 response failed")
+		return 1
+	}
+	return 0
+}
+
+func decodeTier1Request(raw []byte) (healing.Request, error) {
+	if !utf8.Valid(raw) || !validJSONUnicodeEscapes(raw) {
+		return healing.Request{}, errors.New("invalid request encoding")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	first, err := decoder.Token()
+	if err != nil || first != json.Delim('{') {
+		return healing.Request{}, errors.New("request must be an object")
+	}
+	allowed := map[string]bool{"version": true, "framework": true, "errorMessage": true, "stackTrace": true, "failureType": true, "failedSelector": true, "testCode": true, "pageSnapshot": true, "allowAssertionChange": true}
+	values := make(map[string]json.RawMessage)
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || !allowed[key] || values[key] != nil {
+			return healing.Request{}, errors.New("invalid request member")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil || bytes.Equal(value, []byte("null")) {
+			return healing.Request{}, errors.New("invalid request value")
+		}
+		values[key] = value
+	}
+	last, err := decoder.Token()
+	if err != nil || last != json.Delim('}') {
+		return healing.Request{}, errors.New("unterminated request")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return healing.Request{}, errors.New("multiple JSON values")
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return healing.Request{}, err
+	}
+	var request healing.Request
+	if err := json.Unmarshal(encoded, &request); err != nil {
+		return healing.Request{}, err
+	}
+	return request, nil
+}
+
+// encoding/json replaces malformed UTF-8 and lone UTF-16 surrogates. Tier 1's
+// strict request schema rejects them before decoding so a caller cannot change
+// request meaning through replacement characters.
+func validJSONUnicodeEscapes(raw []byte) bool {
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '"' && !inString {
+			inString = !inString
+			continue
+		}
+		if !inString {
+			continue
+		}
+		if raw[i] == '"' {
+			inString = false
+			continue
+		}
+		if raw[i] != '\\' || i+1 >= len(raw) {
+			continue
+		}
+		if raw[i+1] != 'u' {
+			i++
+			continue
+		}
+		if i+5 >= len(raw) {
+			return false
+		}
+		unit, ok := hexUnit(raw[i+2 : i+6])
+		if !ok {
+			return false
+		}
+		if unit >= 0xD800 && unit <= 0xDBFF {
+			if i+11 >= len(raw) || raw[i+6] != '\\' || raw[i+7] != 'u' {
+				return false
+			}
+			low, ok := hexUnit(raw[i+8 : i+12])
+			if !ok || low < 0xDC00 || low > 0xDFFF {
+				return false
+			}
+			i += 11
+			continue
+		}
+		if unit >= 0xDC00 && unit <= 0xDFFF {
+			return false
+		}
+		i += 5
+	}
+	return !inString
+}
+
+func hexUnit(value []byte) (rune, bool) {
+	var unit rune
+	for _, digit := range value {
+		unit <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			unit += rune(digit - '0')
+		case digit >= 'a' && digit <= 'f':
+			unit += rune(digit-'a') + 10
+		case digit >= 'A' && digit <= 'F':
+			unit += rune(digit-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return unit, true
 }
 
 func runCommand(command string, args []string, out, errOut io.Writer) int {
