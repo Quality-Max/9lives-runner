@@ -1,0 +1,5 @@
+{
+  "name": "9lives-sdk-fixture",
+  "private": true,
+  "devDependencies": {"@9lives/playwright": "0.0.0", "@playwright/test": "1.61.1"}
+}

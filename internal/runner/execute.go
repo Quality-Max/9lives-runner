@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -26,6 +28,7 @@ type ExecuteOptions struct {
 	Adapters   []Adapter
 	Store      Store
 	Executor   ProcessExecutor
+	Services   AttemptServiceFactory
 }
 
 func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, error) {
@@ -293,7 +296,9 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 	var receipt Receipt
 	for attempt := 1; attempt <= opts.MaxAttempts; attempt++ {
 		receipt = executeAttempt(parent, runID, job, attempt, opts, store, executor)
-		if receipt.Status != StatusError || parent.Err() != nil {
+		// An interrupted goal may already have changed the application. Never
+		// replay the entire worker automatically after an uncertain effect.
+		if receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed {
 			break
 		}
 	}
@@ -318,11 +323,50 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		return persistAttempt(receipt, store, nil, nil)
 	}
 	_ = store.AppendEvent(ProgressEvent{Type: "attempt_started", JobID: job.ID, AttemptID: receipt.AttemptID})
+	// Infrastructure that fails before the worker starts is an error, never a
+	// test verdict, and still closes the attempt in the event log.
+	infrastructureError := func(reason string) Receipt {
+		receipt.Status, receipt.Error = StatusError, reason
+		receipt = persistAttempt(receipt, store, nil, nil)
+		_ = store.AppendEvent(ProgressEvent{Type: "attempt_finished", JobID: job.ID, AttemptID: receipt.AttemptID, Detail: string(receipt.Status)})
+		return receipt
+	}
 
 	ctx, cancel := context.WithTimeout(parent, opts.Timeout)
 	defer cancel()
-	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
+	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_JOB_ID": job.ID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
+	var service AttemptService
+	if opts.Services != nil {
+		var err error
+		service, err = opts.Services.Start(ctx, AttemptIdentity{runID, job.ID, receipt.AttemptID})
+		if err != nil {
+			return infrastructureError("goal engine could not start")
+		}
+		job.Env = mergeMaps(job.Env, service.Environment())
+		withholdCredentials(job.Env, opts.Services.CredentialNames())
+	}
+	evidencePath := ""
+	if channel, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceChannel); ok {
+		directory, err := os.MkdirTemp("", "9lives-evidence-")
+		if err != nil {
+			if service != nil {
+				receipt.Goals = service.Close()
+			}
+			return infrastructureError("engine evidence channel could not be created")
+		}
+		defer os.RemoveAll(directory)
+		evidencePath = filepath.Join(directory, "events.ndjson")
+		job.Env[channel.EvidenceEnv()] = evidencePath
+	}
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
+	if service != nil {
+		receipt.Goals = service.Close()
+	}
+	if evidencePath != "" {
+		// Worker stdout is ordinary process output here; only the private
+		// channel is validated and persisted as the evidence stream.
+		output.Stdout, output.StdoutTruncated = readEvidence(evidencePath, opts.MaxOutputBytes)
+	}
 	receipt.Executed, receipt.ExitCode = output.Executed, output.ExitCode
 	// Keep actual cleanup attempts as local evidence even when the leader
 	// exited normally before its owned descendants were reaped.
@@ -341,7 +385,16 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		if adapter == nil {
 			receipt.Status, receipt.Error = StatusError, "planned adapter is not registered"
 		} else {
-			validation, validationErr := adapter.Validate(output.Stdout)
+			var validation Validation
+			var validationErr error
+			if bound, ok := adapter.(AttemptValidator); ok {
+				validation, validationErr = bound.ValidateAttempt(output.Stdout, AttemptIdentity{runID, job.ID, receipt.AttemptID})
+				if output.StdoutTruncated {
+					validationErr = fmt.Errorf("engine protocol output exceeded capture limit")
+				}
+			} else {
+				validation, validationErr = adapter.Validate(output.Stdout)
+			}
 			if validationErr != nil {
 				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), "missing or invalid structured report"
 			} else if err := validateValidation(validation); err != nil {
@@ -349,6 +402,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			} else {
 				receipt.Validated = true
 				receipt.FailureCount = validation.FailureCount
+				receipt.GoalFailed = validation.GoalFailed
 				receipt.ExecutedTests = validation.ExecutedTests
 				receipt.SkippedTests = validation.SkippedTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
@@ -366,7 +420,22 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		}
 	}
 	receipt.Evidence.StdoutTruncated = output.StdoutTruncated
+	if receipt.Status == StatusPassed {
+		for _, goal := range receipt.Goals {
+			if goal.Status != "completed" {
+				receipt.Status, receipt.Error = StatusFailed, "goal did not complete; see bounded goal receipt"
+				receipt.GoalFailed = true
+				break
+			}
+		}
+	}
+	if receipt.GoalFailed && receipt.Status == StatusPassed {
+		receipt.Status, receipt.Error = StatusFailed, "goal invocation failed; see bounded goal evidence"
+	}
 	receipt.Evidence.StderrTruncated = output.StderrTruncated
+	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
+		output.Stdout, output.Stderr = sanitizer.SanitizeEvidence(output.Stdout, output.Stderr, receipt.Validated)
+	}
 	receipt = persistAttempt(receipt, store, output.Stdout, output.Stderr)
 	_ = store.AppendEvent(ProgressEvent{Type: "attempt_finished", JobID: job.ID, AttemptID: receipt.AttemptID, Detail: string(receipt.Status)})
 	return receipt
@@ -452,6 +521,40 @@ func (localProcessExecutor) Run(ctx context.Context, job Job, outputLimit int) P
 		}
 	}
 	return result
+}
+
+// withholdCredentials removes a service's own credentials from the worker
+// environment. Names compare case-insensitively, as Windows treats them.
+func withholdCredentials(env map[string]string, names []string) {
+	for key := range env {
+		for _, name := range names {
+			if strings.EqualFold(key, name) {
+				delete(env, key)
+			}
+		}
+	}
+}
+
+// readEvidence returns at most limit bytes of a regular evidence file. A
+// missing, non-regular or oversized channel yields output that cannot validate.
+func readEvidence(path string, limit int) ([]byte, bool) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	if err != nil {
+		return nil, false
+	}
+	if len(raw) > limit {
+		return raw[:limit], true
+	}
+	return raw, false
 }
 
 func mergeMaps(inputs ...map[string]string) map[string]string {

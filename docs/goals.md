@@ -1,0 +1,96 @@
+# Bounded local goal execution
+
+`nineLives.goal(instruction, options?)` observes up to 25 visible enabled controls
+from at most 100 semantic DOM matches, plus eight bounded heading/status labels.
+Go accepts exactly one typed decision per observation, validates its target and
+parameter names, then awaits an execution acknowledgement. The worker rechecks
+the owned element handle, visibility and role/label/link fingerprint immediately
+before acting; the fingerprint includes the raw stop-policy text, so a match
+proves the observed policy verdict still holds. No model-provided JavaScript, selector, URL,
+input value or extra field can execute. Candidate IDs are scoped to the decision.
+Unsupported controls and cross-origin links are omitted. Password/file inputs,
+iframes, custom contenteditable controls and native/mobile work are unsupported.
+
+Actions are `click`, `fill`, `select`, `check`, `wait`, `complete`, `unresolved`.
+`check` sets a checkbox true; `select` uses a named local option value. Ordinary
+Playwright navigation, authentication setup and assertions surround the goal.
+Page text is untrusted provider input. Purchase, deletion and outreach labels
+stop by default, including before redaction/truncation. This conservative label
+policy does not establish the safety of arbitrary unlabeled application effects;
+choose controlled local/staging tasks. Direct ordinary test actions remain the
+test author's responsibility.
+
+## Ownership and transport
+
+Go starts a private per-attempt Unix socket (`9lives.goal/1`) in a mode-0700 temp
+directory. Each bounded, strict JSON request must carry the owning run/job/attempt
+identity. Only the socket path and identity reach the worker. API credentials
+remain with the existing Go HTTP transport; provider redirects are rejected.
+The runner withholds the provider's credential variables from workers even
+when they are named with `--pass-env` (compared case-insensitively).
+A decision wrapped in a single Markdown code fence is unwrapped; its JSON is
+still decoded strictly, and any other surrounding text is an invalid decision.
+Provider round trips run outside the engine lock, so goals in parallel workers
+do not wait on each other's calls; budgets are reserved before each call.
+The socket is a local same-user boundary, not a sandbox for hostile test code.
+`--goal-provider anthropic|openai` is explicit; no CLI/tool fallback can bypass
+bounded output. `--goal-script file.json` is an offline qualification provider,
+not a language model or verified replay cache. Providers/scripts are exclusive.
+
+## Limits and interruption
+
+Defaults per owning attempt: 12 actions, 24 decisions, 200,000 reserved tokens
+and 60 seconds (including worker startup); the `--goal-*` flags set them.
+Goal options can lower these caps; an option the test omits keeps the CLI cap.
+Repeated goals share attempt caps; they cannot reset action/token/cost/time
+allowances. The surrounding runner still owns job/run budgets and deadlines.
+Each call reserves UTF-8 prompt bytes plus 1,024 envelope/system tokens and at
+most 512 output tokens, with no refund after errors or absent usage. This is a
+conservative reservation, not a tokenizer measurement. Explicit conservative
+input/output prices allow a micro-USD reservation cap. Reported usage remains
+separate, with availability explicit. Actual billing/cost is not certified.
+
+Parent cancellation closes the provider context and owned worker/browser tree.
+`GoalOptions.signal` also closes the goal's page, because Playwright's in-flight
+actions do not support AbortSignal. After an issued action errors, its effect is
+unknown; the engine stops instead of repeating it. A stale target discovered
+before issuance can be reobserved. Go worker retries stop after any goal receipt;
+Playwright retry attempts cannot invoke goals. An application state check is
+required before an intentional rerun after interruption.
+
+## Evidence and qualification
+
+`receipt.json` adds `goals`: goal ID, terminal status/duration, provider name,
+conservative reservations and decisions with IDs, typed action/current target
+ID, outcome and reported usage availability. Instructions, parameter values,
+page labels and raw provider bodies/errors are not retained. Canonical execution
+receipts preserve their existing schema. A caught unresolved/blocked/failed goal
+still prevents an overall green receipt.
+
+A returned `{status: 'completed', verified: false}` means only action execution
+finished. Required Playwright assertions establish the expected behavior;
+independent assertion coverage remains unknown. Current deterministic real
+Chromium smoke qualifies multi-step execution, delayed controls/style drift,
+business defects remaining red, stop policy surviving redaction, aborting a
+covered in-flight click, Playwright retry suppression and worker/browser cleanup.
+Go tests qualify strict decisions, ownership, shared budgets, cancellation,
+usage/error privacy and uncertain-action abstention. Live provider accuracy,
+representative drift, measured latency/billing, independent behavioral
+verification and replay admission remain follow-up qualification.
+
+The grounding contracts are ported from playwright-login's
+`services/ai_crawl/discovery_grounding.py`, `step_evidence.py` and
+`services/jev_decision_client.py` reviewed at `c209fca62`: finite current targets,
+untrusted labels, typed decisions, abstention, fresh revalidation and default
+stop policies. Browser handles stay local; no platform account is required.
+See [the existing-project guide](run-existing-project.md) for a runnable harness.
+
+The `nineLives` fixture uses the selected test's Playwright `page` fixture, so
+SDK tests using it require an installed browser even when they only call `step`.
+A failed goal invocation has its own categorical SDK evidence, including failures
+before a provider starts. Catching that exception cannot make the engine pass.
+Observed Playwright test counts remain unchanged; the canonical receipt records
+a separate `goal.failed` policy failure when otherwise passing tests caught it.
+
+The SDK reserves the exact step title `9lives goal` for goal evidence. Use a
+different title for ordinary `nineLives.step` or Playwright steps.

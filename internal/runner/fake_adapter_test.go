@@ -356,9 +356,92 @@ func TestRunnerHelperProcess(t *testing.T) {
 		time.Sleep(time.Duration(milliseconds) * time.Millisecond)
 		fmt.Print(`{"outcome":"passed","assertions":1,"artifact":true}`)
 		os.Exit(0)
+	case "channel":
+		fmt.Print("[dotenv@17] injecting env (0) from .env\n") // ordinary stdout
+		if os.WriteFile(os.Getenv("NINELIVES_FAKE_EVENTS"), []byte(`{"outcome":"passed","assertions":1,"artifact":true}`), 0600) != nil {
+			os.Exit(4)
+		}
+		os.Exit(0)
+	case "credentials":
+		for _, item := range os.Environ() {
+			if key, _, _ := strings.Cut(item, "="); strings.EqualFold(key, "FAKE_PROVIDER_KEY") {
+				os.Exit(5)
+			}
+		}
+		fmt.Print(`{"outcome":"passed","assertions":1,"artifact":true}`)
+		os.Exit(0)
 	case "large":
 		fmt.Print(`{"outcome":"passed","assertions":1,"artifact":true,"padding":"` + strings.Repeat("x", 4096) + `"}`)
 		os.Exit(0)
 	}
 	os.Exit(3)
+}
+
+// channelAdapter receives evidence through a private file, like the SDK bridge.
+type channelAdapter struct{ fakeAdapter }
+
+func (channelAdapter) EvidenceEnv() string { return "NINELIVES_FAKE_EVENTS" }
+
+func TestEvidenceChannelReplacesWorkerStdout(t *testing.T) {
+	for _, test := range []struct {
+		mode string
+		want ReceiptStatus
+	}{{"channel", StatusPassed}, {"success", StatusError}} {
+		t.Run(test.mode, func(t *testing.T) {
+			plan := Plan{Version: 1, RunID: "run-channel", Jobs: []Job{fakeJob("job-001", test.mode, 0)}}
+			summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{channelAdapter{}}})
+			receipt := summary.Receipts[0]
+			if receipt.Status != test.want {
+				t.Fatalf("status %s, want %s: %s", receipt.Status, test.want, receipt.Error)
+			}
+			if test.want != StatusPassed {
+				return // stdout alone is not evidence for a channel adapter
+			}
+			persisted, err := os.ReadFile(receipt.Evidence.StdoutPath)
+			if err != nil || strings.Contains(string(persisted), "dotenv") || !strings.Contains(string(persisted), `"outcome":"passed"`) {
+				t.Fatalf("persisted evidence must be the channel, not worker stdout: %q %v", persisted, err)
+			}
+		})
+	}
+}
+
+type fakeServices struct{ err error }
+type fakeService struct{}
+
+func (f fakeServices) Start(context.Context, AttemptIdentity) (AttemptService, error) {
+	return fakeService{}, f.err
+}
+func (fakeServices) CredentialNames() []string     { return []string{"FAKE_PROVIDER_KEY"} }
+func (fakeService) Environment() map[string]string { return map[string]string{} }
+func (fakeService) Close() []GoalReceipt           { return nil }
+
+func TestServiceCredentialsAreWithheldCaseInsensitively(t *testing.T) {
+	t.Setenv("FAKE_PROVIDER_KEY", "fixture")
+	t.Setenv("fake_provider_key", "fixture")
+	plan := Plan{Version: 1, RunID: "run-credentials", Jobs: []Job{fakeJob("job-001", "credentials", 0)}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}},
+		PassEnv: []string{"FAKE_PROVIDER_KEY", "fake_provider_key"}, Services: fakeServices{}})
+	if summary.Receipts[0].Status != StatusPassed {
+		t.Fatalf("service credential reached the worker: %+v", summary.Receipts[0])
+	}
+}
+
+func TestServiceStartFailureIsInfrastructureError(t *testing.T) {
+	root := t.TempDir()
+	plan := Plan{Version: 1, RunID: "run-service", Jobs: []Job{fakeJob("job-001", "success", 0)}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, MaxAttempts: 1, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}, Services: fakeServices{err: errors.New("listen failed")}})
+	if receipt := summary.Receipts[0]; receipt.Status != StatusError || receipt.Executed {
+		t.Fatalf("service start failure must be an infrastructure error: %+v", receipt)
+	}
+	events, err := readEvents(filepath.Join(root, plan.RunID, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := false
+	for _, event := range events {
+		finished = finished || event.Type == "attempt_finished"
+	}
+	if !finished {
+		t.Fatalf("attempt was never finished in the event log: %#v", events)
+	}
 }

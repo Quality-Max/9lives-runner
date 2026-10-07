@@ -23,6 +23,9 @@ func writeCanonicalReceipt(root string, receipt Receipt) (string, error) {
 		if receipt.FailureCount > 0 {
 			verdict = "failed"
 			failure = map[string]any{"category": "test", "code": "test.failed", "confidence": 1.0, "evidence_ids": []string{"terminal", "counts"}}
+		} else if receipt.GoalFailed {
+			verdict = "failed"
+			failure = map[string]any{"category": "policy", "code": "goal.failed", "confidence": 1.0, "evidence_ids": []string{"terminal", "structured-output"}}
 		} else if receipt.ExitCode != 0 {
 			verdict = "failed"
 			failure = map[string]any{"category": "infrastructure", "code": "execution.process_failed", "confidence": 1.0, "evidence_ids": []string{"terminal"}}
@@ -42,6 +45,9 @@ func writeCanonicalReceipt(root string, receipt Receipt) (string, error) {
 		failure = nil
 	}
 	framework := receipt.Adapter
+	if framework == "playwright-sdk" {
+		framework = "playwright"
+	}
 	if framework != "playwright" {
 		framework = "unknown"
 	}

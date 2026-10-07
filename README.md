@@ -1,6 +1,6 @@
 # 9lives runner
 
-A fast Go execution runner for [9lives](https://github.com/Quality-Max/9lives).
+A Go execution core and local Playwright SDK for [9lives](https://github.com/Quality-Max/9lives).
 
 - Repository: `https://github.com/Quality-Max/9lives-runner` (private during the initial development phase)
 - Go module: `github.com/qualitymax/9lives-runner`
@@ -8,8 +8,92 @@ A fast Go execution runner for [9lives](https://github.com/Quality-Max/9lives).
 
 This repository owns test discovery, inspectable execution plans, bounded
 parallel execution, cancellation, completeness accounting, and local evidence
-receipts. Healing remains in the Python `9lives` package until the compatibility
-contract is proven and migrated explicitly.
+receipts. Native offline Tier 1 proposals and verified Tier 2 healing sessions
+are available alongside the Python compatibility bridge. See
+[native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
+
+## Framework direction
+
+We are building a standalone testing framework that combines ordinary code and
+assertions with bounded goal-driven execution. Our standard is a verified
+behavioral outcome, with evidence tied to the exact test and attempt. Actions
+completing or a model declaring success are insufficient.
+
+The delivery sequence is the local TypeScript SDK and Go bridge, bounded live
+goals over observed targets, independent behavioral verification, replay of
+verified actions, native mobile qualification, and developer/CI workflows with
+measured correctness, latency and cost. Grounding, generation, healing and mobile
+contracts should reuse the QualityMax platform's existing work. Local execution
+must remain usable without a platform account.
+
+The SDK/bridge and bounded natural-language goal loop run locally. Independent
+behavioral verification, verified replay and mobile support remain planned. Replayed and healed tests
+must preserve assertions and recheck the required outcome before they can pass.
+
+## Local Playwright SDK
+
+`@9lives/playwright` is a workspace-local package, not yet published. It adds a
+`nineLives.step` and `nineLives.goal` fixtures while retaining normal Playwright assertions and browser
+fixtures. Go launches the installed Playwright runtime with an opt-in reporter
+and validates the bounded `9lives.engine/1` evidence stream against the owning
+run, job and attempt. Existing execution without `--sdk` is unchanged. Under
+`--sdk`, a skipped test fails the attempt unless it is declared with
+`--pin-skip "<file> › <title>"` (see [skip pins](docs/sdk-bridge.md#skip-pins)).
+
+```sh
+npm ci
+npm run build
+npm exec playwright install chromium
+go build -o .context/9l ./cmd/9l
+.context/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json
+npm test
+npm run smoke
+```
+
+On Linux, use `npm exec playwright install --with-deps chromium` to install
+browser system dependencies too. The smoke uses a real local Chromium checkout,
+checks that a business defect stays red, and verifies timeout/cancel terminate
+the owned worker and browser. It needs no model, application server or account.
+
+```ts
+import {test, expect} from '@9lives/playwright';
+
+test('checkout', async ({page, nineLives}) => {
+  await page.goto('http://localhost:3000/checkout');
+  await nineLives.step('place the order', async () => {
+    await page.getByRole('button', {name: 'Place order'}).click();
+    await expect(page.getByRole('status')).toHaveText('Order confirmed');
+  });
+});
+```
+
+## Natural-language goals
+
+```ts
+await nineLives.goal('Fill Name using name, then click Continue.', {
+  params: {name: 'Fixture Person'}, maxActions: 3, timeoutMs: 30_000,
+});
+await expect(page.getByRole('heading', {name: 'Review'})).toBeVisible();
+```
+
+Run with `9l run tests/flow.spec.ts --sdk --goal-provider anthropic` (or
+`openai`) and securely configure the corresponding provider key in Go's calling
+environment. The provider sees finite observed controls and parameter names;
+values stay in the browser worker. Every decision is validated, targets are
+rechecked, and actions share bounded attempt budgets. Purchase, deletion and
+outreach controls stop by default. Model completion is unverified; explicit
+assertions remain the test oracle. Live model accuracy and cost have not yet
+been qualified. Offline `--goal-script` fixtures qualify browser/engine behavior
+without paid API calls.
+
+For copy-and-paste build, install and run commands against our existing
+playwright-login, see [run an existing project](docs/run-existing-project.md) and the
+[ready test harness](examples/playwright-login). See [goal contracts](docs/goals.md) for
+limits, cancellation, receipts and qualification boundaries.
+
+See [the SDK bridge contract](docs/sdk-bridge.md) for supported configuration,
+identity, limits, evidence privacy and failure behavior. See [AGENTS.md](AGENTS.md)
+and [CLAUDE.md](CLAUDE.md) for engineering intentions and delivery standards.
 
 Compatibility fixtures are reviewed against the offline Python `9lives` source:
 release `0.1.3` (`8a40d8d5c83f27f84384f060aeed74a3ded7ab77`) and current source

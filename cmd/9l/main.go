@@ -19,6 +19,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/qualitymax/9lives-runner/internal/adapters/playwright"
+	"github.com/qualitymax/9lives-runner/internal/adapters/playwrightsdk"
+	"github.com/qualitymax/9lives-runner/internal/goals"
 	"github.com/qualitymax/9lives-runner/internal/healing"
 	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
 	"github.com/qualitymax/9lives-runner/internal/runner"
@@ -64,6 +66,8 @@ func usage(w io.Writer) {
 Usage:
   9l plan <spec-or-glob>... [--format text|json] [--max-jobs N]
   9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
+          [--sdk]  # opt-in @9lives/playwright engine protocol
+          [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
@@ -362,11 +366,26 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
+	sdk := fs.Bool("sdk", false, "use the installed @9lives/playwright engine bridge")
+	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
+	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
+	goalScript := fs.String("goal-script", "", "offline scripted goal decisions JSON (qualification only)")
+	goalLimits := goals.Defaults()
+	fs.IntVar(&goalLimits.MaxActions, "goal-max-actions", goalLimits.MaxActions, "shared attempt goal action budget")
+	fs.IntVar(&goalLimits.MaxDecisions, "goal-max-decisions", goalLimits.MaxDecisions, "shared attempt provider decision budget")
+	fs.IntVar(&goalLimits.MaxTokens, "goal-max-tokens", goalLimits.MaxTokens, "conservative shared goal token reservation")
+	fs.IntVar(&goalLimits.TimeoutMS, "goal-timeout-ms", goalLimits.TimeoutMS, "per-goal time budget in milliseconds")
+	goalCost := fs.Int64("goal-max-cost-micros", 0, "optional shared estimated-cost ceiling in millionths of USD")
+	goalInputPrice := fs.Int64("goal-input-micros-per-million", 0, "explicit conservative input price, millionths of USD per million tokens")
+	goalOutputPrice := fs.Int64("goal-output-micros-per-million", 0, "explicit conservative output price, millionths of USD per million tokens")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for evidence receipts")
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
+	var skipPins skipPinList
+	fs.Var(&skipPins, "pin-skip", "with --sdk, accept this skipped test: \"<file> › <title>\" (repeatable)")
 	normalized := flagsFirst(args, map[string]bool{
 		"-pass-env": true, "--pass-env": true,
+		"-pin-skip": true, "--pin-skip": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
 		"-workers": true, "--workers": true,
@@ -375,6 +394,9 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-attempts": true, "--attempts": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
 		"-receipt-dir": true, "--receipt-dir": true,
+		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
+		"-goal-max-actions": true, "--goal-max-actions": true, "-goal-max-decisions": true, "--goal-max-decisions": true, "-goal-max-tokens": true, "--goal-max-tokens": true, "-goal-timeout-ms": true, "--goal-timeout-ms": true,
+		"-goal-max-cost-micros": true, "--goal-max-cost-micros": true, "-goal-input-micros-per-million": true, "--goal-input-micros-per-million": true, "-goal-output-micros-per-million": true, "--goal-output-micros-per-million": true,
 	})
 	if err := fs.Parse(normalized); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -394,8 +416,59 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
 	}
+	if *goalModel != "" && *goalProvider == "" {
+		fmt.Fprintln(errOut, "9l: --goal-model requires --goal-provider")
+		return 2
+	}
+	var services runner.AttemptServiceFactory
+	if *goalProvider != "" || *goalScript != "" {
+		factory := goals.Factory{Model: *goalModel, Limits: goalLimits, MaxCostMicros: *goalCost, InputMicrosPerMillion: *goalInputPrice, OutputMicrosPerMillion: *goalOutputPrice}
+		if !*sdk || (*goalProvider != "" && *goalScript != "") || factory.ValidateBudget() != nil {
+			fmt.Fprintln(errOut, "9l: goals require --sdk, one explicit provider, and valid budgets; cost ceilings require both conservative token prices")
+			return 2
+		}
+		var provider goals.Provider
+		if *goalScript != "" {
+			script, err := goals.LoadScript(*goalScript)
+			if err != nil {
+				fmt.Fprintln(errOut, "9l: invalid goal script")
+				return 2
+			}
+			provider = script
+		} else {
+			if *goalProvider != "openai" && *goalProvider != "anthropic" {
+				fmt.Fprintln(errOut, "9l: goal provider must be openai or anthropic")
+				return 2
+			}
+			resolved, err := tier2.Resolve(tier2.Options{Name: *goalProvider, Timeout: time.Duration(goalLimits.TimeoutMS) * time.Millisecond})
+			if err != nil {
+				fmt.Fprintln(errOut, "9l: goal provider unavailable")
+				return 2
+			}
+			var ok bool
+			provider, ok = resolved.(goals.Provider)
+			if !ok {
+				fmt.Fprintln(errOut, "9l: goal provider lacks bounded decision transport")
+				return 2
+			}
+		}
+		factory.Provider = provider
+		services = factory
+	}
 
+	if len(skipPins) > 0 && !*sdk {
+		fmt.Fprintln(errOut, "9l: --pin-skip requires --sdk")
+		return 2
+	}
 	availableAdapters := []runner.Adapter{playwright.New()}
+	if *sdk {
+		adapter, err := playwrightsdk.New().WithSkipPins(skipPins)
+		if err != nil {
+			fmt.Fprintf(errOut, "9l: --pin-skip: %v\n", err)
+			return 2
+		}
+		availableAdapters = []runner.Adapter{adapter}
+	}
 	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
@@ -413,7 +486,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
-		Workers: *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters,
+		Workers: *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	executionFailed := err != nil
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
@@ -541,6 +614,16 @@ func (names *envNames) Set(value string) error {
 		}
 		*names = append(*names, name)
 	}
+	return nil
+}
+
+// Pins are whole titles, which may contain commas, so each flag is one pin.
+type skipPinList []string
+
+func (pins *skipPinList) String() string { return strings.Join(*pins, "\n") }
+
+func (pins *skipPinList) Set(value string) error {
+	*pins = append(*pins, value)
 	return nil
 }
 

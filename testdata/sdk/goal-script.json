@@ -1,0 +1,1 @@
+{"version":"9lives.goal/1","steps":[{"action":"fill","label":"Name","parameter":"name"},{"action":"click","label":"Continue"},{"action":"click","label":"Confirm cart"},{"action":"complete"}]}

@@ -6,3 +6,5 @@ test-results/
 __pycache__/
 *.py[cod]
 /testdata/upstream/
+/packages/*/dist/
+/playwright-report/

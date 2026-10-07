@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -103,5 +104,35 @@ func TestReadTerminalApprovalAcceptsOnlyYOrYes(t *testing.T) {
 				t.Fatalf("got=%v want=%v", got, want)
 			}
 		})
+	}
+}
+
+func TestRejectInvalidGoalConfigurationBeforeExecution(t *testing.T) {
+	for _, args := range [][]string{
+		{"run", "fixture.spec.ts", "--goal-provider", "openai"},
+		{"run", "fixture.spec.ts", "--sdk", "--goal-provider", "other"},
+		{"run", "fixture.spec.ts", "--sdk", "--goal-provider", "openai", "--goal-script", "fixture.json"},
+		{"run", "fixture.spec.ts", "--sdk", "--goal-provider", "openai", "--goal-max-actions", "0"},
+		{"run", "fixture.spec.ts", "--sdk", "--goal-provider", "openai", "--goal-max-cost-micros", "1"},
+		{"run", "fixture.spec.ts", "--sdk", "--goal-model", "fixture"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 {
+			t.Fatalf("invalid goal config executed: code %d", code)
+		}
+	}
+}
+
+func TestRejectInvalidSkipPinsBeforeExecution(t *testing.T) {
+	for _, args := range [][]string{
+		{"run", "fixture.spec.ts", "--pin-skip", "tests/a.spec.ts › skipped"},
+		{"run", "fixture.spec.ts", "--sdk", "--pin-skip", "no separator"},
+		{"run", "fixture.spec.ts", "--sdk", "--pin-skip", "tests/a.spec.ts › two\nlines"},
+		{"run", "fixture.spec.ts", "--sdk", "--pin-skip", " tests/a.spec.ts › padded"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "pin-skip") {
+			t.Fatalf("invalid skip pin executed: code %d %q", code, stderr.String())
+		}
 	}
 }

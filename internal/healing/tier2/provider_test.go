@@ -178,7 +178,7 @@ func TestProviderPromptBudgetUsesLocalHTTPAndCLI(t *testing.T) {
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || len(payload.Messages) != 1 || len(payload.Messages[0].Content) != maxProviderPromptBytes || payload.MaxTokens != maxProviderTokens {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || len(payload.Messages) != 2 || len(payload.Messages[1].Content) != maxProviderPromptBytes || payload.MaxTokens != maxProviderTokens {
 			t.Errorf("payload err=%v size=%d tokens=%d", err, len(payload.Messages[0].Content), payload.MaxTokens)
 		}
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
@@ -203,5 +203,71 @@ func TestProviderPromptBudgetUsesLocalHTTPAndCLI(t *testing.T) {
 	bytes, _ := os.ReadFile(record)
 	if strings.TrimSpace(string(bytes)) != "32768" {
 		t.Fatalf("argv bytes=%q", bytes)
+	}
+}
+
+func TestDecisionTransportBoundsAndUsage(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "fixture-key")
+	for _, usage := range []bool{false, true} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body["max_tokens"] != float64(512) {
+				t.Error("decision output cap missing")
+			}
+			messages, ok := body["messages"].([]any)
+			if !ok || len(messages) != 2 || messages[0].(map[string]any)["role"] != "system" {
+				t.Error("decision system contract missing")
+			}
+			response := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"action":"complete"}`}}}}
+			if usage {
+				response["usage"] = map[string]int{"prompt_tokens": 31, "completion_tokens": 7}
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		p := HTTPProvider{name: "openai", baseURL: server.URL, timeout: time.Second}
+		got, err := p.CompleteDecision(context.Background(), "finite controls", "fixture-model", 512)
+		server.Close()
+		if err != nil || got.UsageAvailable != usage || usage && (got.InputTokens != 31 || got.OutputTokens != 7) {
+			t.Fatal("decision transport usage mismatch")
+		}
+	}
+}
+
+func TestDecisionTransportCancellation(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "fixture-key")
+	entered, stopped := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Consume the body so the server can observe client disconnect reliably.
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		close(entered)
+		<-r.Context().Done()
+		close(stopped)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan error, 1)
+	go func() {
+		_, err := (HTTPProvider{name: "openai", baseURL: server.URL, timeout: time.Second}).CompleteDecision(ctx, "controls", "fixture-model", 512)
+		finished <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("request not started")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("cancellation not propagated")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider remained blocked")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("HTTP request not canceled")
 	}
 }

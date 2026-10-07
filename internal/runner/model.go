@@ -49,6 +49,7 @@ const (
 // Receipt is one job's immutable execution record. Executed and Validated are
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
+	Goals              []GoalReceipt `json:"goals,omitempty"`
 	Version            int           `json:"version"`
 	RunID              string        `json:"runId"`
 	JobID              string        `json:"jobId"`
@@ -64,6 +65,7 @@ type Receipt struct {
 	Executed           bool          `json:"executed"`
 	Validated          bool          `json:"validated"`
 	Validation         string        `json:"validation,omitempty"`
+	GoalFailed         bool          `json:"goalFailed,omitempty"`
 	FailureCount       int           `json:"failureCount"`
 	ExecutedTests      int           `json:"executedTests"`
 	SkippedTests       int           `json:"skippedTests"`
