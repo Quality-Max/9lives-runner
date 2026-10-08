@@ -55,17 +55,24 @@ type AnalysisLimit struct {
 	Location
 	Code string `json:"code"`
 }
+
+// ConditionalSkip is a suite modifier that may skip a test. Environment marks a
+// condition that reads process.env.
+type ConditionalSkip struct {
+	Location
+	Environment bool `json:"environment"`
+}
 type Fact struct {
 	Location
-	Title            string          `json:"title,omitempty"`
-	Requirements     []string        `json:"requirements"`
-	Assertions       []Assertion     `json:"assertions"`
-	Sleeps           []Location      `json:"sleeps"`
-	ConditionalSkips []Location      `json:"conditionalSkips"`
-	Disabled         *bool           `json:"disabled"`
-	Exclusive        bool            `json:"exclusive"`
-	Unsupported      bool            `json:"unsupported"`
-	Limits           []AnalysisLimit `json:"limits"`
+	Title            string            `json:"title,omitempty"`
+	Requirements     []string          `json:"requirements"`
+	Assertions       []Assertion       `json:"assertions"`
+	Sleeps           []Location        `json:"sleeps"`
+	ConditionalSkips []ConditionalSkip `json:"conditionalSkips"`
+	Disabled         *bool             `json:"disabled"`
+	Exclusive        bool              `json:"exclusive"`
+	Unsupported      bool              `json:"unsupported"`
+	Limits           []AnalysisLimit   `json:"limits"`
 }
 type Facts struct {
 	Version  int    `json:"version"`
@@ -290,11 +297,11 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 		}
 		applied := map[Location]bool{}
 		for _, p := range t.ConditionalSkips {
-			if !valid(p) || applied[p] {
+			if !valid(p.Location) || applied[p.Location] {
 				return false
 			}
-			applied[p] = true
-			modifiers[p] = true
+			applied[p.Location] = true
+			modifiers[p.Location] = true
 		}
 		total += len(t.Assertions) + len(t.Sleeps) + len(t.Limits)
 	}
@@ -379,7 +386,11 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			add("disabled-test", "demonstrated", "engineeringQuality", "", "", "A syntactic test.skip/test.fixme declaration, unconditional suite modifier or enclosing skipped/fixme suite is present.", "Review why the test is disabled before relying on it to protect the requirement.", fact.Location)
 		}
 		for _, p := range fact.ConditionalSkips {
-			add("conditional-skip", "informational", "engineeringQuality", "", "", "A conditional or after-hook test.skip/test.fixme modifier applies to this test's suite; whether it skips this test is not evaluated.", "Confirm the condition and reason; while it holds, this test does not protect the requirement.", p)
+			if p.Environment {
+				add("environment-skip", "suspected", "engineeringQuality", "", "", "A test.skip/test.fixme modifier applying to this test's suite depends on an environment variable; the test may not run in some environments, such as CI.", "Confirm which environments skip it and that at least one required run still executes this test.", p.Location)
+				continue
+			}
+			add("conditional-skip", "informational", "engineeringQuality", "", "", "A conditional or after-hook test.skip/test.fixme modifier applies to this test's suite; whether it skips this test is not evaluated.", "Confirm the condition and reason; while it holds, this test does not protect the requirement.", p.Location)
 		}
 		report.Tests = append(report.Tests, t)
 	}

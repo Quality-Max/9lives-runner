@@ -15,7 +15,10 @@
   could be declarations, such as `test.skip(name, run)`, stay disabled tests;
   modifiers in after hooks are informational; a modifier shared by several
   tests counts once toward analysis limits and the text summary. An empty
-  `--requirements` value is a usage error.
+  `--requirements` value is a usage error. Modifiers whose condition reads
+  `process.env` give a suspected `environment-skip`. Unawaited
+  `resolves`/`rejects` matchers are flagged, and unawaited matchers outside the
+  pinned Playwright API give an `unknown-matcher` limit.
 - Every assessment finding carries `code`; report version 3, policy
   `assessment-source-v4` (#10).
 - Assessment text output omits empty requirement/outcome fields, ends with a
