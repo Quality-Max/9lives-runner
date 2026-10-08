@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>9lives: ordinary Playwright tests, bounded AI help, evidence for every attempt</title>
+<meta name="description" content="What a 9lives test looks like, how it runs without an AI model, how it compares with Vibium and hosted vendors, and what is shipped versus planned.">
+<link rel="stylesheet" href="explainer.css">
+</head>
+<body>
+<div id="page"><div><div style="min-height: 100vh; background: var(--brand-canvas); color: var(--brand-text); font-family: var(--font-body); font-size: 16px; line-height: 1.6;">
+
+  <header style="position: sticky; top: 0px; z-index: 10; background: rgba(9, 11, 20, 0.8); backdrop-filter: blur(16px); border-bottom: 1px solid var(--brand-border);">
+    <div style="max-width: 1120px; margin: 0px auto; padding: 0px 24px; height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 24px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <img src="assets/qualitymax-logo-white.png" alt="QualityMax" style="height: 22px; width: auto; display: block;">
+        <span style="width: 1px; height: 20px; background: var(--brand-border);"></span>
+        <span style="font-family: var(--font-code); font-variant-ligatures: none; font-weight: 600; font-size: 16px; letter-spacing: -0.01em;">9lives</span>
+        <div style="display: contents;"><span style="display: inline-flex; align-items: center; gap: 5px; padding: 0.0625rem 0.375rem; font-size: 0.6875rem; font-weight: 500; font-family: var(--font-body); line-height: 1.5; border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-secondary); text-transform: none; letter-spacing: 0px; white-space: nowrap;">open source</span></div>
+      </div>
+      <nav style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; font-weight: 500;">
+        <a href="#tests" style="color: var(--brand-text-dim);">Tests</a>
+        <a href="#no-model" style="color: var(--brand-text-dim);">No model</a>
+        <a href="#compare" style="color: var(--brand-text-dim);">Compare</a>
+        <a href="#status" style="color: var(--brand-text-dim);">Status</a>
+        <a href="#why" style="color: var(--brand-text-dim);">Why</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="max-width: 1120px; margin: 0px auto; padding: 0px 24px;">
+
+    
+    <section style="position: relative; padding: 104px 0px 96px; display: flex; flex-direction: column; align-items: center; gap: 56px; text-align: center;">
+      <div style="position: absolute; top: -180px; left: 50%; transform: translateX(-50%); width: 900px; max-width: 160%; height: 900px; background: var(--brand-glow); pointer-events: none;"></div>
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 26px; max-width: 880px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255); background: rgba(124, 108, 240, 0.12); border: 1px solid rgba(124, 108, 240, 0.28); padding: 6px 14px; border-radius: 999px;">Open-source testing framework for Playwright</span>
+        <h1 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(38px, 6vw, 64px); line-height: 1.05; letter-spacing: -0.03em; text-wrap: balance;">Ordinary Playwright tests. Bounded AI help. <span style="background-image: ; background-position-x: ; background-position-y: ; background-size: ; background-repeat: ; background-attachment: ; background-origin: ; background-clip: text; background-color: ; -webkit-text-fill-color: transparent;">Evidence for every attempt.</span></h1>
+        <p style="margin: 0px; max-width: 620px; font-size: 19px; line-height: 1.6; color: var(--brand-text-dim); text-wrap: pretty;">A model finishing a task is never a passing test. Your assertions are the oracle, and Go keeps the receipts.</p>
+      </div>
+      <div style="position: relative; width: 100%; max-width: 780px; text-align: left; background: var(--brand-surface-2); border: 1px solid rgba(124, 108, 240, 0.25); border-radius: 14px; overflow: hidden; min-width: 0px; box-shadow: rgba(0, 0, 0, 0.45) 0px 24px 64px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--brand-border); background: var(--brand-surface);">
+          <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 12px; color: var(--text-tertiary);">checkout.spec.ts</span>
+          <div style="display: contents;"><button type="button" id="copy-hero" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0px 10px; font-size: 0.75rem; font-weight: 500; font-family: var(--font-body); line-height: 1; white-space: nowrap; border-radius: var(--radius-md); cursor: pointer; opacity: 1; transition: background-color 150ms, opacity 150ms, transform 100ms; background: transparent; color: var(--text-secondary); border-width: medium; border-style: none; border-color: currentcolor; border-image: initial;">Copy</button></div>
+        </div>
+        <div id="hero-code" style="padding: 20px; overflow-x: auto; font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; line-height: 1.75; color: var(--code-block-text);">
+          <div style="white-space: pre;"><span style="color: var(--accent-secondary);">import</span> {test, expect} <span style="color: var(--accent-secondary);">from</span> <span style="color: var(--brand-violet-soft);">'@9l/playwright'</span>;</div>
+          <div style="white-space: pre; height: 1.75em;"></div>
+          <div style="white-space: pre;">test(<span style="color: var(--brand-violet-soft);">'checkout confirms an order'</span>, <span style="color: var(--accent-secondary);">async</span> ({page, n9l}) =&gt; {</div>
+          <div style="white-space: pre;">  <span style="color: var(--accent-secondary);">await</span> page.goto(<span style="color: var(--brand-violet-soft);">'http://localhost:3000/checkout'</span>);</div>
+          <div style="white-space: pre;">  <span style="color: var(--accent-secondary);">await</span> n9l.step(<span style="color: var(--brand-violet-soft);">'place the order'</span>, <span style="color: var(--accent-secondary);">async</span> () =&gt; {</div>
+          <div style="white-space: pre;">    <span style="color: var(--accent-secondary);">await</span> page.getByRole(<span style="color: var(--brand-violet-soft);">'button'</span>, {name: <span style="color: var(--brand-violet-soft);">'Place order'</span>}).click();</div>
+          <div style="white-space: pre;">  });</div>
+          <div style="white-space: pre;">  <span style="color: var(--accent-secondary);">await</span> expect(page.getByRole(<span style="color: var(--brand-violet-soft);">'status'</span>)).toHaveText(<span style="color: var(--brand-violet-soft);">'Order confirmed'</span>);</div>
+          <div style="white-space: pre;">});</div>
+        </div>
+      </div>
+    </section>
+
+    
+    <section id="tests" style="padding: 80px 0px; border-top: 1px solid var(--brand-border); display: flex; flex-direction: column; gap: 40px;">
+      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 640px;">
+        <div style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">01 · Shape</div>
+        <h2 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em;">What a test looks like</h2>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px;">
+        <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: rgba(124, 108, 240, 0.12); color: rgb(184, 168, 255);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"></path><path d="m3 7 2 2 4-4"></path><path d="M13 6h8"></path><path d="M13 12h8"></path><path d="M13 18h8"></path></svg></div>
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 20px;">Steps</h3>
+          <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-border); border-radius: 8px; padding: 14px 16px; font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; line-height: 1.6; color: var(--code-block-text); white-space: pre-wrap; word-break: break-word;">n9l.step(<span style="color: var(--brand-violet-soft);">'label'</span>, fn)</div>
+          <p style="margin: 0px; font-size: 14px; color: var(--brand-text-dim); text-wrap: pretty;">Ordinary code wrapped in a labelled unit, so the Go core can tie evidence to the exact run, job and attempt.</p>
+        </div>
+        <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: rgba(124, 108, 240, 0.12); color: rgb(184, 168, 255);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></div>
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 20px;">Goals</h3>
+          <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-border); border-radius: 8px; padding: 14px 16px; font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; line-height: 1.6; color: var(--code-block-text); white-space: pre-wrap; word-break: break-word;">n9l.goal(<span style="color: var(--brand-violet-soft);">'Click the Login button. Stop when Welcome back is visible. Do not submit the form.'</span>)</div>
+          <p style="margin: 0px; font-size: 14px; color: var(--brand-text-dim); text-wrap: pretty;">A bounded natural-language action with an explicit stop condition, followed by normal <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; color: var(--brand-text);">expect</span> assertions. The model sees only the names of observed controls and parameter names. Values stay in the browser worker.</p>
+        </div>
+        <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+          <div style="width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center; background: rgba(124, 108, 240, 0.12); color: rgb(184, 168, 255);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"></path><path d="M3.34 19a10 10 0 1 1 17.32 0"></path></svg></div>
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 20px;">Budgets</h3>
+          <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-border); border-radius: 8px; padding: 14px 16px; font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; line-height: 1.6; color: var(--code-block-text); white-space: pre-wrap; word-break: break-word;">{params: {name: <span style="color: var(--brand-violet-soft);">'Fixture Person'</span>}, maxActions: 3, timeoutMs: 30_000}</div>
+          <p style="margin: 0px; font-size: 14px; color: var(--brand-text-dim); text-wrap: pretty;">Action caps and deadlines are enforced by Go, not by the model loop. Purchase, delete and outreach controls stop by default.</p>
+        </div>
+      </div>
+      <p style="margin: 0px; font-size: 15px; color: var(--text-tertiary);">Everything else is stock Playwright. Same config, same fixtures, same assertions.</p>
+    </section>
+
+    
+    <section id="no-model" style="padding: 80px 0px; border-top: 1px solid var(--brand-border); display: flex; flex-direction: column; gap: 40px;">
+      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 640px;">
+        <div style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">02 · Dependencies</div>
+        <h2 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em;">Runs without an AI model</h2>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); border: 1px solid var(--brand-border); border-radius: 12px; overflow: hidden; gap: 1px; background: var(--brand-border);">
+        <div style="background: var(--brand-canvas); padding: 32px; display: flex; flex-direction: column; gap: 20px;">
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 20px;">No model needed</h3>
+          <div style="display: flex; flex-direction: column; gap: 16px; font-size: 15px; color: var(--brand-text-dim);">
+            <div style="display: grid; grid-template-columns: 16px minmax(0px, 1fr); gap: 12px;"><span style="font-family: var(--font-code); font-variant-ligatures: none; color: var(--text-muted);">—</span><span>Step-only tests never contact a model.</span></div>
+            <div style="display: grid; grid-template-columns: 16px minmax(0px, 1fr); gap: 12px;"><span style="font-family: var(--font-code); font-variant-ligatures: none; color: var(--text-muted);">—</span><span>Goal tests can run with <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; color: var(--brand-text); background: rgba(124, 108, 240, 0.12); padding: 1px 6px; border-radius: 4px;">--goal-script file.json</span>, an offline scripted provider that replays a fixed, bounded action list. No API key, no charge.</span></div>
+            <div style="display: grid; grid-template-columns: 16px minmax(0px, 1fr); gap: 12px;"><span style="font-family: var(--font-code); font-variant-ligatures: none; color: var(--text-muted);">—</span><span>Local execution needs no account and no network beyond your own app.</span></div>
+          </div>
+        </div>
+        <div style="background: var(--brand-canvas); padding: 32px; display: flex; flex-direction: column; gap: 20px;">
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 20px;">Model is opt-in</h3>
+          <div style="display: flex; flex-direction: column; gap: 16px; font-size: 15px; color: var(--brand-text-dim);">
+            <div style="display: grid; grid-template-columns: 16px minmax(0px, 1fr); gap: 12px;"><span style="font-family: var(--font-code); font-variant-ligatures: none; color: var(--text-muted);">—</span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; color: var(--brand-text); background: rgba(124, 108, 240, 0.12); padding: 1px 6px; border-radius: 4px;">--goal-provider anthropic</span> or <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; color: var(--brand-text); background: rgba(124, 108, 240, 0.12); padding: 1px 6px; border-radius: 4px;">openai</span>, chosen explicitly per run.</span></div>
+            <div style="display: grid; grid-template-columns: 16px minmax(0px, 1fr); gap: 12px;"><span style="font-family: var(--font-code); font-variant-ligatures: none; color: var(--text-muted);">—</span><span>No silent fallback to a CLI tool or an agent.</span></div>
+            <div style="display: grid; grid-template-columns: 16px minmax(0px, 1fr); gap: 12px;"><span style="font-family: var(--font-code); font-variant-ligatures: none; color: var(--text-muted);">—</span><span>API keys stay in the Go process. They are never written to plans or receipts.</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; padding: 16px 20px; border: 1px solid rgba(124, 108, 240, 0.28); background: rgba(124, 108, 240, 0.08); border-radius: 8px; font-size: 14px; color: var(--brand-text-dim);">
+        <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary);">Note</span>
+        <span style="flex: 1 1 0%; min-width: 240px;">An agent such as Claude can help author a spec. Once written, the spec is a file that runs without the agent.</span>
+      </div>
+    </section>
+
+    
+    <section id="compare" style="padding: 80px 0px; border-top: 1px solid var(--brand-border); display: flex; flex-direction: column; gap: 40px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap;">
+        <div style="display: flex; flex-direction: column; gap: 12px; max-width: 640px;">
+          <div style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">03 · Landscape</div>
+          <h2 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em;">How it compares</h2>
+        </div>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: var(--brand-text-dim);">
+          <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 50%; background: var(--brand-text);"></span>Yes</span>
+          <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg,var(--brand-text) 50%,transparent 50%);"></span>Partial or varies</span>
+          <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--text-muted);"></span>No</span>
+        </div>
+      </div>
+
+      
+        <div class="matrix-table"><div style="border: 1px solid var(--brand-border); border-radius: 12px; overflow: hidden;">
+          <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border); background: var(--brand-surface);">
+            <div style="padding: 16px 20px;"></div>
+            
+              <div style="padding: 16px 12px; text-align: center; font-size: 13px; font-weight: 500; line-height: 1.35; color: var(--brand-text-dim); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;">
+                <span style="color: var(--brand-text);">9lives</span>
+                <span style="font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+            
+              <div style="padding: 16px 12px; text-align: center; font-size: 13px; font-weight: 500; line-height: 1.35; color: var(--brand-text-dim); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;">
+                <span style="color: var(--brand-text);">Vibium</span>
+                <span style="font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+            
+              <div style="padding: 16px 12px; text-align: center; font-size: 13px; font-weight: 500; line-height: 1.35; color: var(--brand-text-dim); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;">
+                <span style="color: var(--brand-text);">Hosted vendors</span>
+                <span style="font-size: 11px; color: var(--text-tertiary);">Testim, mabl, Momentic…</span>
+              </div>
+            
+              <div style="padding: 16px 12px; text-align: center; font-size: 13px; font-weight: 500; line-height: 1.35; color: var(--brand-text-dim); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;">
+                <span style="color: var(--brand-text);">Plain Playwright</span>
+                <span style="font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+            
+          </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Ordinary code and assertions as the oracle</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: Partial or varies" aria-label="Vibium: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: Yes" aria-label="Plain Playwright: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Bounded natural-language actions</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: No" aria-label="Plain Playwright: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Hard action and time budgets enforced outside the model</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: Partial or varies" aria-label="Plain Playwright: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Per-attempt evidence receipts, redacted, stored locally</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: No" aria-label="Hosted vendors: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: Partial or varies" aria-label="Plain Playwright: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Runs locally with no account</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: No" aria-label="Hosted vendors: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: Yes" aria-label="Plain Playwright: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Browser driver layer (BiDi or CDP)</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: Yes" aria-label="Plain Playwright: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Agent-facing MCP surface</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: Partial or varies" aria-label="Plain Playwright: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+            </div>
+          
+            <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom-width: medium; border-bottom-style: none; border-bottom-color: currentcolor;">
+              <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
+                <span>Model completion counts as a pass</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);">filled is a risk here</span>
+              </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
+                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                </div>
+              
+                <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
+                  <span title="Plain Playwright: No" aria-label="Plain Playwright: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                </div>
+              
+            </div>
+          
+        </div></div><div class="matrix-cards"><div style="display: flex; flex-direction: column; gap: 12px;">
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Ordinary code and assertions as the oracle</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: Partial or varies" aria-label="Vibium: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: Yes" aria-label="Plain Playwright: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Bounded natural-language actions</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: No" aria-label="Plain Playwright: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Hard action and time budgets enforced outside the model</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: Partial or varies" aria-label="Plain Playwright: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Per-attempt evidence receipts, redacted, stored locally</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: No" aria-label="Hosted vendors: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: Partial or varies" aria-label="Plain Playwright: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Runs locally with no account</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: No" aria-label="Hosted vendors: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: Yes" aria-label="Plain Playwright: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Browser driver layer (BiDi or CDP)</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: Yes" aria-label="Plain Playwright: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Agent-facing MCP surface</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: Partial or varies" aria-label="Plain Playwright: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+              </div>
+            </div>
+          
+            <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 15px; font-weight: 500;">Model completion counts as a pass</span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);">filled is a risk here</span>
+              </div>
+              <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
+                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
+                  <span title="Vibium: No" aria-label="Vibium: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Hosted vendors</span>
+                  <span title="Hosted vendors: Partial or varies" aria-label="Hosted vendors: Partial or varies" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--brand-text); background: linear-gradient(90deg, var(--brand-text) 50%, transparent 50%);"></span>
+                
+                  <span style="font-size: 13px; color: var(--brand-text-dim);">Plain Playwright</span>
+                  <span title="Plain Playwright: No" aria-label="Plain Playwright: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                
+              </div>
+            </div>
+          
+        </div></div>
+      
+
+      
+
+      <p style="margin: 0px; max-width: 760px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">Vibium replaces the browser driver and gives agents a compact command surface. 9lives sits one layer up, on top of Playwright, and owns execution policy and evidence. They are complements, not competitors; Vibium could in principle become a 9lives backend.</p>
+    </section>
+
+    
+    <section id="status" style="padding: 80px 0px; border-top: 1px solid var(--brand-border); display: flex; flex-direction: column; gap: 40px;">
+      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 640px;">
+        <div style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">04 · Status</div>
+        <h2 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em;">Shipped today vs planned</h2>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 16px;">
+        <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 28px; display: flex; flex-direction: column; gap: 20px;">
+          <div><div style="display: contents;"><span style="display: inline-flex; align-items: center; gap: 5px; padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 500; font-family: var(--font-body); line-height: 1.5; border-radius: var(--radius-full); background: var(--badge-purple-bg); color: var(--badge-purple-text); text-transform: none; letter-spacing: 0px; white-space: nowrap;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentcolor; flex-shrink: 0;"></span>Shipped today</span></div></div>
+          <div style="display: flex; flex-direction: column; font-size: 14px; color: var(--brand-text);">
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">n9l.step</span> and bounded <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">n9l.goal</span> in <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">@9l/playwright</span></span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l plan, 9l run --sdk, 9l status, 9l result, 9l cancel</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>Explicit Anthropic or OpenAI provider, or offline scripted provider</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>Run-wide budgets, bounded concurrency, attempt limits, process-tree cancellation</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>Per-attempt receipts with redacted stdout and stderr under <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">.9lives/receipts/</span></span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>Scrubbed test environment; env vars forwarded only when named</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>A skipped test fails the attempt unless explicitly pinned</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l assess</span>: opt-in advisory assessment of a Playwright spec against shared requirements</span></div>
+          </div>
+        </div>
+        <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 28px; display: flex; flex-direction: column; gap: 20px;">
+          <div><div style="display: contents;"><span style="display: inline-flex; align-items: center; gap: 5px; padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 500; font-family: var(--font-body); line-height: 1.5; border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-secondary); text-transform: none; letter-spacing: 0px; white-space: nowrap;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentcolor; flex-shrink: 0;"></span>Planned, not shipped</span></div></div>
+          <div style="display: flex; flex-direction: column; font-size: 14px; color: var(--brand-text-dim);">
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Independent behavioral verification. The <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; color: var(--brand-text);">result.verified</span> field exists but is always <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px; color: var(--brand-text);">false</span> today.</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Replay of verified actions</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Native mobile execution</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Measured correctness, latency and cost of live model runs</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>General semantic review of generated tests</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+    <section id="why" style="padding: 80px 0px; border-top: 1px solid var(--brand-border); display: flex; flex-direction: column; gap: 40px;">
+      <div style="display: flex; flex-direction: column; gap: 12px; max-width: 640px;">
+        <div style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">05 · Rationale</div>
+        <h2 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em;">Why build it this way</h2>
+      </div>
+
+      
+        <div style="display: grid; grid-template-columns: minmax(0px, 1fr) minmax(120px, 0.8fr) minmax(0px, 1fr); align-items: center; gap: 0px; padding: 32px; border: 1px solid var(--brand-border); border-radius: 12px;">
+          <div style="border: 1px solid rgba(124, 108, 240, 0.3); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 6px; background: var(--brand-surface);">
+            <span style="font-family: var(--font-heading); font-weight: 600; font-size: 16px;">Go core</span>
+            <span style="font-size: 13px; color: var(--brand-text-dim);">Attempt identity, budgets, cancellation, receipts, API keys</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0px 12px;">
+            <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 12px; color: var(--brand-text);">9l.engine/1</span>
+            <div style="display: flex; align-items: center; width: 100%;">
+              <span style="flex: 1 1 0%; height: 1px; background: var(--brand-violet);"></span>
+              <span style="width: 0px; height: 0px; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 8px solid var(--brand-violet);"></span>
+            </div>
+          </div>
+          <div style="border: 1px solid rgba(124, 108, 240, 0.3); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 6px; background: var(--brand-surface);">
+            <span style="font-family: var(--font-heading); font-weight: 600; font-size: 16px;">Playwright worker</span>
+            <span style="font-size: 13px; color: var(--brand-text-dim);">Browsers, fixtures, assertions, parameter values</span>
+          </div>
+        </div>
+      
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 40px 56px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 18px;">It sells worse on purpose.</h3>
+          <p style="margin: 0px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">"The model finished so the test passed" demos well and is wrong. 9lives refuses that framing.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 18px;">Local-first removes lock-in.</h3>
+          <p style="margin: 0px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">Hosted vendors need the account because the recordings and healing data are the product. Here they are files in your repo.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 18px;">Policy lives in Go, browsers live in Playwright.</h3>
+          <p style="margin: 0px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">Two runtimes and a versioned protocol cost more to maintain. In exchange, attempt identity, budgets and cancellation stay deterministic.</p>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <h3 style="margin: 0px; font-family: var(--font-heading); font-weight: 600; font-size: 18px;">The hard part is still ahead.</h3>
+          <p style="margin: 0px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">Independent verification is an open problem for everyone. Until it lands with measured results, a fair reviewer can call this Playwright plus a bounded goal loop plus good receipts.</p>
+        </div>
+      </div>
+    </section>
+
+    <section style="padding: 96px 0px 120px;">
+      <div style="position: relative; border-radius: 24px; padding: 72px 32px; overflow: hidden; text-align: center; background: linear-gradient(135deg, rgba(124, 108, 240, 0.14), rgba(9, 11, 20, 0.4)); border: 1px solid rgba(124, 108, 240, 0.25); display: flex; flex-direction: column; align-items: center; gap: 16px;">
+        <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">9lives</span>
+        <p style="margin: 0px; max-width: 760px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4.5vw, 46px); line-height: 1.1; letter-spacing: -0.025em; text-wrap: balance;">Run it locally. Read the receipts. <span style="background-image: ; background-position-x: ; background-position-y: ; background-size: ; background-repeat: ; background-attachment: ; background-origin: ; background-clip: text; background-color: ; -webkit-text-fill-color: transparent;">Keep your assertions.</span></p>
+      </div>
+    </section>
+  </main>
+  <footer style="border-top: 1px solid var(--brand-border);">
+    <div style="max-width: 1120px; margin: 0px auto; padding: 28px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--brand-text-dim);">
+      <img src="assets/qualitymax-logo-white.png" alt="QualityMax" style="height: 22px; width: auto; opacity: 0.8; display: block;">
+      <span>9lives · open source</span>
+    </div>
+  </footer></div></div></div>
+<script>
+(function () {
+  var button = document.getElementById('copy-hero');
+  var code = document.getElementById('hero-code');
+  if (!button || !code || !navigator.clipboard) return;
+  button.addEventListener('click', function () {
+    navigator.clipboard.writeText(Array.prototype.map.call(code.children, function (line) { return line.textContent; }).join('\n')).then(function () {
+      button.textContent = 'Copied';
+      setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+    }, function () {});
+  });
+})();
+</script>
+</body>
+</html>
