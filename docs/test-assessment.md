@@ -31,6 +31,34 @@ such as one suite modifier applying to several tests, count once. `--titles` add
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
 
+### Suites
+
+```sh
+.context/9l assess tests/ --format json
+.context/9l assess 'tests/**/*.spec.ts' tests/smoke.ts --requirements requirements.json
+```
+
+A single regular file gives the single-file report described below. Several
+inputs, a directory or a quoted pattern give one combined suite report
+(`version` 1) with the shared `policy`, `requirementsSHA256`, `execution` and
+`completeness`, one `files` entry per file holding its single-file `report` or
+an `error` code, a `summary` (files, assessed, not assessed, tests, findings and
+per-rule counts) and the union of limits. A directory contributes files named
+like Playwright's default `testMatch` (`*.spec.*`/`*.test.*` with `js`, `ts`,
+`jsx`, `tsx`, `mjs`, `cjs`, `mts` or `cts`). A pattern matches path segments,
+with `**` matching any number of directories, and takes every matching file. A
+named file is taken as given. Walks skip `node_modules`, hidden directories and
+symbolic links; repeated files are assessed once and listed in path order.
+
+Each file keeps the single-file budgets. A suite is limited to 2,048 files and
+64 MiB of source, which are checked before analysis, and to ten minutes
+overall, with four files analyzed at a time. A file that cannot be assessed is
+recorded with its code (the diagnostics below, or `source-limit`,
+`suite-timeout`), and the other files are still assessed. The suite report is
+then still written, with a limit noting the missing files, and the command
+exits 2 with the count on stderr. `--agent-provenance` applies to a single spec
+and is rejected for suites.
+
 Assessment needs Node 22 or newer. A plain Go build includes the qualified
 TypeScript 5.9.3 parser; it does not need npm, consumer TypeScript, a separate
 parser installation or a runtime download. The parser is extracted into a

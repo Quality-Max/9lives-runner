@@ -81,7 +81,7 @@ Usage:
   9l heal <args...>  # delegates to the installed Python healing library
   9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
-  9l assess <spec> [--requirements <contract.json>] [--format text|json] [--titles]
+  9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
@@ -100,8 +100,8 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true})) != nil {
 		return 2
 	}
-	if fs.NArg() != 1 || (*format != "json" && *format != "text") {
-		fmt.Fprintln(errOut, "9l: assess requires one spec and text or json format")
+	if fs.NArg() == 0 || (*format != "json" && *format != "text") {
+		fmt.Fprintln(errOut, "9l: assess requires a spec, directory or pattern and text or json format")
 		return 2
 	}
 	// An empty path, e.g. from an unset variable, must not silently drop the
@@ -130,13 +130,9 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 		}
 		return data, nil
 	}
-	source, err := read(fs.Arg(0), assessment.MaxSource)
-	if err != nil {
-		fmt.Fprintln(errOut, "9l:", err)
-		return 2
-	}
 	var contract []byte
 	if *requirements != "" {
+		var err error
 		if contract, err = read(*requirements, 256<<10); err != nil {
 			fmt.Fprintln(errOut, "9l:", err)
 			return 2
@@ -144,6 +140,20 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// One regular file keeps the single-file report. Several inputs, a
+	// directory or a pattern give one combined suite report.
+	if info, err := os.Stat(fs.Arg(0)); fs.NArg() > 1 || assessment.IsPattern(fs.Arg(0)) || (err == nil && info.IsDir()) {
+		if *agentRecord != "" {
+			fmt.Fprintln(errOut, "9l: --agent-provenance applies to a single spec")
+			return 2
+		}
+		return assessSuite(ctx, fs.Args(), contract, *format, *titles, read, out, errOut)
+	}
+	source, err := read(fs.Arg(0), assessment.MaxSource)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
 	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles})
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
@@ -177,17 +187,76 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 	return 0
 }
 
+// assessSuite reads and assesses every discovered file. It writes the combined
+// report even when some files could not be assessed, then exits 2 for them.
+func assessSuite(ctx context.Context, inputs []string, contract []byte, format string, titles bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
+	paths, err := assessment.DiscoverSpecs(inputs)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
+	var total int64
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			total += info.Size()
+		}
+	}
+	if total > assessment.MaxSuiteSource {
+		fmt.Fprintln(errOut, "9l: assessment input exceeds the 64 MiB suite source limit; narrow the directory or pattern")
+		return 2
+	}
+	files := make([]assessment.SuiteInput, len(paths))
+	for index, path := range paths {
+		files[index].Path = filepath.ToSlash(path)
+		if files[index].Source, err = read(path, assessment.MaxSource); err != nil {
+			files[index].Error = "source-limit"
+		}
+	}
+	suite, err := assessment.AssessSuite(ctx, files, contract, assessment.Options{Titles: titles})
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
+	if format == "json" {
+		if json.NewEncoder(out).Encode(suite) != nil {
+			return 2
+		}
+	} else {
+		fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
+		for _, file := range suite.Files {
+			if file.Report == nil {
+				fmt.Fprintf(out, "file %s: not assessed: %s\n", strconv.Quote(file.Path), file.Error)
+				continue
+			}
+			fmt.Fprintf(out, "file %s:\n", strconv.Quote(file.Path))
+			writeAssessmentTests(out, *file.Report)
+		}
+		for _, limit := range suite.Limits {
+			fmt.Fprintln(out, "Limit:", limit)
+		}
+		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed), %d tests, %d findings\n", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed, suite.Summary.Tests, suite.Summary.Findings)
+		writeRuleCounts(out, suite.Summary.Rules)
+	}
+	if suite.Summary.Failed > 0 {
+		fmt.Fprintf(errOut, "9l: %d of %d files could not be assessed\n", suite.Summary.Failed, suite.Summary.Files)
+		return 2
+	}
+	return 0
+}
+
 func writeAssessmentText(out io.Writer, report assessment.Report) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
 	fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
-	// Findings at the same location, such as one suite modifier applying to
-	// several tests, count once in the summary.
-	type key struct {
-		rule, requirement, outcome string
-		at                         assessment.Location
+	writeAssessmentTests(out, report)
+	for _, limit := range report.Limits {
+		fmt.Fprintln(out, "Limit:", limit)
 	}
-	counted := map[key]bool{}
-	counts, total := map[string]int{}, 0
+	counts, total := assessment.CountFindings(report)
+	fmt.Fprintf(out, "Summary: %d tests, %d findings\n", len(report.Tests), total)
+	writeRuleCounts(out, counts)
+}
+
+func writeAssessmentTests(out io.Writer, report assessment.Report) {
 	for _, test := range report.Tests {
 		title := ""
 		if test.Title != "" {
@@ -196,15 +265,6 @@ func writeAssessmentText(out io.Writer, report assessment.Report) {
 		}
 		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
 		for _, finding := range test.Findings {
-			rule := finding.Rule
-			if finding.Code != finding.Rule {
-				rule += "/" + finding.Code
-			}
-			if k := (key{rule, finding.Requirement, finding.Outcome, finding.Location}); !counted[k] {
-				counted[k] = true
-				counts[rule]++
-				total++
-			}
 			fields := ""
 			if finding.Requirement != "" {
 				fields += " requirement=" + finding.Requirement
@@ -212,12 +272,13 @@ func writeAssessmentText(out io.Writer, report assessment.Report) {
 			if finding.Outcome != "" {
 				fields += " outcome=" + finding.Outcome
 			}
-			fmt.Fprintf(out, "  %s [%s] at %d:%d%s: %s\n", rule, finding.Classification, finding.Line, finding.Column, fields, finding.Message)
+			fmt.Fprintf(out, "  %s [%s] at %d:%d%s: %s\n", assessment.FindingRule(finding), finding.Classification, finding.Line, finding.Column, fields, finding.Message)
 		}
 	}
-	for _, limit := range report.Limits {
-		fmt.Fprintln(out, "Limit:", limit)
-	}
+}
+
+// writeRuleCounts lists rules by descending count, then name.
+func writeRuleCounts(out io.Writer, counts map[string]int) {
 	rules := make([]string, 0, len(counts))
 	for rule := range counts {
 		rules = append(rules, rule)
@@ -228,7 +289,6 @@ func writeAssessmentText(out io.Writer, report assessment.Report) {
 		}
 		return rules[i] < rules[j]
 	})
-	fmt.Fprintf(out, "Summary: %d tests, %d findings\n", len(report.Tests), total)
 	for _, rule := range rules {
 		fmt.Fprintf(out, "  %s: %d\n", rule, counts[rule])
 	}

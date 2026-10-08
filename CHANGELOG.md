@@ -26,6 +26,10 @@
 - `9l assess` reports `absence-after-wait` (suspected) when the first
   assertion after a fixed wait only checks that something is absent or did not
   happen; policy `assessment-source-v5` (#8).
+- `9l assess` accepts several specs, a directory or a quoted pattern (`**`
+  supported) and writes one combined suite report with per-file reports or
+  error codes and a suite summary. A file that cannot be assessed does not
+  stop the others; the command then exits 2 (#6).
 - `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`; 1.61.1
   remains the only qualified version (#9).
 
