@@ -15,3 +15,11 @@ The benchmark measures one offline moved-ID proposal per process. Python include
 Measurement used dirty frozen source on base 75c675b242c007cce657cd58671ae191646fd18f; the raw artifact records that truthfully. Source hashes match the returned frozen handoff and independent review. Adding these evidence files and committing changes patch identity, but does not alter measured Go inputs, oracle or benchmark harness. Never relabel the measured binary as built from the eventual PR/merge commit. Current CI, all enabled advisory reviews on the final PR head and a fresh merged-CLI smoke are separate delivery gates.
 
 The durable correctness report omits one final blank line to satisfy whitespace checks. Its original context artifact digest is recorded in the benchmark review; all substantive report bytes are unchanged.
+
+## Publication copies
+
+Absolute machine paths in these publication copies use `<RUNNER_CHECKOUT>` and
+`<PYTHON_ENV>` placeholders. Measurement values and recorded source/binary
+digests are unchanged. Path-bearing documents and JSON files have different
+bytes from the original collected artifacts; their old whole-file digests do
+not validate these edited copies. The original artifacts are retained privately.

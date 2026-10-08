@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
-	"github.com/qualitymax/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 type fakeProvider struct {

@@ -8,3 +8,4 @@ __pycache__/
 /testdata/upstream/
 /packages/*/dist/
 /playwright-report/
+/.context/

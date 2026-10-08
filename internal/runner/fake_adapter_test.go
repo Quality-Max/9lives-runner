@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qualitymax/9lives-runner/internal/contracttest"
+	"github.com/Quality-Max/9lives-runner/internal/contracttest"
 )
 
 type fakeAdapter struct{}

@@ -21,9 +21,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
-	"github.com/qualitymax/9lives-runner/internal/runner"
-	"github.com/qualitymax/9lives-runner/internal/strictjson"
+	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/strictjson"
 )
 
 const Version = "9l.goal/1"

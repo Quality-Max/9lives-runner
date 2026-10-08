@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qualitymax/9lives-runner/internal/contracttest"
+	"github.com/Quality-Max/9lives-runner/internal/contracttest"
 )
 
 func TestPythonCompatibilityFixtures(t *testing.T) {

@@ -172,7 +172,7 @@
     "python_runtime": {
       "machine": "arm64",
       "version": "3.11.8",
-      "executable": "<LOCAL_CHECKOUT>/.context/venv-arm64/bin/python"
+      "executable": "<PYTHON_ENV>/bin/python"
     },
     "go_compiler": "go version go1.25.13 darwin/amd64",
     "target_arch": "arm64",
@@ -198,15 +198,15 @@
     "python_0.1.3": [
       "/tmp/qua2151-python-arm64",
       "-I",
-      "<LOCAL_CHECKOUT>/.context/9lives-runner-pr2/internal/contracttest/python_oracle.py",
-      "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.1.3/src",
+      "<RUNNER_CHECKOUT>/internal/contracttest/python_oracle.py",
+      "<RUNNER_CHECKOUT>/testdata/upstream/ninelives-0.1.3/src",
       "0.1.3"
     ],
     "python_0.2.1": [
       "/tmp/qua2151-python-arm64",
       "-I",
-      "<LOCAL_CHECKOUT>/.context/9lives-runner-pr2/internal/contracttest/python_oracle.py",
-      "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.2.1/src",
+      "<RUNNER_CHECKOUT>/internal/contracttest/python_oracle.py",
+      "<RUNNER_CHECKOUT>/testdata/upstream/ninelives-0.2.1/src",
       "0.2.1"
     ],
     "go_native": [

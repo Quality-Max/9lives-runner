@@ -18,13 +18,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/qualitymax/9lives-runner/internal/adapters/playwright"
-	"github.com/qualitymax/9lives-runner/internal/adapters/playwrightsdk"
-	"github.com/qualitymax/9lives-runner/internal/assessment"
-	"github.com/qualitymax/9lives-runner/internal/goals"
-	"github.com/qualitymax/9lives-runner/internal/healing"
-	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
-	"github.com/qualitymax/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
+	"github.com/Quality-Max/9lives-runner/internal/adapters/playwrightsdk"
+	"github.com/Quality-Max/9lives-runner/internal/assessment"
+	"github.com/Quality-Max/9lives-runner/internal/goals"
+	"github.com/Quality-Max/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 const version = "0.1.0"

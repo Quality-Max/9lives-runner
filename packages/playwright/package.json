@@ -17,7 +17,7 @@
     ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},
     "./reporter": {"types": "./dist/reporter.d.ts", "default": "./dist/reporter.js"}
   },
-  "files": ["dist", "LICENSE", "NOTICE"],
+  "files": ["dist", "LICENSE", "NOTICE", "README.md"],
   "scripts": {"build": "tsc -p tsconfig.json"},
   "peerDependencies": {"@playwright/test": "1.61.1"},
   "engines": {"node": ">=22"},

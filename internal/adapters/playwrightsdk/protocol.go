@@ -9,8 +9,8 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/qualitymax/9lives-runner/internal/runner"
-	"github.com/qualitymax/9lives-runner/internal/strictjson"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/strictjson"
 )
 
 const Version = "9l.engine/1"

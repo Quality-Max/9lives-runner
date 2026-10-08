@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qualitymax/9lives-runner/internal/strictjson"
+	"github.com/Quality-Max/9lives-runner/internal/strictjson"
 )
 
 // AgentProvenance records a local snapshot, not authenticated agent authorship.

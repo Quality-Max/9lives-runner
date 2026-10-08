@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qualitymax/9lives-runner/internal/contracttest"
+	"github.com/Quality-Max/9lives-runner/internal/contracttest"
 )
 
 // TestPinnedPythonTier2PromptAndParserContract runs the pinned 0.2.1 source

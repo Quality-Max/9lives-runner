@@ -1,17 +1,21 @@
-# Run 9lives against playwright-login
+# Run 9lives against an existing application
 
-This example opens the existing application's login modal and asserts its heading
-and both fields. It exercises the real UI without signing in or changing data.
-The harness lives outside the monorepo and needs no changes to its test setup.
-Current goal execution supports local Chromium on macOS/Linux with Node 22+ and
-Go 1.25.13. The SDK has not been published; install the locally built tarball.
+The supplied login example opens a **Login** modal and asserts **Welcome back**,
+**Email** and **Password**. Use it with an application that has those controls,
+or intentionally adapt the goal and assertions to your reviewed requirements.
+It does not sign in or change application data. The harness lives outside the
+application repository and preserves its existing Playwright setup.
+
+Use Node 24 (Node 22 minimum), Playwright 1.61.1, Chromium and Go 1.25.13 or
+newer. The steps below install the SDK from a locally built `0.0.0` tarball.
 
 ## 1. Build the executable and SDK
 
-From this runner workspace:
+Replace the checkout placeholder with your local runner directory:
 
 ```sh
-cd <LOCAL_CHECKOUT>
+RUNNER_ROOT=/path/to/9lives-runner
+cd "$RUNNER_ROOT"
 npm ci
 npm run build
 mkdir -p .context/build
@@ -19,118 +23,100 @@ go build -trimpath -o .context/build/9l ./cmd/9l
 npm pack --workspace @9l/playwright --pack-destination .context/build
 ```
 
-This creates `.context/build/9l` and
-`.context/build/9lives-playwright-0.0.0.tgz`. The executable is native to your
-machine. It launches the installed Playwright worker; it is not a bundled browser.
+This creates `.context/build/9l` and `.context/build/9l-playwright-0.0.0.tgz`.
+The executable is native to your machine. It launches the project's installed
+Playwright worker; it does not bundle a browser.
 
-## 2. Start your existing application
+## 2. Start your application
 
-Use your usual local playwright-login environment. In its own terminal, for an already
-configured Python environment:
-
-```sh
-cd <LOCAL_CHECKOUT>
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-If you normally use Docker, follow that repository's `DOCKER_DEVELOPMENT.md`
-instead. Application dependencies and server credentials remain managed by the
-application. First open `http://127.0.0.1:8000/app` and confirm that clicking
-**Login** opens **Welcome back**. A healthy server endpoint alone does not prove
-that the UI has loaded. Set the URL below to your actual local/staging origin.
+Start your application's development server using its own documented setup.
+Application dependencies and server credentials stay managed by the application.
+Open its login page and confirm that **Login** opens **Welcome back** with
+**Email** and **Password** fields. The example navigates to `/app`; adjust that
+path intentionally if your application uses another route.
 
 ## 3. Install an isolated test harness
 
-Run in a separate terminal:
+In a separate terminal, set the same runner checkout path and your application's
+origin:
 
 ```sh
-mkdir -p "$HOME/9lives-qa-rag-smoke"
-cp -R <LOCAL_CHECKOUT>/examples/playwright-login/. "$HOME/9lives-qa-rag-smoke/"
-cd "$HOME/9lives-qa-rag-smoke"
+RUNNER_ROOT=/path/to/9lives-runner
+mkdir -p "$HOME/9lives-login-smoke"
+cp -R "$RUNNER_ROOT/examples/playwright-login/." "$HOME/9lives-login-smoke/"
+cd "$HOME/9lives-login-smoke"
 npm init -y
-npm install --save-dev @playwright/test@1.61.1 <LOCAL_CHECKOUT>/.context/build/9lives-playwright-0.0.0.tgz
+npm install --save-dev @playwright/test@1.61.1 "$RUNNER_ROOT/.context/build/9l-playwright-0.0.0.tgz"
 npm exec playwright install chromium
 export QA_BASE_URL=http://127.0.0.1:8000
 ```
 
-Linux may require `npm exec playwright install --with-deps chromium`.
-The copied spec is `tests/login-modal.spec.ts`; keep its normal Playwright
-assertions after the goal. The expected page comes from playwright-login's `/app`
-route, `static/index.html` Login button and `static/js/auth-modal.js` form
-(source reviewed at `c209fca62`). If those labels change, review the assertion
-and fixture intentionally rather than weakening the check.
+On Linux use `npm exec playwright install --with-deps chromium` if browser
+system dependencies are missing. Set `QA_BASE_URL` to your approved local or
+staging origin. Keep the normal Playwright assertions after the goal.
 
 ## 4. First run without a model key
 
 From the harness directory:
 
 ```sh
-<LOCAL_CHECKOUT>/.context/build/9l run tests/login-modal.spec.ts --sdk --goal-script login-script.json --pass-env QA_BASE_URL --timeout 2m --format json
+"$RUNNER_ROOT/.context/build/9l" run tests/login-modal.spec.ts --sdk --goal-script login-script.json --pass-env QA_BASE_URL --timeout 2m --format json
 ```
 
-The scripted provider chooses the currently observed **Login** control and
-finishes its action sequence. The assertions wait for the actual modal.
-This proves setup and browser execution; it does not measure LLM accuracy.
-A zero exit code plus `complete: true` and a validated passing receipt means
-the required Playwright test passed. `goals[].status: completed` alone means
-only the goal's action loop completed. Receipts are under `.9lives/receipts/`.
+The scripted provider chooses the observed **Login** control and finishes its
+bounded action sequence. Assertions wait for the actual modal. This verifies
+setup and browser behavior for the selected fixture; it does not measure LLM
+accuracy. A zero exit code, `complete: true` and a validated passing receipt
+mean the required test passed. A completed goal alone is unverified. Receipts
+are under `.9lives/receipts/`.
 
-## 5. Run the natural-language provider
+## 5. Run a natural-language provider
 
-Configure `ANTHROPIC_API_KEY` securely in the calling terminal using your existing
-secret manager; do not put the value in the spec, shell history or command line.
-Then, from the same harness directory:
+Configure `ANTHROPIC_API_KEY` securely in the calling terminal through your
+existing secret manager. Do not put its value in the spec, command line or
+shell history. From the same harness directory:
 
 ```sh
-<LOCAL_CHECKOUT>/.context/build/9l run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
+"$RUNNER_ROOT/.context/build/9l" run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
 ```
 
-Alternatively select `--goal-provider openai` with `OPENAI_API_KEY` configured.
-Provider credentials remain in Go; never forward them with `--pass-env`.
-`--goal-model` overrides the existing transport's pinned default. This run sends
-your goal and bounded, redacted control labels/headings/status text to the
-selected provider and can incur API charges. Do not put secrets in goal text.
-Named `params` values stay in the worker. Receipts retain decision IDs, typed
-actions, outcomes and reported usage, rather than page text or model responses.
+Alternatively use `--goal-provider openai` with `OPENAI_API_KEY` configured.
+Credentials remain in Go; never forward them with `--pass-env`. `--goal-model`
+overrides the transport's pinned default. This sends the goal and bounded,
+redacted control labels to the selected provider and can incur API charges.
+Named parameter values stay in the worker. Receipts omit page text and raw
+provider responses. Do not put secrets in goal text.
 
 Provider usage is marked unavailable when absent. Token reservations are
-conservative bounds, not measured usage. To enforce a monetary reservation cap,
-supply all three flags: `--goal-max-cost-micros`,
-`--goal-input-micros-per-million`, and `--goal-output-micros-per-million`.
-Prices are caller-supplied conservative upper bounds in micro-USD per million
-tokens; consult your provider/account prices. The receipt's estimated cost is
-not a billing receipt. Live model correctness/cost remain unqualified until
-measured against representative applications.
+conservative bounds, not measured usage. A monetary reservation cap needs all
+three flags: `--goal-max-cost-micros`, `--goal-input-micros-per-million` and
+`--goal-output-micros-per-million`. Supply conservative prices in micro-USD per
+million tokens from your provider/account. Estimated cost is not a billing
+receipt. Live model correctness and cost remain unqualified.
 
 ## Use it in an existing Playwright suite
 
-Install the SDK tarball beside that suite's pinned Playwright 1.61.1 dependency,
-change the selected spec's import to `@9l/playwright`, and add
-`n9l.goal(...)` where needed. Keep the existing config and explicit
-assertions. Run from the suite's directory with `9l run ... --sdk` plus the
-chosen provider. For authenticated tests, prepare an approved Playwright
-`storageState` through your existing setup; password filling is outside this
-first goal executor. Add only needed application settings to `--pass-env`.
+Install the SDK beside the suite's pinned Playwright 1.61.1 dependency. Change
+selected imports to `@9l/playwright` and add `n9l.goal(...)` where useful. Keep
+the existing configuration and explicit assertions. Run from the suite with
+`9l run ... --sdk` and one provider or script. Prepare authenticated state
+through the existing approved setup; password filling is unsupported by the
+goal executor. Forward only needed application settings with `--pass-env`.
 
 ## Diagnose a failure
 
-- **No local Playwright/SDK:** install both into the harness and build the SDK.
+- **SDK unavailable:** install the package and the pinned Playwright dependency.
 - **Browser missing:** install Chromium in the same user/runtime environment.
-- **Connection refused:** start the app and check `QA_BASE_URL`; `--pass-env` is
-  required because application environment is opt-in.
-- **Provider required/error:** choose exactly one provider or script, and check
-  key presence through your secret manager without printing its value.
-- **Budget exhausted/unresolved:** inspect the bounded receipt; reduce the goal
-  to a clear UI task, then intentionally adjust budgets if necessary.
+- **Connection refused:** start the app and pass `QA_BASE_URL` explicitly.
+- **Provider error:** choose one provider or script and check credential presence
+  in your secret manager without printing its value.
+- **Budget exhausted:** review the goal and its limits against the intended task.
 - **Policy blocked:** purchase, deletion and outreach controls stop by default.
-  Use ordinary approved Playwright code for such actions in controlled fixtures.
-- **Unknown effect/interrupted:** inspect application state before rerunning;
-  the engine does not blindly retry a possibly completed action.
-- **Goal completed but test failed:** inspect the business assertion; fix the
-  application or the test's intended expectation, not the goal completion flag.
+  Use approved ordinary Playwright actions in controlled fixtures when needed.
+- **Interrupted or unknown effect:** inspect application state before rerunning;
+  goal mutations are not automatically retried.
+- **Goal completed but test failed:** inspect the business assertion; goal
+  completion cannot replace its expected outcome.
 
-Qualification: the packaged binary and SDK were installed into a fresh harness
-and this spec passed against the checked-out application's actual auth-modal
-JavaScript served by an isolated local fixture. The full playwright-login backend was
-not running during qualification; follow step 2 to validate the complete app.
-No live model request was made.
+Historical qualification used an isolated local fixture with a login modal.
+That does not qualify every application, a complete backend or live providers.

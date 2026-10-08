@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/qualitymax/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/healing"
 )
 
 var codeMarker = regexp.MustCompile(`(?im)(?:^|\n)CODE:[ \t]*(?:\r?\n)?`)

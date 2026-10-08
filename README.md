@@ -2,8 +2,8 @@
 
 A Go execution core and local Playwright SDK for [9lives](https://github.com/Quality-Max/9lives).
 
-- Repository: `https://github.com/Quality-Max/9lives-runner` (private during the initial development phase)
-- Go module: `github.com/qualitymax/9lives-runner`
+- Repository: [Quality-Max/9lives-runner](https://github.com/Quality-Max/9lives-runner)
+- Go module: `github.com/Quality-Max/9lives-runner`
 - Release targets: macOS and Linux on amd64 and arm64
 - Release workflow: packages `9l-<os>-<arch>.tar.gz` archives containing `9l`,
   `LICENSE` and `NOTICE`; no releases are published yet
@@ -44,7 +44,7 @@ correctness; general semantic review remains planned.
 
 ## Local Playwright SDK
 
-`@9l/playwright` is a workspace-local package, not yet published. It adds the
+`@9l/playwright` is the local Playwright SDK. It adds the
 `n9l` fixture with `step` and `goal` methods while retaining normal Playwright
 assertions and browser fixtures. Use Node 24 for the qualified runtime (Node 22
 is the declared minimum) and `@playwright/test` 1.61.1. Go launches the
@@ -100,8 +100,8 @@ assertions remain the test oracle. Live model accuracy and cost have not yet
 been qualified. Offline `--goal-script` fixtures qualify browser/engine behavior
 without paid API calls.
 
-For copy-and-paste build, install and run commands against our existing
-playwright-login, see [run an existing project](docs/run-existing-project.md) and the
+For build, install and run commands against an existing application, see
+[run an existing project](docs/run-existing-project.md) and the
 [ready test harness](examples/playwright-login). See [goal contracts](docs/goals.md) for
 limits, cancellation, receipts and qualification boundaries.
 
@@ -221,14 +221,17 @@ sources these contract tests are skipped locally. CI sets
 ## Design notes
 
 See [architecture decisions](docs/architecture.md) for package boundaries,
-qmax-code reuse decisions, and the design reference-derived contracts. The initial
+planning, execution, budgets and evidence contracts. The initial
 [performance baseline](benchmarks/BASELINE.md) separates runner overhead from
 Playwright and browser costs.
 
-The runner borrows design reference's useful separation of plan, execution, and evidence,
-plus explicit budget skip reasons and the distinction between “called” and
-“validated.” Run IDs are checked on every receipt, and every reserved job gets
-a terminal receipt even when cancellation arrives before it starts.
+The runner separates planning, execution and evidence. It records explicit
+budget skip reasons and distinguishes action execution from validated behavior.
+Run IDs are checked on every receipt, and every reserved job gets a terminal
+receipt even when cancellation arrives before it starts.
+
+See [release instructions](docs/releases.md) for SDK package qualification and
+npm publishing.
 
 ## License
 

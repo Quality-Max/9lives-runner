@@ -57,38 +57,17 @@ Python comparisons were skipped until pinned fixtures were restored for PR #9.
   failed in Linux CI. It now checks decompressed source/license bytes and all
   manifest hashes; alternate valid gzip encoding is covered by a regression,
   along with rejection of changed source, license and checksum.
-- Archive the [full supplied consumer review](consumer-e2e-review-2026-10-08.md),
+- Archive the full supplied consumer review privately,
   including its requirement mapping and all 70 runtime-case boundaries. It is
   historical evidence from another repository, not a fresh run by this PR.
 - Add [resource/scaling results and reproduction scripts](../runner-efficiency.md).
   Measured source predates the documentation and gzip-check fix in this PR.
 
-## Consumer review and unresolved test gaps
+## Private consumer validation
 
-The supplied review reports 70 tests across five specs passing through pinned
-source `2bfe3103a6109a902a2b2f1461faca17d283363a`, one worker/attempt, 1m54.3s.
-An initial five-job setup failure was diagnosed as occupied fixture ports; it
-is not counted as five assertion failures. Most API responses were intercepted.
-UI approvals, exact payloads, failure states and local auth were meaningfully
-checked; durability, concurrency and workers were not established by that run.
-
-All six consumer findings remain open in that repository:
-
-| Finding | Classification and next evidence |
-| --- | --- |
-| F1: durability, global capacity, durable pause, automatic admission | Source-confirmed scope limit; run existing isolated database/worker integration suites and preserve persisted states, attempts and restart/race outcomes. |
-| F2: stale response may arrive after final assertion | Suspected adequacy gap; await response/client processing and qualify with a suppression-disabled control. |
-| F3: phone plan is never opened; width/count checks incomplete | Missing actions/checks confirmed in source; open/edit the plan, assert nonzero fields, and verify intended target dimensions. |
-| F4: capture and personalization matrix incomplete | Suspected coverage gaps; qualify complete/partial/empty/failed/stale captures and grounded claims against controlled evidence. |
-| F5: 3.5-second wait cannot establish never retried | Demonstrated fixed-wait syntax; bound the claim and verify clock/worker terminal behavior. |
-| F6: visual regression checks only campaigns | Source-confirmed scope limit; rename the claim or add representative panel baselines and interactive accessibility states. |
-
-That source-v2 analyzer recognized 65 declarations versus 70 runtime cases and
-misidentified assertions in generated callbacks. This PR addresses that analyzer
-class, not the consumer's underlying assertions. The controlled incompatible
-package portability fixture is not an actual TypeScript 7 consumer rerun.
-Existing test creation provenance remains unknown. Backend/agentic-send suites
-and live provider accuracy/cost remain unmeasured by the consumer E2E run.
+The supplied consumer review is retained privately. Its application-specific
+findings and requirement mapping are omitted from this publication copy. That
+review is historical evidence; it does not qualify this release.
 
 ## Validation record
 
