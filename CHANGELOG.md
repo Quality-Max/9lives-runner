@@ -23,6 +23,9 @@
   `assessment-source-v4` (#10).
 - Assessment text output omits empty requirement/outcome fields, ends with a
   per-rule summary and shows literal test titles with opt-in `--titles` (#11).
+- `9l assess` reports `absence-after-wait` (suspected) when the first
+  assertion after a fixed wait only checks that something is absent or did not
+  happen; policy `assessment-source-v5` (#8).
 - `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`; 1.61.1
   remains the only qualified version (#9).
 

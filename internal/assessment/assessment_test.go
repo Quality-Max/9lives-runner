@@ -3,6 +3,7 @@ package assessment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -228,7 +229,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 4, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -263,7 +264,7 @@ func TestRejectForeignAndIncompleteFacts(t *testing.T) {
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("duplicate test accepted")
 	}
-	if validFacts(Facts{Version: 3, Compiler: "5.9.3"}, []byte("x"), false) {
+	if validFacts(Facts{Version: 4, Compiler: "5.9.3"}, []byte("x"), false) {
 		t.Fatal("missing inventory accepted")
 	}
 }
@@ -288,7 +289,7 @@ func TestEveryFindingCarriesACode(t *testing.T) {
 	c, _ := ParseContract([]byte(contractJSON))
 	disabled := true
 	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order", "missing"}, Sleeps: []Location{{2, 1}}, ConditionalSkips: []ConditionalSkip{{Location: Location{3, 1}}, {Location: Location{3, 5}, Environment: true}}, Disabled: &disabled, Exclusive: true,
-		Assertions: []Assertion{{Location: Location{4, 1}, Unawaited: true}}, Unsupported: true, Limits: []AnalysisLimit{{Location: Location{5, 1}, Code: "unresolved-helper"}}}
+		Assertions: []Assertion{{Location: Location{4, 1}, Unawaited: true, Absence: true}}, Unsupported: true, Limits: []AnalysisLimit{{Location: Location{5, 1}, Code: "unresolved-helper"}}}
 	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Tests: []Fact{fact}})
 	seen := map[string]bool{}
 	for _, f := range report.Tests[0].Findings {
@@ -301,7 +302,7 @@ func TestEveryFindingCarriesACode(t *testing.T) {
 		}
 		seen[f.Rule] = true
 	}
-	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip", "environment-skip"} {
+	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip", "environment-skip", "absence-after-wait"} {
 		if !seen[rule] {
 			t.Fatalf("fixture did not exercise %s", rule)
 		}
@@ -320,7 +321,7 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 4, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -346,7 +347,7 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 	source := []byte(strings.Repeat("xxxxxxxx\n", 256))
 	guards := []ConditionalSkip{{Location: Location{1, 1}}, {Location: Location{2, 1}}, {Location: Location{3, 1}}, {Location: Location{4, 1}}, {Location: Location{5, 1}}}
-	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{}}
+	f := Facts{Version: 4, Compiler: "5.9.3", Tests: []Fact{}}
 	for line := 10; line < 210; line++ {
 		assertions := make([]Assertion, 6)
 		for i := range assertions {
@@ -401,5 +402,59 @@ func TestEnvironmentSkipIsASuspectedConcern(t *testing.T) {
 	}
 	if test.Dimensions["engineeringQuality"] != "concern" {
 		t.Fatal("environment-dependent skip raised no concern")
+	}
+}
+
+func TestAbsenceAfterWaitIsASuspectedAdequacyConcern(t *testing.T) {
+	fact := Fact{Location: Location{1, 1}, Disabled: new(bool),
+		Sleeps: []Location{{2, 3}, {5, 3}, {8, 3}, {9, 3}},
+		Assertions: []Assertion{
+			{Location: Location{3, 3}, Absence: true},  // directly after the first wait
+			{Location: Location{6, 3}},                 // positive signal after the second wait
+			{Location: Location{7, 3}, Absence: true},  // not first after a wait
+			{Location: Location{10, 3}, Absence: true}, // first after both later waits; reported once
+		}}
+	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	var flagged []Location
+	for _, f := range test.Findings {
+		if f.Rule == "absence-after-wait" {
+			if f.Classification != "suspected" || f.Dimension != "assertionAdequacy" || f.Code != f.Rule {
+				t.Fatalf("absence after wait misclassified: %+v", f)
+			}
+			flagged = append(flagged, f.Location)
+		}
+	}
+	if fmt.Sprint(flagged) != "[{3 3} {10 3}]" || test.Dimensions["assertionAdequacy"] != "concern" {
+		t.Fatalf("absence after wait flagged at %v; dimensions %v", flagged, test.Dimensions)
+	}
+}
+
+func TestAssessFlagsWaitThenAbsence(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"test('toast disappears', async ({page}) => {\n" +
+		"  await page.getByRole('button').click();\n" +
+		"  await page.waitForTimeout(2000);\n" +
+		"  await expect(page.getByRole('alert')).toBeHidden();\n" +
+		"});\n" +
+		"test('saved first', async ({page}) => {\n" +
+		"  await page.waitForTimeout(2000);\n" +
+		"  await expect(page.getByText('Saved')).toBeVisible();\n" +
+		"  await expect(page.getByRole('alert')).toBeHidden();\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules [][]string
+	for _, test := range report.Tests {
+		var r []string
+		for _, f := range test.Findings {
+			r = append(r, f.Rule)
+		}
+		rules = append(rules, r)
+	}
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v5" {
+		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }

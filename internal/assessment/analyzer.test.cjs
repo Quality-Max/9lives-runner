@@ -296,3 +296,29 @@ test('suite modifiers whose condition reads process.env are marked', () => {
   assert.equal(test.disabled, true);
   assert.deepEqual(test.conditionalSkips.map(s => [s.line, s.environment]), [[2, true], [4, true], [5, false]]);
 });
+
+test('absence assertions are marked, and negated absence matchers are presence checks', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('absence', async ({page}) => {
+      await expect(page.getByRole('alert')).toBeHidden();
+      await expect(page.getByRole('row')).toHaveCount(0);
+      await expect(page).not.toHaveURL('/error');
+      expect(count).toBe(0);
+      expect(errors).toHaveLength(0);
+      expect(sent).toBe(false);
+      expect(error).toBeNull();
+      await expect(page.getByText('x')).toBeVisible({ visible: false });
+      await expect(page.getByText('x')).toBeAttached({ attached: false });
+      await expect(promise).resolves.toBeFalsy();
+    });
+    test('presence', async ({page}) => {
+      await expect(page.getByRole('alert')).toBeVisible();
+      await expect(page.getByRole('alert')).not.toBeHidden();
+      await expect(page.getByRole('row')).toHaveCount(3);
+      await expect(page.getByRole('row')).not.toHaveCount(0);
+      expect(count).toBe(1);
+      expect(sent).toBe(true);
+      await expect(page.getByText('x')).toBeVisible({ visible: true });
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.absence)), [Array(10).fill(true), Array(7).fill(false)]);
+});
