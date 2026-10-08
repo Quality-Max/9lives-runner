@@ -18,3 +18,6 @@
 
 Dated benchmark and validation records document their own source and limits.
 They are not claims of production performance or independent semantic proof.
+
+[Independent reviews](reviews/) are external field reports, reproduced unedited
+with a maintainer status note. They describe the release the reviewer used.
