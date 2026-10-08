@@ -228,7 +228,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []Location{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -287,7 +287,7 @@ func TestWithoutContractRunsCodeChecksOnly(t *testing.T) {
 func TestEveryFindingCarriesACode(t *testing.T) {
 	c, _ := ParseContract([]byte(contractJSON))
 	disabled := true
-	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order", "missing"}, Sleeps: []Location{{2, 1}}, ConditionalSkips: []Location{{3, 1}}, Disabled: &disabled, Exclusive: true,
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order", "missing"}, Sleeps: []Location{{2, 1}}, ConditionalSkips: []ConditionalSkip{{Location: Location{3, 1}}, {Location: Location{3, 5}, Environment: true}}, Disabled: &disabled, Exclusive: true,
 		Assertions: []Assertion{{Location: Location{4, 1}, Unawaited: true}}, Unsupported: true, Limits: []AnalysisLimit{{Location: Location{5, 1}, Code: "unresolved-helper"}}}
 	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Tests: []Fact{fact}})
 	seen := map[string]bool{}
@@ -301,7 +301,7 @@ func TestEveryFindingCarriesACode(t *testing.T) {
 		}
 		seen[f.Rule] = true
 	}
-	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip"} {
+	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip", "environment-skip"} {
 		if !seen[rule] {
 			t.Fatalf("fixture did not exercise %s", rule)
 		}
@@ -309,7 +309,7 @@ func TestEveryFindingCarriesACode(t *testing.T) {
 }
 
 func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
-	fact := Fact{Location: Location{1, 1}, Disabled: new(bool), Assertions: []Assertion{{Location: Location{2, 1}}}, ConditionalSkips: []Location{{3, 1}}}
+	fact := Fact{Location: Location{1, 1}, Disabled: new(bool), Assertions: []Assertion{{Location: Location{2, 1}}}, ConditionalSkips: []ConditionalSkip{{Location: Location{3, 1}}}}
 	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
 	if len(test.Findings) != 1 || test.Findings[0].Rule != "conditional-skip" || test.Findings[0].Classification != "informational" || test.Findings[0].Location != (Location{3, 1}) {
 		t.Fatalf("conditional skip misreported: %+v", test.Findings)
@@ -320,7 +320,7 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []Location{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -329,11 +329,11 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 		t.Fatal("oversized title accepted")
 	}
 	f.Tests[0].Title = ""
-	f.Tests[0].ConditionalSkips = []Location{{9, 1}}
+	f.Tests[0].ConditionalSkips = []ConditionalSkip{{Location: Location{9, 1}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign conditional skip accepted")
 	}
-	f.Tests[0].ConditionalSkips = []Location{{1, 1}, {1, 1}}
+	f.Tests[0].ConditionalSkips = []ConditionalSkip{{Location: Location{1, 1}}, {Location: Location{1, 1}, Environment: true}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("duplicate conditional skip accepted")
 	}
@@ -345,7 +345,7 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 
 func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 	source := []byte(strings.Repeat("xxxxxxxx\n", 256))
-	guards := []Location{{1, 1}, {2, 1}, {3, 1}, {4, 1}, {5, 1}}
+	guards := []ConditionalSkip{{Location: Location{1, 1}}, {Location: Location{2, 1}}, {Location: Location{3, 1}}, {Location: Location{4, 1}}, {Location: Location{5, 1}}}
 	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{}}
 	for line := 10; line < 210; line++ {
 		assertions := make([]Assertion, 6)
@@ -357,9 +357,9 @@ func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 	if !validFacts(f, source, false) {
 		t.Fatal("shared modifiers counted once per test")
 	}
-	many := make([]Location, 17)
+	many := make([]ConditionalSkip, 17)
 	for i := range many {
-		many[i] = Location{i + 1, 1}
+		many[i] = ConditionalSkip{Location: Location{i + 1, 1}}
 	}
 	f.Tests = f.Tests[:1]
 	f.Tests[0].ConditionalSkips = many
@@ -390,5 +390,16 @@ func TestAssessSuiteGuardWithoutContract(t *testing.T) {
 		if want := map[bool]string{false: "", true: "shows today"}[titles]; test.Title != want {
 			t.Fatalf("title %q with titles=%v", test.Title, titles)
 		}
+	}
+}
+
+func TestEnvironmentSkipIsASuspectedConcern(t *testing.T) {
+	fact := Fact{Location: Location{1, 1}, Disabled: new(bool), Assertions: []Assertion{{Location: Location{2, 1}}}, ConditionalSkips: []ConditionalSkip{{Location: Location{3, 1}, Environment: true}}}
+	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "environment-skip" || test.Findings[0].Code != "environment-skip" || test.Findings[0].Classification != "suspected" || test.Findings[0].Location != (Location{3, 1}) {
+		t.Fatalf("environment skip misreported: %+v", test.Findings)
+	}
+	if test.Dimensions["engineeringQuality"] != "concern" {
+		t.Fatal("environment-dependent skip raised no concern")
 	}
 }

@@ -19,6 +19,16 @@ function createAnalyzer(ts) {
     'toHaveRole', 'toHaveScreenshot', 'toHaveText', 'toHaveValue', 'toHaveValues',
     'toHaveTitle', 'toHaveURL', 'toMatchAriaSnapshot', 'toBeOK', 'toPass',
   ]);
+  // Its generic and snapshot matchers, which are synchronous unless chained
+  // through resolves/rejects. Any other matcher, such as a custom one or one
+  // from a newer release, has unknown timing.
+  const syncMatchers = new Set([
+    'toBe', 'toBeCloseTo', 'toBeDefined', 'toBeFalsy', 'toBeGreaterThan',
+    'toBeGreaterThanOrEqual', 'toBeInstanceOf', 'toBeLessThan', 'toBeLessThanOrEqual',
+    'toBeNaN', 'toBeNull', 'toBeTruthy', 'toBeUndefined', 'toContain', 'toContainEqual',
+    'toEqual', 'toHaveLength', 'toHaveProperty', 'toMatch', 'toMatchObject',
+    'toStrictEqual', 'toThrow', 'toThrowError', 'toMatchSnapshot',
+  ]);
 
   function analyze(source, options = {}) {
     const file = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -87,14 +97,26 @@ function createAnalyzer(ts) {
       if (isFunction(first) || isBoolean(first)) return true;
       return node.arguments.length === 1 || (node.arguments.length === 2 && isTitle(second));
     };
+    const readsEnvironment = node => {
+      if ((ts.isPropertyAccessExpression(node) && node.name.text === 'env')
+        || (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === 'env')) {
+        if (ts.isIdentifier(node.expression) && node.expression.text === 'process') return true;
+      }
+      return !!ts.forEachChild(node, child => readsEnvironment(child) || undefined);
+    };
+    // The condition an enclosing statement or expression applies to a modifier.
+    const condition = node => ts.isIfStatement(node) || ts.isSwitchStatement(node) ? node.expression
+      : ts.isConditionalExpression(node) ? node.condition : ts.isBinaryExpression(node) ? node.left : undefined;
     // The suite scope a modifier applies to, through hooks only. A modifier
     // inside any other function cannot be attributed from source and is ignored.
     // One in an after hook runs once test bodies have run, so it is reported as
     // conditional rather than disabling the suite.
+    // Conditions that read process.env are reported separately: such a test
+    // may never run in an environment like CI.
     const modifierScope = (node, scope) => {
-      let conditional = false;
+      let conditional = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor === scope) return { conditional };
+        if (ancestor === scope) return { conditional, environment };
         if (ts.isFunctionLike(ancestor)) {
           if (!isHookCallback(ancestor)) return null;
           if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) conditional = true;
@@ -103,6 +125,8 @@ function createAnalyzer(ts) {
         if (ts.isExpressionStatement(ancestor) || ts.isBlock(ancestor) || ts.isAwaitExpression(ancestor) || ts.isParenthesizedExpression(ancestor)
           || (ts.isCallExpression(ancestor) && isTestCall(ancestor, ['beforeEach', 'beforeAll', 'afterEach', 'afterAll']))) continue;
         conditional = true;
+        const guard = condition(ancestor);
+        if (guard && readsEnvironment(guard)) environment = true;
       }
       return null;
     };
@@ -142,7 +166,7 @@ function createAnalyzer(ts) {
           if (attributed && first?.kind !== ts.SyntaxKind.FalseKeyword) {
             const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [] };
             if (!attributed.conditional && (!first || first.kind === ts.SyntaxKind.TrueKeyword)) entry.disabled = true;
-            else entry.conditional.push(location(node));
+            else entry.conditional.push({ ...location(node), environment: attributed.environment });
             scopeModifiers.set(scope, entry);
           }
           return;
@@ -203,12 +227,17 @@ function createAnalyzer(ts) {
                 if (ts.isPropertyAccessExpression(child.expression) && expects.has(root(child.expression)) && !shadowed.has(root(child.expression))) {
                   // The outer matcher call, rather than expect(...) or expect.poll(...).
                   let chain = child.expression.expression;
-                  while (ts.isPropertyAccessExpression(chain)) chain = chain.expression;
+                  const modifiers = [];
+                  while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
                   if (ts.isCallExpression(chain)) {
                     let anchor = child;
                     while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
                     const awaited = ts.isAwaitExpression(child.parent) || ts.isReturnStatement(child.parent);
-                    const asyncMatcher = asyncMatchers.has(child.expression.name.text) || child.getText(file).startsWith(root(child.expression) + '.poll(');
+                    const matcher = child.expression.name.text;
+                    const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects')
+                      || child.getText(file).startsWith(root(child.expression) + '.poll(');
+                    // An unawaited matcher of unknown timing may be an unawaited promise.
+                    if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited) limited('unknown-matcher', child);
                     fact.assertions.push({ ...location(child), outcomes: annotations(anchor, 'outcome'), unawaited: asyncMatcher && !awaited });
                   }
                 }

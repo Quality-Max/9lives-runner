@@ -92,7 +92,8 @@ prevent complete analysis. Every report is explicitly partial. Test locations
 identify recognized syntax; this inventory is not authoritative runtime
 discovery. Limit findings carry one bounded code and location per reason:
 `dynamic-callback`, `declaration-generation`, `nested-function`,
-`conditional-flow`, `shadowed-binding`, `runtime-skip` and `unresolved-helper`.
+`conditional-flow`, `shadowed-binding`, `runtime-skip`, `unresolved-helper` and
+`unknown-matcher`.
 
 Helper bodies are not resolved. Calls outside the imported test/expect chains
 and direct built-in browser fixture chains can produce `unresolved-helper`;
@@ -112,6 +113,7 @@ with no recognized assertion still produces a suspected absence finding.
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
 | Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
+| Suite modifier whose condition reads `process.env` | suspected | The test may not run in some environments, such as CI; confirm a required run still executes it. |
 | Unknown requirement or unsupported analysis | unsupported | Supply reviewed intent or inspect manually. |
 
 A known requirement mapping supports **purpose** only. Even complete outcome
@@ -134,8 +136,17 @@ or syntactically boolean first argument (`true`, `!x`, a comparison), or a
 non-title condition followed by a literal reason. Ambiguous calls such as
 `test.skip(name, run)` stay disabled declarations; `test.skip(isMobile,
 REASON)` is therefore misread as a disabled test. Body-level conditional skip/fixme calls remain
-unsupported; their conditions are not evaluated. Async matcher detection follows the pinned Playwright 1.61.1
-API, including locator, page, API-response and function assertions.
+unsupported; their conditions are not evaluated. A modifier whose condition
+argument, or an enclosing `if`, conditional or logical expression, reads
+`process.env` gives `environment-skip` instead of `conditional-skip`; values
+copied out of `process.env` first are not traced.
+Async matcher detection follows the pinned Playwright 1.61.1
+API, including locator, page, API-response and function assertions, and any
+matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
+are synchronous. Any other matcher, such as a custom `expect.extend` matcher or
+one added in a later Playwright release, that is neither awaited nor returned
+gives the `unknown-matcher` limit, because whether it returns a promise is
+unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
 inputs invalidate prior assessments. Report/helper version 3 and policy
@@ -143,8 +154,9 @@ inputs invalidate prior assessments. Report/helper version 3 and policy
 `code`: the limit reason for `analysis-limit` findings and the rule name for
 all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
-`conditional-skip` rule, an absent `requirementsSHA256` and an optional test
-`title` before upgrading. Requirement contract and agent provenance snapshot
+`conditional-skip` and `environment-skip` rules, the `unknown-matcher` limit
+code, an absent `requirementsSHA256` and an optional test `title` before
+upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
 payloads, and omit titles unless `--titles` is given.
 

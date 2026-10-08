@@ -139,9 +139,31 @@ test('all pinned Playwright async matchers require await or return', () => {
       test('returned', () => { return check(target).${matcher}(); });`);
     assert.deepEqual(facts.tests.map(t => t.assertions[0].unawaited), [true, true, false, false], matcher);
   }
-  const sync = analyze(`import {test,expect} from '@playwright/test';
-    test('sync', () => { expect(1).toBe(1); expect('x').toMatchSnapshot(); });`);
-  assert.deepEqual(sync.tests[0].assertions.map(a => a.unawaited), [false, false]);
+  // Every other pinned matcher is synchronous unless chained through resolves/rejects.
+  const generic = new Set();
+  function genericVisit(node) {
+    const members = ts.isInterfaceDeclaration(node) && ['GenericAssertions', 'SnapshotAssertions'].includes(node.name.text) ? node.members : [];
+    for (const method of members) if (ts.isMethodSignature(method)) generic.add(method.name.getText(file));
+    ts.forEachChild(node, genericVisit);
+  }
+  genericVisit(file);
+  assert.ok(generic.has('toBe') && generic.has('toMatchSnapshot'));
+  for (const matcher of generic) {
+    const facts = analyze(`import {test,expect} from '@playwright/test';
+      test('sync', () => { expect(value).${matcher}(); expect(value).not.${matcher}(); });
+      test('resolves', async () => { expect(promise).resolves.${matcher}(); expect(promise).rejects.not.${matcher}(); await expect(promise).resolves.${matcher}(); });`);
+    assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.unawaited)), [[false, false], [true, true, false]], matcher);
+    assert(facts.tests.every(t => t.limits.length === 0), matcher);
+  }
+});
+
+test('matchers outside the pinned API have unknown timing unless awaited or returned', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('custom', async () => { expect(page).toHaveNewMatcher(); });
+    test('awaited', async () => { await expect(page).toHaveNewMatcher(); });
+    test('returned', () => { return expect(page).not.toHaveNewMatcher(); });`);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [['unknown-matcher'], [], []]);
+  assert.deepEqual(facts.tests.map(t => t.assertions.length), [1, 1, 1]);
 });
 
 test('syntax, aliases and annotations; comments and strings are not assertions', () => {
@@ -259,4 +281,18 @@ test('calls through a test binding redeclared in an enclosing scope are not decl
   assert.equal(facts.tests[0].assertions.length, 1);
   // A redeclaration inside the callback keeps the declaration but stays unknown.
   assert.deepEqual(facts.tests[1].limits.map(l => l.code), ['shadowed-binding']);
+});
+
+test('suite modifiers whose condition reads process.env are marked', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test.skip(!!process.env.CI, 'flaky in CI');
+    test.describe('a', () => {
+      test.beforeEach(() => { if (process.env['STAGE'] === 'prod') test.skip(); });
+      test.fixme(({browserName}) => browserName === 'webkit', 'webkit');
+      test.skip(true, process.env.REASON);
+      test('a', async () => { expect(1).toBe(1); });
+    });`);
+  const [test] = facts.tests;
+  assert.equal(test.disabled, true);
+  assert.deepEqual(test.conditionalSkips.map(s => [s.line, s.environment]), [[2, true], [4, true], [5, false]]);
 });
