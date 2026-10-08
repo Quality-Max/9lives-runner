@@ -97,6 +97,19 @@ function createAnalyzer(ts) {
       if (isFunction(first) || isBoolean(first)) return true;
       return node.arguments.length === 1 || (node.arguments.length === 2 && isTitle(second));
     };
+    // An assertion that something is absent or did not happen, which a slow
+    // application also satisfies. A negated absence matcher is a presence check.
+    const absence = (matcher, modifiers, args) => {
+      const [first] = args;
+      const is = (node, kind) => !!node && (kind === 0 ? ts.isNumericLiteral(node) && Number(node.text) === 0 : node.kind === kind);
+      const disabledOption = name => !!first && ts.isObjectLiteralExpression(first) && first.properties.some(property =>
+        ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === name && property.initializer.kind === ts.SyntaxKind.FalseKeyword);
+      const negative = ['toBeHidden', 'toBeFalsy', 'toBeNull', 'toBeUndefined'].includes(matcher)
+        || (['toHaveCount', 'toHaveLength', 'toBe', 'toEqual', 'toStrictEqual'].includes(matcher) && is(first, 0))
+        || (['toBe', 'toEqual', 'toStrictEqual'].includes(matcher) && is(first, ts.SyntaxKind.FalseKeyword))
+        || (matcher === 'toBeVisible' && disabledOption('visible')) || (matcher === 'toBeAttached' && disabledOption('attached'));
+      return negative !== modifiers.includes('not');
+    };
     const readsEnvironment = node => {
       if ((ts.isPropertyAccessExpression(node) && node.name.text === 'env')
         || (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === 'env')) {
@@ -238,7 +251,7 @@ function createAnalyzer(ts) {
                       || child.getText(file).startsWith(root(child.expression) + '.poll(');
                     // An unawaited matcher of unknown timing may be an unawaited promise.
                     if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited) limited('unknown-matcher', child);
-                    fact.assertions.push({ ...location(child), outcomes: annotations(anchor, 'outcome'), unawaited: asyncMatcher && !awaited });
+                    fact.assertions.push({ ...location(child), outcomes: annotations(anchor, 'outcome'), unawaited: asyncMatcher && !awaited, absence: absence(matcher, modifiers, child.arguments) });
                   }
                 }
               }
@@ -272,7 +285,7 @@ function createAnalyzer(ts) {
     // A shared modifier counts once, however many tests it applies to.
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
-    return { version: 3, compiler: ts.version, tests: results };
+    return { version: 4, compiler: ts.version, tests: results };
   }
 
   return analyze;
@@ -295,7 +308,7 @@ async function main() {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 3, error: code }));
+    process.stdout.write(JSON.stringify({ version: 4, error: code }));
     process.exitCode = 2;
   }
 }

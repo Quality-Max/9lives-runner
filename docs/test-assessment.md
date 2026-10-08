@@ -111,6 +111,7 @@ with no recognized assertion still produces a suspected absence finding.
 | No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
+| Absence assertion first after a fixed wait (`absence-after-wait`) | suspected | A slow application also passes it; assert a positive completion signal first. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
 | Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
 | Suite modifier whose condition reads `process.env` | suspected | The test may not run in some environments, such as CI; confirm a required run still executes it. |
@@ -140,6 +141,17 @@ unsupported; their conditions are not evaluated. A modifier whose condition
 argument, or an enclosing `if`, conditional or logical expression, reads
 `process.env` gives `environment-skip` instead of `conditional-skip`; values
 copied out of `process.env` first are not traced.
+Every `waitForTimeout` gives `fixed-wait`. When the first recognized assertion
+after a wait checks that something is absent or did not happen, the test also
+gets `absence-after-wait` at that assertion, which raises an assertion adequacy
+concern: if the application is merely slow, the check still passes. Absence
+assertions are `toBeHidden`, `toBeFalsy`, `toBeNull`, `toBeUndefined`,
+`toHaveCount(0)`, `toHaveLength(0)`, `toBe`/`toEqual`/`toStrictEqual` with `0`
+or `false`, `toBeVisible({visible: false})`, `toBeAttached({attached: false})`
+and any other matcher negated with `.not`; negating an absence matcher, such as
+`not.toBeHidden()`, makes it a presence check. A recognized positive assertion
+between the wait and the absence check counts as a completion signal. An
+unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the pinned Playwright 1.61.1
 API, including locator, page, API-response and function assertions, and any
 matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
@@ -149,12 +161,12 @@ gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Report/helper version 3 and policy
-`assessment-source-v4` replace version 2/source-v3. Every finding now carries
+inputs invalidate prior assessments. Report version 3, helper version 4 and policy
+`assessment-source-v5` replace version 2/source-v3. Every finding now carries
 `code`: the limit reason for `analysis-limit` findings and the rule name for
 all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
-`conditional-skip` and `environment-skip` rules, the `unknown-matcher` limit
+`conditional-skip`, `environment-skip` and `absence-after-wait` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256` and an optional test `title` before
 upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
