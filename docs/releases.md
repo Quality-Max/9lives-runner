@@ -81,11 +81,18 @@ publication does not receive GitHub Actions provenance.
 
 ## Subsequent trusted publications
 
-Before the next automated SDK release, configure the package's npm trusted
-publisher for GitHub owner `Quality-Max`,
-repository `9lives-runner`, and workflow `npm-release.yml`. Enable direct
-publishing in npm's publisher settings; a publisher restricted to staging
-does not authorize the workflow's direct `npm publish` command.
+The package's npm trusted publisher is configured for GitHub owner
+`Quality-Max`, repository `9lives-runner` and workflow `npm-release.yml`, with
+both the publish and stage publish permissions. SDK 0.1.0 was the first
+automated publication: tag `sdk-v0.1.0` on `48f9cf3`, with npm provenance.
+
+The workflow runs a direct `npm publish`, so the publisher needs the publish
+permission; a stage-only publisher fails with `403 OIDC permission denied`, and
+a missing publisher fails with `ENEEDAUTH`. npm accepts one publisher per
+matching workflow, so changing permissions means revoking the existing entry
+first (`npm trust list`, then `npm trust revoke --id=<id>`) and creating it
+again with `--allow-publish --allow-stage-publish`. After a configuration fix,
+rerun the failed publish job; the qualified tarball artifact is reused.
 
 For a future release, update the SDK version and lockfile in a reviewed change,
 merge it to `main`, and push a matching `sdk-v<version>` tag. The workflow

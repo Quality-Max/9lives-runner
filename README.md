@@ -19,7 +19,7 @@ the test oracle. Local execution needs no QualityMax account or hosted service.
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.0.0 @playwright/test@1.61.1
+npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.61.1
 npm exec playwright install chromium
 ```
 
@@ -176,7 +176,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.0.0](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.1.0](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions. SDK releases use `sdk-v<version>`;
 CLI releases use `v<version>`. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)
