@@ -40,6 +40,9 @@ go build -o .context/9l ./cmd/9l
 
 Without `--requirements`, assessment still reports waits, skips, exclusive tests
 and missing or unawaited assertions, but leaves requirement mapping unchecked.
+To assess a whole suite in one call, pass a directory or a quoted pattern, for
+example `.context/9l assess tests/ --format json`; files that cannot be
+assessed are listed with an error code and make the command exit 2.
 Assessment needs Node 22 or newer; the runner owns its pinned parser. Do not
 install or downgrade consumer TypeScript, change application dependencies or
 change cwd to select an assessment parser. Respect specific analysis-limit

@@ -135,3 +135,58 @@ func TestAssessRejectsAnEmptyRequirementsPath(t *testing.T) {
 		}
 	}
 }
+
+func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		if os.Getenv("NINELIVES_REQUIRE_ASSESSMENT") == "1" {
+			t.Fatal("CI requires Node for assessment qualification")
+		}
+		t.Skip("requires Node")
+	}
+	root := t.TempDir()
+	write := func(name, source string) {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte("import {test,expect} from '@playwright/test';\n"+source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("tests/a.spec.ts", "test('a', async ({page}) => { await page.waitForTimeout(1); await expect(page.getByRole('alert')).toBeHidden(); });\n")
+	write("tests/nested/b.test.ts", "test('b', () => { expect(1).toBe(1); });\n")
+	t.Chdir(root)
+
+	var stdout, stderr bytes.Buffer
+	if code := assessCommand([]string{"tests"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("suite failed: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"file \"tests/a.spec.ts\":\n", "file \"tests/nested/b.test.ts\":\n", "Summary: 2 files (2 assessed, 0 not assessed), 2 tests, 2 findings\n  absence-after-wait: 1\n  fixed-wait: 1\n"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("suite text lacks %q:\n%s", want, stdout.String())
+		}
+	}
+
+	write("tests/broken.spec.ts", "test('x', () => {\n")
+	stdout.Reset()
+	stderr.Reset()
+	if code := assessCommand([]string{"tests/**/*.ts", "--format", "json"}, &stdout, &stderr); code != 2 || stderr.String() != "9l: 1 of 3 files could not be assessed\n" {
+		t.Fatalf("partial suite: code=%d stderr=%q", code, stderr.String())
+	}
+	var suite struct {
+		Files []struct {
+			Path   string          `json:"path"`
+			Report json.RawMessage `json:"report"`
+			Error  string          `json:"error"`
+		} `json:"files"`
+		Summary struct{ Assessed, Failed int } `json:"summary"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &suite); err != nil || len(suite.Files) != 3 || suite.Files[1].Path != "tests/broken.spec.ts" || suite.Files[1].Error != "syntax" || suite.Files[1].Report != nil || suite.Summary.Assessed != 2 || suite.Summary.Failed != 1 {
+		t.Fatalf("partial suite report %s (%v)", stdout.String(), err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := assessCommand([]string{"tests", "--agent-provenance", "snapshot.json"}, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "applies to a single spec") {
+		t.Fatalf("suite provenance accepted: code=%d stderr=%q", code, stderr.String())
+	}
+}

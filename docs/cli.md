@@ -22,7 +22,8 @@
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
-- `9l assess`: advisory source assessment, optionally against a shared
+- `9l assess`: advisory source assessment of a spec, or a combined report for
+  several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles
   for local use. Static findings do not establish executed assertion coverage.
 - `9l provenance`: record a declared agent and the current workspace, branch,
