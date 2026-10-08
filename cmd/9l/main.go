@@ -272,6 +272,10 @@ func writeAssessmentTests(out io.Writer, report assessment.Report) {
 			if finding.Outcome != "" {
 				fields += " outcome=" + finding.Outcome
 			}
+			if finding.Site != nil {
+				// The finding is inside a helper; the site is the test's call.
+				fields += fmt.Sprintf(" via %d:%d", finding.Site.Line, finding.Site.Column)
+			}
 			fmt.Fprintf(out, "  %s [%s] at %d:%d%s: %s\n", assessment.FindingRule(finding), finding.Classification, finding.Line, finding.Column, fields, finding.Message)
 		}
 	}

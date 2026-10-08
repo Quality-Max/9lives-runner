@@ -321,7 +321,8 @@ func buildSuite(files []SuiteFile, contract []byte) SuiteReport {
 
 // CountFindings counts a report's findings per rule, or per rule/code for
 // analysis limits. Findings at the same location, such as one suite modifier
-// applying to several tests, count once.
+// applying to several tests or one wait inside a shared helper, count once; an
+// outcome unmapped in the file counts once per requirement and outcome.
 func CountFindings(report Report) (map[string]int, int) {
 	type key struct {
 		rule, requirement, outcome string
@@ -332,7 +333,11 @@ func CountFindings(report Report) (map[string]int, int) {
 	for _, test := range report.Tests {
 		for _, finding := range test.Findings {
 			rule := FindingRule(finding)
-			if k := (key{rule, finding.Requirement, finding.Outcome, finding.Location}); !counted[k] {
+			k := key{rule, finding.Requirement, finding.Outcome, finding.Location}
+			if finding.Rule == "unmapped-outcome" {
+				k.at = Location{}
+			}
+			if !counted[k] {
 				counted[k] = true
 				counts[rule]++
 				total++

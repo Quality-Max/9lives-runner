@@ -23,7 +23,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v6"
+const Policy = "assessment-source-v7"
 const MaxSource = 1 << 20
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$`)
@@ -48,8 +48,11 @@ type Location struct {
 }
 type Assertion struct {
 	Location
-	Outcomes  []string `json:"outcomes"`
-	Unawaited bool     `json:"unawaited"`
+	// Site is the test's call site when the assertion is inside an inlined
+	// helper; nil for one in the test body.
+	Site      *Location `json:"site,omitempty"`
+	Outcomes  []string  `json:"outcomes"`
+	Unawaited bool      `json:"unawaited"`
 	// Absence marks an assertion that something is absent or did not happen.
 	Absence bool `json:"absence"`
 	// AfterWait marks the first recognized assertion after a fixed wait, in
@@ -59,6 +62,13 @@ type Assertion struct {
 type AnalysisLimit struct {
 	Location
 	Code string `json:"code"`
+}
+
+// Sleep is a fixed wait; Site is the test's call site when it is inside an
+// inlined helper.
+type Sleep struct {
+	Location
+	Site *Location `json:"site,omitempty"`
 }
 
 // ConditionalSkip is a suite modifier that may skip a test. Environment marks a
@@ -72,7 +82,7 @@ type Fact struct {
 	Title            string            `json:"title,omitempty"`
 	Requirements     []string          `json:"requirements"`
 	Assertions       []Assertion       `json:"assertions"`
-	Sleeps           []Location        `json:"sleeps"`
+	Sleeps           []Sleep           `json:"sleeps"`
 	ConditionalSkips []ConditionalSkip `json:"conditionalSkips"`
 	Disabled         *bool             `json:"disabled"`
 	Exclusive        bool              `json:"exclusive"`
@@ -89,10 +99,13 @@ type Finding struct {
 	Classification string `json:"classification"`
 	Dimension      string `json:"dimension"`
 	Location
-	Requirement string `json:"requirement,omitempty"`
-	Outcome     string `json:"outcome,omitempty"`
-	Message     string `json:"message"`
-	Suggestion  string `json:"suggestion"`
+	// Site is the test's call site when the finding is inside a helper the
+	// test calls; the location is then the helper's own line.
+	Site        *Location `json:"site,omitempty"`
+	Requirement string    `json:"requirement,omitempty"`
+	Outcome     string    `json:"outcome,omitempty"`
+	Message     string    `json:"message"`
+	Suggestion  string    `json:"suggestion"`
 	// Code is the specific reason: the limit code for analysis limits and the
 	// rule itself for every other finding.
 	Code string `json:"code"`
@@ -225,7 +238,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 5 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 6 {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -258,7 +271,7 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 5 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 {
+	if f.Version != 6 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 {
 		return false
 	}
 	lines := bytes.Split(source, []byte("\n"))
@@ -291,12 +304,12 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 			codes[limit.Code] = true
 		}
 		for _, a := range t.Assertions {
-			if !valid(a.Location) || !ids(a.Outcomes) {
+			if !valid(a.Location) || (a.Site != nil && !valid(*a.Site)) || !ids(a.Outcomes) {
 				return false
 			}
 		}
 		for _, p := range t.Sleeps {
-			if !valid(p) {
+			if !valid(p.Location) || (p.Site != nil && !valid(*p.Site)) {
 				return false
 			}
 		}
@@ -332,6 +345,19 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 	for _, r := range c.Requirements {
 		requirements[r.ID] = r
 	}
+	// A requirement's outcomes may be spread over sibling tests: an outcome
+	// mapped by any test in the file covers it for every test that references
+	// the requirement and maps at least one of its outcomes. A test that maps
+	// none of them claims a requirement it does not check, and is reported for
+	// every outcome. Mapping in other files is not considered.
+	mapped := map[string]bool{}
+	for _, fact := range facts.Tests {
+		for _, a := range fact.Assertions {
+			for _, id := range a.Outcomes {
+				mapped[id] = true
+			}
+		}
+	}
 	for _, fact := range facts.Tests {
 		t := Test{Location: fact.Location, Title: fact.Title, Requirements: fact.Requirements, Dimensions: map[string]string{"purpose": "unknown", "intentAlignment": "unknown", "assertionAdequacy": "unknown", "runtimeEvidence": "unknown", "engineeringQuality": "unknown"}, Findings: []Finding{}}
 		add := func(rule, classification, dimension, requirement, outcome, message, suggestion string, loc Location) {
@@ -343,12 +369,6 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		for _, limit := range fact.Limits {
 			add("analysis-limit", "unsupported", "assertionAdequacy", "", "", analysisLimits[limit.Code], "Review the unsupported syntax and related helpers manually.", limit.Location)
 			t.Findings[len(t.Findings)-1].Code = limit.Code
-		}
-		mapped := map[string]bool{}
-		for _, a := range fact.Assertions {
-			for _, id := range a.Outcomes {
-				mapped[id] = true
-			}
 		}
 		// Without a contract, references are reported but cannot be checked.
 		references := fact.Requirements
@@ -363,9 +383,21 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 				add("unknown-requirement", "unsupported", "purpose", id, "", "The requirement reference is absent from the supplied contract.", "Supply the independently reviewed requirement.", fact.Location)
 				continue
 			}
+			own := map[string]bool{}
+			for _, a := range fact.Assertions {
+				for _, outcome := range a.Outcomes {
+					own[outcome] = true
+				}
+			}
+			checks := false
 			for _, o := range r.ExpectedOutcomes {
-				if !mapped[o.ID] {
-					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping; helpers may protect it.", "Review the gap and map an assertion that checks this outcome.", fact.Location)
+				checks = checks || own[o.ID]
+			}
+			for _, o := range r.ExpectedOutcomes {
+				if !checks {
+					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "The test references the requirement but maps none of its outcomes; helpers may protect it.", "Map an assertion in this test to an outcome of the requirement, or reference the requirement it checks.", fact.Location)
+				} else if !mapped[o.ID] {
+					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping in this file; helpers or other files may protect it.", "Review the gap and map an assertion in this file that checks this outcome.", fact.Location)
 				}
 			}
 		}
@@ -379,16 +411,19 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		for _, a := range fact.Assertions {
 			if a.Unawaited {
 				add("unawaited-assertion", "suspected", "engineeringQuality", "", "", "A recognized asynchronous assertion is neither directly awaited nor returned.", "Await or return the assertion, or verify how its promise is consumed.", a.Location)
+				t.Findings[len(t.Findings)-1].Site = a.Site
 			}
 		}
 		for _, p := range fact.Sleeps {
-			add("fixed-wait", "demonstrated", "engineeringQuality", "", "", "A waitForTimeout call is present; timing alone does not prove readiness.", "Prefer an observable readiness condition where applicable.", p)
+			add("fixed-wait", "demonstrated", "engineeringQuality", "", "", "A waitForTimeout call is present; timing alone does not prove readiness.", "Prefer an observable readiness condition where applicable.", p.Location)
+			t.Findings[len(t.Findings)-1].Site = p.Site
 		}
 		// A fixed wait directly followed by an absence assertion passes when the
 		// application is merely slow, so it can hide the defect it should catch.
 		for _, next := range fact.Assertions {
 			if next.Absence && next.AfterWait {
 				add("absence-after-wait", "suspected", "assertionAdequacy", "", "", "The first recognized assertion after a fixed wait checks that something is absent or did not happen; if the application is merely slow, it passes without the outcome having occurred.", "Assert a positive completion signal first, such as the response, a confirmation or the final URL, then check the absence.", next.Location)
+				t.Findings[len(t.Findings)-1].Site = next.Site
 			}
 		}
 		if fact.Exclusive {
