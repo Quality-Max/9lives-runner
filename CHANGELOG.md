@@ -1,42 +1,50 @@
 # Changelog
 
-## Unreleased
+## SDK 0.1.0 — 2026-10-08
+
+- `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`, so projects
+  on later Playwright 1.x releases can install it; 1.61.1 remains the only
+  qualified version (#9).
+
+## CLI 0.1.0 — 2026-10-08
+
+`9l assess` changes from an external trial on an 87-file Playwright suite.
+
+- `--requirements` is optional. Code-level checks run without a contract;
+  requirement mapping is reported as not run. An empty value is a usage
+  error (#5).
+- Suites: several specs, a directory or a quoted pattern (`**` supported)
+  give one combined report with per-file reports or error codes and a suite
+  summary. A file that cannot be assessed does not stop the others; the
+  command then exits 2. At most half the CPUs analyze at once, and a file
+  whose analyzer timed out is retried once on its own (#6).
+- Helpers: same-file helper functions are resolved, attributing their
+  assertions, waits and limits to the calling test. `// @9l-assertion-helper`
+  on a function or import declaration counts calls as reviewed assertions.
+  Imports into other files are not followed yet (#4).
+- Skip guards: file- and `describe`-level `test.skip(condition, reason)`/
+  `test.fixme` modifiers are no longer parsed as tests. Unconditional ones
+  give `disabled-test`; conditional and after-hook ones give informational
+  `conditional-skip`; conditions reading `process.env` give suspected
+  `environment-skip`. Calls that could be declarations, such as
+  `test.skip(name, run)`, stay disabled tests (#7).
+- New finding `absence-after-wait` (suspected) when the first assertion after
+  a fixed wait only checks that something is absent or did not happen (#8).
+- Unawaited `resolves`/`rejects` matchers are flagged; unawaited matchers
+  outside the pinned Playwright API give an `unknown-matcher` limit.
+- Every finding carries `code` (#10). Text output omits empty fields, ends with
+  a per-rule summary and shows literal test titles with opt-in `--titles` (#11).
+- Report version 3, policy `assessment-source-v6`. Consumers must accept the
+  `informational` classification, the new rules and limit code, an absent
+  `requirementsSHA256` and an optional test `title`.
+
+## CLI 0.0.0 — 2026-10-08
 
 - Consumer installation, checkout demo, documentation index, contribution and
   security guides.
 - CLI release gate with full CI qualification, native version/startup checks,
   four platform archives, license files and SHA-256 checksums.
 - CLI source version aligned to 0.0.0; release builds embed the validated tag.
-- `9l assess` no longer requires `--requirements`; code-level checks run
-  without a contract and requirement mapping is reported as not run (#5).
-- Suite-level `test.skip(condition, reason)`/`test.fixme` modifiers are no
-  longer parsed as tests; conditional ones are reported as informational
-  `conditional-skip`, unconditional ones keep `disabled-test` (#7). Calls that
-  could be declarations, such as `test.skip(name, run)`, stay disabled tests;
-  modifiers in after hooks are informational; a modifier shared by several
-  tests counts once toward analysis limits and the text summary. An empty
-  `--requirements` value is a usage error. Modifiers whose condition reads
-  `process.env` give a suspected `environment-skip`. Unawaited
-  `resolves`/`rejects` matchers are flagged, and unawaited matchers outside the
-  pinned Playwright API give an `unknown-matcher` limit.
-- Every assessment finding carries `code`; report version 3, policy
-  `assessment-source-v4` (#10).
-- Assessment text output omits empty requirement/outcome fields, ends with a
-  per-rule summary and shows literal test titles with opt-in `--titles` (#11).
-- `9l assess` reports `absence-after-wait` (suspected) when the first
-  assertion after a fixed wait only checks that something is absent or did not
-  happen; policy `assessment-source-v5` (#8).
-- `9l assess` accepts several specs, a directory or a quoted pattern (`**`
-  supported) and writes one combined suite report with per-file reports or
-  error codes and a suite summary. A file that cannot be assessed does not
-  stop the others; the command then exits 2 (#6).
-- `9l assess` resolves same-file helper functions, attributing their
-  assertions, waits and limits to the calling test, and accepts
-  `// @9l-assertion-helper` on a function or import declaration to count calls
-  as reviewed assertions. Imports are not followed yet; policy
-  `assessment-source-v6` (#4).
-- `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`; 1.61.1
-  remains the only qualified version (#9).
 
 ## SDK 0.0.0 — 2026-10-08
 

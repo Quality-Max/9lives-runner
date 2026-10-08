@@ -170,7 +170,7 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	if code := assessCommand([]string{"tests/**/*.ts", "--format", "json"}, &stdout, &stderr); code != 2 || stderr.String() != "9l: 1 of 3 files could not be assessed\n" {
-		t.Fatalf("partial suite: code=%d stderr=%q", code, stderr.String())
+		t.Fatalf("partial suite: code=%d stderr=%q report=%s", code, stderr.String(), stdout.String())
 	}
 	var suite struct {
 		Files []struct {
