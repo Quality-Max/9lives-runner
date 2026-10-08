@@ -418,6 +418,15 @@ test('a nested function returning the matcher is not unawaited unless forEach di
   assert(facts.tests[0].limits.some(l => l.code === 'nested-function'));
 });
 
+test('parenthesized async matchers are recognized as consumed', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('concise return', async ({page}) => { const check = () => (expect(page).toHaveURL('/')); check(); });
+    test('explicit return', async ({page}) => { const check = () => { return (expect(page).toHaveURL('/')); }; check(); });
+    test('await', async () => { await (expect(page).toHaveURL('/')); });
+    test('parenthesized chain', async () => { await (expect(page).toHaveURL('/')).then(() => {}); });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.unawaited)), [[false], [false], [false], [false]]);
+});
+
 test('an empty array equality after a fixed wait is an absence check', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
     test('no mutations', async ({page}) => {

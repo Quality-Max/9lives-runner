@@ -320,6 +320,7 @@ function createAnalyzer(ts) {
               // unawaited, and that function is already a limit, unless the
               // caller is known to discard it.
               const returnedHere = child => {
+                while (ts.isParenthesizedExpression(child.parent)) child = child.parent;
                 let owner = null;
                 if (ts.isArrowFunction(child.parent) && child.parent.body === child) owner = child.parent;
                 else if (ts.isReturnStatement(child.parent)) {
@@ -332,9 +333,13 @@ function createAnalyzer(ts) {
               // The outermost call of a then/catch/finally chain carries the
               // promise, so awaiting or returning the chain consumes the matcher.
               const chained = child => {
-                while (ts.isPropertyAccessExpression(child.parent) && ['then', 'catch', 'finally'].includes(child.parent.name.text)
-                  && ts.isCallExpression(child.parent.parent) && child.parent.parent.expression === child.parent) child = child.parent.parent;
-                return child;
+                while (true) {
+                  while (ts.isParenthesizedExpression(child.parent)) child = child.parent;
+                  if (ts.isPropertyAccessExpression(child.parent) && ['then', 'catch', 'finally'].includes(child.parent.name.text)
+                    && ts.isCallExpression(child.parent.parent) && child.parent.parent.expression === child.parent) {
+                    child = child.parent.parent;
+                  } else return child;
+                }
               };
               const consumed = child => {
                 const outer = chained(child);
