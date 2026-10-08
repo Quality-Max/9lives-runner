@@ -108,3 +108,4 @@ jobs:
           name: playwright-package-${{ github.sha }}
           path: .context/npm-pack/
           if-no-files-found: error
+          include-hidden-files: true
