@@ -13,6 +13,11 @@ vendors, and which capabilities are shipped versus planned.
   from it with the Blank template, then export and flatten the rendered DOM
   as described below.
 
+The page is published with GitHub Pages at
+<https://quality-max.github.io/9lives-runner/>. The `Pages` workflow in
+`.github/workflows/pages.yml` deploys this directory on every push to `main`
+that touches it, and refuses to deploy if the page gains an external script.
+
 Open it locally with any static server, for example:
 
 ```sh
