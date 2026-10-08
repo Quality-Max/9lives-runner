@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-sdk-smoke-'));
 const engine = path.join(work, '9l');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let smokeCase = 'engine-build';
 
 function sync(command, args, options = {}) {
   const result = spawnSync(command, args, {cwd: root, encoding: 'utf8', timeout: 60000, maxBuffer: 4 << 20, ...options});
@@ -16,6 +17,7 @@ function sync(command, args, options = {}) {
   return result;
 }
 function invoke(spec, options = []) {
+  smokeCase = path.basename(spec);
   const result = sync(engine, ['run', spec, '--sdk', '--format', 'json', '--receipt-dir', path.join(work, 'receipts'), ...options]);
   return {code: result.status, summary: JSON.parse(result.stdout)};
 }
@@ -34,6 +36,7 @@ function processTable() {
   }).filter(Boolean);
 }
 async function interrupted(kind) {
+  smokeCase = `owned-${kind}`;
   const marker = path.join(work, `${kind}.json`);
   const receipts = path.join(work, kind);
   const child = spawn(engine, ['run', 'testdata/sdk/tests/slow.spec.ts', '--sdk', '--format', 'json', '--timeout', kind === 'timeout' ? '12s' : '30s', '--pass-env', 'NINELIVES_SMOKE_MARKER', '--receipt-dir', receipts], {
@@ -208,6 +211,7 @@ async function main() {
   // 1000-character cut, and one split by whitespace, must both be redacted.
   const {chromium} = require('@playwright/test');
   const {observeState, valueRedactor} = require(path.join(root, 'packages/playwright/dist/goal.js'));
+  smokeCase = 'goal-state-redaction';
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -221,4 +225,9 @@ async function main() {
   await interrupted('timeout');
   await interrupted('cancel');
 }
-main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => fs.rmSync(work, {recursive: true, force: true}));
+main().catch(error => {
+  const kind = error instanceof assert.AssertionError ? 'assertion' : error instanceof SyntaxError ? 'invalid-json' : error instanceof TypeError ? 'invalid-result' : 'execution';
+  const line = error.stack?.match(/sdk-smoke\.cjs:(\d+):\d+/)?.[1];
+  console.error(`SDK smoke failed: ${smokeCase} (${kind}${line ? `, line ${line}` : ''})`);
+  process.exitCode = 1;
+}).finally(() => fs.rmSync(work, {recursive: true, force: true}));
