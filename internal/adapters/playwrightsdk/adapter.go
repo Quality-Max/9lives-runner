@@ -12,8 +12,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/qualitymax/9lives-runner/internal/adapters/playwright"
-	"github.com/qualitymax/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 type Adapter struct {

@@ -78,7 +78,7 @@ usage/error privacy and uncertain-action abstention. Live provider accuracy,
 representative drift, measured latency/billing, independent behavioral
 verification and replay admission remain follow-up qualification.
 
-The grounding contracts are ported from playwright-login's
+The grounding contracts are ported from an existing application's
 `services/ai_crawl/discovery_grounding.py`, `step_evidence.py` and
 `services/jev_decision_client.py` reviewed at `c209fca62`: finite current targets,
 untrusted labels, typed decisions, abstention, fresh revalidation and default

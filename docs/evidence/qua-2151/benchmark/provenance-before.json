@@ -96,7 +96,7 @@
   },
   "python_sources": {
     "python_0.1.3": {
-      "path": "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.1.3/src",
+      "path": "<RUNNER_CHECKOUT>/testdata/upstream/ninelives-0.1.3/src",
       "revision": "8a40d8d5c83f27f84384f060aeed74a3ded7ab77",
       "tracked_source_manifest": {
         "src/ninelives/__init__.py": "e343420433bab927b9c73b2c37af569face196c79fd1a7d5e060481aae8e4a76",
@@ -119,7 +119,7 @@
       }
     },
     "python_0.2.1": {
-      "path": "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.2.1/src",
+      "path": "<RUNNER_CHECKOUT>/testdata/upstream/ninelives-0.2.1/src",
       "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
       "tracked_source_manifest": {
         "src/ninelives/__init__.py": "85253804debc636ee233ac62c1adcc43fa702e37e8efe1c81cb6228aa6a1d1ec",

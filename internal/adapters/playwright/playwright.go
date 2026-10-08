@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/qualitymax/9lives-runner/internal/healing"
-	"github.com/qualitymax/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 // FailureContext extracts bounded failed-test diagnostic text from Playwright's

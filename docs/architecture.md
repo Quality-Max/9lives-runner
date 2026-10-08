@@ -31,16 +31,9 @@ continuity. Those are useful primitives for a future agent-backed
 healing adapter, but ordinary test execution must not depend on an agent. The
 initial runner therefore does not import `qmax-code/codexrunner`.
 
-`qmax-receipt` was also reviewed. It is a signed manifest of outbound network
-exposure, while this runner needs receipts for local test attempts and evidence.
-Combining those meanings would weaken both schemas. If the runner later makes
-outbound requests, it should emit a qmax exposure receipt alongside its
-execution receipt.
+## Planning and evidence contracts
 
-## design reference-derived choices
-
-The design incorporates concepts reviewed from design reference at commit
-`2f0afd29682ff4215b9229361463e7738ba78aa4` without copying its source:
+The runner uses these contracts:
 
 - plan before execution, with visible skip and budget-cap reasons;
 - reserve the run-wide job budget before processes start;
@@ -50,8 +43,6 @@ The design incorporates concepts reviewed from design reference at commit
 - distinguish process execution from structured-result validation;
 - use one execution boundary for timeouts, process-tree cancellation, output
   limits, environment overlays, redaction, and evidence persistence.
-
-No design reference code or fixtures are included, so no additional MIT notice is needed.
 
 ## Python compatibility
 

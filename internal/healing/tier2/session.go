@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/qualitymax/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/healing"
 )
 
 // RunFunc executes exactly the supplied physical spec and returns a verified

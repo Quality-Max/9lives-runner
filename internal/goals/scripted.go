@@ -8,7 +8,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/qualitymax/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 )
 
 // Scripted is an explicit offline qualification provider, never a claimed LLM.

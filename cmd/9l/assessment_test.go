@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qualitymax/9lives-runner/internal/assessment"
-	"github.com/qualitymax/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/assessment"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 func TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured(t *testing.T) {

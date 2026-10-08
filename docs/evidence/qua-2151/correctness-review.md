@@ -122,7 +122,7 @@ Independent strict actual-source differential invocation:
 ```sh
 GOARCH=arm64 NINELIVES_REQUIRE_CONTRACT=1 \
 NINELIVES_CONTRACT_PYTHON=/tmp/qua2151-python-arm64 \
-NINELIVES_UPSTREAM_DIR=<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream \
+NINELIVES_UPSTREAM_DIR=<RUNNER_CHECKOUT>/testdata/upstream \
 go test ./internal/healing ./internal/contracttest \
   -run 'TestPinnedPython(Differential|ClassifierAndStrategyCorpus|OracleIdentityAndCaches)' -count=1 -json
 ```

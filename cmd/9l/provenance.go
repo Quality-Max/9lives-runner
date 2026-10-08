@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/qualitymax/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 func loadAgentProvenance(path string) (runner.AgentProvenance, error) {

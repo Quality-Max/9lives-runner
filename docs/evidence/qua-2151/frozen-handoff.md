@@ -35,13 +35,13 @@ Commands executed from the runner repository unless stated otherwise:
 # Actual pin/source-only fixtures were required for every Go test invocation.
 GOARCH=arm64 NINELIVES_REQUIRE_CONTRACT=1 \
 NINELIVES_CONTRACT_PYTHON=/tmp/qua2151-python-arm64 \
-NINELIVES_UPSTREAM_DIR=<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream \
+NINELIVES_UPSTREAM_DIR=<RUNNER_CHECKOUT>/testdata/upstream \
 go test -race ./... -count=1
 
 # Same explicit environment, counted actual comparison and identity suite.
 GOARCH=arm64 NINELIVES_REQUIRE_CONTRACT=1 \
 NINELIVES_CONTRACT_PYTHON=/tmp/qua2151-python-arm64 \
-NINELIVES_UPSTREAM_DIR=<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream \
+NINELIVES_UPSTREAM_DIR=<RUNNER_CHECKOUT>/testdata/upstream \
 go test ./internal/healing ./internal/contracttest \
   -run 'TestPinnedPython(Differential|ClassifierAndStrategyCorpus|OracleIdentityAndCaches)' \
   -count=1 -json > /tmp/qua2151-v4-contract-tests.jsonl
@@ -242,7 +242,7 @@ All 15 declared owned files, all 33 Go files plus both module inputs, exact trac
   },
   "protected_go_and_module_inputs_unchanged_count": 31,
   "protected_owned_unchanged_count": 10,
-  "repo": "<LOCAL_CHECKOUT>/.context/9lives-runner-pr2",
+  "repo": "<RUNNER_CHECKOUT>",
   "strict_counts": {
     "0.1.3": {
       "classifier_parser_strategy": 28,
@@ -257,14 +257,14 @@ All 15 declared owned files, all 33 Go files plus both module inputs, exact trac
   "strict_skips": 0,
   "upstream": {
     "0.1.3": {
-      "path": "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.1.3/src",
+      "path": "<RUNNER_CHECKOUT>/testdata/upstream/ninelives-0.1.3/src",
       "revision": "8a40d8d5c83f27f84384f060aeed74a3ded7ab77",
       "runtime_version": "0.1.0",
       "tracked_source_count": 17,
       "tracked_source_manifest_sha256": "34a203794da487d5c123eb818fe1dde3cc3dade31f15d7bbe2c222ca9afeb1bf"
     },
     "0.2.1": {
-      "path": "<LOCAL_CHECKOUT>/.context/9lives-runner-live/testdata/upstream/ninelives-0.2.1/src",
+      "path": "<RUNNER_CHECKOUT>/testdata/upstream/ninelives-0.2.1/src",
       "revision": "568c7a6882441c13cdb9bfe8c0190ca0bf7d8240",
       "runtime_version": "0.2.1",
       "tracked_source_count": 25,

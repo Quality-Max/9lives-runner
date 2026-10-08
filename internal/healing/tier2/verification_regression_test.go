@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qualitymax/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/healing"
 )
 
 func TestHealGatesEveryCandidateVerification(t *testing.T) {
