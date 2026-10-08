@@ -324,6 +324,8 @@ test('absence assertions are marked, and negated absence matchers are presence c
 });
 
 const summary = t => ({ assertions: t.assertions.map(a => [a.line, a.unawaited, a.absence, a.afterWait]), sleeps: t.sleeps.map(s => s.line), limits: t.limits.map(l => l.code) });
+// Facts inside an inlined helper carry the test's call site; direct facts carry none.
+const sites = t => [...t.assertions, ...t.sleeps].map(f => f.site ? `${f.line}<${f.site.line}` : String(f.line));
 
 test('same-file helpers are inlined at their call site in execution order', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
@@ -343,14 +345,28 @@ test('same-file helpers are inlined at their call site in execution order', () =
       await page.waitForTimeout(1);
       await count(page.getByRole('row'));
     });`);
-  // Facts carry the test's call site; a fixture argument makes the parameter a fixture root.
+  // Facts keep the helper's own line and carry the test's call site; a fixture
+  // argument makes the parameter a fixture root.
   assert.deepEqual(summary(facts.tests[0]), {
-    assertions: [[10, false, false, true], [11, false, true, true], [12, false, true, false]],
-    sleeps: [9, 11],
+    assertions: [[4, false, false, true], [6, false, true, true], [7, false, true, false]],
+    sleeps: [9, 6],
     limits: ['unresolved-helper'], // page2 inside expectGone is not a fixture
   });
+  assert.deepEqual(sites(facts.tests[0]), ['4<10', '6<11', '7<12', '9', '6<11']);
   assert.equal(facts.tests[0].limits[0].line, 6);
-  assert.deepEqual(summary(facts.tests[1]), { assertions: [[16, false, true, true]], sleeps: [15], limits: [] });
+  assert.deepEqual(summary(facts.tests[1]), { assertions: [[7, false, true, true]], sleeps: [15], limits: [] });
+  assert.deepEqual(sites(facts.tests[1]), ['7<16', '15']);
+});
+
+test('nested helper facts carry the site of the call in the test', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function settle(page) { await page.waitForTimeout(50); }
+    async function poll(page) { await settle(page); await expect(page.getByRole('status')).toHaveText('done'); }
+    test('a', async ({page}) => { await poll(page); });
+    test('b', async ({page}) => {
+      await poll(page);
+    });`);
+  assert.deepEqual(facts.tests.map(sites), [['3<4', '2<4'], ['3<6', '2<6']]);
 });
 
 test('a helper wait followed by its own absence check stays ordered', () => {
@@ -360,7 +376,58 @@ test('a helper wait followed by its own absence check stays ordered', () => {
       await expect(page.getByRole('alert')).toBeHidden();
     }
     test('t', async ({page}) => { await closesToast(page); });`);
-  assert.deepEqual(summary(facts.tests[0]), { assertions: [[6, false, true, true]], sleeps: [6], limits: [] });
+  assert.deepEqual(summary(facts.tests[0]), { assertions: [[4, false, true, true]], sleeps: [3], limits: [] });
+  assert.deepEqual(sites(facts.tests[0]), ['4<6', '3<6']);
+});
+
+test('an awaited then/catch/finally chain consumes the matcher', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    const showMonth = async (root, arrow) => {
+      await expect(root).not.toContainText('May').catch(() => arrow.click());
+    };
+    test('chains', async ({page}) => {
+      await showMonth(page.locator('.cal'), page.locator('.next'));
+      await expect(page).toHaveURL('/a').then(() => {}).finally(() => {});
+      return expect(page).toHaveURL('/b').catch(() => {});
+    });
+    test('dropped', async ({page}) => {
+      expect(page).toHaveURL('/c').catch(() => {});
+      showMonth(page.locator('.cal'), page.locator('.next'));
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.unawaited])), [[[3, false], [7, false], [8, false]], [[11, true], [3, true]]]);
+  // The callbacks are nested functions, which remain a limit.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [['nested-function'], ['nested-function']]);
+});
+
+test('a nested function returning the matcher is not unawaited unless forEach discards it', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('rendered map', async ({page}) => {
+      const rendered = {
+        heading: () => expect(page.getByRole('heading')).toBeVisible(),
+        rows: () => { return expect(page.getByRole('row')).toHaveCount(3); },
+        status: async () => { await expect(page.getByRole('status')).toBeVisible(); },
+      };
+      for (const check of Object.values(rendered)) await check();
+      await Promise.all([1, 2].map(n => expect(page.getByText(String(n))).toBeVisible()));
+      [page.locator('a')].forEach(l => expect(l).toBeVisible());
+      [page.locator('b')].forEach(l => { return expect(l).toBeVisible(); });
+      [page.locator('c')].forEach(l => { expect(l).toBeVisible(); });
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.unawaited]),
+    [[4, false], [5, false], [6, false], [9, false], [10, true], [11, true], [12, true]]);
+  assert(facts.tests[0].limits.some(l => l.code === 'nested-function'));
+});
+
+test('an empty array equality after a fixed wait is an absence check', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('no mutations', async ({page}) => {
+      await page.waitForTimeout(300);
+      expect(mutations).toEqual([]);
+      expect(calls).toStrictEqual([]);
+      expect(items).toEqual([1]);
+      expect(items).not.toEqual([]);
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.absence, a.afterWait]), [[true, true], [true, false], [false, false], [false, false]]);
 });
 
 test('unconsumed helper promises make their assertions unawaited', () => {
@@ -454,8 +521,9 @@ test('review regressions: helper resolution never invents or hides assertions', 
   // A helper declared inside the test is scanned once, as a nested function.
   assert.deepEqual(run(`test('inner', async () => { const check = () => { expect(1).toBe(1); }; check(); });`),
     [{ assertions: [[2, false]], limits: ['nested-function', 'unresolved-helper'] }]);
-  // A concise arrow inside another function does not consume the matcher.
+  // forEach discards a concise arrow's promise; a nested arrow elsewhere returns it to an unknown caller.
   assert.deepEqual(run(`test('t', async ({page}) => { [page.locator('a')].forEach(l => expect(l).toBeVisible()); });`)[0].assertions, [[2, true]]);
+  assert.deepEqual(run(`test('t', async ({page}) => { const check = () => expect(page).toHaveURL('/'); await check(); });`)[0].assertions, [[2, false]]);
   // A non-async marked helper's timing is unknown when unconsumed.
   assert.deepEqual(run(`// @9l-assertion-helper
     function check(page) { return expect(page).toHaveURL('/x'); }

@@ -27,7 +27,9 @@ checked, `purpose` and `intentAlignment` stay unknown, `requirementsSHA256` is
 omitted and the report lists the missing contract as a limit. An empty
 `--requirements` value is a usage error rather than a silent skip. The text
 report ends with a per-rule summary in which findings at the same location,
-such as one suite modifier applying to several tests, count once. `--titles` adds literal test titles (first 200
+such as one suite modifier applying to several tests or one wait inside a
+helper several tests call, count once, and an outcome unmapped in the file
+counts once per requirement and outcome. `--titles` adds literal test titles (first 200
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
 
@@ -96,7 +98,10 @@ When you check requirements, use a shared contract, not a document per test:
 ```
 
 Reference independently reviewed intent from a ticket, contract or supplied
-outcomes. Agent-inferred intent remains a proposal until reviewed. The command
+outcomes. A requirement's outcomes may be spread over the tests in a file: an
+outcome mapped by any test in the file covers it for every test referencing
+the requirement, and one mapped nowhere in the file is reported on each of
+those tests. Mapping in other files of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
 records the supplied contract hash; it does not retrieve or authenticate the
 referenced requirement. Outcome IDs must be unique across the entire contract,
 because outcome annotations have no requirement namespace. Annotate each mapped
@@ -130,8 +135,11 @@ function declaration or `const` function is inlined when that name is bound
 exactly once in the file, in a scope enclosing the call and outside the
 function being scanned; any other binding of the name, in any scope, leaves
 the call unresolved. The helper's direct `expect` facts, waits and limits are
-attributed to the test at the call site, in execution order, up to four levels
-deep and 64 inlined calls per test. Inlining also stops before it could exhaust
+attributed to the calling test, in execution order, up to four levels deep and
+64 inlined calls per test. Each fact keeps the helper's own location and, for
+assertions and waits, carries the test's call site as `site` (`via` in text
+output), so a wait in a shared helper is listed under every calling test but
+counted once in the summary. Inlining also stops before it could exhaust
 the fact limit left after the file's own matcher and wait calls, or a fixed
 work budget; an abandoned call is rolled back
 and reported as `unresolved-helper` rather than failing the file. A
@@ -167,7 +175,7 @@ with no recognized assertion still produces a suspected absence finding.
 
 | Finding | Classification | Meaning |
 | --- | --- | --- |
-| Required outcome lacks an assertion annotation | suspected | A declared mapping is missing; helpers may protect it. |
+| Required outcome lacks an assertion annotation in the file | suspected | No test in the file maps it; helpers or other files may protect it. |
 | No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
@@ -207,7 +215,8 @@ gets `absence-after-wait` at that assertion, which raises an assertion adequacy
 concern: if the application is merely slow, the check still passes. Absence
 assertions are `toBeHidden`, `toBeFalsy`, `toBeNull`, `toBeUndefined`,
 `toHaveCount(0)`, `toHaveLength(0)`, `toBe`/`toEqual`/`toStrictEqual` with `0`
-or `false`, `toBeVisible({visible: false})`, `toBeAttached({attached: false})`
+or `false`, `toEqual`/`toStrictEqual` with `[]`, `toBeVisible({visible: false})`,
+`toBeAttached({attached: false})`
 and any other matcher negated with `.not`; negating an absence matcher, such as
 `not.toBeHidden()`, makes it a presence check. A recognized positive assertion
 between the wait and the absence check counts as a completion signal. An
@@ -215,20 +224,25 @@ unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the pinned Playwright 1.61.1
 API, including locator, page, API-response and function assertions, and any
 matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
-are synchronous. Any other matcher, such as a custom `expect.extend` matcher or
+are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
+chain on it, is awaited or returned by the function being scanned; the chained
+promise methods are not themselves matchers. A nested function's concise body
+or `return` passes the promise to a caller the analysis cannot see, so it is
+not reported as unawaited and the `nested-function` limit stands, except for a
+callback passed directly to `forEach`, which discards it. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Report version 3, helper version 5 and policy
-`assessment-source-v6` replace version 2/source-v3. Every finding now carries
+inputs invalidate prior assessments. Report version 3, helper version 6 and policy
+`assessment-source-v7` replace version 2/source-v3. Every finding now carries
 `code`: the limit reason for `analysis-limit` findings and the rule name for
 all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip` and `absence-after-wait` rules, the `unknown-matcher` limit
-code, an absent `requirementsSHA256` and an optional test `title` before
-upgrading. Requirement contract and agent provenance snapshot
+code, an absent `requirementsSHA256`, an optional test `title` and an optional
+finding `site` before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
 payloads, and omit titles unless `--titles` is given.
 

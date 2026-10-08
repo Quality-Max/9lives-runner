@@ -1,5 +1,28 @@
 # Changelog
 
+## CLI unreleased
+
+`9l assess` changes from the second external trial, on the same 87-file suite
+and a new helper-function spec.
+
+- A matcher whose `then`/`catch`/`finally` chain is awaited or returned is no
+  longer `unawaited-assertion`, and the chained call is no longer counted as a
+  second matcher.
+- A nested function that returns the matcher, such as `() => expect(...)` in
+  a map of checks, is no longer `unawaited-assertion`; it stays a
+  `nested-function` limit. A callback passed directly to `forEach` still is.
+- Assertions and waits inside a resolved helper keep the helper's own
+  location and carry the test's call site as `site` (`via` in text output).
+  One wait in a shared helper therefore counts once in the summary, not once
+  per calling test.
+- `toEqual([])` and `toStrictEqual([])` are absence checks for
+  `absence-after-wait`.
+- `unmapped-outcome` is checked per file: an outcome mapped by any test in
+  the file covers it for every test referencing the requirement. The finding
+  counts once per requirement and outcome.
+- Helper facts version 6, policy `assessment-source-v7`; report version 3 gains
+  the optional finding `site`.
+
 ## SDK 0.1.0 — 2026-10-08
 
 - `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`, so projects

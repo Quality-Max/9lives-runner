@@ -104,9 +104,11 @@ function createAnalyzer(ts) {
       const is = (node, kind) => !!node && (kind === 0 ? ts.isNumericLiteral(node) && Number(node.text) === 0 : node.kind === kind);
       const disabledOption = name => !!first && ts.isObjectLiteralExpression(first) && first.properties.some(property =>
         ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === name && property.initializer.kind === ts.SyntaxKind.FalseKeyword);
+      const emptyArray = !!first && ts.isArrayLiteralExpression(first) && first.elements.length === 0;
       const negative = ['toBeHidden', 'toBeFalsy', 'toBeNull', 'toBeUndefined'].includes(matcher)
         || (['toHaveCount', 'toHaveLength', 'toBe', 'toEqual', 'toStrictEqual'].includes(matcher) && is(first, 0))
         || (['toBe', 'toEqual', 'toStrictEqual'].includes(matcher) && is(first, ts.SyntaxKind.FalseKeyword))
+        || (['toEqual', 'toStrictEqual'].includes(matcher) && emptyArray)
         || (matcher === 'toBeVisible' && disabledOption('visible')) || (matcher === 'toBeAttached' && disabledOption('attached'));
       return negative !== modifiers.includes('not');
     };
@@ -305,16 +307,39 @@ function createAnalyzer(ts) {
               function bindings(child) { spend(); declare(child); ts.forEachChild(child, bindings); }
               bindings(fn);
               enclosingDeclarations(declarationsAt).forEach(declare);
-              const at = child => ctx.site || location(child);
-              // Only this function's own concise body passes its promise to the
-              // caller, and only when the caller consumes it. A return statement
-              // in a nested function keeps its previous treatment; that function
-              // is already a limit.
+              // A fact keeps its own location. One inside an inlined helper also
+              // carries the test's call site, so it is reported once per
+              // location however many tests call the helper.
+              const at = child => ctx.site ? { ...location(child), site: ctx.site } : location(child);
+              // A callback passed to forEach has its return value discarded.
+              const discards = callback => ts.isCallExpression(callback.parent) && callback.parent.arguments.includes(callback)
+                && ts.isPropertyAccessExpression(callback.parent.expression) && callback.parent.expression.name.text === 'forEach';
+              // This function's own concise body or return statement passes its
+              // promise to the caller, which consumes it only when `returned`.
+              // A nested function returns its promise to an unknown caller: not
+              // unawaited, and that function is already a limit, unless the
+              // caller is known to discard it.
               const returnedHere = child => {
-                if (ts.isArrowFunction(child.parent)) return child.parent === fn && fn.body === child && ctx.returned;
-                return ts.isReturnStatement(child.parent) && ctx.returned;
+                let owner = null;
+                if (ts.isArrowFunction(child.parent) && child.parent.body === child) owner = child.parent;
+                else if (ts.isReturnStatement(child.parent)) {
+                  owner = child.parent;
+                  while (owner && !ts.isFunctionLike(owner)) owner = owner.parent;
+                }
+                if (!owner) return false;
+                return owner === fn ? ctx.returned : !discards(owner);
               };
-              const consumed = child => !ctx.floating && (ts.isAwaitExpression(child.parent) || returnedHere(child));
+              // The outermost call of a then/catch/finally chain carries the
+              // promise, so awaiting or returning the chain consumes the matcher.
+              const chained = child => {
+                while (ts.isPropertyAccessExpression(child.parent) && ['then', 'catch', 'finally'].includes(child.parent.name.text)
+                  && ts.isCallExpression(child.parent.parent) && child.parent.parent.expression === child.parent) child = child.parent.parent;
+                return child;
+              };
+              const consumed = child => {
+                const outer = chained(child);
+                return !ctx.floating && (ts.isAwaitExpression(outer.parent) || returnedHere(outer));
+              };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
               const assertion = (child, outcomes, unawaited, isAbsence) => {
                 record();
@@ -363,7 +388,7 @@ function createAnalyzer(ts) {
                       const settled = consumed(child);
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
-                        scanFunction(helper.fn, helperRoots, helper.fn, { site: at(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
+                        scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
                           returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]) });
                       } catch (error) {
                         if (!(error instanceof Exhausted)) throw error;
@@ -377,8 +402,10 @@ function createAnalyzer(ts) {
                       }
                     }
                   }
-                  if (ts.isPropertyAccessExpression(child.expression) && expects.has(root(child.expression)) && !shadowed.has(root(child.expression))) {
-                    // The outer matcher call, rather than expect(...) or expect.poll(...).
+                  // The matcher call, rather than expect(...), expect.poll(...) or a
+                  // promise method chained after the matcher.
+                  if (ts.isPropertyAccessExpression(child.expression) && expects.has(root(child.expression)) && !shadowed.has(root(child.expression))
+                    && !['then', 'catch', 'finally'].includes(child.expression.name.text)) {
                     let chain = child.expression.expression;
                     const modifiers = [];
                     while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
@@ -428,7 +455,7 @@ function createAnalyzer(ts) {
     // A shared modifier counts once, however many tests it applies to.
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
-    return { version: 5, compiler: ts.version, tests: results };
+    return { version: 6, compiler: ts.version, tests: results };
   }
 
   return analyze;
@@ -451,7 +478,7 @@ async function main() {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 5, error: code }));
+    process.stdout.write(JSON.stringify({ version: 6, error: code }));
     process.exitCode = 2;
   }
 }

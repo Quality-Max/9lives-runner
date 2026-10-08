@@ -89,7 +89,10 @@ func TestAssessTextWithoutRequirements(t *testing.T) {
 		"  await page.waitForTimeout(500);\n" +
 		"  await page.waitForTimeout(500);\n" +
 		"});\n" +
-		"test('checks', () => { expect(1).toBe(1); });\n"
+		"test('checks', () => { expect(1).toBe(1); });\n" +
+		"async function settle(page) { await page.waitForTimeout(50); }\n" +
+		"test('polls once', async ({page}) => { await settle(page); });\n" +
+		"test('polls twice', async ({page}) => { await settle(page); await settle(page); });\n"
 	if err := os.WriteFile(spec, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -106,9 +109,14 @@ func TestAssessTextWithoutRequirements(t *testing.T) {
 		for _, want := range []string{
 			"  fixed-wait [demonstrated] at 4:9: ",
 			"  conditional-skip [informational] at 2:1: ",
+			// A wait inside a helper keeps the helper's line and names the test's call.
+			"  fixed-wait [demonstrated] at 8:37 via 9:46: ",
+			"  fixed-wait [demonstrated] at 8:37 via 10:47: ",
+			"  fixed-wait [demonstrated] at 8:37 via 10:67: ",
 			"Limit: No requirement contract was supplied",
-			// The file-level guard applies to both tests and counts once.
-			"Summary: 2 tests, 4 findings\n  fixed-wait: 2\n  conditional-skip: 1\n  no-direct-assertion: 1\n",
+			// The file-level guard applies to every test and counts once; so does
+			// the helper's wait, however many tests call it.
+			"Summary: 4 tests, 7 findings\n  fixed-wait: 3\n  no-direct-assertion: 3\n  conditional-skip: 1\n",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("text report lacks %q:\n%s", want, text)
