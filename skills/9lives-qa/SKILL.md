@@ -38,6 +38,11 @@ go build -o .context/9l ./cmd/9l
 .context/9l assess path/to/checkout.spec.ts --requirements requirements.json --format json
 ```
 
+Assessment needs Node 22 or newer; the runner owns its pinned parser. Do not
+install or downgrade consumer TypeScript, change application dependencies or
+change cwd to select an assessment parser. Respect specific analysis-limit
+codes; helper or unsupported syntax does not establish missing assertions.
+
 Report per-dimension findings with locations, source/contract hashes and clear
 analysis limits. Missing mappings are suspected gaps; helper assertions and
 dynamic generation can remain unknown. Static assessment exits zero with

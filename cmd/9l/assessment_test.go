@@ -14,16 +14,19 @@ import (
 )
 
 func TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured(t *testing.T) {
-	// Exercise the real source analyzer when local npm dependencies are installed.
+	// Exercise the bundled source analyzer without consumer npm dependencies.
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(root)
-	check := exec.Command("node", "-e", "require.resolve('typescript')")
+	check := exec.Command("node", "--version")
 	check.Env = []string{"PATH=" + os.Getenv("PATH")}
 	if check.Run() != nil {
-		t.Skip("requires Node and local TypeScript; run npm ci")
+		if os.Getenv("NINELIVES_REQUIRE_ASSESSMENT") == "1" {
+			t.Fatal("CI requires Node for assessment qualification")
+		}
+		t.Skip("requires Node")
 	}
 	dir := t.TempDir()
 	spec := filepath.Join(dir, "fixture.spec.ts")

@@ -161,7 +161,11 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 		for _, test := range report.Tests {
 			fmt.Fprintf(out, "test at %d:%d: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
 			for _, finding := range test.Findings {
-				fmt.Fprintf(out, "  %s [%s] at %d:%d requirement=%s outcome=%s: %s\n", finding.Rule, finding.Classification, finding.Line, finding.Column, finding.Requirement, finding.Outcome, finding.Message)
+				rule := finding.Rule
+				if finding.Code != "" {
+					rule += "/" + finding.Code
+				}
+				fmt.Fprintf(out, "  %s [%s] at %d:%d requirement=%s outcome=%s: %s\n", rule, finding.Classification, finding.Line, finding.Column, finding.Requirement, finding.Outcome, finding.Message)
 			}
 		}
 		for _, limit := range report.Limits {

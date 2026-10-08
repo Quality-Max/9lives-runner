@@ -1,0 +1,70 @@
+{
+  "source_commit": "c7cbcc7f10fda133b4d06d35717729c87234f13e",
+  "scope": "CLI planning only; these generated files are not executed tests; build excluded; warm caches; 3 repetitions per size",
+  "ram_method": "macOS /usr/bin/time -l maximum resident set size; planning command has no test/browser children",
+  "runs": [
+    {
+      "jobs": 100,
+      "sample": 1,
+      "seconds": 0.016802042002382223,
+      "peak_go_rss_mib": 13.109375,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 100,
+      "sample": 2,
+      "seconds": 0.014707292000821326,
+      "peak_go_rss_mib": 13.234375,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 100,
+      "sample": 3,
+      "seconds": 0.015312791998439934,
+      "peak_go_rss_mib": 13.375,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 1000,
+      "sample": 1,
+      "seconds": 0.04614600000058999,
+      "peak_go_rss_mib": 19.09375,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 1000,
+      "sample": 2,
+      "seconds": 0.04707629200129304,
+      "peak_go_rss_mib": 18.8125,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 1000,
+      "sample": 3,
+      "seconds": 0.045519040999352,
+      "peak_go_rss_mib": 19.015625,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 10000,
+      "sample": 1,
+      "seconds": 0.3245731249990058,
+      "peak_go_rss_mib": 41.015625,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 10000,
+      "sample": 2,
+      "seconds": 0.32916600000316976,
+      "peak_go_rss_mib": 41.328125,
+      "all_jobs_planned": true
+    },
+    {
+      "jobs": 10000,
+      "sample": 3,
+      "seconds": 0.3311713749935734,
+      "peak_go_rss_mib": 41.375,
+      "all_jobs_planned": true
+    }
+  ]
+}

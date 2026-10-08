@@ -1,0 +1,62 @@
+{
+  "host": "darwin/arm64 Apple M2 Pro",
+  "revision": "c7cbcc7f10fda133b4d06d35717729c87234f13e",
+  "pairs": [
+    {
+      "direct_ms": 537.6434579957277,
+      "runner_ms": 563.5964999964926,
+      "delta_ms": 25.95304200076498
+    },
+    {
+      "direct_ms": 536.5217090002261,
+      "runner_ms": 576.9922920007957,
+      "delta_ms": 40.470583000569604
+    },
+    {
+      "direct_ms": 551.7982080054935,
+      "runner_ms": 548.8080420036567,
+      "delta_ms": -2.9901660018367693
+    },
+    {
+      "direct_ms": 543.4213749977062,
+      "runner_ms": 568.2853749967762,
+      "delta_ms": 24.863999999070074
+    },
+    {
+      "direct_ms": 560.9512499941047,
+      "runner_ms": 559.6107079982175,
+      "delta_ms": -1.340541995887179
+    },
+    {
+      "direct_ms": 549.8432079984923,
+      "runner_ms": 551.8446249989211,
+      "delta_ms": 2.0014170004287735
+    },
+    {
+      "direct_ms": 545.0597500021104,
+      "runner_ms": 558.1265829969198,
+      "delta_ms": 13.066832994809374
+    },
+    {
+      "direct_ms": 543.8744589991984,
+      "runner_ms": 561.0497080051573,
+      "delta_ms": 17.175249005958904
+    },
+    {
+      "direct_ms": 540.3350409978884,
+      "runner_ms": 553.4087499981979,
+      "delta_ms": 13.073709000309464
+    },
+    {
+      "direct_ms": 549.8998330003815,
+      "runner_ms": 559.4851249989006,
+      "delta_ms": 9.585291998519097
+    }
+  ],
+  "direct_median_ms": 544.4671045006544,
+  "runner_median_ms": 559.5479164985591,
+  "paired_delta_median_ms": 13.070270997559419,
+  "assessment_first_ms": 204.7668329978478,
+  "assessment_warm_median_ms": 188.7518959993031,
+  "limits": "One browser-free assertion, 10 alternating warm pairs; both commands run one local Playwright process. No CPU/RSS profile, cache purge, real browser suite or provider cost measurement."
+}

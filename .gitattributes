@@ -1,0 +1,2 @@
+# Preserve the vendored license byte-for-byte, including upstream CRLF and spaces.
+internal/assessment/parser/LICENSE.txt -text whitespace=-blank-at-eol

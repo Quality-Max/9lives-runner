@@ -1,0 +1,17 @@
+[
+  {
+    "label": "9l-100spec-1workers-r1",
+    "reason": "two Chromium launch timeouts during a prolonged wall-clock pause; invalid successful-suite performance measurement",
+    "passed_jobs": 98,
+    "failed_jobs": 2,
+    "duration_ms_reported_by_runner": 1412370,
+    "evidence": "9l-100spec-1workers-r1/execution.json"
+  },
+  {
+    "label": "9l-1spec-500tests",
+    "reason": "Benchmark harness used a 30-second per-job limit for 500 tests in one file; exceeded that limit. Remeasured with 120-second limit. Original timeout receipt retained.",
+    "timed_out_jobs": 1,
+    "duration_ms_reported_by_runner": 30045,
+    "evidence": "9l-1spec-500tests/execution.json"
+  }
+]

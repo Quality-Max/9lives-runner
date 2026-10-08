@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/qualitymax/9lives-runner/internal/runner
+cpu: Apple M2 Pro
+BenchmarkBuildPlan-10    	     200	    151001 ns/op	  112493 B/op	     746 allocs/op
+PASS
+ok  	github.com/qualitymax/9lives-runner/internal/runner	0.401s

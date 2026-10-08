@@ -14,19 +14,29 @@ or model opinion upgrades unknown coverage.
 ## Local assessment
 
 ```sh
-npm ci
 mkdir -p .context
 go build -o .context/9l ./cmd/9l
 .context/9l assess testdata/assessment/tests/checkout.spec.ts --requirements testdata/assessment/requirements.json --format json
 ```
 
-Assessment needs Node and TypeScript resolvable from the working directory
-(this repository pins TypeScript and Playwright dependencies). It parses
-source without importing the spec, configuration or application. Go owns the
+Assessment needs Node 22 or newer. A plain Go build includes the qualified
+TypeScript 5.9.3 parser; it does not need npm, consumer TypeScript, a separate
+parser installation or a runtime download. The parser is extracted into a
+private temporary directory per assessment and removed after the owned helper
+stops. Consumer `node_modules`, `NODE_PATH` and `NODE_OPTIONS` do not choose or
+preload code. This also works when the consuming TypeScript package has no
+JavaScript parser API. It parses source without importing the spec,
+configuration or application. Go owns the
 helper's ten-second budget, cancellation, output limits and report validation.
 Source is limited to 1 MiB, requirements to 256 KiB, recognized tests to 256
-and combined assertions/waits to 2,048. Malformed, unavailable or over-limit
-analysis exits 2; advisory findings exit 0. This is not a gate.
+and combined assertions/waits/limit reasons to 2,048. Malformed, unavailable or over-limit
+analysis exits 2; advisory findings exit 0. This is not a gate. Failures write
+fixed diagnostics on stderr and no partial report on stdout: `node-unavailable`,
+`parser-unavailable`, `syntax`, `annotation`, `limit`, `output-limit`, `timeout`,
+`cancelled`, `helper-failed` or `invalid-evidence`. Raw helper errors and source
+are suppressed. Newer syntax unsupported by the pinned parser remains a syntax
+failure; independence from consumer TypeScript is not support for every future
+language feature.
 
 Use a shared requirement contract, not a document per test:
 
@@ -61,15 +71,30 @@ test('checkout creates an order', async ({page}) => {
 ```
 
 Named `test`/`expect` imports from Playwright or the local SDK, including aliases,
-and inline callbacks are recognized. Helpers, custom fixtures, branches,
-dynamic generation and shadowed bindings can prevent complete analysis. Every
-report is explicitly partial. Test locations identify recognized syntax;
-this inventory is not authoritative runtime discovery.
+and inline block callbacks are recognized regardless of whether the title is
+a literal, template or expression. A declaration inside a loop or generation
+callback is inspected once; its runtime expansion is never guessed or executed.
+Helpers, custom fixtures, branches, dynamic callbacks and shadowed bindings can
+prevent complete analysis. Every report is explicitly partial. Test locations
+identify recognized syntax; this inventory is not authoritative runtime
+discovery. Limit findings carry one bounded code and location per reason:
+`dynamic-callback`, `declaration-generation`, `nested-function`,
+`conditional-flow`, `shadowed-binding`, `runtime-skip` and `unresolved-helper`.
+
+Helper bodies are not resolved. Calls outside the imported test/expect chains
+and direct built-in browser fixture chains can produce `unresolved-helper`;
+this can include harmless utility calls. A shadowed expect binding's matcher
+calls are excluded conservatively. A call through a test binding redeclared in
+an enclosing scope, such as a parameter or loop variable named `test`, is not a
+declaration and adds nothing to the inventory. Limit findings retain independently visible
+waits, exclusive/disabled syntax and recognized asynchronous matcher findings.
+Unsupported analysis never produces `no-direct-assertion`; a supported body
+with no recognized assertion still produces a suspected absence finding.
 
 | Finding | Classification | Meaning |
 | --- | --- | --- |
 | Required outcome lacks an assertion annotation | suspected | A declared mapping is missing; helpers may protect it. |
-| No direct expect matcher | suspected | No recognized direct assertion; helper behavior is unknown. |
+| No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
 | `test.skip`/`test.fixme` declaration or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
@@ -83,8 +108,37 @@ are not evaluated. Async matcher detection follows the pinned Playwright 1.61.1
 API, including locator, page, API-response and function assertions.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Reports omit source, titles, requirement
+inputs invalidate prior assessments. Report/helper version 2 and policy
+`assessment-source-v3` replace version 1/source-v2; consumers must accept the
+new version and optional finding `code` before upgrading. Requirement contract
+and agent provenance snapshot versions remain 1. Reports omit source, titles, requirement
 prose and raw diagnostic payloads.
+
+## Maintaining the bundled parser
+
+The compressed parser, Apache license and SHA-256 manifest live in
+`internal/assessment/parser/` and are embedded into the binary. The Go helper
+verifies the compressed asset, decompressed code and license before use. To
+reproduce assets from the locked dependency:
+
+```sh
+npm ci
+node scripts/bundle-assessment-parser.cjs
+npm run parser:check
+npm run smoke:assessment-portability
+```
+
+CI checks decompressed source and license bytes against the locked package,
+and verifies the committed compressed stream's checksum. Gzip encodings may
+differ between Node/zlib releases without changing the parser. CI exercises an actual Go-built binary
+from consumer directories with no TypeScript and a controlled incompatible
+package. Changing the pin requires changing the bundler/analyzer/Go version
+checks, updating the locked npm dependency and manifest, and running syntax,
+portability and browser qualification again. The asset adds approximately
+1.6 MiB to the Go artifact; Node remains a runtime prerequisite.
+
+See the [assessment validation and handoff](validation/assessment-and-efficiency-2026-10-08.md)
+for prior review fixes, consumer review boundaries and measured runner costs.
 
 ## Agent creation and execution provenance
 

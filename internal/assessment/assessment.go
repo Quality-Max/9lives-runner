@@ -23,7 +23,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v2"
+const Policy = "assessment-source-v3"
 const MaxSource = 1 << 20
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$`)
@@ -51,14 +51,19 @@ type Assertion struct {
 	Outcomes  []string `json:"outcomes"`
 	Unawaited bool     `json:"unawaited"`
 }
+type AnalysisLimit struct {
+	Location
+	Code string `json:"code"`
+}
 type Fact struct {
 	Location
-	Requirements []string    `json:"requirements"`
-	Assertions   []Assertion `json:"assertions"`
-	Sleeps       []Location  `json:"sleeps"`
-	Disabled     *bool       `json:"disabled"`
-	Exclusive    bool        `json:"exclusive"`
-	Unsupported  bool        `json:"unsupported"`
+	Requirements []string        `json:"requirements"`
+	Assertions   []Assertion     `json:"assertions"`
+	Sleeps       []Location      `json:"sleeps"`
+	Disabled     *bool           `json:"disabled"`
+	Exclusive    bool            `json:"exclusive"`
+	Unsupported  bool            `json:"unsupported"`
+	Limits       []AnalysisLimit `json:"limits"`
 }
 type Facts struct {
 	Version  int    `json:"version"`
@@ -74,6 +79,7 @@ type Finding struct {
 	Outcome     string `json:"outcome,omitempty"`
 	Message     string `json:"message"`
 	Suggestion  string `json:"suggestion"`
+	Code        string `json:"code,omitempty"`
 }
 type Test struct {
 	Location
@@ -145,12 +151,22 @@ func Assess(ctx context.Context, source, contract []byte) (Report, error) {
 	if len(source) == 0 || len(source) > MaxSource || !utf8.Valid(source) {
 		return empty, errors.New("source exceeds assessment limit or is empty")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	parser, cleanup, err := materializeParser()
+	if err != nil {
+		return empty, diagnostic("parser-unavailable")
+	}
+	defer cleanup()
+	return assessWithHelper(ctx, source, contract, c, parser, 10*time.Second)
+}
+
+func assessWithHelper(parent context.Context, source, contract []byte, c Contract, parser string, timeout time.Duration) (Report, error) {
+	var empty Report
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	input, _ := json.Marshal(struct {
 		Source string `json:"source"`
 	}{string(source)})
-	command := exec.Command("node", "-e", analyzer+"\nmain();")
+	command := exec.Command("node", "-e", analyzer+"\nmain();", parser)
 	command.Env = []string{}
 	if path, ok := os.LookupEnv("PATH"); ok {
 		command.Env = append(command.Env, "PATH="+path)
@@ -159,12 +175,38 @@ func Assess(ctx context.Context, source, contract []byte) (Report, error) {
 	output := &boundedOutput{cancel: cancel}
 	command.Stdout = output
 	command.Stderr = io.Discard
-	if runner.RunOwnedCommand(ctx, command) != nil || ctx.Err() != nil || output.overflow {
-		return empty, errors.New("assessment analyzer failed, exceeded limits or was cancelled; install Node and TypeScript locally")
+	err := runner.RunOwnedCommand(ctx, command)
+	if output.overflow {
+		return empty, diagnostic("output-limit")
+	}
+	if parent.Err() != nil {
+		if errors.Is(parent.Err(), context.DeadlineExceeded) {
+			return empty, diagnostic("timeout")
+		}
+		return empty, diagnostic("cancelled")
+	}
+	if ctx.Err() != nil {
+		return empty, diagnostic("timeout")
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return empty, diagnostic("node-unavailable")
+	}
+	if err != nil {
+		var failure struct {
+			Version int    `json:"version"`
+			Error   string `json:"error"`
+		}
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 2 {
+			switch failure.Error {
+			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
+				return empty, diagnostic(failure.Error)
+			}
+		}
+		return empty, diagnostic("helper-failed")
 	}
 	var facts Facts
 	if Decode(output.Bytes(), &facts) != nil || !validFacts(facts, source) {
-		return empty, errors.New("invalid assessment analyzer evidence")
+		return empty, diagnostic("invalid-evidence")
 	}
 	return Build(source, contract, c, facts), nil
 }
@@ -187,7 +229,7 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 func validFacts(f Facts, source []byte) bool {
-	if f.Version != 1 || !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(f.Compiler) || f.Tests == nil || len(f.Tests) > 256 {
+	if f.Version != 2 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 {
 		return false
 	}
 	lines := bytes.Split(source, []byte("\n"))
@@ -207,10 +249,17 @@ func validFacts(f Facts, source []byte) bool {
 	seen := map[Location]bool{}
 	total := 0
 	for _, t := range f.Tests {
-		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.Disabled == nil || !ids(t.Requirements) {
+		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.Disabled == nil || !ids(t.Requirements) || t.Limits == nil || len(t.Limits) > len(analysisLimits) || t.Unsupported != (len(t.Limits) > 0) {
 			return false
 		}
 		seen[t.Location] = true
+		codes := map[string]bool{}
+		for _, limit := range t.Limits {
+			if !valid(limit.Location) || analysisLimits[limit.Code] == "" || codes[limit.Code] {
+				return false
+			}
+			codes[limit.Code] = true
+		}
 		for _, a := range t.Assertions {
 			if !valid(a.Location) || !ids(a.Outcomes) {
 				return false
@@ -221,13 +270,13 @@ func validFacts(f Facts, source []byte) bool {
 				return false
 			}
 		}
-		total += len(t.Assertions) + len(t.Sleeps)
+		total += len(t.Assertions) + len(t.Sleeps) + len(t.Limits)
 	}
 	return total <= 2048
 }
 
 func Build(source, contract []byte, c Contract, facts Facts) Report {
-	report := Report{AgentProvenance: runner.UnknownAgentProvenance(), Version: 1, Policy: Policy, SourceSHA256: digest(source), RequirementsSHA256: digest(contract), Compiler: facts.Compiler, Execution: "not_run", Completeness: "partial", Tests: []Test{}, Limits: []string{
+	report := Report{AgentProvenance: runner.UnknownAgentProvenance(), Version: 2, Policy: Policy, SourceSHA256: digest(source), RequirementsSHA256: digest(contract), Compiler: facts.Compiler, Execution: "not_run", Completeness: "partial", Tests: []Test{}, Limits: []string{
 		"Named test/expect imports and inline tests only; dynamic generation, custom fixtures and helper assertions may be omitted.",
 		"Outcome annotations are reviewed coverage claims, not semantic or behavioral proof. Source-only assessment cannot establish correctness.",
 		"No test, configuration or application module is executed. Runtime evidence requires a separate attributed control experiment.",
@@ -239,13 +288,14 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 	for _, fact := range facts.Tests {
 		t := Test{Location: fact.Location, Requirements: fact.Requirements, Dimensions: map[string]string{"purpose": "unknown", "intentAlignment": "unknown", "assertionAdequacy": "unknown", "runtimeEvidence": "unknown", "engineeringQuality": "unknown"}, Findings: []Finding{}}
 		add := func(rule, classification, dimension, requirement, outcome, message, suggestion string, loc Location) {
-			t.Findings = append(t.Findings, Finding{rule, classification, dimension, loc, requirement, outcome, message, suggestion})
+			t.Findings = append(t.Findings, Finding{Rule: rule, Classification: classification, Dimension: dimension, Location: loc, Requirement: requirement, Outcome: outcome, Message: message, Suggestion: suggestion})
 			if classification != "unsupported" {
 				t.Dimensions[dimension] = "concern"
 			}
 		}
-		if fact.Unsupported {
-			add("analysis-limit", "unsupported", "intentAlignment", "", "", "Dynamic, conditional or nested syntax prevents complete assertion analysis.", "Review this test and its helpers manually.", fact.Location)
+		for _, limit := range fact.Limits {
+			add("analysis-limit", "unsupported", "assertionAdequacy", "", "", analysisLimits[limit.Code], "Review the unsupported syntax and related helpers manually.", limit.Location)
+			t.Findings[len(t.Findings)-1].Code = limit.Code
 		}
 		mapped := map[string]bool{}
 		for _, a := range fact.Assertions {
@@ -271,7 +321,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			t.Dimensions["purpose"] = "supported"
 		}
 		// Even complete declared mappings leave semantic alignment unknown.
-		if len(fact.Assertions) == 0 {
+		if len(fact.Assertions) == 0 && !fact.Unsupported {
 			add("no-direct-assertion", "suspected", "assertionAdequacy", "", "", "No direct expect matcher was recognized; helper assertions remain unknown.", "Inspect helpers and add an attributable assertion for the requirement.", fact.Location)
 		}
 		for _, a := range fact.Assertions {

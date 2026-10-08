@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/qualitymax/9lives-runner/internal/runner
+cpu: Apple M2 Pro
+BenchmarkBoundedThroughput-10    	      10	 256798058 ns/op	       240.0 expected-delay-ms	        15.65 jobs/s	  523444 B/op	    1896 allocs/op
+PASS
+ok  	github.com/qualitymax/9lives-runner/internal/runner	3.347s

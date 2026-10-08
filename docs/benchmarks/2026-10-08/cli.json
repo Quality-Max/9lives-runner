@@ -1,0 +1,23 @@
+{
+  "platform": {
+    "os": "Darwin",
+    "machine": "arm64",
+    "go": [
+      "darwin",
+      "arm64",
+      "go1.25.13"
+    ]
+  },
+  "samples": 30,
+  "run_samples": 5,
+  "startup_first_process_ms": 336.1176250036806,
+  "startup_warm_median_ms": 7.03639599669259,
+  "plan_first_process_ms": 7.69258299987996,
+  "plan_warm_median_ms": 7.135125000786502,
+  "fixture_first_run_ms": 940.2565839991439,
+  "fixture_warm_median_ms": 554.3893540016143,
+  "first_persisted_output_first_ms": 937.5644169995212,
+  "first_persisted_output_warm_median_ms": 551.8181040024501,
+  "cancel_ms": 64.65200000093319,
+  "measurement": "first process after build; no OS cache purge; 1ms evidence polling; Playwright browser-free assertion; build/install excluded; no model or provider work"
+}
