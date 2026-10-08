@@ -6,26 +6,24 @@ or intentionally adapt the goal and assertions to your reviewed requirements.
 It does not sign in or change application data. The harness lives outside the
 application repository and preserves its existing Playwright setup.
 
-Use Node 24 (Node 22 minimum), Playwright 1.61.1, Chromium and Go 1.25.13 or
-newer. The steps below install the SDK from a locally built `0.0.0` tarball.
+Use Node 24 (Node 22 minimum), Playwright 1.61.1 and Chromium.
+The SDK is published as `@9l/playwright` 0.0.0.
 
-## 1. Build the executable and SDK
+## 1. Install the CLI and get the example
 
-Replace the checkout placeholder with your local runner directory:
+Install the executable using the [CLI installation guide](install.md). With
+Go 1.25.13 or newer, `go install github.com/Quality-Max/9lives-runner/cmd/9l@latest`
+installs it from public source. Clone the repository for the example harness:
 
 ```sh
-RUNNER_ROOT=/path/to/9lives-runner
-cd "$RUNNER_ROOT"
-npm ci
-npm run build
-mkdir -p .context/build
-go build -trimpath -o .context/build/9l ./cmd/9l
-npm pack --workspace @9l/playwright --pack-destination .context/build
+git clone https://github.com/Quality-Max/9lives-runner.git
+RUNNER_ROOT="$PWD/9lives-runner"
+9l --version
 ```
 
-This creates `.context/build/9l` and `.context/build/9l-playwright-0.0.0.tgz`.
-The executable is native to your machine. It launches the project's installed
-Playwright worker; it does not bundle a browser.
+The executable launches the project's installed Playwright worker; it does not
+bundle a browser. If Python `9lives` is installed too, use the explicit path to
+the Go executable to avoid their shared `9l` command name.
 
 ## 2. Start your application
 
@@ -46,7 +44,7 @@ mkdir -p "$HOME/9lives-login-smoke"
 cp -R "$RUNNER_ROOT/examples/playwright-login/." "$HOME/9lives-login-smoke/"
 cd "$HOME/9lives-login-smoke"
 npm init -y
-npm install --save-dev @playwright/test@1.61.1 "$RUNNER_ROOT/.context/build/9l-playwright-0.0.0.tgz"
+npm install --save-dev @playwright/test@1.61.1 @9l/playwright@0.0.0
 npm exec playwright install chromium
 export QA_BASE_URL=http://127.0.0.1:8000
 ```
@@ -60,7 +58,7 @@ staging origin. Keep the normal Playwright assertions after the goal.
 From the harness directory:
 
 ```sh
-"$RUNNER_ROOT/.context/build/9l" run tests/login-modal.spec.ts --sdk --goal-script login-script.json --pass-env QA_BASE_URL --timeout 2m --format json
+9l run tests/login-modal.spec.ts --sdk --goal-script login-script.json --pass-env QA_BASE_URL --timeout 2m --format json
 ```
 
 The scripted provider chooses the observed **Login** control and finishes its
@@ -77,7 +75,7 @@ existing secret manager. Do not put its value in the spec, command line or
 shell history. From the same harness directory:
 
 ```sh
-"$RUNNER_ROOT/.context/build/9l" run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
+9l run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
 ```
 
 Alternatively use `--goal-provider openai` with `OPENAI_API_KEY` configured.

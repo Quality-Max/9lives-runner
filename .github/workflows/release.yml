@@ -1,48 +1,98 @@
-name: Release
+name: Release CLI
 
 on:
   push:
-    tags: ["v*"]
+    tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  binaries:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [darwin, linux]
-        goarch: [amd64, arm64]
+  check-tag:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Verify release identity and main ancestry
+        id: identity
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: node scripts/verify-cli-release.cjs
+
+  qualification:
+    needs: check-tag
+    uses: ./.github/workflows/ci.yml
+
+  binaries:
+    needs: [check-tag, qualification]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-15-intel, goos: darwin, goarch: amd64}
+          - {runner: macos-15, goos: darwin, goarch: arm64}
+          - {runner: ubuntu-24.04, goos: linux, goarch: amd64}
+          - {runner: ubuntu-24.04-arm, goos: linux, goarch: arm64}
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_VERSION: ${{ needs.check-tag.outputs.version }}
+      BUNDLE: 9l-${{ matrix.goos }}-${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
         with:
           go-version: 1.25.13
           cache: true
-      - name: Build and package binary with legal files
+      - name: Build and exercise native release executable
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
-          bundle="9l-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p "dist/$bundle"
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -trimpath -ldflags="-s -w" -o "dist/$bundle/9l" ./cmd/9l
-          cp LICENSE NOTICE "dist/$bundle/"
-          tar -czf "$bundle.tar.gz" -C dist "$bundle"
-      - uses: actions/upload-artifact@v4
+          mkdir -p "dist/$BUNDLE"
+          go build -trimpath -ldflags="-s -w -X main.version=$RELEASE_VERSION" -o "dist/$BUNDLE/9l" ./cmd/9l
+          test "$("dist/$BUNDLE/9l" --version)" = "9l $RELEASE_VERSION (Go runner)"
+          "dist/$BUNDLE/9l" --help > /dev/null
+          "dist/$BUNDLE/9l" plan testdata/sdk/tests/checkout.spec.ts --format json
+      - name: Package executable and legal files
+        run: |
+          cp LICENSE NOTICE "dist/$BUNDLE/"
+          tar -czf "$BUNDLE.tar.gz" -C dist "$BUNDLE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: 9l-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: 9l-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          name: release-${{ env.BUNDLE }}
+          path: ${{ env.BUNDLE }}.tar.gz
           if-no-files-found: error
 
   publish:
-    needs: binaries
-    runs-on: ubuntu-latest
+    needs: [check-tag, binaries]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-9l-*
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - name: Verify archive contents and write SHA-256 checksums
+        run: python3 scripts/check-cli-archives.py dist
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
-          files: dist/*.tar.gz
+          files: |
+            dist/9l-*.tar.gz
+            dist/SHA256SUMS
           fail_on_unmatched_files: true
           generate_release_notes: true

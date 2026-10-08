@@ -27,7 +27,8 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
-const version = "0.1.0"
+// Release builds set this with -ldflags "-X main.version=<version>".
+var version = "0.0.0"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
