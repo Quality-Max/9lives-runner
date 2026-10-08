@@ -14,8 +14,9 @@ npm exec playwright install chromium
 ```
 
 On Linux use `npm exec playwright install --with-deps chromium`.
-Playwright 1.61.1 and Chromium are qualified; other versions and engines need
-qualification. Preserve the existing project configuration and assertions.
+The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified versions:
+1.61.1 with Chromium. Other versions in that range install but are unqualified,
+as are other engines. Preserve the existing project configuration and assertions.
 The [SDK contract](sdk-bridge.md) describes supported settings and limits.
 
 ## CLI from source

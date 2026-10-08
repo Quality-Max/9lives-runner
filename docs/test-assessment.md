@@ -17,7 +17,19 @@ or model opinion upgrades unknown coverage.
 mkdir -p .context
 go build -o .context/9l ./cmd/9l
 .context/9l assess testdata/assessment/tests/checkout.spec.ts --requirements testdata/assessment/requirements.json --format json
+.context/9l assess testdata/assessment/tests/checkout.spec.ts --titles
 ```
+
+`--requirements` is optional. Without it, the code-level checks still run
+(fixed waits, exclusive, disabled and conditionally skipped tests, missing and
+unawaited assertions, analysis limits). Requirement references are not
+checked, `purpose` and `intentAlignment` stay unknown, `requirementsSHA256` is
+omitted and the report lists the missing contract as a limit. An empty
+`--requirements` value is a usage error rather than a silent skip. The text
+report ends with a per-rule summary in which findings at the same location,
+such as one suite modifier applying to several tests, count once. `--titles` adds literal test titles (first 200
+characters; computed titles are omitted) to the text and JSON report for local
+use. Text output quotes them so control characters are not written raw.
 
 Assessment needs Node 22 or newer. A plain Go build includes the qualified
 TypeScript 5.9.3 parser; it does not need npm, consumer TypeScript, a separate
@@ -29,7 +41,8 @@ JavaScript parser API. It parses source without importing the spec,
 configuration or application. Go owns the
 helper's ten-second budget, cancellation, output limits and report validation.
 Source is limited to 1 MiB, requirements to 256 KiB, recognized tests to 256
-and combined assertions/waits/limit reasons to 2,048. Malformed, unavailable or over-limit
+and combined assertions/waits/limit reasons plus distinct conditional suite
+modifiers to 2,048, with at most 16 conditional modifiers applying to one test. Malformed, unavailable or over-limit
 analysis exits 2; advisory findings exit 0. This is not a gate. Failures write
 fixed diagnostics on stderr and no partial report on stdout: `node-unavailable`,
 `parser-unavailable`, `syntax`, `annotation`, `limit`, `output-limit`, `timeout`,
@@ -38,7 +51,7 @@ are suppressed. Newer syntax unsupported by the pinned parser remains a syntax
 failure; independence from consumer TypeScript is not support for every future
 language feature.
 
-Use a shared requirement contract, not a document per test:
+When you check requirements, use a shared contract, not a document per test:
 
 ```json
 {
@@ -97,22 +110,43 @@ with no recognized assertion still produces a suspected absence finding.
 | No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
-| `test.skip`/`test.fixme` declaration or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
+| `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
+| Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
 | Unknown requirement or unsupported analysis | unsupported | Supply reviewed intent or inspect manually. |
 
 A known requirement mapping supports **purpose** only. Even complete outcome
 annotations leave semantic alignment and assertion adequacy unknown. Static
 assessment always says execution `not_run` and runtime evidence `unknown`.
-Body-level conditional skip/fixme calls remain unsupported; their conditions
-are not evaluated. Async matcher detection follows the pinned Playwright 1.61.1
+Suite modifiers (`test.skip()`, `test.skip(condition, reason)` or the fixture
+callback form, at file or `describe` level or in a `beforeEach`/`beforeAll`/
+`afterEach`/`afterAll` hook) are not test declarations. They apply to every
+recognized test in that suite, including tests declared before them.
+`test.skip()` and `test.skip(true, ...)` disable those tests; `false` is
+ignored; any other condition, a modifier under a branch, or one in an
+`afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
+location. After hooks run once test bodies have run: Playwright 1.61.1 reports
+a passing test skipped from `afterEach` and only some results skipped from
+`afterAll`, so neither disables the suite. Modifiers inside other functions
+cannot be attributed from source and are ignored. Playwright treats a string
+followed by a function as a declaration at runtime, so only calls that cannot
+be one are modifiers: no arguments, one non-title argument, a fixture callback
+or syntactically boolean first argument (`true`, `!x`, a comparison), or a
+non-title condition followed by a literal reason. Ambiguous calls such as
+`test.skip(name, run)` stay disabled declarations; `test.skip(isMobile,
+REASON)` is therefore misread as a disabled test. Body-level conditional skip/fixme calls remain
+unsupported; their conditions are not evaluated. Async matcher detection follows the pinned Playwright 1.61.1
 API, including locator, page, API-response and function assertions.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Report/helper version 2 and policy
-`assessment-source-v3` replace version 1/source-v2; consumers must accept the
-new version and optional finding `code` before upgrading. Requirement contract
-and agent provenance snapshot versions remain 1. Reports omit source, titles, requirement
-prose and raw diagnostic payloads.
+inputs invalidate prior assessments. Report/helper version 3 and policy
+`assessment-source-v4` replace version 2/source-v3. Every finding now carries
+`code`: the limit reason for `analysis-limit` findings and the rule name for
+all others, so `rule` is the finding family and `code` the specific reason.
+Consumers must also accept the `informational` classification, the
+`conditional-skip` rule, an absent `requirementsSHA256` and an optional test
+`title` before upgrading. Requirement contract and agent provenance snapshot
+versions remain 1. Reports omit source, requirement prose and raw diagnostic
+payloads, and omit titles unless `--titles` is given.
 
 ## Maintaining the bundled parser
 

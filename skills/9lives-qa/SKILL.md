@@ -38,6 +38,8 @@ go build -o .context/9l ./cmd/9l
 .context/9l assess path/to/checkout.spec.ts --requirements requirements.json --format json
 ```
 
+Without `--requirements`, assessment still reports waits, skips, exclusive tests
+and missing or unawaited assertions, but leaves requirement mapping unchecked.
 Assessment needs Node 22 or newer; the runner owns its pinned parser. Do not
 install or downgrade consumer TypeScript, change application dependencies or
 change cwd to select an assessment parser. Respect specific analysis-limit

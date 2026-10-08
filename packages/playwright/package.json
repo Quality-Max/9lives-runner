@@ -19,7 +19,7 @@
   },
   "files": ["dist", "LICENSE", "NOTICE", "README.md"],
   "scripts": {"build": "tsc -p tsconfig.json"},
-  "peerDependencies": {"@playwright/test": "1.61.1"},
+  "peerDependencies": {"@playwright/test": ">=1.61.1 <2"},
   "engines": {"node": ">=22"},
   "publishConfig": {"access": "public"}
 }

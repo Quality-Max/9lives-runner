@@ -10,6 +10,8 @@ const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9l-package-smoke-'));
 const destination = path.join(root, '.context', 'npm-pack');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'packages/playwright/package.json')));
+// The peer range admits unqualified releases; qualify against the workspace pin.
+const qualifiedPlaywright = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).devDependencies['@playwright/test'];
 const results = [];
 let stage = 'pack';
 
@@ -54,7 +56,7 @@ try {
   const consumer = path.join(work, 'consumer');
   stage = 'consumer install';
   fs.mkdirSync(path.join(consumer, 'tests'), {recursive: true});
-  fs.writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({name: '9l-package-consumer', private: true, devDependencies: {'@9l/playwright': `file:${tarball}`, '@playwright/test': manifest.peerDependencies['@playwright/test']}}));
+  fs.writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({name: '9l-package-consumer', private: true, devDependencies: {'@9l/playwright': `file:${tarball}`, '@playwright/test': qualifiedPlaywright}}));
   call('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], consumer);
   const installed = path.join(consumer, 'node_modules/@9l/playwright');
   assert(fs.realpathSync(installed).startsWith(`${fs.realpathSync(consumer)}${path.sep}`), 'consumer resolved a workspace SDK');

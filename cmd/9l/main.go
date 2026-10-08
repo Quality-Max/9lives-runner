@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -80,7 +81,7 @@ Usage:
   9l heal <args...>  # delegates to the installed Python healing library
   9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
-  9l assess <spec> --requirements <contract.json> [--format text|json]
+  9l assess <spec> [--requirements <contract.json>] [--format text|json] [--titles]
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
@@ -92,14 +93,25 @@ It never reports an incomplete run green.
 func assessCommand(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("assess", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	requirements := fs.String("requirements", "", "shared reviewed requirement contract")
+	requirements := fs.String("requirements", "", "shared reviewed requirement contract; without it, requirement checks are not run")
 	format := fs.String("format", "text", "text or json advisory report")
 	agentRecord := fs.String("agent-provenance", "", "agent creation snapshot JSON")
+	titles := fs.Bool("titles", false, "include literal test titles (source text) for local use")
 	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true})) != nil {
 		return 2
 	}
-	if fs.NArg() != 1 || *requirements == "" || (*format != "json" && *format != "text") {
-		fmt.Fprintln(errOut, "9l: assess requires one spec, --requirements, and text or json format")
+	if fs.NArg() != 1 || (*format != "json" && *format != "text") {
+		fmt.Fprintln(errOut, "9l: assess requires one spec and text or json format")
+		return 2
+	}
+	// An empty path, e.g. from an unset variable, must not silently drop the
+	// requirement checks. Omit the flag to assess without a contract.
+	emptyRequirements := false
+	fs.Visit(func(f *flag.Flag) {
+		emptyRequirements = emptyRequirements || (f.Name == "requirements" && *requirements == "")
+	})
+	if emptyRequirements {
+		fmt.Fprintln(errOut, "9l: --requirements needs a contract path; omit it to assess without one")
 		return 2
 	}
 	read := func(path string, limit int64) ([]byte, error) {
@@ -123,14 +135,16 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
 	}
-	contract, err := read(*requirements, 256<<10)
-	if err != nil {
-		fmt.Fprintln(errOut, "9l:", err)
-		return 2
+	var contract []byte
+	if *requirements != "" {
+		if contract, err = read(*requirements, 256<<10); err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return 2
+		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	report, err := assessment.Assess(ctx, source, contract)
+	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles})
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
@@ -157,24 +171,67 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 			return 2
 		}
 	} else {
-		fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
-		fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
-		for _, test := range report.Tests {
-			fmt.Fprintf(out, "test at %d:%d: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
-			for _, finding := range test.Findings {
-				rule := finding.Rule
-				if finding.Code != "" {
-					rule += "/" + finding.Code
-				}
-				fmt.Fprintf(out, "  %s [%s] at %d:%d requirement=%s outcome=%s: %s\n", rule, finding.Classification, finding.Line, finding.Column, finding.Requirement, finding.Outcome, finding.Message)
-			}
-		}
-		for _, limit := range report.Limits {
-			fmt.Fprintln(out, "Limit:", limit)
-		}
+		writeAssessmentText(out, report)
 	}
 	// Advice does not gate execution. Invalid or unavailable analysis exits 2.
 	return 0
+}
+
+func writeAssessmentText(out io.Writer, report assessment.Report) {
+	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
+	fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
+	// Findings at the same location, such as one suite modifier applying to
+	// several tests, count once in the summary.
+	type key struct {
+		rule, requirement, outcome string
+		at                         assessment.Location
+	}
+	counted := map[key]bool{}
+	counts, total := map[string]int{}, 0
+	for _, test := range report.Tests {
+		title := ""
+		if test.Title != "" {
+			// Quoting keeps control characters in source titles off the terminal.
+			title = " " + strconv.Quote(test.Title)
+		}
+		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+		for _, finding := range test.Findings {
+			rule := finding.Rule
+			if finding.Code != finding.Rule {
+				rule += "/" + finding.Code
+			}
+			if k := (key{rule, finding.Requirement, finding.Outcome, finding.Location}); !counted[k] {
+				counted[k] = true
+				counts[rule]++
+				total++
+			}
+			fields := ""
+			if finding.Requirement != "" {
+				fields += " requirement=" + finding.Requirement
+			}
+			if finding.Outcome != "" {
+				fields += " outcome=" + finding.Outcome
+			}
+			fmt.Fprintf(out, "  %s [%s] at %d:%d%s: %s\n", rule, finding.Classification, finding.Line, finding.Column, fields, finding.Message)
+		}
+	}
+	for _, limit := range report.Limits {
+		fmt.Fprintln(out, "Limit:", limit)
+	}
+	rules := make([]string, 0, len(counts))
+	for rule := range counts {
+		rules = append(rules, rule)
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		if counts[rules[i]] != counts[rules[j]] {
+			return counts[rules[i]] > counts[rules[j]]
+		}
+		return rules[i] < rules[j]
+	})
+	fmt.Fprintf(out, "Summary: %d tests, %d findings\n", len(report.Tests), total)
+	for _, rule := range rules {
+		fmt.Fprintf(out, "  %s: %d\n", rule, counts[rule])
+	}
 }
 
 func nativeRunTimeout() time.Duration {
