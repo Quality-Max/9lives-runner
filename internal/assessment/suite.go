@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -21,10 +22,16 @@ const (
 	MaxSuiteFiles  = 2048
 	MaxSuiteSource = 64 << 20
 	SuiteTimeout   = 10 * time.Minute
-	suiteWorkers   = 4
 )
 
 const SuiteVersion = 1
+
+// suiteFileTimeout is each file's analyzer budget, as for a single spec.
+var suiteFileTimeout = 10 * time.Second
+
+// suiteWorkers analyzes at most four files at once, and at most half the
+// CPUs, so parallel analyzers do not starve each other of their budgets.
+func suiteWorkers() int { return max(1, min(4, runtime.NumCPU()/2)) }
 
 // Playwright's default testMatch: **/*.@(spec|test).?(c|m)[jt]s?(x).
 var specName = regexp.MustCompile(`\.(spec|test)\.[cm]?[jt]sx?$`)
@@ -216,7 +223,7 @@ func AssessSuite(parent context.Context, inputs []SuiteInput, contract []byte, o
 	files := make([]SuiteFile, len(inputs))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
-	for worker := 0; worker < suiteWorkers; worker++ {
+	for worker := 0; worker < suiteWorkers(); worker++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -234,6 +241,13 @@ func AssessSuite(parent context.Context, inputs []SuiteInput, contract []byte, o
 	}
 	close(jobs)
 	wg.Wait()
+	// A file whose own analyzer timed out may have been slowed by the others
+	// running beside it. Retry it once, alone, within the suite deadline.
+	for index := range files {
+		if files[index].Error == "timeout" && ctx.Err() == nil {
+			files[index] = assessSuiteFile(ctx, inputs[index], contract, c, opts, parser)
+		}
+	}
 	return buildSuite(files, contract), nil
 }
 
@@ -250,7 +264,7 @@ func assessSuiteFile(ctx context.Context, input SuiteInput, contract []byte, c C
 		file.Error = stopped(ctx)
 		return file
 	}
-	report, err := assessWithHelper(ctx, input.Source, contract, c, opts, parser, 10*time.Second)
+	report, err := assessWithHelper(ctx, input.Source, contract, c, opts, parser, suiteFileTimeout)
 	var failure *Error
 	switch {
 	case err == nil:

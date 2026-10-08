@@ -52,7 +52,9 @@ symbolic links; repeated files are assessed once and listed in path order.
 
 Each file keeps the single-file budgets. A suite is limited to 2,048 files and
 64 MiB of source, which are checked before analysis, and to ten minutes
-overall, with four files analyzed at a time. A file that cannot be assessed is
+overall. At most four files, and at most half the CPUs, are analyzed at a
+time. A file whose own analyzer timed out is retried once on its own after the
+others, within the suite deadline. A file that cannot be assessed is
 recorded with its code (the diagnostics below, or `source-limit`,
 `suite-timeout`), and the other files are still assessed. The suite report is
 then still written, with a limit noting the missing files, and the command

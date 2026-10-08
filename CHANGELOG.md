@@ -16,7 +16,8 @@
 - Suites: several specs, a directory or a quoted pattern (`**` supported)
   give one combined report with per-file reports or error codes and a suite
   summary. A file that cannot be assessed does not stop the others; the
-  command then exits 2 (#6).
+  command then exits 2. At most half the CPUs analyze at once, and a file
+  whose analyzer timed out is retried once on its own (#6).
 - Helpers: same-file helper functions are resolved, attributing their
   assertions, waits and limits to the calling test. `// @9l-assertion-helper`
   on a function or import declaration counts calls as reviewed assertions.

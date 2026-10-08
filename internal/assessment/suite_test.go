@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeTree(t *testing.T, files map[string]string) string {
@@ -137,5 +138,40 @@ func TestAssessSuiteStopsAtCancellation(t *testing.T) {
 	}
 	if suite.Summary.Failed != 2 || suite.RequirementsSHA256 != "" {
 		t.Fatalf("summary %+v", suite.Summary)
+	}
+}
+
+func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
+	node := requireNode(t)
+	previous := suiteFileTimeout
+	suiteFileTimeout = 2 * time.Second
+	t.Cleanup(func() { suiteFileTimeout = previous })
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+	source := []byte("import {test,expect} from '@playwright/test';\ntest('a', () => { expect(1).toBe(1); });\n")
+	for _, test := range []struct {
+		name, slow string
+		want       string
+	}{
+		// Slow only on the first run: the retry, alone, succeeds.
+		{"transient", "if /bin/mkdir %s 2>/dev/null; then /bin/sleep 5; fi\n", ""},
+		// Always slow: the file stays a timeout; nothing is invented.
+		{"persistent", "/bin/sleep 5\n", "timeout"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// Trusted test paths, quoted for /bin/sh; no user-provided text.
+			wrapper := "#!/bin/sh\n" + strings.Replace(test.slow, "%s", quote(filepath.Join(dir, "first")), 1) + "exec " + quote(node) + " \"$@\"\n"
+			if err := os.WriteFile(filepath.Join(dir, "node"), []byte(wrapper), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir)
+			suite, err := AssessSuite(context.Background(), []SuiteInput{{Path: "a.spec.ts", Source: source}}, nil, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if file := suite.Files[0]; file.Error != test.want || (test.want == "") != (file.Report != nil) {
+				t.Fatalf("file %+v, want error %q", file, test.want)
+			}
+		})
 	}
 }
