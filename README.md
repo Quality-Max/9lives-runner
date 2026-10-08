@@ -14,6 +14,13 @@ the test oracle. Local execution needs no QualityMax account or hosted service.
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
+![9l assess flags a sleep before an absence check and an unmapped requirement outcome; 9l run passes the checkout fixture in Chromium, then fails it with a planted defect that only the order-count assertion catches](demo/9l-demo.gif)
+
+Recorded against the repository's synthetic checkout fixture with real
+Chromium and no model or account. Assessment is advisory; a passing run proves
+the assertions passed, not that they cover the requirements.
+See [how it is recorded](demo/README.md#recording).
+
 ## Start with an executed result
 
 Install the published SDK in your Playwright project:
