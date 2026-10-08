@@ -23,3 +23,8 @@ Absolute machine paths in these publication copies use `<RUNNER_CHECKOUT>` and
 digests are unchanged. Path-bearing documents and JSON files have different
 bytes from the original collected artifacts; their old whole-file digests do
 not validate these edited copies. The original artifacts are retained privately.
+
+Public history was rewritten before publication. Commit IDs recorded in the
+original evidence identify the private pre-publication history; they are not
+current build identities and may not resolve in the public repository. The
+historical raw artifact referenced above remains available in the private backup.
