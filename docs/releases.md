@@ -39,6 +39,7 @@ and executable permissions, and byte-identical legal files. It writes
 `SHA256SUMS` for all four archives. Only the final publishing job has repository
 write permission; its actions are pinned to commit SHAs. The release workflow
 publishes GitHub assets, not the npm SDK. Archives are not Apple notarized.
+Published assets are not overwritten by a workflow rerun.
 
 After publication, download the matching native archive and checksum file,
 verify them using the [installation guide](install.md), inspect `9l --version`,
