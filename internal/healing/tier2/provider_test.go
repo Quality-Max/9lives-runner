@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+// CLI success tests verify transport behavior, not startup latency. Allow
+// subprocess scheduling headroom under concurrent race-enabled package tests.
+const cliTestTimeout = 10 * time.Second
+
 func TestHTTPProviderUsesBoundedLocalTransport(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +58,7 @@ func TestCLIProviderPromptIsStdinAndErrorsAreSanitized(t *testing.T) {
 	}
 	old := os.Getenv("PATH")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+old)
-	got, err := (CLIProvider{name: "codex", timeout: time.Second}).Complete(context.Background(), "prompt-in-stdin", "m")
+	got, err := (CLIProvider{name: "codex", timeout: cliTestTimeout}).Complete(context.Background(), "prompt-in-stdin", "m")
 	if err != nil || got != "prompt-in-stdin" {
 		t.Fatalf("got=%q err=%v", got, err)
 	}
@@ -75,7 +79,7 @@ func TestResolvePreservesClaudeCodeAliasAndHTTPFallback(t *testing.T) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
 	}))
 	defer server.Close()
-	provider, err := Resolve(Options{Name: "claude-code", BaseURL: server.URL, Timeout: time.Second})
+	provider, err := Resolve(Options{Name: "claude-code", BaseURL: server.URL, Timeout: cliTestTimeout})
 	if err != nil || provider.Name() != "claude" {
 		t.Fatalf("provider=%v err=%v", provider, err)
 	}
@@ -108,7 +112,7 @@ func TestCLIProviderForwardsExplicitModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if got, err := (CLIProvider{name: "codex", timeout: time.Second}).Complete(context.Background(), "prompt", "chosen"); err != nil || got != "prompt" {
+	if got, err := (CLIProvider{name: "codex", timeout: cliTestTimeout}).Complete(context.Background(), "prompt", "chosen"); err != nil || got != "prompt" {
 		t.Fatalf("got=%q err=%v", got, err)
 	}
 }
@@ -197,7 +201,7 @@ func TestProviderPromptBudgetUsesLocalHTTPAndCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if got, err := (CLIProvider{name: "opencode", timeout: time.Second}).Complete(context.Background(), prompt, ""); err != nil || got != "ok" {
+	if got, err := (CLIProvider{name: "opencode", timeout: cliTestTimeout}).Complete(context.Background(), prompt, ""); err != nil || got != "ok" {
 		t.Fatalf("got=%q err=%v", got, err)
 	}
 	bytes, _ := os.ReadFile(record)
