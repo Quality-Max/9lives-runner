@@ -1,0 +1,352 @@
+/* ---- tokens/fonts.css ---- */
+/* =============================================================
+   QualityMax — Webfonts
+   Space Grotesk (display/headings), DM Sans (body),
+   Fira Code (code/mono), DM Serif Display (marketing accent).
+   All four are Google Fonts; consumers load them from the Google
+   CDN. There are no self-hosted binaries to ship.
+   ============================================================= */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fira+Code:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap');
+
+/* ---- tokens/colors.css ---- */
+/* =============================================================
+   QualityMax — Color tokens
+   Dark-first: :root = dark mode, [data-theme="light"] = light.
+   Palette: zinc backgrounds + indigo/violet accents.
+   Marketing/landing surface runs a distinct violet (#7c6cf0)
+   family, exposed here as --brand-* tokens.
+   ============================================================= */
+
+:root {
+  /* ---- Core backgrounds (zinc) ---- */
+  --bg-primary: #09090b;     /* zinc-950 — app canvas */
+  --bg-secondary: #18181b;   /* zinc-900 — header, cards, panels */
+  --bg-tertiary: #27272a;    /* zinc-800 — inputs hover, chips */
+  --bg-elevated: #1c1c22;    /* modals, popovers */
+  --bg-hover: #27272a;
+  --bg-active: #3f3f46;      /* zinc-700 */
+  --bg-page: #09090b;
+
+  /* ---- Text ---- */
+  --text-primary: #fafafa;   /* zinc-50 */
+  --text-secondary: #a1a1aa; /* zinc-400 */
+  --text-tertiary: #71717a;  /* zinc-500 */
+  --text-muted: #52525b;     /* zinc-600 */
+  --text-inverse: #09090b;
+  --text-link: #818cf8;      /* indigo-400 */
+  --text-link-hover: #a5b4fc;/* indigo-300 */
+
+  /* ---- Borders ---- */
+  --border-default: #27272a;
+  --border-light: #18181b;
+  --border-strong: #3f3f46;
+  --border-focus: #6366f1;
+
+  /* ---- Accent (indigo / violet) ---- */
+  --accent-primary: #6366f1;        /* indigo-500 */
+  --accent-primary-hover: #818cf8;  /* indigo-400 */
+  --accent-primary-light: rgba(99, 102, 241, 0.15);
+  --accent-secondary: #a78bfa;      /* violet-400 */
+  --accent-gradient: linear-gradient(135deg, #6366f1, #8b5cf6); /* @kind other */
+
+  /* ---- Semantic ---- */
+  --success-bg: rgba(34, 197, 94, 0.1);
+  --success-text: #4ade80;
+  --success-border: #22c55e;
+  --success-solid: #22c55e;
+
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-text: #f87171;
+  --error-border: #ef4444;
+  --error-solid: #ef4444;
+
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --warning-text: #fbbf24;
+  --warning-border: #f59e0b;
+  --warning-solid: #f59e0b;
+
+  --info-bg: rgba(99, 102, 241, 0.1);
+  --info-text: #818cf8;
+  --info-border: #6366f1;
+  --info-solid: #6366f1;
+
+  /* ---- Component surfaces ---- */
+  --header-bg: #18181b;
+  --header-text: #fafafa;
+  --header-border: #27272a;
+
+  --sidebar-bg: #111114;
+  --sidebar-text: #a1a1aa;
+  --sidebar-text-muted: #52525b;
+  --sidebar-hover: #27272a;
+  --sidebar-active-bg: rgba(99, 102, 241, 0.15);
+  --sidebar-active-text: #818cf8;
+  --sidebar-border: #27272a;
+
+  --card-bg: #18181b;
+  --card-border: #27272a;
+  --card-shadow: none;
+
+  --input-bg: #09090b;
+  --input-border: #27272a;
+  --input-border-hover: #3f3f46;
+  --input-border-focus: #6366f1;
+  --input-text: #fafafa;
+  --input-placeholder: #52525b;
+
+  --modal-overlay: rgba(0, 0, 0, 0.6);
+  --modal-bg: #1c1c22;
+  --modal-border: #27272a;
+
+  --code-bg: #27272a;
+  --code-text: #f87171;
+  --code-block-bg: #09090b;
+  --code-block-text: #e4e4e7;
+
+  /* ---- Badge tints ---- */
+  --badge-blue-bg: rgba(99, 102, 241, 0.1);
+  --badge-blue-text: #818cf8;
+  --badge-green-bg: rgba(34, 197, 94, 0.1);
+  --badge-green-text: #4ade80;
+  --badge-red-bg: rgba(239, 68, 68, 0.1);
+  --badge-red-text: #f87171;
+  --badge-yellow-bg: rgba(245, 158, 11, 0.1);
+  --badge-yellow-text: #fbbf24;
+  --badge-purple-bg: rgba(139, 92, 246, 0.1);
+  --badge-purple-text: #a78bfa;
+
+  /* ---- Marketing / landing surface (violet family) ----
+     The public landing pages run their own brand-violet palette
+     that intentionally differs from the app shell's indigo. */
+  --brand-violet: #7c6cf0;
+  --brand-violet-dark: #6a5bd6;
+  --brand-violet-light: #9b8cff;
+  --brand-violet-soft: #b4a4ff;
+  --brand-canvas: #090b14;          /* deep navy-black hero/section bg */
+  --brand-surface: #10121f;
+  --brand-surface-2: #0c0e1a;
+  --brand-card-tint: rgba(255, 255, 255, 0.04);
+  --brand-border: rgba(255, 255, 255, 0.08);
+  --brand-text: #e8eaf0;
+  --brand-text-dim: #8b8fa8;
+  --brand-gradient-text: linear-gradient(90deg, #9b8cff 0%, #c4a0e8 40%, #d4a574 100%); /* @kind other */
+  --brand-glow: radial-gradient(circle, rgba(124, 108, 240, 0.08) 0%, transparent 70%); /* @kind other */
+}
+
+/* =============================================================
+   LIGHT THEME
+   ============================================================= */
+[data-theme="light"] {
+  --bg-primary: #fafafa;
+  --bg-secondary: #f4f4f5;
+  --bg-tertiary: #e4e4e7;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e4e4e7;
+  --bg-active: #d4d4d8;
+  --bg-page: #fafafa;
+
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-tertiary: #71717a;
+  --text-muted: #a1a1aa;
+  --text-inverse: #fafafa;
+  --text-link: #4f46e5;
+  --text-link-hover: #6366f1;
+
+  --border-default: #e4e4e7;
+  --border-light: #f4f4f5;
+  --border-strong: #d4d4d8;
+  --border-focus: #4f46e5;
+
+  --accent-primary: #4f46e5;
+  --accent-primary-hover: #6366f1;
+  --accent-primary-light: rgba(79, 70, 229, 0.1);
+  --accent-secondary: #7c3aed;
+  --accent-gradient: linear-gradient(135deg, #4f46e5, #7c3aed); /* @kind other */
+
+  --header-bg: #ffffff;
+  --header-text: #09090b;
+  --header-border: #e4e4e7;
+
+  --sidebar-bg: #f4f4f5;
+  --sidebar-text: #52525b;
+  --sidebar-text-muted: #a1a1aa;
+  --sidebar-hover: #e4e4e7;
+  --sidebar-active-bg: rgba(79, 70, 229, 0.1);
+  --sidebar-active-text: #4f46e5;
+  --sidebar-border: #e4e4e7;
+
+  --card-bg: #ffffff;
+  --card-border: #e4e4e7;
+
+  --input-bg: #ffffff;
+  --input-border: #e4e4e7;
+  --input-border-hover: #d4d4d8;
+  --input-border-focus: #4f46e5;
+  --input-text: #09090b;
+  --input-placeholder: #a1a1aa;
+
+  --modal-bg: #ffffff;
+  --modal-border: #e4e4e7;
+  --code-bg: #f4f4f5;
+  --code-text: #db2777;
+  --code-block-bg: #18181b;
+  --code-block-text: #e4e4e7;
+}
+
+/* ---- tokens/typography.css ---- */
+/* =============================================================
+   QualityMax — Typography tokens
+   Space Grotesk (headings), DM Sans (body/UI), Fira Code (mono),
+   DM Serif Display (marketing editorial accent only).
+   ============================================================= */
+
+:root {
+  /* Font families */
+  --font-heading: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-code: 'Fira Code', 'SF Mono', 'Monaco', 'Menlo', monospace;
+  --font-serif: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+
+  /* Type scale (rem) */
+  --text-xs: 0.75rem;     /* 12px */
+  --text-sm: 0.875rem;    /* 14px */
+  --text-base: 1rem;      /* 16px */
+  --text-lg: 1.125rem;    /* 18px */
+  --text-xl: 1.25rem;     /* 20px */
+  --text-2xl: 1.5rem;     /* 24px */
+  --text-3xl: 1.875rem;   /* 30px */
+  --text-4xl: 2.25rem;    /* 36px */
+  --text-5xl: 3rem;       /* 48px */
+
+  /* Font weights */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Line heights */
+  --line-height-tight: 1.25;
+  --line-height-snug: 1.375;
+  --line-height-base: 1.5;
+  --line-height-relaxed: 1.625;
+  --line-height-loose: 1.75;
+
+  /* Letter spacing */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+}
+
+/* ---- tokens/spacing.css ---- */
+/* =============================================================
+   QualityMax — Spacing tokens
+   4px base grid. Names match the px value (--space-4 = 16px).
+   ============================================================= */
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* Container max-widths */
+  --container-sm: 480px;
+  --container-md: 720px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
+  --container-2xl: 1440px;
+
+  /* Layout dimensions */
+  --header-height: 48px;
+  --sidebar-width: 240px;
+  --sidebar-width-collapsed: 64px;
+
+  /* Breakpoints — documentation tokens (custom props are not valid
+     inside @media; JS reads these via getComputedStyle). */
+  --breakpoint-sm: 480px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+}
+
+/* ---- tokens/effects.css ---- */
+/* =============================================================
+   QualityMax — Effects: radius, shadow, motion, z-index
+   Shadows are dark-tuned by default; light theme softens them.
+   ============================================================= */
+
+:root {
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Shadows (dark) */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+
+  /* Motion */
+  --duration-fast: 100ms;   /* @kind other */
+  --duration-base: 150ms;   /* @kind other */
+  --duration-slow: 300ms;   /* @kind other */
+  --duration-slower: 500ms; /* @kind other */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1); /* @kind other */
+  --transition-fast: var(--duration-fast) var(--ease-default); /* @kind other */
+  --transition-base: var(--duration-base) var(--ease-default); /* @kind other */
+  --transition-slow: var(--duration-slow) var(--ease-default); /* @kind other */
+
+  /* Z-index scale */
+  --z-base: 1;       /* @kind other */
+  --z-raised: 10;    /* @kind other */
+  --z-dropdown: 100; /* @kind other */
+  --z-sticky: 200;   /* @kind other */
+  --z-header: 300;   /* @kind other */
+  --z-sidebar: 400;  /* @kind other */
+  --z-overlay: 800;  /* @kind other */
+  --z-modal: 900;    /* @kind other */
+  --z-toast: 1000;   /* @kind other */
+  --z-tooltip: 1100; /* @kind other */
+}
+
+[data-theme="light"] {
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* ---- styles.css ---- */
+/* =============================================================
+   QualityMax Design System — global entry point
+   Consumers link THIS file. It is an
+
+/* ---- page ---- */
+html, body { margin: 0; background: #090b14; color: #e8eaf0; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+a { color: var(--brand-violet-soft); text-decoration: none; }
+a:hover { color: #ffffff; }
+::selection { background: rgba(124,108,240,0.4); }
+html, body { overflow-x: hidden; }
+.matrix-cards { display: none; }
+@media (max-width: 759px) {
+  .matrix-table { display: none; }
+  .matrix-cards { display: block; }
+  header nav { display: none; }
+}

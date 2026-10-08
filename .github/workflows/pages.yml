@@ -1,0 +1,39 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/explainer/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Reject runtime scripts in the static explainer
+        run: |
+          if grep -R -n -E '<script[^>]+src=' docs/explainer/index.html; then
+            echo "docs/explainer must stay a static page without external scripts" >&2
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/explainer
+      - id: deployment
+        uses: actions/deploy-pages@v4

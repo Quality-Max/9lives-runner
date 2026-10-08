@@ -9,7 +9,8 @@ Run Playwright tests with bounded execution and attributable receipts. Add
 named steps and natural-language goals while keeping explicit assertions as
 the test oracle. Local execution needs no QualityMax account or hosted service.
 
-[Documentation](docs/README.md) · [Local demo](demo/README.md) ·
+[Documentation](docs/README.md) · [Explainer](https://quality-max.github.io/9lives-runner/) ·
+[Local demo](demo/README.md) ·
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
