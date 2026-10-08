@@ -1,4 +1,4 @@
-import {test, expect} from '@9lives/playwright';
+import {test, expect} from '@9l/playwright';
 
 test('ordinary assertion passes', async () => {
   expect(1 + 1).toBe(2);

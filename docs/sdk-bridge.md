@@ -1,6 +1,6 @@
 # Local SDK and engine bridge
 
-`@9lives/playwright` is the chosen package name. This repository builds it as an
+`@9l/playwright` is the chosen package name. This repository builds it as an
 npm workspace at version `0.0.0`; no registry publication is performed. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1. Node 22 is the declared
 minimum. Other Playwright versions and browser engines require qualification.
@@ -15,17 +15,17 @@ reporter output cannot be mixed into the protocol. Without `--sdk`, ordinary
 Playwright JSON reporting remains the default; that report also goes to a
 private per-attempt file (`PLAYWRIGHT_JSON_OUTPUT_FILE`), so output on stdout
 cannot corrupt it. The fixture requires a supported engine identity when
-`nineLives` is used.
+`n9l` is used.
 
 ## Contract
 
-Go supplies `NINELIVES_ENGINE_PROTOCOL=9lives.engine/1` and run/job/attempt IDs
+Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
 the protocol and capabilities in a `hello` frame. Go controls the worker through
 the existing owned process group and cancellation/deadline mechanisms. Browser
 handles never cross the bridge. This first version is a startup-control and
 worker-evidence protocol. Interactive goals use the separate attempt-owned
-`9lives.goal/1` Unix socket protocol; see [goals.md](goals.md).
+`9l.goal/1` Unix socket protocol; see [goals.md](goals.md).
 
 Evidence is newline-delimited JSON in a private per-attempt file. Go creates a
 mode-0700 temporary directory for each attempt and names the file in

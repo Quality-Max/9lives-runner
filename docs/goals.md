@@ -1,6 +1,6 @@
 # Bounded local goal execution
 
-`nineLives.goal(instruction, options?)` observes up to 25 visible enabled controls
+`n9l.goal(instruction, options?)` observes up to 25 visible enabled controls
 from at most 100 semantic DOM matches, plus eight bounded heading/status labels.
 Go accepts exactly one typed decision per observation, validates its target and
 parameter names, then awaits an execution acknowledgement. The worker rechecks
@@ -22,7 +22,7 @@ test author's responsibility.
 
 ## Ownership and transport
 
-Go starts a private per-attempt Unix socket (`9lives.goal/1`) in a mode-0700 temp
+Go starts a private per-attempt Unix socket (`9l.goal/1`) in a mode-0700 temp
 directory. Each bounded, strict JSON request must carry the owning run/job/attempt
 identity. Only the socket path and identity reach the worker. API credentials
 remain with the existing Go HTTP transport; provider redirects are rejected.
@@ -85,12 +85,12 @@ untrusted labels, typed decisions, abstention, fresh revalidation and default
 stop policies. Browser handles stay local; no platform account is required.
 See [the existing-project guide](run-existing-project.md) for a runnable harness.
 
-The `nineLives` fixture uses the selected test's Playwright `page` fixture, so
+The `n9l` fixture uses the selected test's Playwright `page` fixture, so
 SDK tests using it require an installed browser even when they only call `step`.
 A failed goal invocation has its own categorical SDK evidence, including failures
 before a provider starts. Catching that exception cannot make the engine pass.
 Observed Playwright test counts remain unchanged; the canonical receipt records
 a separate `goal.failed` policy failure when otherwise passing tests caught it.
 
-The SDK reserves the exact step title `9lives goal` for goal evidence. Use a
-different title for ordinary `nineLives.step` or Playwright steps.
+The SDK reserves the exact step title `9l goal` for goal evidence. Use a
+different title for ordinary `n9l.step` or Playwright steps.

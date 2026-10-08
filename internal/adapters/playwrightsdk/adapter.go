@@ -51,7 +51,7 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 		if binary == "" && regular(candidate) {
 			binary = candidate
 		}
-		candidate = filepath.Join(directory, "node_modules", "@9lives", "playwright", "dist", "reporter.js")
+		candidate = filepath.Join(directory, "node_modules", "@9l", "playwright", "dist", "reporter.js")
 		if reporter == "" && regular(candidate) {
 			reporter = candidate
 		}
@@ -63,7 +63,7 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 		project = filepath.Dir(config)
 	}
 	if project == "" || binary == "" || reporter == "" {
-		return runner.Job{}, fmt.Errorf("SDK engine unavailable: install @playwright/test and build @9lives/playwright before using --sdk")
+		return runner.Job{}, fmt.Errorf("SDK engine unavailable: install @playwright/test and build @9l/playwright before using --sdk")
 	}
 	relative, err := filepath.Rel(project, path)
 	if err != nil {

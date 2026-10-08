@@ -43,7 +43,7 @@ export default class EngineReporter implements Reporter {
     const categories: Record<string, string> = {'test.step': 'action', expect: 'assertion', 'pw:api': 'browser', fixture: 'fixture'};
     this.emit('step_end', {
       testId: this.testId(test), retry: result.retry, stepId: `step-${++this.stepSeq}`,
-      category: step.category === 'test.step' && step.title === '9lives goal' ? 'goal' : categories[step.category] ?? 'other', status: step.error ? 'failed' : 'passed',
+      category: step.category === 'test.step' && step.title === '9l goal' ? 'goal' : categories[step.category] ?? 'other', status: step.error ? 'failed' : 'passed',
     });
   }
   onTestEnd(test: TestCase, result: TestResult) {

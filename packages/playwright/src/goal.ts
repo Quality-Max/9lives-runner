@@ -17,7 +17,7 @@ type Decision = {action: Action; targetId?: string; parameter?: string};
 type Reply = {status: string; goalId?: string; decisionId?: string; decision?: Decision; timeoutMs?: number};
 type Control = {id: string; role: string; label: string; actions: Action[]; blocked: boolean};
 type Target = {handle: ElementHandle<HTMLElement | SVGElement>; fingerprint: string; control: Control};
-const version = '9lives.goal/1';
+const version = '9l.goal/1';
 const risky = /\b(send|resend|invite|publish|broadcast|notify|share|post|reply|comment|buy|purchase|pay|payment|checkout|check out|place (your |my )?order|submit order|order now|complete (order|purchase|checkout|booking|payment)|confirm (order|purchase|payment|booking)|book now|reserve|donate|subscribe|upgrade|start (subscription|trial)|delete|remove|destroy|erase|discard|trash|deactivate|revoke|close account|cancel (account|subscription))\b/i;
 const fail = (status: string): never => { throw new Error(`9lives goal stopped: ${status}`); };
 // Bounded semantic labels, never input values, HTML, URLs or entire page text.

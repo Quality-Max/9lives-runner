@@ -41,10 +41,10 @@ correctness; general semantic review remains planned.
 
 ## Local Playwright SDK
 
-`@9lives/playwright` is a workspace-local package, not yet published. It adds a
-`nineLives.step` and `nineLives.goal` fixtures while retaining normal Playwright assertions and browser
+`@9l/playwright` is a workspace-local package, not yet published. It adds a
+`n9l.step` and `n9l.goal` fixtures while retaining normal Playwright assertions and browser
 fixtures. Go launches the installed Playwright runtime with an opt-in reporter
-and validates the bounded `9lives.engine/1` evidence stream against the owning
+and validates the bounded `9l.engine/1` evidence stream against the owning
 run, job and attempt. Existing execution without `--sdk` is unchanged. Under
 `--sdk`, a skipped test fails the attempt unless it is declared with
 `--pin-skip "<file> › <title>"` (see [skip pins](docs/sdk-bridge.md#skip-pins)).
@@ -65,11 +65,11 @@ checks that a business defect stays red, and verifies timeout/cancel terminate
 the owned worker and browser. It needs no model, application server or account.
 
 ```ts
-import {test, expect} from '@9lives/playwright';
+import {test, expect} from '@9l/playwright';
 
-test('checkout', async ({page, nineLives}) => {
+test('checkout', async ({page, n9l}) => {
   await page.goto('http://localhost:3000/checkout');
-  await nineLives.step('place the order', async () => {
+  await n9l.step('place the order', async () => {
     await page.getByRole('button', {name: 'Place order'}).click();
     await expect(page.getByRole('status')).toHaveText('Order confirmed');
   });
@@ -79,7 +79,7 @@ test('checkout', async ({page, nineLives}) => {
 ## Natural-language goals
 
 ```ts
-await nineLives.goal('Fill Name using name, then click Continue.', {
+await n9l.goal('Fill Name using name, then click Continue.', {
   params: {name: 'Fixture Person'}, maxActions: 3, timeoutMs: 30_000,
 });
 await expect(page.getByRole('heading', {name: 'Review'})).toBeVisible();

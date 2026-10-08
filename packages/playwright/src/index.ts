@@ -9,10 +9,10 @@ export type NineLives = {
   step<T>(name: string, body: () => Promise<T>): Promise<T>;
 };
 
-export const test = base.extend<{nineLives: NineLives}>({
-  nineLives: async ({page}, use, testInfo) => {
+export const test = base.extend<{n9l: NineLives}>({
+  n9l: async ({page}, use, testInfo) => {
     engineIdentity();
-    await use({goal: (instruction, options) => base.step('9lives goal', () => {
+    await use({goal: (instruction, options) => base.step('9l goal', () => {
       if (testInfo.retry > 0) throw new Error('9lives goal stopped: automatic goal retries disabled');
       return executeGoal(page, instruction, options);
     }), step: (name, body) => base.step(name, body)});

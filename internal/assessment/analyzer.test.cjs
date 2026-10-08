@@ -61,10 +61,10 @@ test('all pinned Playwright async matchers require await or return', () => {
 
 test('syntax, aliases and annotations; comments and strings are not assertions', () => {
   const facts = analyze(`import { test as scenario, expect as check } from '@playwright/test';
-  // @9lives-requirement checkout-order
+  // @9l-requirement checkout-order
   scenario('checkout', async ({page}) => {
     const text = 'expect(x).toBe(1)'; // expect(x).toBe(1)
-    // @9lives-outcome confirmation
+    // @9l-outcome confirmation
     await check(page.getByRole('status')).toHaveText('Complete');
   });`);
   assert.equal(facts.tests.length, 1);

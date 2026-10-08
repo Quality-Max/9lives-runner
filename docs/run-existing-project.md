@@ -16,7 +16,7 @@ npm ci
 npm run build
 mkdir -p .context/build
 go build -trimpath -o .context/build/9l ./cmd/9l
-npm pack --workspace @9lives/playwright --pack-destination .context/build
+npm pack --workspace @9l/playwright --pack-destination .context/build
 ```
 
 This creates `.context/build/9l` and
@@ -105,8 +105,8 @@ measured against representative applications.
 ## Use it in an existing Playwright suite
 
 Install the SDK tarball beside that suite's pinned Playwright 1.61.1 dependency,
-change the selected spec's import to `@9lives/playwright`, and add
-`nineLives.goal(...)` where needed. Keep the existing config and explicit
+change the selected spec's import to `@9l/playwright`, and add
+`n9l.goal(...)` where needed. Keep the existing config and explicit
 assertions. Run from the suite's directory with `9l run ... --sdk` plus the
 chosen provider. For authenticated tests, prepare an approved Playwright
 `storageState` through your existing setup; password filling is outside this

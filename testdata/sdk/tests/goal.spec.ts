@@ -1,5 +1,5 @@
-import {test, expect} from '@9lives/playwright';
-test('bounded goal handles delayed controls and style drift', async ({page, nineLives}) => {
+import {test, expect} from '@9l/playwright';
+test('bounded goal handles delayed controls and style drift', async ({page, n9l}) => {
   await page.setContent(`<label>Name <input aria-label="Name"></label><button class="old">Continue</button><p role="status">Ready</p><script>
   document.querySelector('button').onclick = () => {
     document.querySelector('button').remove();
@@ -9,7 +9,7 @@ test('bounded goal handles delayed controls and style drift', async ({page, nine
     }, 350);
   };
   </script>`);
-  const result = await nineLives.goal('Fill Name using parameter name, continue, then confirm the cart.', {params: {name: 'Fixture Person'}});
+  const result = await n9l.goal('Fill Name using parameter name, continue, then confirm the cart.', {params: {name: 'Fixture Person'}});
   expect(result.verified).toBe(false);
   await expect(page.getByRole('status')).toHaveText('Order confirmed');
 });

@@ -51,7 +51,7 @@ func TestOwnedTransportRejectsForeignMalformedEvidence(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", s.socket)
 	}}}
 	defer client.CloseIdleConnections()
-	for _, body := range []string{`{"version":"9lives.goal/1","runId":"foreign","jobId":"job","attemptId":"attempt","op":"start","instruction":"Continue"}`, `{"version":"9lives.goal/1","version":"9lives.goal/1"}`, `{"op":null}`} {
+	for _, body := range []string{`{"version":"9l.goal/1","runId":"foreign","jobId":"job","attemptId":"attempt","op":"start","instruction":"Continue"}`, `{"version":"9l.goal/1","version":"9l.goal/1"}`, `{"op":null}`} {
 		r, err := client.Post("http://engine/goal", "application/json", strings.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
@@ -62,7 +62,7 @@ func TestOwnedTransportRejectsForeignMalformedEvidence(t *testing.T) {
 			t.Fatal(r.StatusCode)
 		}
 	}
-	body := `{"version":"9lives.goal/1","runId":"run","jobId":"job","attemptId":"attempt","op":"start","instruction":"Continue"}`
+	body := `{"version":"9l.goal/1","runId":"run","jobId":"job","attemptId":"attempt","op":"start","instruction":"Continue"}`
 	r, err := client.Post("http://engine/goal", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)

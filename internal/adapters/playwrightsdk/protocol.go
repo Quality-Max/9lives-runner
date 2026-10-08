@@ -13,7 +13,7 @@ import (
 	"github.com/qualitymax/9lives-runner/internal/strictjson"
 )
 
-const Version = "9lives.engine/1"
+const Version = "9l.engine/1"
 const maxFrameBytes = 16 * 1024
 const maxEvents = 10000
 const maxProtocolBytes = 4 << 20
@@ -74,7 +74,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 	steps := make(map[string]bool)
 	total, unpinned := 0, 0
 	ended, summarizing := false, false
-	validation := runner.Validation{AssertionCoverage: "unknown", Description: "9lives.engine/1; attempt-bound step evidence; assertion count unavailable; artifact metadata only"}
+	validation := runner.Validation{AssertionCoverage: "unknown", Description: "9l.engine/1; attempt-bound step evidence; assertion count unavailable; artifact metadata only"}
 	for index, line := range lines {
 		frame, err := decodeEvent(line)
 		if err != nil {

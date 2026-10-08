@@ -1,4 +1,4 @@
-import {test, expect} from '@9lives/playwright';
+import {test, expect} from '@9l/playwright';
 
 test.describe('serial retry compatibility', () => {
   test.describe.configure({mode: 'serial', retries: 1});

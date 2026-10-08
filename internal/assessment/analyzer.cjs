@@ -20,7 +20,7 @@ function analyze(source) {
   if (file.parseDiagnostics.length) throw new Error('syntax');
   const tests = new Set(), expects = new Set();
   for (const statement of file.statements) {
-    if (!ts.isImportDeclaration(statement) || !['@playwright/test', '@9lives/playwright'].includes(statement.moduleSpecifier.text)) continue;
+    if (!ts.isImportDeclaration(statement) || !['@playwright/test', '@9l/playwright'].includes(statement.moduleSpecifier.text)) continue;
     const bindings = statement.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
     for (const binding of bindings.elements) {
@@ -37,7 +37,7 @@ function analyze(source) {
     const values = [];
     for (const range of ts.getLeadingCommentRanges(source, node.getFullStart()) || []) {
       const comment = source.slice(range.pos, range.end);
-      for (const match of comment.matchAll(new RegExp('@9lives-' + kind + '\\s+([^\\s*]+)', 'g'))) {
+      for (const match of comment.matchAll(new RegExp('@9l-' + kind + '\\s+([^\\s*]+)', 'g'))) {
         if (!idPattern.test(match[1])) throw new Error('annotation');
         values.push(match[1]);
       }

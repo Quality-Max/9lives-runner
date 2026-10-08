@@ -1,5 +1,5 @@
 {
-  "name": "@9lives/playwright",
+  "name": "@9l/playwright",
   "version": "0.0.0",
   "description": "Playwright fixtures and the versioned 9lives Go engine bridge",
   "type": "commonjs",

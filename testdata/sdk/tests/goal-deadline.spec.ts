@@ -1,5 +1,5 @@
-import {test, expect} from '@9lives/playwright';
-test('the goal deadline also stops browser observation', async ({page, nineLives}) => {
+import {test, expect} from '@9l/playwright';
+test('the goal deadline also stops browser observation', async ({page, n9l}) => {
   await page.setContent('<button>Continue</button>');
   const original = page.locator.bind(page);
   page.locator = (...args) => {
@@ -8,7 +8,7 @@ test('the goal deadline also stops browser observation', async ({page, nineLives
     return locator;
   };
   const started = Date.now();
-  await expect(nineLives.goal('Click Continue', {timeoutMs: 100})).rejects.toThrow('budget_exhausted');
+  await expect(n9l.goal('Click Continue', {timeoutMs: 100})).rejects.toThrow('budget_exhausted');
   expect(Date.now() - started).toBeLessThan(2000);
   expect(page.isClosed()).toBe(true);
 });

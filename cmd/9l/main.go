@@ -71,7 +71,7 @@ func usage(w io.Writer) {
 Usage:
   9l plan <spec-or-glob>... [--format text|json] [--max-jobs N]
   9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
-          [--sdk]  # opt-in @9lives/playwright engine protocol
+          [--sdk]  # opt-in @9l/playwright engine protocol
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
@@ -458,7 +458,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
-	sdk := fs.Bool("sdk", false, "use the installed @9lives/playwright engine bridge")
+	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
 	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")

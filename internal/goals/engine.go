@@ -26,7 +26,7 @@ import (
 	"github.com/qualitymax/9lives-runner/internal/strictjson"
 )
 
-const Version = "9lives.goal/1"
+const Version = "9l.goal/1"
 const outputTokens = 512
 const maxRequestBytes = 24000
 

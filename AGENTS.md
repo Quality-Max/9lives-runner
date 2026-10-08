@@ -12,7 +12,7 @@ goals, and replay verified actions without depending on a platform account.
   fixtures and browser handles. Keep the engine protocol versioned and bounded.
 - Preserve existing Playwright specs and project configuration. New framework
   behavior is opt-in until compatibility and execution evidence justify a
-  cutover. The local SDK package is `@9lives/playwright`; do not publish it as
+  cutover. The local SDK package is `@9l/playwright`; do not publish it as
   part of routine implementation.
 - Reuse the proven execution and receipt core here. Reuse the platform's
   observed-target grounding, action traces, deterministic generation, healing

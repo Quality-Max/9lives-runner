@@ -61,7 +61,7 @@ func TestRejectUntrustedEvidence(t *testing.T) {
 		"foreign run":         func(f []map[string]any) []map[string]any { f[2]["runId"] = "run-other"; return f },
 		"foreign job":         func(f []map[string]any) []map[string]any { f[2]["jobId"] = "job-other"; return f },
 		"foreign attempt":     func(f []map[string]any) []map[string]any { f[2]["attemptId"] = "old-attempt"; return f },
-		"unknown version":     func(f []map[string]any) []map[string]any { f[0]["version"] = "9lives.engine/99"; return f },
+		"unknown version":     func(f []map[string]any) []map[string]any { f[0]["version"] = "9l.engine/99"; return f },
 		"unknown capability":  func(f []map[string]any) []map[string]any { f[0]["capabilities"] = []string{"guess"}; return f },
 		"zero tests":          func(f []map[string]any) []map[string]any { f[0]["totalTests"] = 0; return f },
 		"missing terminal":    func(f []map[string]any) []map[string]any { return f[:5] },
@@ -313,7 +313,7 @@ func TestNestedPackageKeepsOwningConfigWithHoistedRuntime(t *testing.T) {
 		binaryName += ".cmd"
 	}
 	binary := write(binaryName, "placeholder")
-	reporter := write("node_modules/@9lives/playwright/dist/reporter.js", "placeholder")
+	reporter := write("node_modules/@9l/playwright/dist/reporter.js", "placeholder")
 	job, err := New().Plan(spec, spec, 1)
 	if err != nil {
 		t.Fatal(err)

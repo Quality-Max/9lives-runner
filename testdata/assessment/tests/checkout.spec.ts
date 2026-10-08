@@ -31,26 +31,26 @@ test.beforeEach(async ({ page }) => {
   await page.goto('http://checkout.test/');
 });
 
-// @9lives-requirement checkout-order
+// @9l-requirement checkout-order
 test('banner misses order creation', async ({ page }) => {
   await page.getByRole('button', { name: 'Complete checkout' }).click();
-  // @9lives-outcome confirmation
+  // @9l-outcome confirmation
   await expect(page.getByRole('status')).toHaveText('Order confirmed');
 });
 
-// @9lives-requirement confirmation
+// @9l-requirement confirmation
 test('banner protects confirmation', async ({ page }) => {
   await page.getByRole('button', { name: 'Complete checkout' }).click();
-  // @9lives-outcome confirmation
+  // @9l-outcome confirmation
   await expect(page.getByRole('status')).toHaveText('Order confirmed');
 });
 
-// @9lives-requirement checkout-order
+// @9l-requirement checkout-order
 test('checks persisted order count and items', async ({ page }) => {
   await page.getByRole('button', { name: 'Complete checkout' }).click();
   await expect(page.getByRole('status')).toHaveText('Order confirmed');
-  // @9lives-outcome order-count
+  // @9l-outcome order-count
   expect(orders).toHaveLength(1);
-  // @9lives-outcome order-items
+  // @9l-outcome order-items
   expect(orders[0].items).toEqual(selectedItems);
 });

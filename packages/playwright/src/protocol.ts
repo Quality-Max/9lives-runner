@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {isAbsolute, sep} from 'node:path';
 
-export const protocolVersion = '9lives.engine/1';
+export const protocolVersion = '9l.engine/1';
 export const maxFrameBytes = 16 * 1024;
 export const maxEvents = 10000;
 export const capabilities = ['steps', 'artifact-metadata', 'terminal-outcomes'] as const;

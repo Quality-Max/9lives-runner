@@ -8,12 +8,12 @@ bounded goal-driven execution, independently verified outcomes, deterministic
 replay of verified actions and trustworthy healing. It must run locally without
 an account and integrate with the QualityMax platform through shared contracts.
 
-The Go core owns execution policy and evidence. `@9lives/playwright` owns the
+The Go core owns execution policy and evidence. `@9l/playwright` owns the
 TypeScript fixtures and browser work. Browser handles stay in Playwright workers;
 attempt identity, budgets and process-tree cancellation stay in Go. Maintain
 strict versioned boundaries and preserve existing specs.
 
-The current SDK supports `nineLives.step` and bounded `nineLives.goal` with
+The current SDK supports `n9l.step` and bounded `n9l.goal` with
 `9l run --sdk`, an explicit HTTP or offline scripted provider, and ordinary
 Playwright assertions. Named values stay in browser workers; credentials and
 attempt budgets stay in Go. Model completion never proves a test passed.

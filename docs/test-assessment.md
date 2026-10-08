@@ -52,10 +52,10 @@ test and assertion:
 ```ts
 import {test, expect} from '@playwright/test';
 
-// @9lives-requirement checkout-order
+// @9l-requirement checkout-order
 test('checkout creates an order', async ({page}) => {
   await page.getByRole('button', {name: 'Place order'}).click();
-  // @9lives-outcome order-count
+  // @9l-outcome order-count
   expect(await ordersForThisCheckout()).toHaveLength(1);
 });
 ```

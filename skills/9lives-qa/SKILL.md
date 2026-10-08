@@ -26,7 +26,7 @@ Skill advice does not establish assertion coverage or satisfy a required gate.
 Keep requirements independently sourced: use a ticket, contract or supplied
 expected outcomes, with a reference and revision. Agent-inferred intent remains
 a proposal until reviewed. Reuse one shared requirements contract and map
-`@9lives-requirement` on tests and `@9lives-outcome` on assertions. An annotation
+`@9l-requirement` on tests and `@9l-outcome` on assertions. An annotation
 is a coverage claim to inspect, not semantic proof. Do not change a requirement
 or weaken an assertion to make an execution pass.
 
