@@ -88,7 +88,8 @@ func TestAssessTextWithoutRequirements(t *testing.T) {
 		"test('waits \\x1b[31m', async ({page}) => {\n" +
 		"  await page.waitForTimeout(500);\n" +
 		"  await page.waitForTimeout(500);\n" +
-		"});\n"
+		"});\n" +
+		"test('checks', () => { expect(1).toBe(1); });\n"
 	if err := os.WriteFile(spec, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,8 @@ func TestAssessTextWithoutRequirements(t *testing.T) {
 			"  fixed-wait [demonstrated] at 4:9: ",
 			"  conditional-skip [informational] at 2:1: ",
 			"Limit: No requirement contract was supplied",
-			"Summary: 1 tests, 4 findings\n  fixed-wait: 2\n  conditional-skip: 1\n  no-direct-assertion: 1\n",
+			// The file-level guard applies to both tests and counts once.
+			"Summary: 2 tests, 4 findings\n  fixed-wait: 2\n  conditional-skip: 1\n  no-direct-assertion: 1\n",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("text report lacks %q:\n%s", want, text)
@@ -117,6 +119,19 @@ func TestAssessTextWithoutRequirements(t *testing.T) {
 		}
 		if titled := strings.Contains(text, `test at 3:1 "waits \x1b[31m": `); titled != titles {
 			t.Fatalf("title shown=%v with --titles=%v:\n%s", titled, titles, text)
+		}
+	}
+}
+
+func TestAssessRejectsAnEmptyRequirementsPath(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "fixture.spec.ts")
+	if err := os.WriteFile(spec, []byte("import {test} from '@playwright/test';\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{spec, "--requirements", ""}, {spec, "--requirements="}} {
+		var stdout, stderr bytes.Buffer
+		if code := assessCommand(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "--requirements needs a contract path") {
+			t.Fatalf("empty requirements path accepted for %q: code=%d stdout=%q stderr=%q", args, code, stdout.String(), stderr.String())
 		}
 	}
 }

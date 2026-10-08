@@ -263,10 +263,10 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 		}
 		return len(values) <= 128
 	}
-	seen := map[Location]bool{}
+	seen, modifiers := map[Location]bool{}, map[Location]bool{}
 	total := 0
 	for _, t := range f.Tests {
-		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.ConditionalSkips == nil || t.Disabled == nil ||
+		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.ConditionalSkips == nil || len(t.ConditionalSkips) > 16 || t.Disabled == nil ||
 			(!titles && t.Title != "") || len(t.Title) > 1024 || !utf8.ValidString(t.Title) || !ids(t.Requirements) || t.Limits == nil || len(t.Limits) > len(analysisLimits) || t.Unsupported != (len(t.Limits) > 0) {
 			return false
 		}
@@ -283,14 +283,23 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 				return false
 			}
 		}
-		for _, p := range append(append([]Location{}, t.Sleeps...), t.ConditionalSkips...) {
+		for _, p := range t.Sleeps {
 			if !valid(p) {
 				return false
 			}
 		}
-		total += len(t.Assertions) + len(t.Sleeps) + len(t.ConditionalSkips) + len(t.Limits)
+		applied := map[Location]bool{}
+		for _, p := range t.ConditionalSkips {
+			if !valid(p) || applied[p] {
+				return false
+			}
+			applied[p] = true
+			modifiers[p] = true
+		}
+		total += len(t.Assertions) + len(t.Sleeps) + len(t.Limits)
 	}
-	return total <= 2048
+	// A shared suite modifier counts once, however many tests it applies to.
+	return total+len(modifiers) <= 2048
 }
 
 // Build derives findings from parsed facts. A nil contract means none was
@@ -370,7 +379,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			add("disabled-test", "demonstrated", "engineeringQuality", "", "", "A syntactic test.skip/test.fixme declaration, unconditional suite modifier or enclosing skipped/fixme suite is present.", "Review why the test is disabled before relying on it to protect the requirement.", fact.Location)
 		}
 		for _, p := range fact.ConditionalSkips {
-			add("conditional-skip", "informational", "engineeringQuality", "", "", "A conditional test.skip/test.fixme modifier applies to this test's suite; its condition is not evaluated.", "Confirm the condition and reason; while it holds, this test does not protect the requirement.", p)
+			add("conditional-skip", "informational", "engineeringQuality", "", "", "A conditional or after-hook test.skip/test.fixme modifier applies to this test's suite; whether it skips this test is not evaluated.", "Confirm the condition and reason; while it holds, this test does not protect the requirement.", p)
 		}
 		report.Tests = append(report.Tests, t)
 	}

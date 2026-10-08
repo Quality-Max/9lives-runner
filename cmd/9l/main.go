@@ -104,6 +104,16 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "9l: assess requires one spec and text or json format")
 		return 2
 	}
+	// An empty path, e.g. from an unset variable, must not silently drop the
+	// requirement checks. Omit the flag to assess without a contract.
+	emptyRequirements := false
+	fs.Visit(func(f *flag.Flag) {
+		emptyRequirements = emptyRequirements || (f.Name == "requirements" && *requirements == "")
+	})
+	if emptyRequirements {
+		fmt.Fprintln(errOut, "9l: --requirements needs a contract path; omit it to assess without one")
+		return 2
+	}
 	read := func(path string, limit int64) ([]byte, error) {
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Size() > limit {
@@ -170,6 +180,13 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 func writeAssessmentText(out io.Writer, report assessment.Report) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
 	fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
+	// Findings at the same location, such as one suite modifier applying to
+	// several tests, count once in the summary.
+	type key struct {
+		rule, requirement, outcome string
+		at                         assessment.Location
+	}
+	counted := map[key]bool{}
 	counts, total := map[string]int{}, 0
 	for _, test := range report.Tests {
 		title := ""
@@ -183,8 +200,11 @@ func writeAssessmentText(out io.Writer, report assessment.Report) {
 			if finding.Code != finding.Rule {
 				rule += "/" + finding.Code
 			}
-			counts[rule]++
-			total++
+			if k := (key{rule, finding.Requirement, finding.Outcome, finding.Location}); !counted[k] {
+				counted[k] = true
+				counts[rule]++
+				total++
+			}
 			fields := ""
 			if finding.Requirement != "" {
 				fields += " requirement=" + finding.Requirement

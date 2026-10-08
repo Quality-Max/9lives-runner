@@ -333,9 +333,38 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign conditional skip accepted")
 	}
+	f.Tests[0].ConditionalSkips = []Location{{1, 1}, {1, 1}}
+	if validFacts(f, []byte("x"), false) {
+		t.Fatal("duplicate conditional skip accepted")
+	}
 	f.Tests[0].ConditionalSkips = nil
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("missing conditional skips accepted")
+	}
+}
+
+func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
+	source := []byte(strings.Repeat("xxxxxxxx\n", 256))
+	guards := []Location{{1, 1}, {2, 1}, {3, 1}, {4, 1}, {5, 1}}
+	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{}}
+	for line := 10; line < 210; line++ {
+		assertions := make([]Assertion, 6)
+		for i := range assertions {
+			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}}
+		}
+		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Location{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}})
+	}
+	if !validFacts(f, source, false) {
+		t.Fatal("shared modifiers counted once per test")
+	}
+	many := make([]Location, 17)
+	for i := range many {
+		many[i] = Location{i + 1, 1}
+	}
+	f.Tests = f.Tests[:1]
+	f.Tests[0].ConditionalSkips = many
+	if validFacts(f, source, false) {
+		t.Fatal("more than 16 modifiers on one test accepted")
 	}
 }
 

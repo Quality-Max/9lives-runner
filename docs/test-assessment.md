@@ -24,8 +24,10 @@ go build -o .context/9l ./cmd/9l
 (fixed waits, exclusive, disabled and conditionally skipped tests, missing and
 unawaited assertions, analysis limits). Requirement references are not
 checked, `purpose` and `intentAlignment` stay unknown, `requirementsSHA256` is
-omitted and the report lists the missing contract as a limit. The text report
-ends with a per-rule summary. `--titles` adds literal test titles (first 200
+omitted and the report lists the missing contract as a limit. An empty
+`--requirements` value is a usage error rather than a silent skip. The text
+report ends with a per-rule summary in which findings at the same location,
+such as one suite modifier applying to several tests, count once. `--titles` adds literal test titles (first 200
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
 
@@ -39,7 +41,8 @@ JavaScript parser API. It parses source without importing the spec,
 configuration or application. Go owns the
 helper's ten-second budget, cancellation, output limits and report validation.
 Source is limited to 1 MiB, requirements to 256 KiB, recognized tests to 256
-and combined assertions/waits/conditional skips/limit reasons to 2,048. Malformed, unavailable or over-limit
+and combined assertions/waits/limit reasons plus distinct conditional suite
+modifiers to 2,048, with at most 16 conditional modifiers applying to one test. Malformed, unavailable or over-limit
 analysis exits 2; advisory findings exit 0. This is not a gate. Failures write
 fixed diagnostics on stderr and no partial report on stdout: `node-unavailable`,
 `parser-unavailable`, `syntax`, `annotation`, `limit`, `output-limit`, `timeout`,
@@ -108,7 +111,7 @@ with no recognized assertion still produces a suspected absence finding.
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
-| Conditional `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | The test runs only while the unevaluated condition is false; no concern is raised. |
+| Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
 | Unknown requirement or unsupported analysis | unsupported | Supply reviewed intent or inspect manually. |
 
 A known requirement mapping supports **purpose** only. Even complete outcome
@@ -119,12 +122,18 @@ callback form, at file or `describe` level or in a `beforeEach`/`beforeAll`/
 `afterEach`/`afterAll` hook) are not test declarations. They apply to every
 recognized test in that suite, including tests declared before them.
 `test.skip()` and `test.skip(true, ...)` disable those tests; `false` is
-ignored; any other condition, or a modifier under a branch, produces
-`conditional-skip` at the modifier's location. Modifiers inside other
-functions cannot be attributed from source and are ignored. A two-argument call
-whose first argument is not a string literal and whose last argument is not an
-inline function is read as a modifier, so `test.skip(titleVariable,
-callbackVariable)` is misread. Body-level conditional skip/fixme calls remain
+ignored; any other condition, a modifier under a branch, or one in an
+`afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
+location. After hooks run once test bodies have run: Playwright 1.61.1 reports
+a passing test skipped from `afterEach` and only some results skipped from
+`afterAll`, so neither disables the suite. Modifiers inside other functions
+cannot be attributed from source and are ignored. Playwright treats a string
+followed by a function as a declaration at runtime, so only calls that cannot
+be one are modifiers: no arguments, one non-title argument, a fixture callback
+or syntactically boolean first argument (`true`, `!x`, a comparison), or a
+non-title condition followed by a literal reason. Ambiguous calls such as
+`test.skip(name, run)` stay disabled declarations; `test.skip(isMobile,
+REASON)` is therefore misread as a disabled test. Body-level conditional skip/fixme calls remain
 unsupported; their conditions are not evaluated. Async matcher detection follows the pinned Playwright 1.61.1
 API, including locator, page, API-response and function assertions.
 Findings carry locations, requirement/outcome IDs, rationale and suggested

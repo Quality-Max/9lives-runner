@@ -70,16 +70,36 @@ function createAnalyzer(ts) {
     const isHookCallback = node => ts.isFunctionLike(node) && isTestCall(node.parent, ['beforeEach', 'beforeAll', 'afterEach', 'afterAll']);
     const isFunction = node => !!node && (ts.isArrowFunction(node) || ts.isFunctionExpression(node));
     const isTitle = node => !!node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node));
+    const isBoolean = node => [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(node.kind)
+      || (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken)
+      || (ts.isBinaryExpression(node) && [ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken, ts.SyntaxKind.LessThanEqualsToken,
+        ts.SyntaxKind.GreaterThanEqualsToken, ts.SyntaxKind.InstanceOfKeyword, ts.SyntaxKind.InKeyword].includes(node.operatorToken.kind));
     // test.skip()/test.skip(condition, reason) rather than test.skip(title, body).
-    const isModifier = node => isTestCall(node, ['skip', 'fixme']) && !isTitle(node.arguments[0])
-      && (node.arguments.length < 2 || !isFunction(node.arguments[node.arguments.length - 1]));
+    // Playwright reads a string followed by a function as a declaration at
+    // runtime, so only calls that cannot be one are modifiers. Ambiguous calls
+    // such as test.skip(name, run) stay declarations.
+    const isModifier = node => {
+      if (!isTestCall(node, ['skip', 'fixme'])) return false;
+      const [first, second] = node.arguments;
+      if (!first) return true;
+      if (isTitle(first)) return false;
+      if (isFunction(first) || isBoolean(first)) return true;
+      return node.arguments.length === 1 || (node.arguments.length === 2 && isTitle(second));
+    };
     // The suite scope a modifier applies to, through hooks only. A modifier
     // inside any other function cannot be attributed from source and is ignored.
+    // One in an after hook runs once test bodies have run, so it is reported as
+    // conditional rather than disabling the suite.
     const modifierScope = (node, scope) => {
       let conditional = false;
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
         if (ancestor === scope) return { conditional };
-        if (ts.isFunctionLike(ancestor)) { if (!isHookCallback(ancestor)) return null; continue; }
+        if (ts.isFunctionLike(ancestor)) {
+          if (!isHookCallback(ancestor)) return null;
+          if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) conditional = true;
+          continue;
+        }
         if (ts.isExpressionStatement(ancestor) || ts.isBlock(ancestor) || ts.isAwaitExpression(ancestor) || ts.isParenthesizedExpression(ancestor)
           || (ts.isCallExpression(ancestor) && isTestCall(ancestor, ['beforeEach', 'beforeAll', 'afterEach', 'afterAll']))) continue;
         conditional = true;
@@ -218,8 +238,11 @@ function createAnalyzer(ts) {
         if (entry.disabled) fact.disabled = true;
         fact.conditionalSkips.push(...entry.conditional);
       }
+      if (fact.conditionalSkips.length > 16) throw new AnalysisError('limit');
     }
-    if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.conditionalSkips.length + f.limits.length, 0) > 2048) throw new AnalysisError('limit');
+    // A shared modifier counts once, however many tests it applies to.
+    const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
+    if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     return { version: 3, compiler: ts.version, tests: results };
   }
 

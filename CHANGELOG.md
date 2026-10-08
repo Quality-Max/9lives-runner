@@ -11,7 +11,11 @@
   without a contract and requirement mapping is reported as not run (#5).
 - Suite-level `test.skip(condition, reason)`/`test.fixme` modifiers are no
   longer parsed as tests; conditional ones are reported as informational
-  `conditional-skip`, unconditional ones keep `disabled-test` (#7).
+  `conditional-skip`, unconditional ones keep `disabled-test` (#7). Calls that
+  could be declarations, such as `test.skip(name, run)`, stay disabled tests;
+  modifiers in after hooks are informational; a modifier shared by several
+  tests counts once toward analysis limits and the text summary. An empty
+  `--requirements` value is a usage error.
 - Every assessment finding carries `code`; report version 3, policy
   `assessment-source-v4` (#10).
 - Assessment text output omits empty requirement/outcome fields, ends with a
