@@ -165,6 +165,76 @@ function createAnalyzer(ts) {
       }
       return declarations.filter(isDeclaration);
     };
+    const isAsync = fn => !!fn.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword);
+    // The marker must be the whole comment, or a whole JSDoc line, directly
+    // before the declaration; a mention in prose does not mark anything.
+    const marked = node => {
+      const ranges = ts.getLeadingCommentRanges(source, node.getFullStart()) || [];
+      if (!ranges.length) return false;
+      const text = source.slice(ranges[ranges.length - 1].pos, ranges[ranges.length - 1].end);
+      const lines = text.startsWith('//') ? [text.slice(2)] : text.replace(/^\/\*\*?|\*\/$/g, '').split('\n').map(line => line.replace(/^\s*\*?/, ''));
+      return lines.some(line => line.trim() === '@9l-assertion-helper');
+    };
+    // A non-generator const function or function declaration with a body;
+    // anything else, such as a parameter, let binding or fixture, is not
+    // resolvable.
+    const functionOf = declaration => {
+      if (ts.isFunctionDeclaration(declaration)) return declaration.body && !declaration.asteriskToken ? declaration : null;
+      if (ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name) && ts.isVariableDeclarationList(declaration.parent)
+        && ts.isVariableStatement(declaration.parent.parent) && (declaration.parent.flags & ts.NodeFlags.Const) && declaration.initializer
+        && (ts.isArrowFunction(declaration.initializer) || (ts.isFunctionExpression(declaration.initializer) && !declaration.initializer.asteriskToken))) return declaration.initializer;
+      return null;
+    };
+    const statementOf = declaration => ts.isVariableDeclaration(declaration) ? declaration.parent.parent : declaration;
+    const contains = (ancestor, node) => {
+      for (let current = node; current; current = current.parent) if (current === ancestor) return true;
+      return false;
+    };
+    // Every value binding in the file by name. A helper resolves only when its
+    // name is bound exactly once, so shadowing, hoisting and block scoping
+    // cannot pick the wrong declaration.
+    const bindingsByName = new Map();
+    (function collect(node) {
+      const names = ts.isVariableDeclaration(node) || ts.isParameter(node) ? boundNames(node.name)
+        : (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isClassDeclaration(node) || ts.isClassExpression(node)
+          || ts.isEnumDeclaration(node) || ts.isModuleDeclaration(node) || ts.isImportClause(node) || ts.isImportSpecifier(node)
+          || ts.isNamespaceImport(node) || ts.isImportEqualsDeclaration(node)) && node.name && ts.isIdentifier(node.name) ? [node.name.text] : [];
+      for (const name of names) bindingsByName.set(name, [...(bindingsByName.get(name) || []), node]);
+      ts.forEachChild(node, collect);
+    })(file);
+    // Imported bindings marked as assertion helpers on their import declaration.
+    const importedHelpers = new Set();
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || !marked(statement) || ['@playwright/test', '@9l/playwright'].includes(statement.moduleSpecifier.text)) continue;
+      const clause = statement.importClause;
+      if (clause?.name) importedHelpers.add(clause.name.text);
+      if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) clause.namedBindings.elements.forEach(binding => importedHelpers.add(binding.name.text));
+    }
+    // A called name resolves to a marked import, or to a function declared in a
+    // scope enclosing the call but outside the function being scanned (so it
+    // is neither scanned twice nor called before initialization).
+    const resolveHelper = (name, call, scanned) => {
+      const declarations = bindingsByName.get(name) || [];
+      if (declarations.length !== 1) return null;
+      const [declaration] = declarations;
+      if (ts.isImportClause(declaration) || ts.isImportSpecifier(declaration)) return importedHelpers.has(name) ? { marked: true, fn: null } : null;
+      const fn = functionOf(declaration);
+      if (!fn || !contains(statementOf(declaration).parent, call) || contains(scanned, declaration)) return null;
+      return { marked: marked(statementOf(declaration)), fn };
+    };
+    // Inlining stops before it could exhaust the file's fact limit or its work
+    // budget; the abandoned call is then an unresolved helper.
+    // Inlined facts may only use what the file's own matcher and wait calls,
+    // counted syntactically as an upper bound, leave of the fact limit.
+    class Exhausted {}
+    const budget = { facts: 0, visits: 0 };
+    let direct = 0;
+    (function count(node) {
+      if (ts.isCallExpression(node) && ((ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'waitForTimeout')
+        || expects.has(root(node.expression)))) direct++;
+      ts.forEachChild(node, count);
+    })(file);
+    const inlineFacts = 1984 - direct, inlineVisits = 200000;
     function visit(node, inheritedDisabled = false, scopes = [file]) {
       if (ts.isFunctionLike(node) && ts.isCallExpression(node.parent) && isSuite(node.parent.expression)) scopes = [...scopes, node];
       // A call through a test binding redeclared in an enclosing scope is not a
@@ -214,52 +284,125 @@ function createAnalyzer(ts) {
                 if (ts.isIdentifier(binding.name) && ['page', 'request', 'context', 'browser'].includes((binding.propertyName || binding.name).text)) fixtureRoots.add(binding.name.text);
               }
             }
-            // Conservatively exclude matcher facts if an imported binding is
-            // redeclared anywhere in this callback or an enclosing scope.
-            const shadowed = new Set();
-            const declare = child => {
-              if (isDeclaration(child) && bindsAlias(child.name)) {
-                limited('shadowed-binding', child);
-                boundNames(child.name).forEach(name => shadowed.add(name));
-              }
-            };
-            function bindings(child) { declare(child); ts.forEachChild(child, bindings); }
-            bindings(callback);
-            enclosingDeclarations(node).forEach(declare);
-            function scan(child) {
-              // Helpers, branches and shadowed identifiers prevent complete analysis.
-              if (ts.isFunctionLike(child)) limited('nested-function', child);
-              if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
-                || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
-              if (ts.isCallExpression(child)) {
-                // Body-level skips can depend on runtime conditions or fixture
-                // values. Do not infer their disabled state from source alone.
-                if (tests.has(root(child.expression)) && ts.isPropertyAccessExpression(child.expression) && ['skip', 'fixme'].includes(child.expression.name.text)) limited('runtime-skip', child);
-                if (ts.isPropertyAccessExpression(child.expression) && child.expression.name.text === 'waitForTimeout') fact.sleeps.push(location(child));
-                if (!expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !fixtureRoots.has(root(child.expression))) limited('unresolved-helper', child);
-                if (ts.isPropertyAccessExpression(child.expression) && expects.has(root(child.expression)) && !shadowed.has(root(child.expression))) {
-                  // The outer matcher call, rather than expect(...) or expect.poll(...).
-                  let chain = child.expression.expression;
-                  const modifiers = [];
-                  while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
-                  if (ts.isCallExpression(chain)) {
-                    let anchor = child;
-                    while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
-                    const awaited = ts.isAwaitExpression(child.parent) || ts.isReturnStatement(child.parent);
-                    const matcher = child.expression.name.text;
-                    const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects')
-                      || child.getText(file).startsWith(root(child.expression) + '.poll(');
-                    // An unawaited matcher of unknown timing may be an unawaited promise.
-                    if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited) limited('unknown-matcher', child);
-                    fact.assertions.push({ ...location(child), outcomes: annotations(anchor, 'outcome'), unawaited: asyncMatcher && !awaited, absence: absence(matcher, modifiers, child.arguments) });
+            // Whether the last recognized fact was a fixed wait, in execution order
+            // through resolved helpers.
+            const order = { waited: false, expansions: 0 };
+            // Scan one function body: the test callback, or a resolved helper whose
+            // facts are attributed to the test's call site. `floating` means a
+            // promise on the path from the test is neither awaited nor returned;
+            // `returned` means the function's return value is consumed.
+            function scanFunction(fn, roots, declarationsAt, ctx) {
+              const spend = () => { if (ctx.depth > 0 && ++budget.visits > inlineVisits) throw new Exhausted(); };
+              // Conservatively exclude matcher facts if an imported binding is
+              // redeclared in this function or an enclosing scope.
+              const shadowed = new Set();
+              const declare = child => {
+                if (isDeclaration(child) && bindsAlias(child.name)) {
+                  limited('shadowed-binding', child);
+                  boundNames(child.name).forEach(name => shadowed.add(name));
+                }
+              };
+              function bindings(child) { spend(); declare(child); ts.forEachChild(child, bindings); }
+              bindings(fn);
+              enclosingDeclarations(declarationsAt).forEach(declare);
+              const at = child => ctx.site || location(child);
+              // Only this function's own concise body passes its promise to the
+              // caller, and only when the caller consumes it. A return statement
+              // in a nested function keeps its previous treatment; that function
+              // is already a limit.
+              const returnedHere = child => {
+                if (ts.isArrowFunction(child.parent)) return child.parent === fn && fn.body === child && ctx.returned;
+                return ts.isReturnStatement(child.parent) && ctx.returned;
+              };
+              const consumed = child => !ctx.floating && (ts.isAwaitExpression(child.parent) || returnedHere(child));
+              const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
+              const assertion = (child, outcomes, unawaited, isAbsence) => {
+                record();
+                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited });
+                order.waited = false;
+              };
+              function scan(child) {
+                spend();
+                // Helpers, branches and shadowed identifiers prevent complete analysis.
+                if (ts.isFunctionLike(child)) limited('nested-function', child);
+                if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
+                  || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
+                if (ts.isCallExpression(child)) {
+                  // Body-level skips can depend on runtime conditions or fixture
+                  // values. Do not infer their disabled state from source alone.
+                  if (tests.has(root(child.expression)) && ts.isPropertyAccessExpression(child.expression) && ['skip', 'fixme'].includes(child.expression.name.text)) limited('runtime-skip', child);
+                  if (ts.isPropertyAccessExpression(child.expression) && child.expression.name.text === 'waitForTimeout') {
+                    record();
+                    fact.sleeps.push(at(child));
+                    order.waited = true;
+                  }
+                  if (!expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
+                    const helper = ts.isIdentifier(child.expression) ? resolveHelper(child.expression.text, child, fn) : null;
+                    if (!helper || (!helper.marked && (ctx.depth >= 4 || ctx.stack.has(helper.fn) || order.expansions >= 64))) {
+                      limited('unresolved-helper', child);
+                    } else if (helper.marked) {
+                      // A reviewed assertion helper counts as one attributable
+                      // assertion; its body is not inferred.
+                      let anchor = child;
+                      while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
+                      const settled = consumed(child);
+                      // Only an async helper is known to return a promise; for any
+                      // other unconsumed marked helper the timing is unknown.
+                      const pending = !settled && !ctx.floating;
+                      if (pending && !(helper.fn && isAsync(helper.fn))) limited('unknown-matcher', child);
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false);
+                    } else {
+                      // Inline a same-file helper. Parameters given a browser
+                      // fixture value are fixture roots inside it.
+                      order.expansions++;
+                      const helperRoots = new Set();
+                      helper.fn.parameters.forEach((parameter, index) => {
+                        const argument = child.arguments[index];
+                        if (ts.isIdentifier(parameter.name) && argument && roots.has(root(argument))) helperRoots.add(parameter.name.text);
+                      });
+                      const settled = consumed(child);
+                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
+                      try {
+                        scanFunction(helper.fn, helperRoots, helper.fn, { site: at(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
+                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]) });
+                      } catch (error) {
+                        if (!(error instanceof Exhausted)) throw error;
+                        fact.assertions.length = saved.assertions;
+                        fact.sleeps.length = saved.sleeps;
+                        fact.limits = saved.limits;
+                        fact.unsupported = saved.unsupported;
+                        order.waited = saved.waited;
+                        budget.facts = saved.facts;
+                        limited('unresolved-helper', child);
+                      }
+                    }
+                  }
+                  if (ts.isPropertyAccessExpression(child.expression) && expects.has(root(child.expression)) && !shadowed.has(root(child.expression))) {
+                    // The outer matcher call, rather than expect(...) or expect.poll(...).
+                    let chain = child.expression.expression;
+                    const modifiers = [];
+                    while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
+                    if (ts.isCallExpression(chain)) {
+                      let anchor = child;
+                      while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
+                      const awaited = consumed(child);
+                      const matcher = child.expression.name.text;
+                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects')
+                        || child.getText(file).startsWith(root(child.expression) + '.poll(');
+                      // An unawaited matcher of unknown timing may be an unawaited promise.
+                      if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited && !ctx.floating) limited('unknown-matcher', child);
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments));
+                    }
                   }
                 }
+                ts.forEachChild(child, scan);
               }
-              ts.forEachChild(child, scan);
+              // Include parameters to notice an expect alias being shadowed.
+              fn.parameters.forEach(scan);
+              if (ts.isBlock(fn.body)) ts.forEachChild(fn.body, scan);
+              else scan(fn.body);
             }
-            // Include callback parameters to notice an expect alias being shadowed.
-            callback.parameters.forEach(scan);
-            ts.forEachChild(callback.body, scan);
+            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set() });
           }
           results.push(fact);
           if (results.length > 256) throw new AnalysisError('limit');
@@ -285,7 +428,7 @@ function createAnalyzer(ts) {
     // A shared modifier counts once, however many tests it applies to.
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
-    return { version: 4, compiler: ts.version, tests: results };
+    return { version: 5, compiler: ts.version, tests: results };
   }
 
   return analyze;
@@ -308,7 +451,7 @@ async function main() {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 4, error: code }));
+    process.stdout.write(JSON.stringify({ version: 5, error: code }));
     process.exitCode = 2;
   }
 }
