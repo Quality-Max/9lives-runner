@@ -322,3 +322,177 @@ test('absence assertions are marked, and negated absence matchers are presence c
     });`);
   assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.absence)), [Array(10).fill(true), Array(7).fill(false)]);
 });
+
+const summary = t => ({ assertions: t.assertions.map(a => [a.line, a.unawaited, a.absence, a.afterWait]), sleeps: t.sleeps.map(s => s.line), limits: t.limits.map(l => l.code) });
+
+test('same-file helpers are inlined at their call site in execution order', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function expectSaved(page) {
+      await page.getByRole('button').click();
+      await expect(page.getByText('Saved')).toBeVisible();
+    }
+    const expectGone = async (locator) => { await page2.waitForTimeout(1); await expect(locator).toBeHidden(); };
+    const count = (rows) => expect(rows).toHaveCount(0);
+    test('saved', async ({page}) => {
+      await page.waitForTimeout(1);
+      await expectSaved(page);
+      await expectGone(page.getByRole('alert'));
+      await count(page.getByRole('row'));
+    });
+    test('wait then helper absence', async ({page}) => {
+      await page.waitForTimeout(1);
+      await count(page.getByRole('row'));
+    });`);
+  // Facts carry the test's call site; a fixture argument makes the parameter a fixture root.
+  assert.deepEqual(summary(facts.tests[0]), {
+    assertions: [[10, false, false, true], [11, false, true, true], [12, false, true, false]],
+    sleeps: [9, 11],
+    limits: ['unresolved-helper'], // page2 inside expectGone is not a fixture
+  });
+  assert.equal(facts.tests[0].limits[0].line, 6);
+  assert.deepEqual(summary(facts.tests[1]), { assertions: [[16, false, true, true]], sleeps: [15], limits: [] });
+});
+
+test('a helper wait followed by its own absence check stays ordered', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function closesToast(page) {
+      await page.waitForTimeout(2000);
+      await expect(page.getByRole('alert')).toBeHidden();
+    }
+    test('t', async ({page}) => { await closesToast(page); });`);
+  assert.deepEqual(summary(facts.tests[0]), { assertions: [[6, false, true, true]], sleeps: [6], limits: [] });
+});
+
+test('unconsumed helper promises make their assertions unawaited', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function asyncCheck(page) { expect(1).toBe(1); await expect(page).toHaveURL('/'); }
+    function returnsCheck(page) { return expect(page).toHaveURL('/'); }
+    function syncCheck() { expect(1).toBe(1); }
+    test('floating', async ({page}) => { asyncCheck(page); returnsCheck(page); syncCheck(); });
+    test('consumed', async ({page}) => { await asyncCheck(page); await returnsCheck(page); syncCheck(); });
+    test('returned', ({page}) => { return returnsCheck(page); });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.unawaited)), [[true, true, true, false], [false, false, false, false], [false]]);
+  assert(facts.tests.every(t => t.limits.length === 0));
+});
+
+test('unresolvable helpers stay unknown and never add assertions', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    import { importedCheck } from './helpers';
+    let reassigned = () => expect(1).toBe(1);
+    function recursive(page) { recursive(page); }
+    const h1 = () => h2(); const h2 = () => h3(); const h3 = () => h4(); const h4 = () => h5(); const h5 = () => expect(1).toBe(1);
+    test('imported', async () => { await importedCheck(); });
+    test('let', async () => { reassigned(); });
+    test('parameter', async ({ login }) => { await login(); });
+    test('recursive', async ({page}) => { recursive(page); });
+    test('too deep', async () => { h1(); });
+    test('shadowed helper', async () => { const expectSaved = other; expectSaved(); });
+    function expectSaved() { expect(1).toBe(1); }`);
+  assert.deepEqual(facts.tests.map(t => [t.assertions.length, t.limits.map(l => l.code)]), [
+    [0, ['unresolved-helper']], [0, ['unresolved-helper']], [0, ['unresolved-helper']],
+    [0, ['unresolved-helper']], [0, ['unresolved-helper']], [0, ['unresolved-helper']]]);
+});
+
+test('helper limits, shadowing and outcome annotations carry through', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    function branchy(page) { if (flag) { expect(1).toBe(1); } }
+    function shadows(expect) { expect(1).toBe(1); }
+    function mapped(page) {
+      // @9l-outcome order-created
+      expect(1).toBe(1);
+    }
+    test('branch', async ({page}) => { branchy(page); });
+    test('shadow', async ({page}) => { shadows(page); });
+    test('mapped', async ({page}) => { mapped(page); });`);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])), [[['conditional-flow', 2]], [['shadowed-binding', 3]], []]);
+  assert.deepEqual(facts.tests.map(t => t.assertions.length), [1, 0, 1]);
+  assert.deepEqual(facts.tests[2].assertions[0].outcomes, ['order-created']);
+});
+
+test('marked assertion helpers count as one assertion without inference', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    // @9l-assertion-helper
+    import { expectOrderSaved, expectToast } from './checks';
+    import { submit } from './actions';
+    // @9l-assertion-helper
+    async function expectRow(page) { await page.waitForTimeout(1); await opaque(page); }
+    /** @9l-assertion-helper */
+    const expectTitle = (page) => opaque(page);
+    test('marked', async ({page}) => {
+      await page.waitForTimeout(1);
+      // @9l-outcome order-saved
+      await expectOrderSaved(page);
+      expectRow(page);
+      expectTitle(page);
+      expectToast(page);
+      await submit(page);
+    });`);
+  const [t] = facts.tests;
+  assert.deepEqual(t.assertions.map(a => [a.line, a.unawaited, a.absence, a.afterWait, a.outcomes]), [
+    [12, false, false, true, ['order-saved']], [13, true, false, false, []], [14, false, false, false, []], [15, false, false, false, []]]);
+  // Bodies are not inferred: no inner wait or helper; the unmarked import and an
+  // unconsumed imported helper of unknown timing stay limits.
+  assert.deepEqual(t.sleeps.map(s => s.line), [10]);
+  // A non-async marked helper and an imported one have unknown timing when unconsumed.
+  assert.deepEqual(t.limits.map(l => [l.code, l.line]), [['unknown-matcher', 14], ['unresolved-helper', 16]]);
+});
+
+test('review regressions: helper resolution never invents or hides assertions', () => {
+  const run = source => analyze(`import {test,expect} from '@playwright/test';\n${source}`).tests.map(t => ({
+    assertions: t.assertions.map(a => [a.line, a.unawaited]), limits: t.limits.map(l => l.code) }));
+  // Calling a generator does not run its body.
+  assert.deepEqual(run(`function* gen() { expect(1).toBe(1); }
+    async function* agen() { expect(1).toBe(1); }
+    test('g', async () => { gen(); await agen(); });`), [{ assertions: [], limits: ['unresolved-helper'] }]);
+  // Any second binding of the name, in any scope, leaves the call unresolved.
+  for (const shadow of ['{ var check = Function.prototype; }', 'switch (x) { case 1: const check = other; }']) {
+    assert.deepEqual(run(`function check() { expect(1).toBe(1); }
+      test('t', async () => { ${shadow} check(); });`)[0].assertions, [], shadow);
+  }
+  assert.deepEqual(run(`function check() { expect(1).toBe(1); }
+    namespace N { function check() {} test('n', async () => { check(); }); }`)[0].assertions, []);
+  // A helper declared inside the test is scanned once, as a nested function.
+  assert.deepEqual(run(`test('inner', async () => { const check = () => { expect(1).toBe(1); }; check(); });`),
+    [{ assertions: [[2, false]], limits: ['nested-function', 'unresolved-helper'] }]);
+  // A concise arrow inside another function does not consume the matcher.
+  assert.deepEqual(run(`test('t', async ({page}) => { [page.locator('a')].forEach(l => expect(l).toBeVisible()); });`)[0].assertions, [[2, true]]);
+  // A non-async marked helper's timing is unknown when unconsumed.
+  assert.deepEqual(run(`// @9l-assertion-helper
+    function check(page) { return expect(page).toHaveURL('/x'); }
+    test('t', async ({page}) => { check(page); });`)[0].limits, ['unknown-matcher']);
+  // A marker mentioned in prose marks nothing.
+  assert.deepEqual(run(`/* Helpers here are tagged @9l-assertion-helper where reviewed. */
+    import { login } from './auth';
+    test('t', async ({page}) => { await login(page); });`), [{ assertions: [], limits: ['unresolved-helper'] }]);
+});
+
+test('inlining stays within the fact and work budgets instead of failing the file', () => {
+  const checks = Array.from({ length: 10 }, () => 'await expect(page.getByRole("a")).toBeVisible();').join(' ');
+  const tests = Array.from({ length: 30 }, (_, i) => `test('t${i}', async ({page}) => { ${'await check(page); '.repeat(7)}});`).join('\n');
+  const facts = analyze(`import {test,expect} from '@playwright/test';\nasync function check(page) { ${checks} }\n${tests}`);
+  const total = facts.tests.reduce((n, t) => n + t.assertions.length, 0);
+  assert(total <= 2048 && total >= 1900, String(total));
+  assert(facts.tests.at(-1).limits.some(l => l.code === 'unresolved-helper'));
+  // A large helper called many times is abandoned quickly rather than exhausting time or memory.
+  const big = Array.from({ length: 5000 }, () => 'expect(1).toBe(1);').join(' ');
+  const started = Date.now();
+  const many = analyze(`import {test,expect} from '@playwright/test';\nfunction check() { ${big} }\n${Array.from({ length: 20 }, (_, i) => `test('t${i}', async () => { ${'check(); '.repeat(64)}});`).join('\n')}`);
+  assert(Date.now() - started < 5000, `took ${Date.now() - started} ms`);
+  assert(many.tests.reduce((n, t) => n + t.assertions.length, 0) <= 2048);
+});
+
+test('re-review regressions: consumed concise helpers and the direct fact reservation', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function b(page) { await expect(page).toHaveURL('/x'); }
+    const a = (page) => b(page);
+    test('floating', async ({ page }) => { a(page); });
+    test('awaited', async ({ page }) => { await a(page); });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(x => x.unawaited)), [[true], [false]]);
+  // Inlined facts leave room for direct facts declared later in the file.
+  const checks = Array.from({ length: 10 }, () => 'await expect(page.getByRole("a")).toBeVisible();').join(' ');
+  const inlined = Array.from({ length: 20 }, (_, i) => `test('t${i}', async ({page}) => { ${'await check(page); '.repeat(7)}});`).join('\n');
+  const direct = `test('direct', async ({page}) => { ${'expect(1).toBe(1); '.repeat(700)}});`;
+  const result = analyze(`import {test,expect} from '@playwright/test';\nasync function check(page) { ${checks} }\n${inlined}\n${direct}`);
+  assert.equal(result.tests.at(-1).assertions.length, 700);
+  assert(result.tests.reduce((n, t) => n + t.assertions.length, 0) <= 2048);
+});

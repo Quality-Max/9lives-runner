@@ -40,6 +40,9 @@ go build -o .context/9l ./cmd/9l
 
 Without `--requirements`, assessment still reports waits, skips, exclusive tests
 and missing or unawaited assertions, but leaves requirement mapping unchecked.
+Same-file helper functions are resolved. Mark a reviewed imported or local
+assertion helper with `// @9l-assertion-helper` on its declaration or import so
+calls count as assertions; do not mark helpers that only act.
 To assess a whole suite in one call, pass a directory or a quoted pattern, for
 example `.context/9l assess tests/ --format json`; files that cannot be
 assessed are listed with an error code and make the command exit 2.

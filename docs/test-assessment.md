@@ -123,9 +123,39 @@ discovery. Limit findings carry one bounded code and location per reason:
 `conditional-flow`, `shadowed-binding`, `runtime-skip`, `unresolved-helper` and
 `unknown-matcher`.
 
-Helper bodies are not resolved. Calls outside the imported test/expect chains
-and direct built-in browser fixture chains can produce `unresolved-helper`;
-this can include harmless utility calls. A shadowed expect binding's matcher
+Calls to helpers in the same file are resolved. A call to a non-generator
+function declaration or `const` function is inlined when that name is bound
+exactly once in the file, in a scope enclosing the call and outside the
+function being scanned; any other binding of the name, in any scope, leaves
+the call unresolved. The helper's direct `expect` facts, waits and limits are
+attributed to the test at the call site, in execution order, up to four levels
+deep and 64 inlined calls per test. Inlining also stops before it could exhaust
+the fact limit left after the file's own matcher and wait calls, or a fixed
+work budget; an abandoned call is rolled back
+and reported as `unresolved-helper` rather than failing the file. A
+parameter given a browser fixture value (`page`, `request`, `context`,
+`browser` or a chain on one) is a fixture inside the helper. When an `async`
+helper's call is neither awaited nor returned, every assertion in it is
+unawaited. Outcome annotations inside a helper apply to every test that calls
+it. Recursion, deeper calls, `let`/`var` functions, parameters, custom fixtures,
+method calls such as page objects, and imports stay `unresolved-helper`; their
+assertions remain unknown and are never assumed.
+
+A `// @9l-assertion-helper` comment, or a JSDoc line consisting of the tag,
+directly before a function declaration, a `const` function or an import
+declaration marks those bindings as reviewed assertion helpers. Only the last
+comment before the declaration counts, and a mention of the tag inside other
+comment text marks nothing. Each call counts as one attributable assertion at the call site,
+taking `@9l-outcome` annotations from the calling statement; the helper body is
+not inferred. A marker on an import applies to every binding it imports, so
+split imports to mark only some. A marked `async` function whose call is
+neither awaited nor returned is an unawaited assertion; any other unconsumed
+marked helper gives `unknown-matcher`, because whether it returns a promise is
+unknown. Like outcome annotations, the marker is a
+reviewed claim, not proof. Following imports into other files is not yet
+supported. Other calls outside the imported test/expect chains and built-in
+browser fixture chains can produce `unresolved-helper`; this can include
+harmless utility calls. A shadowed expect binding's matcher
 calls are excluded conservatively. A call through a test binding redeclared in
 an enclosing scope, such as a parameter or loop variable named `test`, is not a
 declaration and adds nothing to the inventory. Limit findings retain independently visible
@@ -170,7 +200,7 @@ argument, or an enclosing `if`, conditional or logical expression, reads
 `process.env` gives `environment-skip` instead of `conditional-skip`; values
 copied out of `process.env` first are not traced.
 Every `waitForTimeout` gives `fixed-wait`. When the first recognized assertion
-after a wait checks that something is absent or did not happen, the test also
+after a wait, in execution order through resolved helpers, checks that something is absent or did not happen, the test also
 gets `absence-after-wait` at that assertion, which raises an assertion adequacy
 concern: if the application is merely slow, the check still passes. Absence
 assertions are `toBeHidden`, `toBeFalsy`, `toBeNull`, `toBeUndefined`,
@@ -189,8 +219,8 @@ gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Report version 3, helper version 4 and policy
-`assessment-source-v5` replace version 2/source-v3. Every finding now carries
+inputs invalidate prior assessments. Report version 3, helper version 5 and policy
+`assessment-source-v6` replace version 2/source-v3. Every finding now carries
 `code`: the limit reason for `analysis-limit` findings and the rule name for
 all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the

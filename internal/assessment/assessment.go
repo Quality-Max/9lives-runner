@@ -23,7 +23,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v5"
+const Policy = "assessment-source-v6"
 const MaxSource = 1 << 20
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$`)
@@ -52,6 +52,9 @@ type Assertion struct {
 	Unawaited bool     `json:"unawaited"`
 	// Absence marks an assertion that something is absent or did not happen.
 	Absence bool `json:"absence"`
+	// AfterWait marks the first recognized assertion after a fixed wait, in
+	// execution order through resolved helpers.
+	AfterWait bool `json:"afterWait"`
 }
 type AnalysisLimit struct {
 	Location
@@ -152,8 +155,6 @@ func ParseContract(data []byte) (Contract, error) {
 	return c, nil
 }
 
-func before(a, b Location) bool { return a.Line < b.Line || (a.Line == b.Line && a.Column < b.Column) }
-
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 // Options adjust what a report contains, not how source is analyzed.
@@ -224,7 +225,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 4 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 5 {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -257,7 +258,7 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 4 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 {
+	if f.Version != 5 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 {
 		return false
 	}
 	lines := bytes.Split(source, []byte("\n"))
@@ -385,16 +386,8 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		}
 		// A fixed wait directly followed by an absence assertion passes when the
 		// application is merely slow, so it can hide the defect it should catch.
-		flagged := map[Location]bool{}
-		for _, p := range fact.Sleeps {
-			var next *Assertion
-			for i, a := range fact.Assertions {
-				if before(p, a.Location) && (next == nil || before(a.Location, next.Location)) {
-					next = &fact.Assertions[i]
-				}
-			}
-			if next != nil && next.Absence && !flagged[next.Location] {
-				flagged[next.Location] = true
+		for _, next := range fact.Assertions {
+			if next.Absence && next.AfterWait {
 				add("absence-after-wait", "suspected", "assertionAdequacy", "", "", "The first recognized assertion after a fixed wait checks that something is absent or did not happen; if the application is merely slow, it passes without the outcome having occurred.", "Assert a positive completion signal first, such as the response, a confirmation or the final URL, then check the absence.", next.Location)
 			}
 		}

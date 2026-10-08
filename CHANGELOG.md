@@ -30,6 +30,11 @@
   supported) and writes one combined suite report with per-file reports or
   error codes and a suite summary. A file that cannot be assessed does not
   stop the others; the command then exits 2 (#6).
+- `9l assess` resolves same-file helper functions, attributing their
+  assertions, waits and limits to the calling test, and accepts
+  `// @9l-assertion-helper` on a function or import declaration to count calls
+  as reviewed assertions. Imports are not followed yet; policy
+  `assessment-source-v6` (#4).
 - `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`; 1.61.1
   remains the only qualified version (#9).
 
