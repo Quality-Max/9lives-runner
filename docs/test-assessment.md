@@ -99,9 +99,12 @@ When you check requirements, use a shared contract, not a document per test:
 
 Reference independently reviewed intent from a ticket, contract or supplied
 outcomes. A requirement's outcomes may be spread over the tests in a file: an
-outcome mapped by any test in the file covers it for every test referencing
-the requirement, and one mapped nowhere in the file is reported on each of
-those tests. Mapping in other files of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
+outcome mapped by any test in the file covers it for every test that
+references the requirement and maps at least one of its outcomes, and one
+mapped nowhere in the file is reported on each of those tests. A test that
+references a requirement but maps none of its outcomes is reported for every
+outcome, as it claims a requirement it does not check. Mapping in other files
+of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
 records the supplied contract hash; it does not retrieve or authenticate the
 referenced requirement. Outcome IDs must be unique across the entire contract,
 because outcome annotations have no requirement namespace. Annotate each mapped
@@ -175,7 +178,7 @@ with no recognized assertion still produces a suspected absence finding.
 
 | Finding | Classification | Meaning |
 | --- | --- | --- |
-| Required outcome lacks an assertion annotation in the file | suspected | No test in the file maps it; helpers or other files may protect it. |
+| Required outcome lacks an assertion annotation | suspected | No test in the file maps it, or this test maps none of the requirement's outcomes; helpers may protect it. |
 | No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |

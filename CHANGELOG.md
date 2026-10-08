@@ -18,8 +18,9 @@ and a new helper-function spec.
 - `toEqual([])` and `toStrictEqual([])` are absence checks for
   `absence-after-wait`.
 - `unmapped-outcome` is checked per file: an outcome mapped by any test in
-  the file covers it for every test referencing the requirement. The finding
-  counts once per requirement and outcome.
+  the file covers it for every test that references the requirement and maps
+  at least one of its outcomes. A test mapping none of them is still reported
+  for every outcome. The finding counts once per requirement and outcome.
 - Helper facts version 6, policy `assessment-source-v7`; report version 3 gains
   the optional finding `site`.
 

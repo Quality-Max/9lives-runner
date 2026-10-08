@@ -345,9 +345,11 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 	for _, r := range c.Requirements {
 		requirements[r.ID] = r
 	}
-	// An outcome mapped by any test in the file covers it for every test that
-	// references the requirement, so a requirement's outcomes may be spread
-	// over sibling tests. Mapping in other files is not considered.
+	// A requirement's outcomes may be spread over sibling tests: an outcome
+	// mapped by any test in the file covers it for every test that references
+	// the requirement and maps at least one of its outcomes. A test that maps
+	// none of them claims a requirement it does not check, and is reported for
+	// every outcome. Mapping in other files is not considered.
 	mapped := map[string]bool{}
 	for _, fact := range facts.Tests {
 		for _, a := range fact.Assertions {
@@ -381,8 +383,20 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 				add("unknown-requirement", "unsupported", "purpose", id, "", "The requirement reference is absent from the supplied contract.", "Supply the independently reviewed requirement.", fact.Location)
 				continue
 			}
+			own := map[string]bool{}
+			for _, a := range fact.Assertions {
+				for _, outcome := range a.Outcomes {
+					own[outcome] = true
+				}
+			}
+			checks := false
 			for _, o := range r.ExpectedOutcomes {
-				if !mapped[o.ID] {
+				checks = checks || own[o.ID]
+			}
+			for _, o := range r.ExpectedOutcomes {
+				if !checks {
+					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "The test references the requirement but maps none of its outcomes; helpers may protect it.", "Map an assertion in this test to an outcome of the requirement, or reference the requirement it checks.", fact.Location)
+				} else if !mapped[o.ID] {
 					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping in this file; helpers or other files may protect it.", "Review the gap and map an assertion in this file that checks this outcome.", fact.Location)
 				}
 			}

@@ -54,17 +54,25 @@ func TestOutcomesMappedBySiblingTestsCoverTheRequirement(t *testing.T) {
 			t.Fatalf("sibling mapping not credited: %+v", test)
 		}
 	}
-	// An outcome mapped nowhere in the file is reported on every referencing
-	// test and counted once.
+	// The second test now maps none of the requirement's outcomes, so it is
+	// reported for every outcome; the first is reported only for the outcome
+	// mapped nowhere in the file. Each requirement/outcome pair counts once.
 	items.Assertions[0].Outcomes = []string{"confirmation"}
 	report = Build([]byte("source"), []byte(contractJSON), c, Facts{Compiler: "5.9.3", Tests: []Fact{count, items}})
+	var got []string
 	for _, test := range report.Tests {
-		if len(test.Findings) != 1 || test.Findings[0].Rule != "unmapped-outcome" || test.Findings[0].Outcome != "order-items" || test.Dimensions["intentAlignment"] != "concern" {
+		if test.Dimensions["intentAlignment"] != "concern" {
 			t.Fatalf("unmapped outcome not reported: %+v", test)
 		}
+		for _, f := range test.Findings {
+			got = append(got, f.Rule+":"+f.Outcome)
+		}
 	}
-	if counts, total := CountFindings(report); total != 1 || counts["unmapped-outcome"] != 1 {
-		t.Fatalf("one unmapped outcome counted %d times", total)
+	if strings.Join(got, " ") != "unmapped-outcome:order-items unmapped-outcome:order-count unmapped-outcome:order-items" {
+		t.Fatalf("unexpected mapping findings %v", got)
+	}
+	if counts, total := CountFindings(report); total != 2 || counts["unmapped-outcome"] != 2 {
+		t.Fatalf("two unmapped outcomes counted %d times", total)
 	}
 }
 
