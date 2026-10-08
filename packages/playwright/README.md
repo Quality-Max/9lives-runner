@@ -16,7 +16,8 @@ npm exec playwright install chromium
 
 Use Node 24 for the qualified runtime (Node 22 minimum), Playwright 1.61.1,
 and Chromium. macOS and Linux on amd64/arm64 are the qualified runner targets.
-Other browser engines and Playwright versions require qualification.
+The peer range is `@playwright/test` `>=1.61.1 <2`; versions in it other than
+1.61.1, and other browser engines, install but are unqualified.
 
 The Go `9l` executable is also required. Use the
 [CLI installation guide](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)

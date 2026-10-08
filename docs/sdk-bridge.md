@@ -3,7 +3,8 @@
 `@9l/playwright` is the chosen package name. This repository builds it as an
 npm workspace at version `0.0.0`; no registry publication is performed. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1. Node 22 is the declared
-minimum. Other Playwright versions and browser engines require qualification.
+minimum. The peer range `>=1.61.1 <2` lets other Playwright 1.x releases install;
+they and other browser engines remain unqualified.
 
 Use `9l plan ... --sdk` to inspect the command and `9l run ... --sdk` to execute.
 The nearest enclosing Playwright config is selected explicitly and its directory
