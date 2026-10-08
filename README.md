@@ -1,78 +1,52 @@
 # 9lives runner
 
-A Go execution core and local Playwright SDK for [9lives](https://github.com/Quality-Max/9lives).
+[![npm version](https://img.shields.io/npm/v/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
+[![npm downloads](https://img.shields.io/npm/dm/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
+[![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-- Repository: [Quality-Max/9lives-runner](https://github.com/Quality-Max/9lives-runner)
-- Go module: `github.com/Quality-Max/9lives-runner`
-- Release targets: macOS and Linux on amd64 and arm64
-- Release workflow: packages `9l-<os>-<arch>.tar.gz` archives containing `9l`,
-  `LICENSE` and `NOTICE`; no releases are published yet
+Run Playwright tests with bounded execution and attributable receipts. Add
+named steps and natural-language goals while keeping explicit assertions as
+the test oracle. Local execution needs no QualityMax account or hosted service.
 
-This repository owns test discovery, inspectable execution plans, bounded
-parallel execution, cancellation, completeness accounting, and local evidence
-receipts. Native offline Tier 1 proposals and experimental native Tier 2
-healing sessions are available alongside the Python compatibility bridge. See
-[native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
+[Documentation](docs/README.md) · [Local demo](demo/README.md) ·
+[npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
+[CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
-## Framework direction
+## Start with an executed result
 
-We are building a standalone testing framework that combines ordinary code and
-assertions with bounded goal-driven execution. Our standard is a verified
-behavioral outcome, with evidence tied to the exact test and attempt. Actions
-completing or a model declaring success are insufficient.
-
-The delivery sequence is the local TypeScript SDK and Go bridge, bounded live
-goals over observed targets, independent behavioral verification, replay of
-verified actions, native mobile qualification, and developer/CI workflows with
-measured correctness, latency and cost. Grounding, generation, healing and mobile
-contracts should reuse the QualityMax platform's existing work. Local execution
-must remain usable without a platform account.
-
-The SDK/bridge and bounded natural-language goal loop run locally. Independent
-behavioral verification, verified replay and mobile support remain planned.
-Native healing preserves assertions and verifies candidates in isolation before
-application; future replay must recheck the expected outcome.
-
-`9l assess` provides opt-in advisory assessment from shared requirements and
-syntax-aware Playwright checks. Creation snapshots can also check whether an
-agent's test is assessed and executed in the same workspace, branch, commit
-and source revision. The [QA skill](skills/9lives-qa/SKILL.md) combines our
-available QA skills with this workflow for Codex and Claude. See
-[test assessment](docs/test-assessment.md) for usage, the executed checkout
-control and analysis limits. Passing execution alone does not establish test
-correctness; general semantic review remains planned.
-
-## Local Playwright SDK
-
-`@9l/playwright` is the local Playwright SDK. It adds the
-`n9l` fixture with `step` and `goal` methods while retaining normal Playwright
-assertions and browser fixtures. Use Node 24 for the qualified runtime (Node 22
-is the declared minimum) and `@playwright/test` 1.61.1. Go launches the
-installed Playwright runtime with an opt-in reporter and validates the bounded
-`9l.engine/1` evidence stream against the owning run, job and attempt. Existing
-execution without `--sdk` is unchanged. Under `--sdk`, a skipped test fails the attempt unless it is declared with
-`--pin-skip "<file> › <title>"` (see [skip pins](docs/sdk-bridge.md#skip-pins)).
+Install the published SDK in your Playwright project:
 
 ```sh
-npm ci
-npm run build
+npm install --save-dev @9l/playwright@0.0.0 @playwright/test@1.61.1
 npm exec playwright install chromium
-mkdir -p .context
-go build -o .context/9l ./cmd/9l
-.context/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json
-npm test
-npm run smoke
 ```
 
-On Linux, use `npm exec playwright install --with-deps chromium` to install
-browser system dependencies too. The smoke uses a real local Chromium checkout,
-checks that a business defect stays red, and verifies timeout/cancel terminate
-the owned worker and browser. It needs no model, application server or account.
+Use Node 24 for the qualified runtime (Node 22 minimum). On Linux, use
+`npm exec playwright install --with-deps chromium` for browser dependencies.
+
+Install the Go CLI separately. With Go 1.25.13 or newer:
+
+```sh
+go install github.com/Quality-Max/9lives-runner/cmd/9l@latest
+9l --version
+```
+
+Ensure Go's binary directory is on your `PATH`. Prebuilt CLI releases target
+macOS and Linux on amd64 and arm64, so their users do not need Go. See the
+[download and checksum instructions](docs/install.md) for availability and
+platform selection. The npm package supplies the fixtures; it does not install
+the CLI or browsers.
+
+### Run a test
+
+Keep your application's existing Playwright configuration and reviewed
+assertions. For an application serving a checkout page:
 
 ```ts
 import {test, expect} from '@9l/playwright';
 
-test('checkout', async ({page, n9l}) => {
+test('checkout confirms an order', async ({page, n9l}) => {
   await page.goto('http://localhost:3000/checkout');
   await n9l.step('place the order', async () => {
     await page.getByRole('button', {name: 'Place order'}).click();
@@ -81,7 +55,46 @@ test('checkout', async ({page, n9l}) => {
 });
 ```
 
-## Natural-language goals
+Start the application, then run from the test project:
+
+```sh
+9l run tests/checkout.spec.ts --sdk --format json
+```
+
+For a complete runnable example that needs no application server or model,
+clone this repository and follow the [local checkout demo](demo/README.md).
+For an existing application, see the [integration guide](docs/run-existing-project.md).
+
+### What the result establishes
+
+The runner records a terminal outcome for every required test and validates
+SDK evidence against the owning run, job and attempt. Required failures,
+missing evidence, unexplained skips and interruption prevent an overall green
+result. Receipts persist under `.9lives/receipts/`; inspect them with
+`9l result <run-id> --format json`.
+
+A passing execution means the test's assertions passed and its report was
+validated. It does not prove that the assertions fully cover the requirements.
+Independent behavioral verification remains planned.
+
+## What you can do
+
+| Capability | Available behavior | Boundary |
+| --- | --- | --- |
+| Plan and run | Discover specs, inspect plans, bound concurrency and deadlines | Runs locally installed Playwright; no automatic tooling downloads |
+| Inspect and cancel | `status`, `result`, `cancel`, and terminal receipts | Interrupted runs are classified; automatic crash recovery is planned |
+| SDK steps | `n9l.step(...)` with normal browser fixtures and assertions | Opt in with `--sdk`; existing execution stays available separately |
+| Bounded goals | `n9l.goal(...)` over finite observed controls | Completion is unverified; live model accuracy and cost are unqualified |
+| Test assessment | `assess` and source/branch provenance | Advisory static review; it does not establish executed assertion coverage |
+| Healing | Offline Tier 1 proposals and experimental native Tier 2 verification | Preserve assertions; verify candidates in isolation before application |
+
+See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md),
+[native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
+Verified replay and native mobile qualification remain subsequent milestones.
+Windows support is not declared; owned process-tree cancellation is qualified
+on Unix platforms.
+
+### Add a bounded goal
 
 ```ts
 await n9l.goal('Fill Name using name, then click Continue.', {
@@ -90,150 +103,85 @@ await n9l.goal('Fill Name using name, then click Continue.', {
 await expect(page.getByRole('heading', {name: 'Review'})).toBeVisible();
 ```
 
-Run with `9l run tests/flow.spec.ts --sdk --goal-provider anthropic` (or
-`openai`) and securely configure the corresponding provider key in Go's calling
-environment. The provider sees finite observed controls and parameter names;
-values stay in the browser worker. Every decision is validated, targets are
-rechecked, and actions share bounded attempt budgets. Purchase, deletion and
-outreach controls stop by default. Model completion is unverified; explicit
-assertions remain the test oracle. Live model accuracy and cost have not yet
-been qualified. Offline `--goal-script` fixtures qualify browser/engine behavior
-without paid API calls.
+Choose `--goal-provider anthropic` or `openai` and configure its credential
+securely in Go's calling environment. Offline `--goal-script` fixtures exercise
+the browser/engine contract without paid API calls. Purchase, deletion and
+outreach controls stop by default. See [goal contracts](docs/goals.md).
 
-For build, install and run commands against an existing application, see
-[run an existing project](docs/run-existing-project.md) and the
-[ready test harness](examples/playwright-login). See [goal contracts](docs/goals.md) for
-limits, cancellation, receipts and qualification boundaries.
+## Add it to your coding agent
 
-See [the SDK bridge contract](docs/sdk-bridge.md) for supported configuration,
-identity, limits, evidence privacy and failure behavior. See [AGENTS.md](AGENTS.md)
-and [CLAUDE.md](CLAUDE.md) for engineering intentions and delivery standards.
+The optional [9lives QA skill](skills/9lives-qa/SKILL.md) guides Codex and Claude
+through requirements, source provenance, assessment and executed results.
+Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
 
-Compatibility fixtures are reviewed against the offline Python `9lives` source:
-pinned releases `0.1.3` (`8a40d8d5c83f27f84384f060aeed74a3ded7ab77`) and
-`0.2.1` (`568c7a6882441c13cdb9bfe8c0190ca0bf7d8240`). They do not invoke hosted
-models or apply a proposed repair without the Python package's approval path.
+## Adjacent QualityMax tools
 
-## Current scope
+| Tool | Use it for |
+| --- | --- |
+| [qmax-mcp](https://github.com/Quality-Max/qmax-mcp) | Browser scanning, page inspection and focused Playwright reproductions |
+| [9lives Python](https://github.com/Quality-Max/9lives) | The separately installed Python healing compatibility path |
 
-- `9l plan`: resolve Playwright specs before launching any process and explain
-  every skipped input.
-- `9l run`: execute planned jobs with a run-wide budget, bounded concurrency,
-  attempt limits, per-job/shared deadlines, and process-tree cancellation.
-- `9l status`, `9l result`, and `9l cancel`: inspect or control a foreground
-  run from another terminal using its persisted run ID.
-- Execution receipts: legacy `receipt.json` plus additive strict
-  `execution-receipt-1.0.json`, with redacted stdout/stderr evidence under
-  `.9lives/receipts/<run-id>/<job-id>/<attempt-id>/`. `receipt.json` is the
-  commit point: if it cannot be written, the canonical export is removed too.
-  A run whose heartbeat is more than 10 seconds stale is reported as
-  interrupted; local receipt persistence does not claim recovery.
-- Controlled environment: test processes inherit only what a browser test
-  runner needs to start and reach the network (`PATH`, `HOME`, temp and locale
-  variables, `DISPLAY`/`WAYLAND_DISPLAY`, `XDG_*`, `PLAYWRIGHT_BROWSERS_PATH`,
-  proxy and CA-certificate variables). Application settings and credentials
-  are forwarded only when named: `9l run tests/ --pass-env BASE_URL,TEST_USER`.
-  Values are read from the caller's environment and never written to the plan
-  or receipts.
-- Honest completeness: execution and report validation are separate;
-  unexplained skips, canceled, failed or unvalidated jobs prevent an overall
-  green result.
-- `9l assess`: advisory source assessment against a shared requirements
-  contract; static findings do not establish executed assertion coverage.
-- `9l provenance`: record a declared agent and the current workspace, branch,
-  commit and test source for later assessment/execution checks.
-- `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
-  proposals remain unverified and require approval.
-- Experimental `9l heal-native`: execute a failing Playwright spec, verify a
-  selector-only candidate in isolation, and save it or apply it with approval.
-- `9l heal`: compatibility bridge to `python3 -m ninelives.cli heal`; this
-  command requires the separately installed Python package.
+These are separate distributions. Installing this runner or SDK does not
+install or configure them. The Python package also provides a `9l` command;
+use an explicit executable path when both CLIs are installed.
 
-Playwright execution supports existing projects with a local
-`@playwright/test` dependency. It never uses `npx` to download tooling during a
-run.
+## Safety and honest limits
 
-Supported release targets are macOS and Linux on amd64 and arm64. Windows is
-not declared yet; owned process-tree cancellation is qualified on Unix
-platforms.
+Test code executes with the local user's permissions. Use approved targets
+and explicitly pass required application environment keys with `--pass-env`.
+Goal parameter values stay in the browser worker; provider credentials stay
+in Go. Receipts omit page content and attachment bodies by default, and bound
+and sanitize diagnostics. Review the [SDK evidence contract](docs/sdk-bridge.md)
+for identity, privacy, skip pins and failure handling.
 
-The runner classifies interruption and persists terminal receipts. Automatic
-restart, durable leases and crash recovery remain planned.
+## Architecture
 
-## Build and use
-
-Go 1.25.13 or newer is required; CI pins 1.25.13. The Go runner and local SDK
-do not require a platform account. Python is needed only for `9l heal` and the
-optional compatibility checks described below.
-
-```bash
-go build -o 9l ./cmd/9l
-./9l plan --format json 'tests/*.spec.ts'
-./9l run --workers 4 --timeout 5m tests/login.spec.ts
+```mermaid
+flowchart LR
+  Specs[Playwright specs and assertions] --> Go[Go CLI: plan, budgets, scheduling]
+  Go --> Worker[TypeScript SDK: fixtures and browser]
+  Worker --> Browser[Local Playwright / Chromium]
+  Browser --> Worker
+  Worker --> Go
+  Go --> Receipts[Validated terminal receipts]
+  Go -. optional goal decisions .-> Provider[Configured model provider]
 ```
 
-Flags may appear before or after spec arguments. Directories are searched
-recursively; shell-style globs use Go's `filepath.Glob` rules.
+Go owns execution identity, cancellation and completeness. TypeScript owns
+browser handles and fixtures. The bounded `9l.engine/1` protocol joins them.
+See [architecture decisions](docs/architecture.md) and the
+[performance baseline](benchmarks/BASELINE.md), which separates runner overhead
+from Playwright and browser costs.
 
-```bash
-./9l plan --max-jobs 20 tests/
-./9l run tests/ --receipt-dir .9lives/receipts --pass-env BASE_URL
-./9l status <run-id>
-./9l cancel <run-id>
-./9l result <run-id> --format json
-```
+## Support and responsible disclosure
 
-To select a particular Python interpreter for the compatibility bridge:
+Use [GitHub Issues](https://github.com/Quality-Max/9lives-runner/issues) for
+non-sensitive usage and documentation questions. Report vulnerabilities
+privately using the [security policy](SECURITY.md).
 
-```bash
-NINELIVES_PYTHON=.venv/bin/python ./9l heal tests/login.spec.ts --yes
-```
+## Development
 
-## Verification
-
-```bash
+```sh
+npm ci
+npm exec playwright install chromium
+npm run demo
 go test -race ./...
 go vet ./...
-go test -run '^$' -bench . -benchmem -benchtime=200x ./internal/runner
-# Offline contract tests, failing instead of skipping when the toolchain is missing:
-NINELIVES_REQUIRE_CONTRACT=1 NINELIVES_CONTRACT_PYTHON=/path/to/python3 go test ./...
-# Browser-free CLI startup, planning, execution evidence, and active cancellation:
-python3 scripts/benchmark.py
 ```
 
-The canonical receipt snapshot is copied from platform commit
-`767d634ba664f090db15cb99a4de19ef1c4de922` under
-`testdata/contracts/execution-receipt/`. CI installs Python 3.11 with
-`pydantic==2.11.7` and `jsonschema==4.26.0`, then validates the snapshot without
-requiring an adjacent platform checkout.
+The [development guide](docs/development.md) lists SDK qualification, pinned
+Python compatibility checks and repository boundaries.
+See [contributing](CONTRIBUTING.md) before proposing changes.
 
-The healing compatibility test runs the real Python Tier 1 healer from the
-pinned `9lives` revisions, checked out by CI under `testdata/upstream/`
-(`ninelives-0.1.3/` and `ninelives-0.2.1/`; override the parent directory with
-`NINELIVES_UPSTREAM_DIR`). Its output is mapped through
-`healingbridge.FromUpstream`, which always requires approval for a proposal
-even though the Python Tier 1 healer marks locator repairs as auto-applicable.
+## Package and release metadata
 
-Without the Python validators (`pydantic`, `jsonschema`) or the upstream
-sources these contract tests are skipped locally. CI sets
-`NINELIVES_REQUIRE_CONTRACT=1`, so there they fail instead.
-
-## Design notes
-
-See [architecture decisions](docs/architecture.md) for package boundaries,
-planning, execution, budgets and evidence contracts. The initial
-[performance baseline](benchmarks/BASELINE.md) separates runner overhead from
-Playwright and browser costs.
-
-The runner separates planning, execution and evidence. It records explicit
-budget skip reasons and distinguishes action execution from validated behavior.
-Run IDs are checked on every receipt, and every reserved job gets a terminal
-receipt even when cancellation arrives before it starts.
-
-See [release instructions](docs/releases.md) for SDK package qualification and
-npm publishing.
+The published [@9l/playwright 0.0.0](https://www.npmjs.com/package/@9l/playwright)
+and the Go CLI are separate distributions. SDK releases use `sdk-v<version>`;
+CLI releases use `v<version>`. Binary archives include `LICENSE`, `NOTICE` and
+release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)
+and [changelog](CHANGELOG.md).
 
 ## License
 
-This runner and `@9l/playwright` are licensed under [Apache 2.0](LICENSE).
-Third-party components retain their own licenses and notices.
+[Apache-2.0](LICENSE). Third-party components retain their own licenses and
+notices. The SDK package and CLI archives include `LICENSE` and `NOTICE`.

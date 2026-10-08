@@ -7,21 +7,21 @@ completing does not verify that behavior.
 
 ## Install
 
-Once `0.0.0` is published:
+Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
 npm install --save-dev @9l/playwright@0.0.0 @playwright/test@1.61.1
 npm exec playwright install chromium
 ```
 
-Before the first publication, build and install a local tarball using the
-[existing-project guide](https://github.com/Quality-Max/9lives-runner/blob/main/docs/run-existing-project.md).
 Use Node 24 for the qualified runtime (Node 22 minimum), Playwright 1.61.1,
 and Chromium. macOS and Linux on amd64/arm64 are the qualified runner targets.
 Other browser engines and Playwright versions require qualification.
 
-The Go `9l` executable is also required. Download a runner release or build it
-from source with Go 1.25.13 or newer. This npm package does not install Go or
+The Go `9l` executable is also required. Use the
+[CLI installation guide](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)
+for release availability or install from source with Go 1.25.13 or newer.
+This npm package does not install Go or
 bundle the runner, browsers or a hosted service. No platform account is needed.
 
 ## Use
