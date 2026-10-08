@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## SDK 0.1.0 — 2026-10-08
 
-- `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`; 1.61.1
-  remains the only qualified version (#9). Reaches users with the next
-  `@9l/playwright` publication.
+- `@9l/playwright` peer range is `@playwright/test` `>=1.61.1 <2`, so projects
+  on later Playwright 1.x releases can install it; 1.61.1 remains the only
+  qualified version (#9).
 
 ## CLI 0.1.0 — 2026-10-08
 
