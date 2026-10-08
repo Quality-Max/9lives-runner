@@ -10,7 +10,7 @@ and a proposed fix when available. Use synthetic data and redact secret values.
 ## Supported versions
 
 This early project focuses fixes on current `main` and the latest published
-SDK, currently `@9l/playwright` 0.0.0. Older development snapshots have no
+SDK, currently `@9l/playwright` 0.1.0. Older development snapshots have no
 separate security maintenance commitment.
 
 ## Local execution boundaries
