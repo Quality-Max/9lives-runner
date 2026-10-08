@@ -1,6 +1,6 @@
 # Changelog
 
-## CLI unreleased
+## CLI 0.1.1 — 2026-10-08
 
 `9l assess` changes from the second external trial, on the same 87-file suite
 and a new helper-function spec.
@@ -11,6 +11,9 @@ and a new helper-function spec.
 - A nested function that returns the matcher, such as `() => expect(...)` in
   a map of checks, is no longer `unawaited-assertion`; it stays a
   `nested-function` limit. A callback passed directly to `forEach` still is.
+- Parentheses around a matcher or its `then`/`catch`/`finally` chain, as in
+  `await (expect(...).toHaveURL(...))` or `() => (expect(...))`, no longer
+  hide that it is awaited or returned.
 - Assertions and waits inside a resolved helper keep the helper's own
   location and carry the test's call site as `site` (`via` in text output).
   One wait in a shared helper therefore counts once in the summary, not once

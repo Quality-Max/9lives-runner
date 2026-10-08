@@ -48,14 +48,14 @@ these executables.
 | Linux, x86-64 | `9l-linux-amd64.tar.gz` |
 | Linux, ARM64 | `9l-linux-arm64.tar.gz` |
 
-For the published `v0.1.0`, using GitHub CLI, this example installs on Apple
+For the published `v0.1.1`, using GitHub CLI, this example installs on Apple
 Silicon. Choose your archive from the table:
 
 ```sh
 mkdir -p /tmp/9l-download
 cd /tmp/9l-download
 BUNDLE=9l-darwin-arm64
-gh release download v0.1.0 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
+gh release download v0.1.1 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
 awk -v archive="$BUNDLE.tar.gz" '$2 == archive' SHA256SUMS > selected.sha256
 test -s selected.sha256
 shasum -a 256 -c selected.sha256
