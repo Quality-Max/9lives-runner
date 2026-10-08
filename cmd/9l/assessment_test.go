@@ -74,3 +74,49 @@ func TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured(t *testing.T) {
 		}
 	}
 }
+
+func TestAssessTextWithoutRequirements(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		if os.Getenv("NINELIVES_REQUIRE_ASSESSMENT") == "1" {
+			t.Fatal("CI requires Node for assessment qualification")
+		}
+		t.Skip("requires Node")
+	}
+	spec := filepath.Join(t.TempDir(), "fixture.spec.ts")
+	source := "import {test,expect} from '@playwright/test';\n" +
+		"test.skip(isWeekend(), 'business days only');\n" +
+		"test('waits \\x1b[31m', async ({page}) => {\n" +
+		"  await page.waitForTimeout(500);\n" +
+		"  await page.waitForTimeout(500);\n" +
+		"});\n"
+	if err := os.WriteFile(spec, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, titles := range []bool{false, true} {
+		args := []string{spec}
+		if titles {
+			args = append(args, "--titles")
+		}
+		var stdout, stderr bytes.Buffer
+		if code := assessCommand(args, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+			t.Fatalf("assessment without requirements failed: code=%d stderr=%q", code, stderr.String())
+		}
+		text := stdout.String()
+		for _, want := range []string{
+			"  fixed-wait [demonstrated] at 4:9: ",
+			"  conditional-skip [informational] at 2:1: ",
+			"Limit: No requirement contract was supplied",
+			"Summary: 1 tests, 4 findings\n  fixed-wait: 2\n  conditional-skip: 1\n  no-direct-assertion: 1\n",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("text report lacks %q:\n%s", want, text)
+			}
+		}
+		if strings.Contains(text, "requirement=") || strings.Contains(text, "outcome=") || strings.Contains(text, "\x1b") {
+			t.Fatalf("empty fields or raw control characters printed:\n%s", text)
+		}
+		if titled := strings.Contains(text, `test at 3:1 "waits \x1b[31m": `); titled != titles {
+			t.Fatalf("title shown=%v with --titles=%v:\n%s", titled, titles, text)
+		}
+	}
+}

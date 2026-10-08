@@ -75,11 +75,11 @@ func TestBundledParserIgnoresConsumerDependenciesAndHooks(t *testing.T) {
 	t.Setenv("NODE_PATH", filepath.Join(dir, "node_modules"))
 	source := []byte("import {test,expect} from '@playwright/test'; import './missing'; throw Error('do not execute');\n" +
 		"for (const name of ['one','two']) { test(`case ${name}`, () => { expect(1).toBe(1); }); }")
-	report, err := Assess(context.Background(), source, []byte(contractJSON))
+	report, err := Assess(context.Background(), source, []byte(contractJSON), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Version != 2 || report.Policy != Policy || report.Compiler != parserVersion || len(report.Tests) != 1 || report.Execution != "not_run" || report.Completeness != "partial" {
+	if report.Version != 3 || report.Policy != Policy || report.Compiler != parserVersion || len(report.Tests) != 1 || report.Execution != "not_run" || report.Completeness != "partial" {
 		t.Fatal("bundled parser qualification failed")
 	}
 	if len(report.Tests[0].Findings) != 1 || report.Tests[0].Findings[0].Code != "declaration-generation" || report.Tests[0].Dimensions["assertionAdequacy"] != "unknown" {
@@ -113,19 +113,19 @@ func TestAssessmentSafeDiagnostics(t *testing.T) {
 		{"limit", "import {test} from '@playwright/test';" + strings.Repeat("test('x', () => {});", 257), "limit"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Assess(context.Background(), []byte(test.source), []byte(contractJSON))
+			_, err := Assess(context.Background(), []byte(test.source), []byte(contractJSON), Options{})
 			assertDiagnostic(t, err, test.code)
 		})
 	}
 	t.Run("cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := Assess(ctx, []byte("const a = 1;"), []byte(contractJSON))
+		_, err := Assess(ctx, []byte("const a = 1;"), []byte(contractJSON), Options{})
 		assertDiagnostic(t, err, "cancelled")
 	})
 	t.Run("missing node", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
-		_, err := Assess(context.Background(), []byte("const a = 1;"), []byte(contractJSON))
+		_, err := Assess(context.Background(), []byte("const a = 1;"), []byte(contractJSON), Options{})
 		assertDiagnostic(t, err, "node-unavailable")
 	})
 }
@@ -147,7 +147,7 @@ func TestHelperFailureModes(t *testing.T) {
 	defer cleanup()
 	c, _ := ParseContract([]byte(contractJSON))
 	t.Run("missing parser", func(t *testing.T) {
-		_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, filepath.Join(t.TempDir(), "missing.cjs"), time.Second)
+		_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, Options{}, filepath.Join(t.TempDir(), "missing.cjs"), time.Second)
 		assertDiagnostic(t, err, "parser-unavailable")
 	})
 	for _, test := range []struct {
@@ -173,7 +173,7 @@ func TestHelperFailureModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", dir)
-			_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, parser, test.timeout)
+			_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, Options{}, parser, test.timeout)
 			assertDiagnostic(t, err, test.code)
 		})
 	}
@@ -228,12 +228,12 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: 2, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
-	if validFacts(f, []byte("x")) {
+	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []Location{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
 	f.Tests[0].Location = Location{1, 1}
-	if !validFacts(f, []byte("x")) {
+	if !validFacts(f, []byte("x"), false) {
 		t.Fatal("valid facts rejected")
 	}
 	for _, limits := range [][]AnalysisLimit{
@@ -244,26 +244,122 @@ func TestRejectForeignAndIncompleteFacts(t *testing.T) {
 	} {
 		f.Tests[0].Limits = limits
 		f.Tests[0].Unsupported = len(limits) > 0
-		if validFacts(f, []byte("x")) {
+		if validFacts(f, []byte("x"), false) {
 			t.Fatal("invalid limit evidence accepted")
 		}
 	}
 	f.Tests[0].Limits = []AnalysisLimit{}
 	f.Tests[0].Unsupported = true
-	if validFacts(f, []byte("x")) {
+	if validFacts(f, []byte("x"), false) {
 		t.Fatal("unsupported flag without reason accepted")
 	}
 	f.Tests[0].Unsupported = false
 	f.Tests[0].Disabled = nil
-	if validFacts(f, []byte("x")) {
+	if validFacts(f, []byte("x"), false) {
 		t.Fatal("missing disabled state accepted")
 	}
 	f.Tests[0].Disabled = new(bool)
 	f.Tests = append(f.Tests, f.Tests[0])
-	if validFacts(f, []byte("x")) {
+	if validFacts(f, []byte("x"), false) {
 		t.Fatal("duplicate test accepted")
 	}
-	if validFacts(Facts{Version: 2, Compiler: "5.9.3"}, []byte("x")) {
+	if validFacts(Facts{Version: 3, Compiler: "5.9.3"}, []byte("x"), false) {
 		t.Fatal("missing inventory accepted")
+	}
+}
+
+func TestWithoutContractRunsCodeChecksOnly(t *testing.T) {
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order"}, Sleeps: []Location{{2, 1}}}
+	report := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}})
+	test := report.Tests[0]
+	var rules []string
+	for _, f := range test.Findings {
+		rules = append(rules, f.Rule)
+	}
+	if strings.Join(rules, ",") != "no-direct-assertion,fixed-wait" {
+		t.Fatalf("unexpected findings without a contract: %v", rules)
+	}
+	if test.Dimensions["purpose"] != "unknown" || report.RequirementsSHA256 != "" || !strings.Contains(strings.Join(report.Limits, "\n"), "No requirement contract was supplied") {
+		t.Fatalf("unchecked requirements reported as checked: %+v", report)
+	}
+}
+
+func TestEveryFindingCarriesACode(t *testing.T) {
+	c, _ := ParseContract([]byte(contractJSON))
+	disabled := true
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order", "missing"}, Sleeps: []Location{{2, 1}}, ConditionalSkips: []Location{{3, 1}}, Disabled: &disabled, Exclusive: true,
+		Assertions: []Assertion{{Location: Location{4, 1}, Unawaited: true}}, Unsupported: true, Limits: []AnalysisLimit{{Location: Location{5, 1}, Code: "unresolved-helper"}}}
+	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Tests: []Fact{fact}})
+	seen := map[string]bool{}
+	for _, f := range report.Tests[0].Findings {
+		want := f.Rule
+		if f.Rule == "analysis-limit" {
+			want = "unresolved-helper"
+		}
+		if f.Code != want {
+			t.Fatalf("finding %s has code %q", f.Rule, f.Code)
+		}
+		seen[f.Rule] = true
+	}
+	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip"} {
+		if !seen[rule] {
+			t.Fatalf("fixture did not exercise %s", rule)
+		}
+	}
+}
+
+func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
+	fact := Fact{Location: Location{1, 1}, Disabled: new(bool), Assertions: []Assertion{{Location: Location{2, 1}}}, ConditionalSkips: []Location{{3, 1}}}
+	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "conditional-skip" || test.Findings[0].Classification != "informational" || test.Findings[0].Location != (Location{3, 1}) {
+		t.Fatalf("conditional skip misreported: %+v", test.Findings)
+	}
+	if test.Dimensions["engineeringQuality"] != "unknown" {
+		t.Fatal("informational finding raised a concern")
+	}
+}
+
+func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
+	f := Facts{Version: 3, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Location{}, ConditionalSkips: []Location{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
+		t.Fatal("title accepted without a request or rejected with one")
+	}
+	f.Tests[0].Title = strings.Repeat("x", 1025)
+	if validFacts(f, []byte("x"), true) {
+		t.Fatal("oversized title accepted")
+	}
+	f.Tests[0].Title = ""
+	f.Tests[0].ConditionalSkips = []Location{{9, 1}}
+	if validFacts(f, []byte("x"), false) {
+		t.Fatal("foreign conditional skip accepted")
+	}
+	f.Tests[0].ConditionalSkips = nil
+	if validFacts(f, []byte("x"), false) {
+		t.Fatal("missing conditional skips accepted")
+	}
+}
+
+func TestAssessSuiteGuardWithoutContract(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"test.describe('weekday flows', () => {\n" +
+		"  test.skip(isWeekend(), 'Only meaningful on business days');\n" +
+		"  test('shows today', async ({page}) => { await expect(page.getByRole('heading')).toBeVisible(); });\n" +
+		"});\n")
+	for _, titles := range []bool{false, true} {
+		report, err := Assess(context.Background(), source, nil, Options{Titles: titles})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Tests) != 1 || report.RequirementsSHA256 != "" {
+			t.Fatalf("guard became a test or a contract was invented: %+v", report)
+		}
+		test := report.Tests[0]
+		if len(test.Findings) != 1 || test.Findings[0].Rule != "conditional-skip" || test.Findings[0].Line != 3 {
+			t.Fatalf("suite guard misreported: %+v", test.Findings)
+		}
+		if want := map[bool]string{false: "", true: "shows today"}[titles]; test.Title != want {
+			t.Fatalf("title %q with titles=%v", test.Title, titles)
+		}
 	}
 }

@@ -22,6 +22,58 @@ test('disabled declarations and enclosing suites retain their state', () => {
   }
 });
 
+test('suite skip modifiers are not declarations and apply to their whole scope', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('file level', async () => { expect(1).toBe(1); });
+    test.skip(isWeekend(), 'Only meaningful on business days');
+    test.describe('conditional suite', () => {
+      test('before modifier', async () => { expect(1).toBe(1); });
+      test.fixme(({browserName}) => browserName === 'webkit', 'Known webkit issue');
+      test.describe('nested', () => {
+        test.beforeEach(async () => { if (flag) test.skip(); });
+        test('nested', async () => { expect(1).toBe(1); });
+      });
+    });
+    test.describe('disabled suite', () => {
+      test.beforeEach(() => { test.skip(); });
+      test('hook disabled', async () => { expect(1).toBe(1); });
+    });
+    test.describe('literal conditions', () => {
+      test.skip(false, 'never');
+      test('literal false', async () => { expect(1).toBe(1); });
+      test.describe('always', () => {
+        test.fixme(true, 'always');
+        test('literal true', async () => { expect(1).toBe(1); });
+      });
+    });
+    function guard() { test.skip(other(), 'helper'); }`);
+  // Modifiers add no inventory, including the one inside an unattributable helper.
+  assert.deepEqual(facts.tests.map(t => t.line), [2, 5, 9, 14, 18, 21]);
+  assert(facts.tests.every(t => t.limits.length === 0));
+  assert.deepEqual(facts.tests.map(t => t.disabled), [false, false, false, true, false, true]);
+  assert.deepEqual(facts.tests.map(t => t.conditionalSkips.map(s => s.line)), [[3], [3, 6], [3, 6, 8], [3], [3], [3]]);
+});
+
+test('skip and fixme declarations stay disabled tests', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test.skip('literal title', async () => { expect(1).toBe(1); });
+    test.fixme(\`template \${name}\`, helper);
+    test.skip(computedTitle, async () => { expect(1).toBe(1); });`);
+  assert.deepEqual(facts.tests.map(t => t.disabled), [true, true, true]);
+  assert(facts.tests.every(t => t.conditionalSkips.length === 0));
+});
+
+test('literal titles are reported only on request', () => {
+  const source = `import {test,expect} from '@playwright/test';
+    test('checkout creates an order', () => { expect(1).toBe(1); });
+    test(\`no substitution\`, () => { expect(1).toBe(1); });
+    test(computedTitle, () => { expect(1).toBe(1); });`;
+  assert(analyze(source).tests.every(t => !('title' in t)));
+  assert.deepEqual(analyze(source, { titles: true }).tests.map(t => t.title), ['checkout creates an order', 'no substitution', undefined]);
+  const long = analyze(`import {test} from '@playwright/test'; test('${'🙂'.repeat(300)}', () => {});`, { titles: true });
+  assert.equal([...long.tests[0].title].length, 200);
+});
+
 test('conditional body skips remain unsupported rather than assumed disabled', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
     test('conditional', async () => {

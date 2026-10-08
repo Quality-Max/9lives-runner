@@ -22,8 +22,9 @@
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
-- `9l assess`: advisory source assessment against a shared requirements
-  contract; static findings do not establish executed assertion coverage.
+- `9l assess`: advisory source assessment, optionally against a shared
+  requirements contract (`--requirements`); `--titles` adds literal test titles
+  for local use. Static findings do not establish executed assertion coverage.
 - `9l provenance`: record a declared agent and the current workspace, branch,
   commit and test source for later assessment/execution checks.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
