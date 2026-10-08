@@ -20,11 +20,18 @@ jobs:
         with:
           go-version: 1.25.13
           cache: true
-      - run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -trimpath -ldflags="-s -w" -o 9l-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/9l
+      - name: Build and package binary with legal files
+        run: |
+          bundle="9l-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "dist/$bundle"
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -trimpath -ldflags="-s -w" -o "dist/$bundle/9l" ./cmd/9l
+          cp LICENSE NOTICE "dist/$bundle/"
+          tar -czf "$bundle.tar.gz" -C dist "$bundle"
       - uses: actions/upload-artifact@v4
         with:
           name: 9l-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: 9l-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: 9l-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
 
   publish:
     needs: binaries
@@ -36,5 +43,6 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: dist/*.tar.gz
+          fail_on_unmatched_files: true
           generate_release_notes: true

@@ -2,6 +2,14 @@
   "name": "@9l/playwright",
   "version": "0.0.0",
   "description": "Playwright fixtures and the versioned 9lives Go engine bridge",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Quality-Max/9lives-runner#local-playwright-sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Quality-Max/9lives-runner.git",
+    "directory": "packages/playwright"
+  },
+  "bugs": {"url": "https://github.com/Quality-Max/9lives-runner/issues"},
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +17,7 @@
     ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},
     "./reporter": {"types": "./dist/reporter.d.ts", "default": "./dist/reporter.js"}
   },
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": {"build": "tsc -p tsconfig.json"},
   "peerDependencies": {"@playwright/test": "1.61.1"},
   "engines": {"node": ">=22"},

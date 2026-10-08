@@ -5,6 +5,7 @@ A Go execution core and local Playwright SDK for [9lives](https://github.com/Qua
 - Repository: `https://github.com/Quality-Max/9lives-runner` (private during the initial development phase)
 - Go module: `github.com/qualitymax/9lives-runner`
 - Release targets: macOS and Linux on amd64 and arm64
+- Release downloads: `9l-<os>-<arch>.tar.gz` archives containing `9l`, `LICENSE` and `NOTICE`
 
 This repository owns test discovery, inspectable execution plans, bounded
 parallel execution, cancellation, completeness accounting, and local evidence
@@ -218,3 +219,8 @@ a terminal receipt even when cancellation arrives before it starts.
 that package is a signed manifest of outbound network exposure, while these are
 test-execution evidence. If this runner later makes outbound requests, it should
 emit a qmax exposure receipt alongside—not instead of—the execution receipt.
+
+## License
+
+9lives and `@9l/playwright` are licensed under [Apache 2.0](LICENSE).
+Third-party components retain their own licenses and notices.

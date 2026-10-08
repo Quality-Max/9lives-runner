@@ -1,6 +1,7 @@
 {
   "name": "9lives-framework-workspace",
   "private": true,
+  "license": "Apache-2.0",
   "workspaces": ["packages/playwright", "testdata/sdk"],
   "scripts": {
     "build": "npm run build --workspace @9l/playwright",
