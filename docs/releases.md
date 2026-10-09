@@ -27,15 +27,20 @@ The workflow rejects a private repository, a mismatched source version,
 noncanonical repository or a tag outside main's history. It runs the entire
 reusable CI workflow before building release executables.
 
-Each executable is built and exercised on its native macOS/Linux amd64/arm64
+Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup
 and fixture planning, and packages the executable with the root `LICENSE` and
-`NOTICE`. Release artifact names are separate from CI's raw binaries and npm
-package, so only the four intended CLI archives reach the release.
+`NOTICE` and `THIRD-PARTY-NOTICES.txt` (Go dependencies). Release artifact names are separate from CI's raw binaries and npm
+package, so only the six intended CLI archives reach the release.
 
 Before upload, archive validation checks exact member paths, regular file
 and executable permissions, and byte-identical legal files. It writes
-`SHA256SUMS` for all four archives. Only the final publishing job has repository
+`SHA256SUMS` for all six archives. Windows uses ZIPs with `9l.exe`; macOS
+and Linux use tarballs with executable permissions. Native Windows CI must
+pass checkout assertions, business failure, owned timeout/cancel and clean
+consumer checks before release packaging. Windows arm64 has no Go race
+detector; its Go tests run without `-race`. Windows ZIPs start with the next
+CLI release after v0.1.5. Only the final publishing job has repository
 write permission; its actions are pinned to commit SHAs. The release workflow
 publishes GitHub assets, not the npm SDK. Archives are not Apple notarized.
 Published assets are not overwritten by a workflow rerun.

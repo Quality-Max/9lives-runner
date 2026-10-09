@@ -9,7 +9,7 @@ const {spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-visual-smoke-'));
-const engine = path.join(work, '9l');
+const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
 const receipts = path.join(work, 'receipts');
 const fixtures = [
   {adapter: 'playwright-sdk', spec: 'testdata/sdk/tests/visual.spec.ts', args: ['--sdk']},
@@ -20,11 +20,11 @@ let stage = 'engine-build';
 const onPath = name => (process.env.PATH || '').split(path.delimiter).some(dir => {
   try { fs.accessSync(path.join(dir, name), fs.constants.X_OK); return true; } catch { return false; }
 });
-const hasDisplay = process.platform === 'darwin' || !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+const hasDisplay = process.platform !== 'linux' || !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 
 function invoke(args, {display = false, headed = false} = {}) {
   const env = {};
-  const keys = ['PATH', 'HOME', 'TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH'];
+  const keys = ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PLAYWRIGHT_BROWSERS_PATH'];
   if (display) keys.push('DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY');
   for (const key of keys) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
@@ -71,7 +71,7 @@ function main() {
     assert.equal(outcome.receipt.status, 'failed');
   }
   stage = 'no display';
-  if (process.platform !== 'darwin') {
+  if (process.platform === 'linux') {
     const refused = invoke(['run', fixtures[0].spec, '--sdk', '--headed', '--receipt-dir', receipts]);
     assert.equal(refused.status, 2);
     assert.match(refused.stderr, /--headed needs a display/);

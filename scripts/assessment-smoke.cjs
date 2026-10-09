@@ -9,14 +9,14 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-assessment-'));
-const engine = path.join(work, '9l');
+const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
 const project = path.join(work, 'project');
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 let stage = 'build';
 function invoke(command, args, extraEnv = {}) {
   const env = {};
   // Explicit non-secret keys only; the fixture control is forwarded separately.
-  for (const key of ['PATH', 'HOME', 'TMPDIR', 'SystemRoot', 'PLAYWRIGHT_BROWSERS_PATH']) {
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PLAYWRIGHT_BROWSERS_PATH']) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
   const result = spawnSync(command, args, { cwd: root, env: { ...env, ...extraEnv }, encoding: 'utf8', timeout: 60000, maxBuffer: 4 << 20 });
@@ -61,7 +61,7 @@ function classify(result, spec, line) {
 try {
   assert.equal(invoke('go', ['build', '-o', engine, './cmd/9l']).status, 0, 'engine build failed');
   fs.cpSync(path.join(root, 'testdata/assessment'), project, { recursive: true });
-  fs.symlinkSync(path.join(root, 'node_modules'), path.join(project, 'node_modules'), 'dir');
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(project, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   const spec = path.join(project, 'tests/checkout.spec.ts');
   const source = fs.readFileSync(spec, 'utf8');
   const countLine = source.split('\n').findIndex(line => line.includes('expect(orders).toHaveLength(1)')) + 1;

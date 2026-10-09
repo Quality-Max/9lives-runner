@@ -6,9 +6,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-assessment-portability-'));
-const engine = path.join(work, '9l');
+const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
 const env = {};
-for (const key of ['PATH', 'HOME', 'TMPDIR', 'SystemRoot']) {
+for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) {
   if (process.env[key] !== undefined) env[key] = process.env[key];
 }
 let stage = 'Go-only build';

@@ -22,8 +22,10 @@ test author's responsibility.
 
 ## Ownership and transport
 
-Go starts a private per-attempt Unix socket (`9l.goal/1`) in a mode-0700 temp
-directory. Each bounded, strict JSON request must carry the owning run/job/attempt
+Go starts a private per-attempt `9l.goal/1` transport: a Unix socket in a
+mode-0700 temporary directory, or a Windows named pipe restricted to the
+engine user. Windows pipes reject remote clients. Each bounded, strict JSON
+request must carry the owning run/job/attempt
 identity. Only the socket path and identity reach the worker. API credentials
 remain with the existing Go HTTP transport; provider redirects are rejected.
 The runner withholds the provider's credential variables from workers even
@@ -32,7 +34,7 @@ A decision wrapped in a single Markdown code fence is unwrapped; its JSON is
 still decoded strictly, and any other surrounding text is an invalid decision.
 Provider round trips run outside the engine lock, so goals in parallel workers
 do not wait on each other's calls; budgets are reserved before each call.
-The socket is a local same-user boundary, not a sandbox for hostile test code.
+The transport is a local same-user boundary, not a sandbox for hostile test code.
 `--goal-provider anthropic|openai` is explicit; no CLI/tool fallback can bypass
 bounded output. `--goal-script file.json` is an offline qualification provider,
 not a language model or verified replay cache. Providers/scripts are exclusive.

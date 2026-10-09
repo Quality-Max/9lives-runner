@@ -122,5 +122,5 @@ NINELIVES_UPDATE_CONTRACTS=1 go test ./cmd/9l -run TestPublishedContractSchemasM
 ```
 
 Not yet in the contract: selecting changed specs, streaming progress events to
-stdout, recording goal-provider egress in receipts, and Windows releases
-(issue #27, items 5–8).
+stdout and recording goal-provider egress in receipts
+(issue #27, items 5–7).

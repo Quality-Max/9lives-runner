@@ -122,7 +122,7 @@ def verify_loaded_identity(source, version):
         "packageVersion": package.__version__,
         "modules": {
             module.__name__: {
-                "path": str(Path(module.__file__).resolve().relative_to(Path(source).resolve())),
+                "path": Path(module.__file__).resolve().relative_to(Path(source).resolve()).as_posix(),
                 "sha256": hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest(),
             }
             for module in sorted(modules, key=lambda module: module.__name__)

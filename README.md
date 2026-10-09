@@ -9,6 +9,10 @@ Run Playwright tests with bounded execution and attributable receipts. Add
 named steps and natural-language goals while keeping explicit assertions as
 the test oracle. Local execution needs no QualityMax account or hosted service.
 
+9lives runs, assesses, and stress-tests Playwright tests locally;
+[qmax-code](https://github.com/Quality-Max/qmax-code) is the terminal coding and
+QA agent that drives broader repository workflows.
+
 [Documentation](docs/README.md) · [Explainer](https://quality-max.github.io/9lives-runner/) ·
 [Local demo](demo/README.md) ·
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
@@ -44,7 +48,9 @@ go install github.com/Quality-Max/9lives-runner/cmd/9l@latest
 Ensure Go's binary directory is on your `PATH`. Prebuilt CLI releases target
 macOS and Linux on amd64 and arm64, so their users do not need Go. See the
 [download and checksum instructions](docs/install.md) for availability and
-platform selection. The npm package supplies the fixtures; it does not install
+platform selection. Windows amd64 and arm64 ZIPs are added by this source
+revision for the next CLI release; published v0.1.5 has macOS/Linux assets only.
+The npm package supplies the fixtures; it does not install
 the CLI or browsers.
 
 ### Run a test
@@ -102,8 +108,9 @@ Independent behavioral verification remains planned.
 See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md), [prove](docs/prove.md),
 [native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
 Verified replay and native mobile qualification remain subsequent milestones.
-Windows support is not declared; owned process-tree cancellation is qualified
-on Unix platforms.
+Windows process ownership uses kill-on-close Job Objects; native Windows
+amd64 and arm64 CI checks Chromium execution and process-tree cleanup.
+Provider CLI shell integrations on Windows remain unqualified.
 
 ### Add a bounded goal
 

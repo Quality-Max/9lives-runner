@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,9 @@ func TestHTTPProviderParsesAnthropicTextBlocks(t *testing.T) {
 }
 
 func TestCLIProviderPromptIsStdinAndErrorsAreSanitized(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "codex")
 	script := "#!/bin/sh\ncat\necho ignored >&2\n"
@@ -65,6 +69,9 @@ func TestCLIProviderPromptIsStdinAndErrorsAreSanitized(t *testing.T) {
 }
 
 func TestResolvePreservesClaudeCodeAliasAndHTTPFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
 	// Isolate provider choice from any developer credentials inherited by go test.
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("NINELIVES_PROVIDER", "")
@@ -105,6 +112,9 @@ func TestHTTPProviderUsesPinnedDefaultModel(t *testing.T) {
 }
 
 func TestCLIProviderForwardsExplicitModel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "codex")
 	script := "#!/bin/sh\n[ \"$1\" = exec ] && [ \"$2\" = --skip-git-repo-check ] && [ \"$3\" = --model ] && [ \"$4\" = chosen ] && [ \"$5\" = - ] || exit 7\ncat\n"
@@ -193,6 +203,9 @@ func TestProviderPromptBudgetUsesLocalHTTPAndCLI(t *testing.T) {
 	}
 	if _, err := httpProvider("openai", server.URL, time.Second).Complete(context.Background(), prompt+"x", ""); err == nil {
 		t.Fatal("accepted oversized HTTP prompt")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("HTTP prompt budget verified; remaining CLI fixture requires POSIX shell")
 	}
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "opencode")

@@ -1,2 +1,9 @@
+# Embedded parser hashes, published schemas and release legal files must retain
+# identical source bytes when checked out on Windows.
+* text=auto eol=lf
+*.gz -text
+*.png -text
+*.gif -text
+
 # Preserve the vendored license byte-for-byte, including upstream CRLF and spaces.
 internal/assessment/parser/LICENSE.txt -text whitespace=-blank-at-eol

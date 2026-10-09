@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"time"
 	"unicode/utf8"
@@ -211,7 +212,19 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 		Source string `json:"source"`
 		Titles bool   `json:"titles"`
 	}{string(source), opts.Titles})
-	command := exec.Command("node", "-e", analyzer+"\nmain();", parser)
+	// Windows command lines are limited to 32,767 UTF-16 code units. Keep
+	// the embedded analyzer in an owned file instead of passing its source as
+	// a large -e argument; only trusted code is materialized or executed.
+	helperDir, err := os.MkdirTemp("", "9lives-assessment-helper-")
+	if err != nil {
+		return empty, diagnostic("parser-unavailable")
+	}
+	defer os.RemoveAll(helperDir)
+	helper := filepath.Join(helperDir, "analyzer.cjs")
+	if err := os.WriteFile(helper, []byte(analyzer+"\nmain(process.argv[2]);"), 0600); err != nil {
+		return empty, diagnostic("parser-unavailable")
+	}
+	command := exec.Command("node", helper, parser)
 	command.Env = []string{}
 	if path, ok := os.LookupEnv("PATH"); ok {
 		command.Env = append(command.Env, "PATH="+path)
@@ -220,7 +233,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 	output := &boundedOutput{cancel: cancel}
 	command.Stdout = output
 	command.Stderr = io.Discard
-	err := runner.RunOwnedCommand(ctx, command)
+	err = runner.RunOwnedCommand(ctx, command)
 	if output.overflow {
 		return empty, diagnostic("output-limit")
 	}

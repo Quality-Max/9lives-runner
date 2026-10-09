@@ -17,10 +17,14 @@ func provenanceGit(t *testing.T, dir string, args ...string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	command.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}
+	emptyConfig := filepath.Join(dir, ".fixture-git-config")
+	if err := os.WriteFile(emptyConfig, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + emptyConfig}
 	command.Stdout, command.Stderr = io.Discard, io.Discard
-	if RunOwnedCommand(ctx, command) != nil {
-		t.Fatal("isolated fixture Git operation failed")
+	if err := RunOwnedCommand(ctx, command); err != nil {
+		t.Fatalf("isolated fixture Git operation failed: %v", err)
 	}
 }
 

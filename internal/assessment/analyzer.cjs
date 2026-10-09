@@ -467,10 +467,10 @@ function createAnalyzer(ts) {
   return analyze;
 }
 
-async function main() {
+async function main(parserPath = process.argv[1]) {
   try {
     let analyze;
-    try { analyze = createAnalyzer(require(process.argv[1])); }
+    try { analyze = createAnalyzer(require(parserPath)); }
     catch { throw new AnalysisError('parser-unavailable'); }
     const chunks = [];
     let bytes = 0;

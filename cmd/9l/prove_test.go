@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -162,6 +163,17 @@ func proveProject(t *testing.T) string {
 		}
 		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		for _, name := range []string{"node_modules/.bin/playwright.cmd", "node_modules/@playwright/test/cli.js"} {
+			full := filepath.Join(project, name)
+			if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte("placeholder"), 0600); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	return project
@@ -325,8 +337,8 @@ func TestProveRecordsWhyEmptyJSONWasNotApplicable(t *testing.T) {
 func TestProveReportsAnInterruptedBaselineAsSuch(t *testing.T) {
 	project := proveProject(t)
 	worker := shopWorker()
-	worker.delay = 2 * time.Second
-	code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--deadline", "100ms", "--receipt-dir", t.TempDir())
+	worker.delay = 5 * time.Second
+	code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--deadline", "1s", "--receipt-dir", t.TempDir())
 	if code != 1 || !strings.Contains(stderr, "canceled or timed out") || strings.Contains(stderr, "failing test") || len(worker.commands) != 1 {
 		t.Fatalf("code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
 	}

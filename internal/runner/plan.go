@@ -86,7 +86,7 @@ func expand(input string, adapters []Adapter) ([]string, error) {
 		})
 		sort.Strings(found)
 		return found, err
-	} else if !os.IsNotExist(err) {
+	} else if !os.IsNotExist(err) && !strings.ContainsAny(input, "*?[") {
 		return nil, err
 	}
 	matches, err := filepath.Glob(input)

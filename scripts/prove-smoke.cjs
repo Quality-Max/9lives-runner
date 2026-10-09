@@ -11,7 +11,7 @@ const {spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-prove-smoke-'));
-const engine = path.join(work, '9l');
+const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
 const receipts = path.join(work, 'receipts');
 let stage = 'engine-build';
 
@@ -27,7 +27,7 @@ function freePort() {
 
 function invoke(command, args, extraEnv = {}) {
   const env = {};
-  for (const key of ['PATH', 'HOME', 'TMPDIR', 'PLAYWRIGHT_BROWSERS_PATH']) {
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PLAYWRIGHT_BROWSERS_PATH']) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
   const result = spawnSync(command, args, {cwd: root, env: {...env, ...extraEnv}, encoding: 'utf8', timeout: 300000, maxBuffer: 4 << 20});
