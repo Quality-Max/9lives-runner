@@ -81,6 +81,13 @@ try {
   run(binary, consumer, 'business-failure', true, 'failed');
   stage = 'ordinary Playwright assertions';
   run(binary, consumer, 'ordinary', false, 'passed');
+  if (process.platform === 'win32') {
+    stage = 'Windows literal spec path';
+    const name = 'checkout[1]& copy';
+    fs.copyFileSync(path.join(consumer, 'tests/checkout.spec.ts'), path.join(consumer, `tests/${name}.spec.ts`));
+    run(binary, consumer, name, true, 'passed');
+    run(binary, consumer, name, false, 'passed');
+  }
   stage = 'artifact admission';
   fs.mkdirSync(destination, {recursive: true});
   fs.copyFileSync(tarball, path.join(destination, path.basename(tarball)));

@@ -63,7 +63,8 @@ test('the prove channel is off outside 9l prove and exclusive per attempt inside
     assert.throws(() => openProveChannel(env, info), /EEXIST/);
     const [file] = fs.readdirSync(dir);
     assert.match(file, /^[a-f0-9]{32}\.ndjson$/);
-    assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
+    // Windows inherits directory ACLs; its mode bits cannot express POSIX 0600.
+    if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
     // The handshake carries the engine's hashed test ID and the retry index;
     // an oversized record ends the stream with an overflow marker.
     const testId = createHash('sha256').update('abc').digest('hex');

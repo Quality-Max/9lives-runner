@@ -99,7 +99,9 @@ and Chromium as above. Native Windows CI covers both architectures with the
 workspace Playwright pin (1.61.1); later Playwright releases are separately
 qualified on Linux. Go's race detector runs on Windows amd64; Windows arm64
 runs the same Go tests without the race detector. Provider CLI shell
-integrations remain unqualified on Windows.
+integrations remain unqualified on Windows. Receipt and evidence files inherit
+their directory's Windows ACLs; keep the project and receipt directory under
+your user account. POSIX mode bits do not set Windows ACLs.
 
 If Python `9lives` is also installed, it has its own `9l` command. Use an
 explicit path such as `$HOME/.local/bin/9l` to select this Go runner.

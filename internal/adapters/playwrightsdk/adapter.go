@@ -69,7 +69,7 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	if err != nil {
 		return runner.Job{}, fmt.Errorf("cannot resolve SDK spec")
 	}
-	command, err := playwright.InstalledCommand(binary, "test", relative, "--reporter="+reporter)
+	command, err := playwright.InstalledCommand(binary, "test", playwright.TestFileFilter(project, relative), "--reporter="+reporter)
 	if err != nil {
 		return runner.Job{}, err
 	}

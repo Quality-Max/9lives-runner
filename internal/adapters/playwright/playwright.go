@@ -101,7 +101,7 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return runner.Job{}, fmt.Errorf("spec is outside its Playwright project")
 	}
-	command, err := InstalledCommand(binary, "test", relative, "--reporter=json")
+	command, err := InstalledCommand(binary, "test", TestFileFilter(project, relative), "--reporter=json")
 	if err != nil {
 		return runner.Job{}, err
 	}
@@ -270,4 +270,13 @@ func InstalledCommand(binary string, args ...string) ([]string, error) {
 		return nil, fmt.Errorf("Node.js is required to execute Playwright")
 	}
 	return append([]string{node, cli}, args...), nil
+}
+
+// TestFileFilter preserves Windows separators and metacharacters when
+// Playwright interprets its file argument as a regular expression.
+func TestFileFilter(project, relative string) string {
+	if runtime.GOOS == "windows" {
+		return "^" + regexp.QuoteMeta(filepath.ToSlash(filepath.Join(project, relative))) + "$"
+	}
+	return relative
 }

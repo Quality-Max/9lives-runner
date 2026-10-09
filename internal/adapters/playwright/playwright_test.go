@@ -27,7 +27,7 @@ func TestPlanUsesInstalledProjectWithoutNpxDownload(t *testing.T) {
 	if err != nil || len(plan.Jobs) != 1 {
 		t.Fatalf("unexpected plan: %#v %v", plan, err)
 	}
-	command, commandErr := InstalledCommand(binary, "test", filepath.Join("tests", "a.spec.ts"), "--reporter=json")
+	command, commandErr := InstalledCommand(binary, "test", TestFileFilter(project, filepath.Join("tests", "a.spec.ts")), "--reporter=json")
 	if commandErr != nil || !slices.Equal(plan.Jobs[0].Command, command) {
 		t.Fatalf("unexpected command: %#v", plan.Jobs[0].Command)
 	}
