@@ -3,6 +3,8 @@ name: Publish Playwright SDK
 on:
   push:
     tags: ['sdk-v*']
+    branches: [main]
+    paths: ['packages/playwright/package.json']
 
 permissions:
   contents: read
@@ -10,6 +12,9 @@ permissions:
 jobs:
   check-tag:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      publish: ${{ steps.identity.outputs.publish }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -19,16 +24,19 @@ jobs:
         with:
           node-version: '24'
       - name: Verify release identity and main ancestry
+        id: identity
         env:
           REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: node scripts/verify-sdk-release.cjs
 
   qualification:
     needs: check-tag
+    if: needs.check-tag.outputs.publish == 'true'
     uses: ./.github/workflows/ci.yml
 
   publish:
     needs: [check-tag, qualification]
+    if: needs.check-tag.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -49,3 +57,18 @@ jobs:
           path: .context/npm-pack/
       - name: Publish qualified tarball using npm trusted publishing
         run: node scripts/publish-sdk.cjs
+
+  # Record the published commit. A tag created with the workflow token does
+  # not trigger this workflow again, so there is no second publication.
+  tag:
+    needs: [check-tag, publish]
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.check-tag.outputs.version }}
+    steps:
+      - name: Create the sdk-v tag on the published commit
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/sdk-v$VERSION" -f sha="$GITHUB_SHA"

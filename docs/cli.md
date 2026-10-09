@@ -29,7 +29,7 @@
 - Experimental `9l prove`: run one spec, then re-run it once per injected
   network fault (`abort`, `http-500`, `empty-json`) on each fetch/XHR request
   it made, and report which faults an assertion caught and which survived.
-  Requires an `@9l/playwright` build with prove support; see [Prove](prove.md).
+  Requires `@9l/playwright` 0.1.1 or newer; see [Prove](prove.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
   commit and test source for later assessment/execution checks.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;

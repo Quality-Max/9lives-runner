@@ -95,12 +95,17 @@ first (`npm trust list`, then `npm trust revoke --id=<id>`) and creating it
 again with `--allow-publish --allow-stage-publish`. After a configuration fix,
 rerun the failed publish job; the qualified tarball artifact is reused.
 
-For a future release, update the SDK version and lockfile in a reviewed change,
-merge it to `main`, and push a matching `sdk-v<version>` tag. The workflow
-rejects private repositories, mismatched versions and commits outside main's
-history. It runs the complete CI workflow, then publishes the exact qualified
-tarball using short-lived OIDC authentication on a GitHub-hosted runner.
-Public trusted publication automatically receives npm provenance.
+For a future release, update the SDK version, lockfile, fixtures, docs and
+changelog in a reviewed change and merge it to `main`. The publish workflow
+runs on every push to `main` that touches `packages/playwright/package.json`:
+it reads the version, skips when the registry already has it, otherwise runs
+the complete CI workflow, publishes the exact qualified tarball using
+short-lived OIDC authentication on a GitHub-hosted runner, and then creates
+the `sdk-v<version>` tag on the published commit. Pushing a matching
+`sdk-v<version>` tag by hand still publishes, for example to retry after a
+registry outage. The workflow rejects private repositories, mismatched tags
+and commits outside main's history. Public trusted publication automatically
+receives npm provenance. SDK 0.1.1 was the first automatic publication.
 
 Do not push `sdk-v0.0.0`: npm will reject that
 duplicate version. Go binary releases use separate `v*` tags and include the

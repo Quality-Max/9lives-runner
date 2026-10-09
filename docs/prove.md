@@ -1,7 +1,8 @@
 # Prove: can this test fail?
 
-Status: experimental. `9l prove` needs an `@9l/playwright` build that includes
-prove support; the published SDK 0.1.1 does not. Qualified with real Chromium
+Status: experimental. `9l prove` needs `@9l/playwright` 0.1.1 or newer, the
+first release with the prove channel, and a CLI built from `main` until the
+next CLI release. Qualified with real Chromium
 on one synthetic fixture and one retry control, see
 [Qualification](#qualification). No accuracy, latency or cost claim is made
 for other applications.
