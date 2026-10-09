@@ -78,8 +78,10 @@ or `context` fixture. Tests that never use a browser context are untouched.
   `--workers` each run's concurrency. `--pass-env` and `--pin-skip` behave as
   in `9l run`.
 - **Exit status.** 0 when the proof finished, whatever it found; 1 when the
-  baseline was not green, nothing was instrumented, or the session was
-  interrupted; 2 for usage errors. Survived faults do not change the exit
+  baseline was not green, nothing was instrumented, any run's prove records
+  failed validation (the report then has `invalidEvidence: true` and is never
+  complete), execution failed, or the session was interrupted; 2 for usage
+  errors such as a missing spec. Survived faults do not change the exit
   status, as `9l assess` findings do not.
 
 ## Evidence and privacy

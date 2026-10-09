@@ -144,6 +144,9 @@ func (observations *Observations) add(raw []byte, mode string) error {
 	if len(lines) > maxRecords {
 		return errors.New("prove record limit exceeded")
 	}
+	// Each file is one test attempt's context, where a response always
+	// follows its request; pair them here, before attempts are merged.
+	requested := map[string]bool{}
 	for index, line := range lines {
 		entry, err := decodeRecord(line)
 		if err != nil {
@@ -176,7 +179,11 @@ func (observations *Observations) add(raw []byte, mode string) error {
 				}
 				request.ResourceType = entry.ResourceType
 				request.Observed++
+				requested[target.Key()] = true
 			} else {
+				if !requested[target.Key()] {
+					return errors.New("response without a recorded request")
+				}
 				if entry.Status < 100 || entry.Status > 599 {
 					return errors.New("invalid response status")
 				}
@@ -198,12 +205,6 @@ func (observations *Observations) add(raw []byte, mode string) error {
 			observations.Overflow = true
 		default:
 			return errors.New("unexpected prove record")
-		}
-	}
-	// A response without its request means the stream lost records.
-	for _, request := range observations.Requests {
-		if request.ResourceType == "" && !observations.Overflow {
-			return errors.New("response without a recorded request")
 		}
 	}
 	return nil

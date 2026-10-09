@@ -34,6 +34,18 @@ type proveSettings struct {
 	receiptDir     string
 }
 
+// proveUsageError is a planning failure the caller can fix by changing the
+// command (exit 2). Every other run error is operational (exit 1).
+type proveUsageError struct{ error }
+
+func proveExit(err error) int {
+	var usage proveUsageError
+	if errors.As(err, &usage) {
+		return 2
+	}
+	return 1
+}
+
 type proveRun struct {
 	summary      runner.RunSummary
 	receipt      runner.Receipt
@@ -102,7 +114,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	baseline, err := settings.run(ctx, nil)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l: prove:", err)
-		return 2
+		return proveExit(err)
 	}
 	fmt.Fprintf(progress, "baseline %s: %s\n", baseline.summary.RunID, baseline.receipt.Status)
 	if baseline.channelInvalid {
@@ -140,8 +152,11 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		entry.DurationMS = time.Since(started).Milliseconds()
 		if err != nil {
 			fmt.Fprintln(errOut, "9l: prove:", err)
-			return 2
+			return proveExit(err)
 		}
+		// Invalid worker records make this fault incomplete and the whole
+		// proof unsuccessful, not merely one inconclusive row.
+		report.InvalidEvidence = report.InvalidEvidence || result.channelInvalid
 		entry.RunID, entry.Applied = result.summary.RunID, result.facts.Applied
 		entry.FailedTests, entry.AssertionFailures = result.facts.Unexpected, result.facts.UnexpectedWithAssertion
 		entry.Result = prove.Classify(result.facts)
@@ -154,7 +169,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		report.Faults = append(report.Faults, prove.FaultReport{ID: fault.ID, Request: fault.Request, Kind: fault.Kind, Result: prove.NotRun})
 	}
 	report.Summary = prove.Summarize(report.Faults)
-	report.Complete = !report.Interrupted && report.Summary.NotRun == 0
+	report.Complete = !report.Interrupted && !report.InvalidEvidence && report.Summary.NotRun == 0
 	saved, saveErr := saveProof(settings.receiptDir, report)
 	if saveErr != nil {
 		fmt.Fprintln(errOut, "9l: prove: report could not be saved:", saveErr)
@@ -167,7 +182,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	} else {
 		printProof(out, report, saved, *paths)
 	}
-	if report.Interrupted || saveErr != nil {
+	if report.Interrupted || report.InvalidEvidence || saveErr != nil {
 		return 1
 	}
 	return 0
@@ -180,10 +195,10 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 	adapters := []runner.Adapter{settings.adapter}
 	plan, err := runner.BuildPlan([]string{settings.spec}, runner.PlanOptions{MaxJobs: 1, MaxParallel: settings.workers, MaxAttempts: 1, MaxOutputBytes: settings.maxOutputBytes, Adapters: adapters})
 	if err != nil {
-		return result, fmt.Errorf("plan: %w", err)
+		return result, proveUsageError{fmt.Errorf("plan: %w", err)}
 	}
 	if len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
-		return result, errors.New("prove requires exactly one spec file")
+		return result, proveUsageError{errors.New("prove requires exactly one spec file")}
 	}
 	dir, err := os.MkdirTemp("", "9lives-prove-")
 	if err != nil {
@@ -293,6 +308,9 @@ func printProof(w io.Writer, report prove.Report, saved string, paths bool) {
 	}
 	if !exercised && len(report.Faults) > 0 {
 		fmt.Fprintln(w, "No fault was exercised: a fault targets the baseline's method, origin and path, so an origin that changes between runs (such as a random port) never matches.")
+	}
+	if report.InvalidEvidence {
+		fmt.Fprintln(w, "  INVALID EVIDENCE: a fault run's prove records failed validation; the proof is incomplete")
 	}
 	if report.Interrupted {
 		fmt.Fprintln(w, "  INTERRUPTED: remaining faults were not run")

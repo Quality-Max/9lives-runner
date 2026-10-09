@@ -175,6 +175,9 @@ type Report struct {
 	Summary     Summary         `json:"summary"`
 	Limits      []string        `json:"limits"`
 	Interrupted bool            `json:"interrupted,omitempty"`
+	// InvalidEvidence marks a fault run whose prove records failed
+	// validation; such a proof is never complete.
+	InvalidEvidence bool `json:"invalidEvidence,omitempty"`
 }
 
 var Limits = []string{

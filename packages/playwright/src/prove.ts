@@ -128,14 +128,11 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
   // first; a request the test fulfills itself is never faulted.
   await context.route('**/*', async route => {
     if (!matches(fault, requestTarget(route.request()))) return route.fallback();
-    if (fault.kind === 'abort') {
-      channel.record({type: 'applied', fault: fault.id});
-      return route.abort('failed');
-    }
-    if (fault.kind === 'http-500') {
-      channel.record({type: 'applied', fault: fault.id});
-      return route.fulfill({status: 500, body: ''});
-    }
+    // Credit a fault only once Playwright has delivered it: a request the
+    // page already cancelled rejects here, and must not count as applied.
+    const applied = () => channel.record({type: 'applied', fault: fault.id});
+    if (fault.kind === 'abort') return route.abort('failed').then(applied);
+    if (fault.kind === 'http-500') return route.fulfill({status: 500, body: ''}).then(applied);
     let response;
     try {
       response = await route.fetch();
@@ -148,7 +145,6 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
       channel.record({type: 'not-applicable', fault: fault.id});
       return route.fulfill({response});
     }
-    channel.record({type: 'applied', fault: fault.id});
-    return route.fulfill({response, body: empty});
+    return route.fulfill({response, body: empty}).then(applied);
   });
 }

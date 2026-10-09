@@ -72,3 +72,24 @@ test('the prove channel is off outside 9l prove and exclusive per attempt inside
     fs.rmSync(dir, {recursive: true, force: true});
   }
 });
+
+test('a fault is credited only after Playwright delivers it', async () => {
+  const {instrument, ProveChannel} = require('../dist/prove.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-route-'));
+  try {
+    for (const [kind, settle, credited] of [['abort', 'resolve', 1], ['abort', 'reject', 0], ['http-500', 'reject', 0]]) {
+      const file = path.join(dir, `${kind}-${settle}.ndjson`);
+      const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind});
+      let handler;
+      await instrument({route: async (_pattern, h) => { handler = h; }}, channel);
+      const outcome = () => settle === 'resolve' ? Promise.resolve() : Promise.reject(new Error('request already handled'));
+      const route = {request: () => request('http://127.0.0.1:4100/api/orders', 'POST'), abort: outcome, fulfill: outcome, fallback: () => Promise.resolve()};
+      await handler(route).catch(() => {});
+      channel.close();
+      const applied = fs.readFileSync(file, 'utf8').split('\n').filter(line => line.includes('"applied"')).length;
+      assert.equal(applied, credited, `${kind} ${settle}`);
+    }
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});

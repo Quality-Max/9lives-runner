@@ -182,3 +182,13 @@ func TestClassify(t *testing.T) {
 		t.Fatalf("summary %#v", summary)
 	}
 }
+
+func TestReadChannelPairsResponsesWithinEachAttempt(t *testing.T) {
+	response := `{"type":"response","method":"GET","origin":"` + origin + `","path":"/api/cart","status":200,"json":true}` + "\n"
+	// The second attempt's response has no request of its own; an earlier
+	// attempt's request for the same target must not vouch for it.
+	dir := writeChannel(t, hello("observe")+observed("GET", "/api/cart", 500, false), hello("observe")+response)
+	if _, err := ReadChannel(dir, "observe"); err == nil {
+		t.Fatal("accepted a response-only stream because another attempt recorded the request")
+	}
+}

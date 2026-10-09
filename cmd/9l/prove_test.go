@@ -22,9 +22,11 @@ type fakeProveWorker struct {
 	asserted   map[string]bool
 	baselineOK bool
 	instrument bool
-	// corrupt writes a record outside the closed schema.
-	corrupt  bool
-	commands [][]string
+	// corrupt writes a record outside the closed schema; corruptFaults does so
+	// only in fault runs.
+	corrupt       bool
+	corruptFaults bool
+	commands      [][]string
 }
 
 const fakeOrigin = "http://127.0.0.1:4100"
@@ -54,7 +56,7 @@ func (worker *fakeProveWorker) Run(_ context.Context, job runner.Job, _ int) run
 		channel = append(channel, fmt.Sprintf(`{"type":"applied","fault":"%s"}`, fault.ID))
 		passed = !worker.asserted[fault.Path]
 	}
-	if worker.corrupt {
+	if worker.corrupt || (worker.corruptFaults && fault != nil) {
 		channel = append(channel, `{"type":"request","url":"http://127.0.0.1:4100/api/cart?token=1"}`)
 	}
 	if worker.instrument {
@@ -186,5 +188,34 @@ func TestProveRejectsInvalidUsage(t *testing.T) {
 		if code, _, _ := runProve(t, &fakeProveWorker{}, args...); code != 2 {
 			t.Fatalf("args %q: code=%d", args, code)
 		}
+	}
+}
+
+func TestProveInvalidFaultEvidenceMakesTheProofUnsuccessful(t *testing.T) {
+	project := proveProject(t)
+	worker := &fakeProveWorker{asserted: map[string]bool{"/api/cart": true}, baselineOK: true, instrument: true, corruptFaults: true}
+	code, stdout, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--format", "json", "--receipt-dir", t.TempDir())
+	var report prove.Report
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("%v: %s", err, stderr)
+	}
+	if code != 1 || report.Complete || !report.InvalidEvidence || report.Summary.Inconclusive != len(report.Faults) {
+		t.Fatalf("code=%d complete=%v invalid=%v summary=%+v", code, report.Complete, report.InvalidEvidence, report.Summary)
+	}
+}
+
+func TestProveSeparatesUsageFromOperationalFailures(t *testing.T) {
+	project := proveProject(t)
+	worker := &fakeProveWorker{baselineOK: true, instrument: true}
+	if code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/missing.spec.ts"), "--receipt-dir", t.TempDir()); code != 2 {
+		t.Fatalf("missing spec: code=%d stderr=%s", code, stderr)
+	}
+	// A receipt directory that is a file fails execution, not the command line.
+	blocked := filepath.Join(t.TempDir(), "receipts")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--receipt-dir", blocked); code != 1 {
+		t.Fatalf("operational failure: code=%d stderr=%s", code, stderr)
 	}
 }
