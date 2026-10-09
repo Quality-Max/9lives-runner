@@ -9,13 +9,13 @@ separately; the SDK does not bundle the runner or a browser.
 From your Playwright project, with Node 24 (Node 22 minimum):
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.61.1
+npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
 On Linux use `npm exec playwright install --with-deps chromium`.
 The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified versions:
-1.61.1 with Chromium. Other versions in that range install but are unqualified,
+every published release from 1.61.1 through 1.64.0 (1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0), with Chromium. Later versions in that range install but are unqualified,
 as are other engines. Preserve the existing project configuration and assertions.
 The [SDK contract](sdk-bridge.md) describes supported settings and limits.
 
@@ -48,14 +48,14 @@ these executables.
 | Linux, x86-64 | `9l-linux-amd64.tar.gz` |
 | Linux, ARM64 | `9l-linux-arm64.tar.gz` |
 
-For the published `v0.1.0`, using GitHub CLI, this example installs on Apple
+For the published `v0.1.1`, using GitHub CLI, this example installs on Apple
 Silicon. Choose your archive from the table:
 
 ```sh
 mkdir -p /tmp/9l-download
 cd /tmp/9l-download
 BUNDLE=9l-darwin-arm64
-gh release download v0.1.0 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
+gh release download v0.1.1 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
 awk -v archive="$BUNDLE.tar.gz" '$2 == archive' SHA256SUMS > selected.sha256
 test -s selected.sha256
 shasum -a 256 -c selected.sha256

@@ -198,9 +198,9 @@ recognized test in that suite, including tests declared before them.
 `test.skip()` and `test.skip(true, ...)` disable those tests; `false` is
 ignored; any other condition, a modifier under a branch, or one in an
 `afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
-location. After hooks run once test bodies have run: Playwright 1.61.1 reports
-a passing test skipped from `afterEach` and only some results skipped from
-`afterAll`, so neither disables the suite. Modifiers inside other functions
+location. After hooks run once test bodies have run: Playwright 1.61.1 through
+1.64.0 report a passing test skipped from `afterEach` and only some results
+skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
 cannot be attributed from source and are ignored. Playwright treats a string
 followed by a function as a declaration at runtime, so only calls that cannot
 be one are modifiers: no arguments, one non-title argument, a fixture callback
@@ -224,8 +224,9 @@ and any other matcher negated with `.not`; negating an absence matcher, such as
 `not.toBeHidden()`, makes it a presence check. A recognized positive assertion
 between the wait and the absence check counts as a completion signal. An
 unresolved helper in between might be one too, so the finding stays suspected.
-Async matcher detection follows the pinned Playwright 1.61.1
-API, including locator, page, API-response and function assertions, and any
+Async matcher detection follows the Playwright 1.61.1 API, whose matchers are
+unchanged through 1.64.0 (CI checks each release's type declarations),
+including locator, page, API-response and function assertions, and any
 matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
 are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
 chain on it, is awaited or returned by the function being scanned; the chained

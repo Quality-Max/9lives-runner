@@ -26,11 +26,12 @@ See [how it is recorded](demo/README.md#recording).
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.61.1
+npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
-Use Node 24 for the qualified runtime (Node 22 minimum). On Linux, use
+Use Node 24 for the qualified runtime (Node 22 minimum) and Playwright 1.61.1
+through 1.64.0; an existing project can keep its version in that range. On Linux, use
 `npm exec playwright install --with-deps chromium` for browser dependencies.
 
 Install the Go CLI separately. With Go 1.25.13 or newer:
@@ -116,6 +117,21 @@ Choose `--goal-provider anthropic` or `openai` and configure its credential
 securely in Go's calling environment. Offline `--goal-script` fixtures exercise
 the browser/engine contract without paid API calls. Purchase, deletion and
 outreach controls stop by default. See [goal contracts](docs/goals.md).
+
+## Compatibility
+
+| Component | Qualified | Boundary |
+| --- | --- | --- |
+| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
+| `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
+| Browser | Chromium | Other engines are unqualified |
+| Node | 24 (22 minimum) | |
+| CLI | 0.1.1 on macOS and Linux, amd64 and arm64 | Windows is not declared |
+| SDK | `@9l/playwright` 0.1.0 | Installing the SDK does not install the CLI or browsers |
+
+Keep your project's existing Playwright version if it is in the qualified
+range; upgrading is not required. To check a release locally, see the
+[development guide](docs/development.md).
 
 ## Add it to your coding agent
 

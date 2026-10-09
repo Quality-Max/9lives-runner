@@ -8,8 +8,9 @@ class AnalysisError extends Error {
 function createAnalyzer(ts) {
   if (ts.version !== '5.9.3' || typeof ts.createSourceFile !== 'function') throw new AnalysisError('parser-unavailable');
   const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/;
-  // Playwright 1.61.1's locator, page, API response and function async matchers.
-  // The regression suite checks this against the pinned public type declarations.
+  // Playwright 1.61.1's locator, page, API response and function async matchers,
+  // unchanged through 1.64.0. The regression suite checks this against the
+  // installed public type declarations; CI installs each qualified release.
   const asyncMatchers = new Set([
     'toBeAttached', 'toBeChecked', 'toBeDisabled', 'toBeEditable', 'toBeEmpty',
     'toBeEnabled', 'toBeFocused', 'toBeHidden', 'toBeInViewport', 'toBeVisible',

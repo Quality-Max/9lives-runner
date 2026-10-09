@@ -2,16 +2,16 @@
 > 0.1.0, reproduced unedited below this note. The reviewer removed details that
 > identify their product; the numbers describe 0.1.0, not later changes.
 >
-> Maintainer status as of 2026-10-09:
+> Maintainer status as of CLI 0.1.1:
 >
 > | Report item | Status |
 > | --- | --- |
 > | §1 `9l` name clash with Python `9lives` | Documented in [Install](../install.md) |
-> | §3 `toEqual([])` after a wait not treated as absence | Fix proposed in PR #24 (open) |
-> | §5a `.catch()` on an awaited matcher flagged as unawaited | Fix proposed in PR #24 (open) |
-> | §5b Concise arrow returning a matcher flagged as unawaited | Fix proposed in PR #24 (open) |
-> | §5c Helper findings reported at every caller | Fix proposed in PR #24 (open) |
-> | §5d `unmapped-outcome` checked per test | Per file in PR #24 (open); per suite tracked in #20 |
+> | §3 `toEqual([])` after a wait not treated as absence | Fixed in CLI 0.1.1 (PR #24) |
+> | §5a `.catch()` on an awaited matcher flagged as unawaited | Fixed in CLI 0.1.1 (PR #24) |
+> | §5b Concise arrow returning a matcher flagged as unawaited | Fixed in CLI 0.1.1 (PR #24) |
+> | §5c Helper findings reported at every caller | Fixed in CLI 0.1.1 (PR #24) |
+> | §5d `unmapped-outcome` checked per test | Per file in CLI 0.1.1 (PR #24); per suite tracked in #20 |
 > | §5e Provenance covers only the spec file | Tracked in #22 |
 > | §5f `--attempts 1` does not override Playwright `retries` | Tracked in #19 |
 > | §5g Project global setup runs under `9l run` | Expected; the project's Playwright config is kept |

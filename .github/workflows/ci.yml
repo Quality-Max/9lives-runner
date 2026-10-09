@@ -111,3 +111,43 @@ jobs:
           path: .context/npm-pack/
           if-no-files-found: error
           include-hidden-files: true
+
+  # The SDK peer range admits later Playwright 1.x releases. Qualify every
+  # published release up to 1.64 with the sdk job's checks; that job covers
+  # the 1.61.1 workspace pin and alone produces the publishable tarball.
+  playwright-compat:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        playwright: ['1.62.0', '1.62.1', '1.63.0', '1.64.0']
+    env:
+      PLAYWRIGHT_VERSION: ${{ matrix.playwright }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.13
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Select the Playwright release in every workspace and fixture
+        run: |
+          node scripts/select-playwright.cjs "$PLAYWRIGHT_VERSION"
+          npm install --no-audit --no-fund
+          npm install --prefix testdata/playwright --no-audit --no-fund
+          node scripts/select-playwright.cjs --check "$PLAYWRIGHT_VERSION"
+      - run: npm test
+      - run: npm exec playwright install --with-deps chromium
+      - run: npm run smoke
+      - run: npm run smoke:assessment
+      - name: Qualify 9l prove fault injection in real Chromium
+        run: npm run smoke:prove
+      - name: Qualify packed SDK in an isolated consumer
+        run: npm run smoke:package
+      - name: Exercise Playwright fixture
+        run: |
+          go run ./cmd/9l plan testdata/playwright/tests/pass.spec.ts --format json
+          go run ./cmd/9l run testdata/playwright/tests/pass.spec.ts --format json --receipt-dir "$RUNNER_TEMP/9lives-receipts"
