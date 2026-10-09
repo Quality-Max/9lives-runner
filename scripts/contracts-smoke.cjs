@@ -7,7 +7,7 @@ const {spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-contract-smoke-'));
-const engine = path.join(work, '9l');
+const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
 const receipts = path.join(work, 'receipts');
 const samples = [];
 let active = 'build';

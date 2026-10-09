@@ -16,6 +16,11 @@ const results = [];
 let stage = 'pack';
 
 function call(command, args, cwd = root, accepted = [0]) {
+  if (command === 'npm' && process.platform === 'win32') {
+    assert(process.env.npm_execpath, 'run package qualification through npm');
+    args = [process.env.npm_execpath, ...args];
+    command = process.execPath;
+  }
   const result = spawnSync(command, args, {cwd, encoding: 'utf8', timeout: 120000, maxBuffer: 4 << 20});
   // Do not emit npm/config/test logs or raw error payloads on failure.
   assert(!result.error && accepted.includes(result.status), `${path.basename(command)} qualification failed (status ${result.status})`);
@@ -67,7 +72,7 @@ try {
     fs.writeFileSync(path.join(consumer, `tests/${name}.spec.ts`), `import {test, expect} from '@9l/playwright';\ntest('checkout confirms one order', async ({page, n9l}) => {\n  await page.setContent(${JSON.stringify(content)});\n  await n9l.step('place order', async () => { await page.getByRole('button', {name: 'Place order'}).click(); });\n  await expect(page.getByRole('status')).toHaveText('Order confirmed: 1 item', {timeout: 500});\n});\n`);
   }
   fs.writeFileSync(path.join(consumer, 'tests/ordinary.spec.ts'), `import {test, expect} from '@playwright/test';\ntest('ordinary checkout confirms one order', async ({page}) => {\n  await page.setContent(${JSON.stringify(page)});\n  await page.getByRole('button', {name: 'Place order'}).click();\n  await expect(page.getByRole('status')).toHaveText('Order confirmed: 1 item');\n});\n`);
-  const binary = path.join(work, '9l');
+  const binary = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
   stage = 'engine build';
   call('go', ['build', '-trimpath', '-o', binary, './cmd/9l']);
   stage = 'checkout assertions';

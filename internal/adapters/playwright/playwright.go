@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -100,9 +101,13 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return runner.Job{}, fmt.Errorf("spec is outside its Playwright project")
 	}
+	command, err := InstalledCommand(binary, "test", relative, "--reporter=json")
+	if err != nil {
+		return runner.Job{}, err
+	}
 	return runner.Job{
 		ID: fmt.Sprintf("job-%03d", index), Input: input, Spec: path,
-		WorkDir: project, Adapter: adapter.Name(), Command: []string{binary, "test", relative, "--reporter=json"}, DependsOn: []string{},
+		WorkDir: project, Adapter: adapter.Name(), Command: command, DependsOn: []string{},
 	}, nil
 }
 
@@ -247,4 +252,22 @@ func legacyOutcome(status string) string {
 		return "skipped"
 	}
 	return status
+}
+
+// InstalledCommand executes the installed JavaScript CLI directly on Windows.
+// exec.Cmd cannot execute npm's .cmd shim; a shell would reinterpret spec paths.
+func InstalledCommand(binary string, args ...string) ([]string, error) {
+	if runtime.GOOS != "windows" {
+		return append([]string{binary}, args...), nil
+	}
+	cli := filepath.Join(filepath.Dir(filepath.Dir(binary)), "@playwright", "test", "cli.js")
+	info, err := os.Stat(cli)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("installed Playwright JavaScript CLI is missing; install project dependencies first")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		return nil, fmt.Errorf("Node.js is required to execute Playwright")
+	}
+	return append([]string{node, cli}, args...), nil
 }

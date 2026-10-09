@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +182,9 @@ func assertDiagnostic(t *testing.T, err error, code string) {
 const generous = 10 * time.Second
 
 func TestHelperFailureModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
 	node := requireNode(t)
 	parser, cleanup, err := materializeParser()
 	if err != nil {

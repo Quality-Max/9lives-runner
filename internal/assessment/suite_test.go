@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -142,6 +143,9 @@ func TestAssessSuiteStopsAtCancellation(t *testing.T) {
 }
 
 func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
 	node := requireNode(t)
 	previous := suiteFileTimeout
 	suiteFileTimeout = 2 * time.Second

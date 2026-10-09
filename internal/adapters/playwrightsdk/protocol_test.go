@@ -340,12 +340,16 @@ func TestNestedPackageKeepsOwningConfigWithHoistedRuntime(t *testing.T) {
 		binaryName += ".cmd"
 	}
 	binary := write(binaryName, "placeholder")
+	if runtime.GOOS == "windows" {
+		binary = ""
+		write("node_modules/@playwright/test/cli.js", "placeholder")
+	}
 	reporter := write("node_modules/@9l/playwright/dist/reporter.js", "placeholder")
 	job, err := New().Plan(spec, spec, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.WorkDir != root || job.Command[0] != binary || job.Command[2] != filepath.Join("packages", "app", "tests", "checkout.spec.ts") || !slices.Contains(job.Command, "--config="+config) || !slices.Contains(job.Command, "--reporter="+reporter) {
+	if job.WorkDir != root || (binary != "" && job.Command[0] != binary) || !slices.Contains(job.Command, filepath.Join("packages", "app", "tests", "checkout.spec.ts")) || !slices.Contains(job.Command, "--config="+config) || !slices.Contains(job.Command, "--reporter="+reporter) {
 		t.Fatalf("owning config/runtime lost: %+v", job)
 	}
 }

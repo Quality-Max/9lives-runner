@@ -58,9 +58,10 @@ Playwright execution supports existing projects with a local
 `@playwright/test` dependency. It never uses `npx` to download tooling during a
 run.
 
-Supported release targets are macOS and Linux on amd64 and arm64. Windows is
-not declared yet; owned process-tree cancellation is qualified on Unix
-platforms.
+Release packaging targets macOS, Linux and Windows on amd64 and arm64.
+Windows ZIPs start with the next CLI release after v0.1.5. Owned process-tree
+cancellation uses Unix process groups or Windows kill-on-close Job Objects;
+native CI exercises real Chromium timeout and cancellation cleanup.
 
 The runner classifies interruption and persists terminal receipts. Automatic
 restart, durable leases and crash recovery remain planned.

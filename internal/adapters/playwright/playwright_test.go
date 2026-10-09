@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,6 +16,10 @@ func TestPlanUsesInstalledProjectWithoutNpxDownload(t *testing.T) {
 	project := t.TempDir()
 	write(t, filepath.Join(project, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
 	binary := filepath.Join(project, "node_modules", ".bin", "playwright")
+	if runtime.GOOS == "windows" {
+		binary += ".cmd"
+		write(t, filepath.Join(project, "node_modules", "@playwright", "test", "cli.js"), "placeholder", 0o600)
+	}
 	write(t, binary, "#!/bin/sh\n", 0o700)
 	spec := filepath.Join(project, "tests", "a.spec.ts")
 	write(t, spec, "", 0o600)
@@ -22,7 +27,8 @@ func TestPlanUsesInstalledProjectWithoutNpxDownload(t *testing.T) {
 	if err != nil || len(plan.Jobs) != 1 {
 		t.Fatalf("unexpected plan: %#v %v", plan, err)
 	}
-	if plan.Jobs[0].Command[0] != binary || plan.Jobs[0].Command[0] == "npx" {
+	command, commandErr := InstalledCommand(binary, "test", filepath.Join("tests", "a.spec.ts"), "--reporter=json")
+	if commandErr != nil || !slices.Equal(plan.Jobs[0].Command, command) {
 		t.Fatalf("unexpected command: %#v", plan.Jobs[0].Command)
 	}
 }

@@ -7,7 +7,7 @@ const {spawn, spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), '9lives-sdk-smoke-'));
-const engine = path.join(work, '9l');
+const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let smokeCase = 'engine-build';
 
@@ -30,6 +30,12 @@ function readEvents(receipt) {
 }
 function processTable() {
   // Process identities/status only: never collect arguments or environment.
+  if (process.platform === 'win32') {
+    const result = sync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress']);
+    assert.equal(result.status, 0, 'process identity query failed');
+    return [].concat(JSON.parse(result.stdout)).map(item => ({pid: item.ProcessId, parent: item.ParentProcessId, group: 0, state: 'R', name: item.Name}));
+  }
   return sync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,comm=']).stdout.trim().split('\n').map(line => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
     return match ? {pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), state: match[4], name: match[5]} : null;
@@ -39,7 +45,7 @@ async function interrupted(kind) {
   smokeCase = `owned-${kind}`;
   const marker = path.join(work, `${kind}.json`);
   const receipts = path.join(work, kind);
-  const child = spawn(engine, ['run', 'testdata/sdk/tests/slow.spec.ts', '--sdk', '--format', 'json', '--timeout', kind === 'timeout' ? '12s' : '30s', '--pass-env', 'NINELIVES_SMOKE_MARKER', '--receipt-dir', receipts], {
+  const child = spawn(engine, ['run', 'testdata/sdk/tests/slow.spec.ts', '--sdk', '--format', 'json', '--timeout', kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s', '--pass-env', 'NINELIVES_SMOKE_MARKER', '--receipt-dir', receipts], {
     cwd: root, env: {...process.env, NINELIVES_SMOKE_MARKER: marker}, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -47,11 +53,11 @@ async function interrupted(kind) {
   child.stdout.on('data', chunk => { output += chunk; assert(output.length < 4 << 20); });
   child.stderr.resume();
   const completion = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code)); });
-  const guard = setTimeout(() => child.kill('SIGTERM'), 40000);
+  const guard = setTimeout(() => child.kill('SIGTERM'), 65000);
   try {
     const start = Date.now();
     while (!fs.existsSync(marker)) {
-      assert(Date.now() - start < 10000, 'real browser did not become ready');
+      assert(Date.now() - start < (process.platform === 'win32' ? 20000 : 10000), 'real browser did not become ready');
       assert(child.exitCode === null, 'engine exited before real browser work');
       await sleep(50);
     }
@@ -61,7 +67,7 @@ async function interrupted(kind) {
     assert(worker, 'worker is running');
     // Chromium starts a separate group; include descendants as well as the
     // engine group so a leaked browser cannot hide behind a successful exit.
-    const ownedIds = new Set(table.filter(item => item.group === worker.group).map(item => item.pid));
+    const ownedIds = new Set(process.platform === 'win32' ? [workerPID] : table.filter(item => item.group === worker.group).map(item => item.pid));
     for (let changed = true; changed;) {
       changed = false;
       for (const item of table) {
@@ -81,7 +87,7 @@ async function interrupted(kind) {
     const receipt = summary.receipts[0];
     assert.equal(receipt.status, kind === 'cancel' ? 'canceled' : 'timed_out');
     assert.equal(receipt.validated, false);
-    assert(receipt.termination && receipt.termination.signal === 'SIGTERM', 'cleanup recorded');
+    assert(receipt.termination && receipt.termination.signal === (process.platform === 'win32' ? 'TerminateJobObject' : 'SIGTERM'), 'cleanup recorded');
     const deadline = Date.now() + 5000;
     while (true) {
       const live = processTable().filter(item => owned.some(original => original.pid === item.pid) && !item.state.startsWith('Z'));

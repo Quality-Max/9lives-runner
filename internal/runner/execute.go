@@ -686,6 +686,7 @@ func (buffer *limitedBuffer) Bytes() []byte { return buffer.data }
 // callers name them with ExecuteOptions.PassEnv (`9l run --pass-env NAME`).
 var inheritedEnvironment = map[string]bool{
 	"HOME": true, "PATH": true, "TMPDIR": true, "TEMP": true, "TMP": true,
+	"USERPROFILE": true, "LOCALAPPDATA": true, "APPDATA": true,
 	"SYSTEMROOT": true, "WINDIR": true, "COMSPEC": true, "PATHEXT": true,
 	"USER": true, "LOGNAME": true, "SHELL": true, "TERM": true, "TZ": true,
 	"LANG": true, "LANGUAGE": true,

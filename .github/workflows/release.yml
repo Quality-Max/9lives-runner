@@ -40,6 +40,8 @@ jobs:
           - {runner: macos-15, goos: darwin, goarch: arm64}
           - {runner: ubuntu-24.04, goos: linux, goarch: amd64}
           - {runner: ubuntu-24.04-arm, goos: linux, goarch: arm64}
+          - {runner: windows-2022, goos: windows, goarch: amd64}
+          - {runner: windows-11-arm, goos: windows, goarch: arm64}
     runs-on: ${{ matrix.runner }}
     env:
       RELEASE_VERSION: ${{ needs.check-tag.outputs.version }}
@@ -52,25 +54,19 @@ jobs:
         with:
           go-version: 1.25.13
           cache: true
-      - name: Build and exercise native release executable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build, exercise and package native release executable
         env:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: |
-          mkdir -p "dist/$BUNDLE"
-          go build -trimpath -ldflags="-s -w -X main.version=$RELEASE_VERSION" -o "dist/$BUNDLE/9l" ./cmd/9l
-          test "$("dist/$BUNDLE/9l" --version)" = "9l $RELEASE_VERSION (Go runner)"
-          "dist/$BUNDLE/9l" --help > /dev/null
-          "dist/$BUNDLE/9l" plan testdata/sdk/tests/checkout.spec.ts --format json
-      - name: Package executable and legal files
-        run: |
-          cp LICENSE NOTICE "dist/$BUNDLE/"
-          tar -czf "$BUNDLE.tar.gz" -C dist "$BUNDLE"
+        run: python scripts/package-cli.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ env.BUNDLE }}
-          path: ${{ env.BUNDLE }}.tar.gz
+          path: ${{ env.BUNDLE }}.${{ matrix.goos == 'windows' && 'zip' || 'tar.gz' }}
           if-no-files-found: error
 
   publish:
@@ -93,6 +89,7 @@ jobs:
         with:
           files: |
             dist/9l-*.tar.gz
+            dist/9l-*.zip
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           overwrite_files: false
