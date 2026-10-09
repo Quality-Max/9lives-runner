@@ -1,0 +1,91 @@
+{
+  "$defs": {
+    "Contracts": {
+      "properties": {
+        "assess": {
+          "type": "integer"
+        },
+        "assessSuite": {
+          "type": "integer"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "executionReceipt": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "integer"
+        },
+        "progressEvent": {
+          "type": "integer"
+        },
+        "receipt": {
+          "type": "integer"
+        },
+        "runResult": {
+          "type": "integer"
+        },
+        "runStatus": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "plan",
+        "runResult",
+        "runStatus",
+        "receipt",
+        "progressEvent",
+        "assess",
+        "assessSuite",
+        "executionReceipt",
+        "engine"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/version.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Implementation, CLI version and the version of every machine-readable output.",
+  "properties": {
+    "cliVersion": {
+      "type": "string"
+    },
+    "commands": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "contracts": {
+      "$ref": "#/$defs/Contracts"
+    },
+    "implementation": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "name",
+    "implementation",
+    "cliVersion",
+    "contracts",
+    "commands"
+  ],
+  "title": "9l version --format json",
+  "type": "object"
+}

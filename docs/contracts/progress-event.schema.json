@@ -1,0 +1,42 @@
+{
+  "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/progress-event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One persisted progress event.",
+  "properties": {
+    "attemptId": {
+      "type": "string"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "sequence": {
+      "type": "integer"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "sequence",
+    "runId",
+    "type",
+    "timestamp"
+  ],
+  "title": "events.jsonl line",
+  "type": "object"
+}

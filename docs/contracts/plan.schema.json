@@ -1,0 +1,156 @@
+{
+  "$defs": {
+    "Job": {
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dependsOn": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "workDir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "input",
+        "spec",
+        "workDir",
+        "adapter",
+        "command",
+        "dependsOn"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "properties": {
+        "deadlineMs": {
+          "type": "integer"
+        },
+        "maxAttempts": {
+          "type": "integer"
+        },
+        "maxJobs": {
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "type": "integer"
+        },
+        "maxParallel": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maxJobs",
+        "maxParallel",
+        "maxAttempts",
+        "maxOutputBytes",
+        "deadlineMs"
+      ],
+      "type": "object"
+    },
+    "Skipped": {
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "reason"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Resolved jobs and explained skipped inputs, before any process starts.",
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "jobs": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Job"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "skipped": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Skipped"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "runId",
+    "createdAt",
+    "jobs",
+    "skipped",
+    "limits"
+  ],
+  "title": "9l plan --format json",
+  "type": "object"
+}

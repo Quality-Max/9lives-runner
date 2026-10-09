@@ -46,11 +46,12 @@ type event struct {
 }
 
 type testState struct {
-	retry    int
-	active   bool
-	statuses []string
-	expected string
-	final    bool
+	retry      int
+	active     bool
+	statuses   []string
+	expected   string
+	final      bool
+	goalFailed bool
 }
 
 func invalid(reason string) (runner.Validation, error) {
@@ -127,7 +128,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			steps[frame.StepID] = true
 			if frame.Category == "goal" && frame.Status == "failed" {
-				validation.GoalFailed = true
+				validation.GoalFailed, state.goalFailed = true, true
 			}
 		case "test_end":
 			if summarizing || state == nil || !state.active || frame.Retry != state.retry {
@@ -170,6 +171,11 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				validation.ExecutedTests++
 				if frame.Outcome == "unexpected" {
 					validation.FailureCount++
+					// Preserve failures in other tests even if a goal failed
+					// (including a caught goal error) elsewhere in this file.
+					if !state.goalFailed {
+						validation.NonGoalFailureCount++
+					}
 				}
 			}
 		case "end":

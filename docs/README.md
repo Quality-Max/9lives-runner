@@ -7,6 +7,7 @@
 | [Local checkout demo](../demo/README.md) | You want an executed result without an application server |
 | [Existing application](run-existing-project.md) | You are adding an isolated harness to a project |
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |
+| [CLI contract](contracts.md) | You are integrating `9l` into another tool through its JSON output and exit codes |
 | [Agent setup](agent-setup.md) | You want the optional QA skill workflow |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
 | [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |

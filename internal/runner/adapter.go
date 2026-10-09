@@ -43,13 +43,17 @@ type Adapter interface {
 }
 
 type Validation struct {
-	GoalFailed         bool
-	FailureCount       int
-	ExecutedTests      int
-	SkippedTests       int
-	VerifiedAssertions int
-	AssertionCoverage  string
-	Description        string
+	GoalFailed bool
+	// NonGoalFailureCount counts unexpected test failures in tests with no
+	// failed goal steps. Legacy adapters may leave this zero; it is consulted
+	// only when GoalFailed is true.
+	NonGoalFailureCount int
+	FailureCount        int
+	ExecutedTests       int
+	SkippedTests        int
+	VerifiedAssertions  int
+	AssertionCoverage   string
+	Description         string
 }
 
 // AttemptValidator binds structured worker evidence to the attempt that owns it.

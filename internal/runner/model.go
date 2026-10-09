@@ -49,33 +49,34 @@ const (
 // Receipt is one job's immutable execution record. Executed and Validated are
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
-	AgentProvenance    *ProvenanceAssessment `json:"agentProvenance,omitempty"`
-	Goals              []GoalReceipt         `json:"goals,omitempty"`
-	Version            int                   `json:"version"`
-	RunID              string                `json:"runId"`
-	JobID              string                `json:"jobId"`
-	AttemptID          string                `json:"attemptId"`
-	Attempt            int                   `json:"attempt"`
-	Spec               string                `json:"spec"`
-	Adapter            string                `json:"adapter"`
-	Status             ReceiptStatus         `json:"status"`
-	StartedAt          time.Time             `json:"startedAt"`
-	FinishedAt         time.Time             `json:"finishedAt"`
-	DurationMS         int64                 `json:"durationMs"`
-	ExitCode           int                   `json:"exitCode"`
-	Executed           bool                  `json:"executed"`
-	Validated          bool                  `json:"validated"`
-	Validation         string                `json:"validation,omitempty"`
-	GoalFailed         bool                  `json:"goalFailed,omitempty"`
-	FailureCount       int                   `json:"failureCount"`
-	ExecutedTests      int                   `json:"executedTests"`
-	SkippedTests       int                   `json:"skippedTests"`
-	VerifiedAssertions int                   `json:"verifiedAssertions"`
-	AssertionCoverage  string                `json:"assertionCoverage"`
-	Error              string                `json:"error,omitempty"`
-	Termination        *Termination          `json:"termination,omitempty"`
-	Evidence           Evidence              `json:"evidence"`
-	ReceiptPath        string                `json:"receiptPath,omitempty"`
+	AgentProvenance     *ProvenanceAssessment `json:"agentProvenance,omitempty"`
+	Goals               []GoalReceipt         `json:"goals,omitempty"`
+	Version             int                   `json:"version"`
+	RunID               string                `json:"runId"`
+	JobID               string                `json:"jobId"`
+	AttemptID           string                `json:"attemptId"`
+	Attempt             int                   `json:"attempt"`
+	Spec                string                `json:"spec"`
+	Adapter             string                `json:"adapter"`
+	Status              ReceiptStatus         `json:"status"`
+	StartedAt           time.Time             `json:"startedAt"`
+	FinishedAt          time.Time             `json:"finishedAt"`
+	DurationMS          int64                 `json:"durationMs"`
+	ExitCode            int                   `json:"exitCode"`
+	Executed            bool                  `json:"executed"`
+	Validated           bool                  `json:"validated"`
+	Validation          string                `json:"validation,omitempty"`
+	GoalFailed          bool                  `json:"goalFailed,omitempty"`
+	NonGoalFailureCount int                   `json:"nonGoalFailureCount,omitempty"`
+	FailureCount        int                   `json:"failureCount"`
+	ExecutedTests       int                   `json:"executedTests"`
+	SkippedTests        int                   `json:"skippedTests"`
+	VerifiedAssertions  int                   `json:"verifiedAssertions"`
+	AssertionCoverage   string                `json:"assertionCoverage"`
+	Error               string                `json:"error,omitempty"`
+	Termination         *Termination          `json:"termination,omitempty"`
+	Evidence            Evidence              `json:"evidence"`
+	ReceiptPath         string                `json:"receiptPath,omitempty"`
 }
 
 type Termination struct {
@@ -118,21 +119,55 @@ type ProgressEvent struct {
 	Detail    string    `json:"detail,omitempty"`
 }
 
+// Output contract versions. Additive fields keep a version; removing,
+// renaming or changing the meaning of a field increments it. See
+// docs/contracts.md.
+const (
+	PlanVersion          = 1
+	ReceiptVersion       = 1
+	ProgressEventVersion = 1
+	RunSummaryVersion    = 1
+	RunStatusVersion     = 1
+)
+
+// RunOutcome is the normative classification of a run for hosts. Complete is
+// kept for compatibility: it is true only when the outcome is passed.
+type RunOutcome string
+
+const (
+	// OutcomePassed: every planned job has a validated passing receipt.
+	OutcomePassed RunOutcome = "passed"
+	// OutcomeFailed: every planned job ran to a validated receipt and at
+	// least one reported a test failure. The change broke something.
+	OutcomeFailed RunOutcome = "failed"
+	// OutcomeIncomplete: anything else (skipped inputs, cancellation,
+	// timeouts, infrastructure errors, missing or invalid evidence). The run
+	// proves neither a pass nor a failure.
+	OutcomeIncomplete RunOutcome = "incomplete"
+)
+
 type RunSummary struct {
-	RunID      string    `json:"runId"`
-	StartedAt  time.Time `json:"startedAt"`
-	FinishedAt time.Time `json:"finishedAt"`
-	DurationMS int64     `json:"durationMs"`
-	Complete   bool      `json:"complete"`
-	Passed     int       `json:"passed"`
-	Failed     int       `json:"failed"`
-	Canceled   int       `json:"canceled"`
-	TimedOut   int       `json:"timedOut"`
-	Errors     int       `json:"errors"`
-	Receipts   []Receipt `json:"receipts"`
+	Version    int        `json:"version"`
+	Outcome    RunOutcome `json:"outcome"`
+	RunID      string     `json:"runId"`
+	StartedAt  time.Time  `json:"startedAt"`
+	FinishedAt time.Time  `json:"finishedAt"`
+	DurationMS int64      `json:"durationMs"`
+	Complete   bool       `json:"complete"`
+	// PlannedJobs and SkippedInputs come from the plan, so a host can see a
+	// dropped spec without reading plan.json.
+	PlannedJobs   int       `json:"plannedJobs"`
+	SkippedInputs int       `json:"skippedInputs"`
+	Passed        int       `json:"passed"`
+	Failed        int       `json:"failed"`
+	Canceled      int       `json:"canceled"`
+	TimedOut      int       `json:"timedOut"`
+	Errors        int       `json:"errors"`
+	Receipts      []Receipt `json:"receipts"`
 }
 
 type RunStatus struct {
+	Version   int            `json:"version"`
 	RunID     string         `json:"runId"`
 	State     string         `json:"state"`
 	Plan      *Plan          `json:"plan,omitempty"`

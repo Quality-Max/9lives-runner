@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// CanonicalReceiptSchema identifies the portable receipt written beside
+// receipt.json as execution-receipt-1.0.json.
+const CanonicalReceiptSchema = "execution-receipt/1.0"
+
 // writeCanonicalReceipt exports the platform-owned execution-receipt/1.0
 // envelope beside the legacy local receipt. The legacy file remains the local
 // CLI contract; this is an additive, portable evidence export.

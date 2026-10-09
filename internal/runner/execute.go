@@ -17,6 +17,8 @@ import (
 )
 
 type ExecuteOptions struct {
+	// OnStarted runs after durable initialization, before any jobs start.
+	OnStarted       func()
 	AgentProvenance *AgentProvenance
 	Workers         int
 	Timeout         time.Duration
@@ -33,27 +35,35 @@ type ExecuteOptions struct {
 	Services   AttemptServiceFactory
 }
 
+// SetupError is a plan or option problem found before any process starts.
+// The caller can fix it by changing the invocation, so the CLI reports it as a
+// usage error and writes no run result.
+type SetupError struct{ Err error }
+
+func (err SetupError) Error() string { return err.Err.Error() }
+func (err SetupError) Unwrap() error { return err.Err }
+
 func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, error) {
 	started := time.Now().UTC()
-	summary := RunSummary{RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, Receipts: []Receipt{}}
+	summary := RunSummary{Version: RunSummaryVersion, Outcome: OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Receipts: []Receipt{}}
 	if err := validateRunID(plan.RunID); err != nil {
 		summary.Complete = false
-		return summary, err
+		return summary, SetupError{err}
 	}
 	if opts.AgentProvenance != nil {
 		raw, _ := json.Marshal(opts.AgentProvenance)
 		if _, err := ParseAgentProvenance(raw); err != nil || len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
 			summary.Complete = false
-			return summary, errors.New("agent provenance requires one exact spec and a valid creation record")
+			return summary, SetupError{errors.New("agent provenance requires one exact spec and a valid creation record")}
 		}
 	}
 	if plan.Limits.MaxJobs > 0 && len(plan.Jobs) > plan.Limits.MaxJobs {
 		summary.Complete = false
-		return summary, fmt.Errorf("planned jobs (%d) exceed run-wide job budget (%d)", len(plan.Jobs), plan.Limits.MaxJobs)
+		return summary, SetupError{fmt.Errorf("planned jobs (%d) exceed run-wide job budget (%d)", len(plan.Jobs), plan.Limits.MaxJobs)}
 	}
 	orderedJobs, hasDependencies, err := orderJobs(plan.Jobs)
 	if err != nil {
-		return summary, err
+		return summary, SetupError{err}
 	}
 	if opts.Workers < 1 {
 		opts.Workers = max(1, plan.Limits.MaxParallel)
@@ -72,7 +82,7 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	if err := validateCanonicalPlanIdentifiers(plan, opts.MaxAttempts); err != nil {
 		summary.Complete = false
-		return summary, err
+		return summary, SetupError{err}
 	}
 	if opts.MaxOutputBytes < 1 {
 		opts.MaxOutputBytes = max(1024, plan.Limits.MaxOutputBytes)
@@ -106,6 +116,9 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	if err := store.AppendEvent(ProgressEvent{Type: "run_started"}); err != nil {
 		return summary, err
+	}
+	if opts.OnStarted != nil {
+		opts.OnStarted()
 	}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
@@ -170,7 +183,7 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 				}
 			}
 			if blocked != "" {
-				receipt := Receipt{Version: 1, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: "blocked by unsuccessful dependency " + blocked, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
+				receipt := Receipt{Version: ReceiptVersion, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: "blocked by unsuccessful dependency " + blocked, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
 				receipt = persistAttempt(receipt, store, nil, nil)
 				completed[job.ID] = receipt
 				summary.Receipts = append(summary.Receipts, receipt)
@@ -230,7 +243,9 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	summary.FinishedAt = time.Now().UTC()
 	summary.DurationMS = summary.FinishedAt.Sub(started).Milliseconds()
+	summary.Outcome = classifyRun(summary, runCtx.Err() != nil)
 	if err := store.Finalize(summary); err != nil {
+		summary.Outcome = OutcomeIncomplete
 		return summary, err
 	}
 	_ = store.AppendEvent(ProgressEvent{Type: "run_finished"})
@@ -317,7 +332,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 func executeAttempt(parent context.Context, runID string, job Job, attempt int, opts ExecuteOptions, store Store, executor ProcessExecutor) Receipt {
 	started := time.Now().UTC()
 	receipt := Receipt{
-		Version: 1, RunID: runID, JobID: job.ID, Spec: job.Spec,
+		Version: ReceiptVersion, RunID: runID, JobID: job.ID, Spec: job.Spec,
 		Attempt: attempt, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, attempt),
 		Adapter: job.Adapter, StartedAt: started, ExitCode: -1,
 		Evidence: Evidence{Command: redactArguments(job.Command), Artifacts: []ArtifactReference{}},
@@ -425,6 +440,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.Validated = true
 				receipt.FailureCount = validation.FailureCount
 				receipt.GoalFailed = validation.GoalFailed
+				receipt.NonGoalFailureCount = validation.NonGoalFailureCount
 				receipt.ExecutedTests = validation.ExecutedTests
 				receipt.SkippedTests = validation.SkippedTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
@@ -484,11 +500,41 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	return receipt
 }
 
+// classifyRun separates a run that proved a failure from one that proved
+// nothing. Only validated receipts count, and every planned job must have one.
+// A failure must be a reported test failure in a test whose goals completed:
+// a goal that did not complete (policy, budget, provider) shows that test
+// could not exercise the behavior, not that the behavior is broken, so its
+// failure is attributed to the goal. Other tests in the same file still count,
+// so one failed goal does not hide a proven defect beside it. A goal failure
+// the evidence cannot attribute to a test keeps the receipt incomplete.
+func classifyRun(summary RunSummary, interrupted bool) RunOutcome {
+	if interrupted || summary.PlannedJobs == 0 || summary.SkippedInputs > 0 || len(summary.Receipts) != summary.PlannedJobs {
+		return OutcomeIncomplete
+	}
+	outcome := OutcomePassed
+	for _, receipt := range summary.Receipts {
+		failures := receipt.FailureCount
+		if receipt.GoalFailed {
+			failures = receipt.NonGoalFailureCount
+		}
+		switch {
+		case !receipt.Validated:
+			return OutcomeIncomplete
+		case receipt.Status == StatusFailed && failures > 0:
+			outcome = OutcomeFailed
+		case receipt.Status != StatusPassed:
+			return OutcomeIncomplete
+		}
+	}
+	return outcome
+}
+
 func validateValidation(validation Validation) error {
 	if validation.ExecutedTests <= 0 {
 		return errors.New("structured report contains no executed tests")
 	}
-	if validation.FailureCount < 0 || validation.SkippedTests < 0 || validation.FailureCount > validation.ExecutedTests {
+	if validation.FailureCount < 0 || validation.SkippedTests < 0 || validation.FailureCount > validation.ExecutedTests || validation.NonGoalFailureCount < 0 || validation.NonGoalFailureCount > validation.FailureCount {
 		return errors.New("structured report has inconsistent test counts")
 	}
 	if validation.ExecutedTests > int(^uint(0)>>1)-validation.SkippedTests {

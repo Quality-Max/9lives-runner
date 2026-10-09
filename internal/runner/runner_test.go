@@ -83,6 +83,11 @@ func TestExecuteRejectsOverBudgetPlanAndBlocksFailedDependencies(t *testing.T) {
 	if len(summary.Receipts) != 2 || summary.Receipts[1].Status != StatusError || !strings.Contains(summary.Receipts[1].Error, "first") {
 		t.Fatalf("failed dependency was not durably blocked: %#v", summary)
 	}
+	// The prerequisite proved a failure, but its descendant never ran. The
+	// full plan remains incomplete and the failing receipt remains visible.
+	if summary.Outcome != OutcomeIncomplete || summary.Complete || summary.Failed != 1 || !summary.Receipts[0].Validated || summary.Receipts[1].Executed || summary.Receipts[1].Validated {
+		t.Fatalf("blocked jobs must not claim executed evidence: %#v", summary)
+	}
 }
 
 type forgedIdentityStore struct{ Store }

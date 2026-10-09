@@ -41,8 +41,7 @@ func run(args []string, out, errOut io.Writer) int {
 		return 0
 	}
 	if args[0] == "--version" || args[0] == "version" {
-		fmt.Fprintf(out, "9l %s (Go runner)\n", version)
-		return 0
+		return versionCommand(args[1:], out, errOut)
 	}
 
 	switch args[0] {
@@ -87,10 +86,12 @@ Usage:
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
   9l provenance <spec> --agent <id>  # creation snapshot JSON
+  9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
 The Go runner currently executes Playwright specs from existing projects.
-It never reports an incomplete run green.
+It never reports an incomplete run green. run exits 0 passed, 1 failed,
+2 usage or setup error, 3 incomplete.
 `)
 }
 
@@ -722,18 +723,27 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}
-	if *format == "json" {
-		fmt.Fprintf(errOut, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
-	} else {
-		fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
+		OnStarted: func() {
+			if *format == "json" {
+				fmt.Fprintf(errOut, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
+			} else {
+				fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
+			}
+		},
 		AgentProvenance: agentProvenance,
 		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
+	// A setup error is found before any process starts: no run exists to
+	// report, cancel or retry, so it is a usage error without a result.
+	var setup runner.SetupError
+	if errors.As(err, &setup) {
+		fmt.Fprintf(errOut, "9l: %v\n", err)
+		return exitUsage
+	}
 	executionFailed := err != nil
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		fmt.Fprintf(errOut, "9l: execution: %v\n", err)
@@ -743,10 +753,30 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	} else {
 		printResult(out, result)
 	}
-	if !executionFailed && result.Complete && result.Failed == 0 && result.Canceled == 0 && result.Errors == 0 {
-		return 0
+	return runExitCode(result, executionFailed)
+}
+
+// Exit codes of `9l run`, part of the host contract in docs/contracts.md.
+const (
+	exitPassed     = 0
+	exitFailed     = 1
+	exitUsage      = 2
+	exitIncomplete = 3
+)
+
+// runExitCode never reports more than the run proved: an execution error
+// makes even an all-passed or failed result incomplete.
+func runExitCode(result runner.RunSummary, executionFailed bool) int {
+	switch {
+	case executionFailed:
+		return exitIncomplete
+	case result.Outcome == runner.OutcomePassed && result.Complete:
+		return exitPassed
+	case result.Outcome == runner.OutcomeFailed:
+		return exitFailed
+	default:
+		return exitIncomplete
 	}
-	return 1
 }
 
 func stateCommand(command string, args []string, out, errOut io.Writer) int {
@@ -830,7 +860,10 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		}
 		fmt.Fprintln(w)
 	}
-	if !result.Complete {
+	switch {
+	case result.Outcome == runner.OutcomeFailed:
+		fmt.Fprintln(w, "  FAILED: every planned job ran and at least one test failed")
+	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
 }

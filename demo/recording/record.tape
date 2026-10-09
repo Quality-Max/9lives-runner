@@ -38,7 +38,9 @@ Wait+Screen@60s /PASSED/
 Sleep 2s
 Type "# Defect: confirmation is shown but the order is discarded" Enter
 Type "NINELIVES_ASSESS_CONTROL=missing-order 9l run tests/checkout.spec.ts --pass-env NINELIVES_ASSESS_CONTROL" Enter
-Wait+Screen@60s /INCOMPLETE/
+Wait+Screen@60s /FAILED:/
+Sleep 1s
+Type "echo exit=$?  # 0 passed, 1 failed, 3 incomplete" Enter
 Sleep 2s
 Type "last-run-tests" Enter
 Sleep 2s

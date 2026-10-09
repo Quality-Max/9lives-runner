@@ -2,6 +2,31 @@
 
 ## CLI unreleased
 
+A machine-readable contract for host integrations such as qmax-code (#27).
+
+- `9l run` exits 3 when the run is incomplete: skipped inputs, cancellation,
+  timeouts, infrastructure errors, missing or invalid evidence, or a goal
+  that did not complete. Exit 1 now means only that every planned job ran and
+  a test failed. Scripts that treat any nonzero exit as not green are
+  unaffected; scripts that compare with 1 should also accept 3.
+- The run result (`run`/`result --format json`) gains `version: 1`,
+  `outcome` (`passed`, `failed`, `incomplete`), `plannedJobs` and
+  `skippedInputs`. `complete` is unchanged. `9l status` JSON gains
+  `version: 1`. Results from earlier CLIs are upgraded when read.
+- The text summary of a failed run says `FAILED` instead of `INCOMPLETE`.
+- `9l version --format json` reports the implementation, CLI version and the
+  version of every machine-readable output.
+- JSON Schemas for every output under `docs/contracts/`, generated from the
+  output types and checked in tests; real CLI documents are independently
+  validated by `npm run smoke:contracts` in CI; see `docs/contracts.md`.
+- Goal-failure classification is per test: a failed or caught goal in one
+  test cannot hide an unexpected failure in a sibling test. SDK receipts add
+  `nonGoalFailureCount`; old receipts without attribution stay conservative.
+- Setup validation errors exit 2 without a result or startup/cancel hint.
+  Operational storage errors remain exit 3; dependency-blocked plans remain
+  incomplete because their descendants never ran.
+
+
 - Visual mode: `9l run --headed` passes Playwright's `--headed` flag to every
   job, for both adapters, and runs one job at a time unless `--workers` is
   given. On Linux without `DISPLAY` or `WAYLAND_DISPLAY` the run is refused

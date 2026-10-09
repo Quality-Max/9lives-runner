@@ -74,7 +74,7 @@ func (store *runStore) AppendEvent(event ProgressEvent) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.seq++
-	event.Version, event.Sequence, event.RunID, event.Timestamp = 1, store.seq, store.runID, time.Now().UTC()
+	event.Version, event.Sequence, event.RunID, event.Timestamp = ProgressEventVersion, store.seq, store.runID, time.Now().UTC()
 	raw, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -156,9 +156,10 @@ func LoadStatus(root, runID string) (RunStatus, error) {
 		}
 		return RunStatus{}, err
 	}
-	status := RunStatus{RunID: runID, State: "running", Plan: &plan}
+	status := RunStatus{Version: RunStatusVersion, RunID: runID, State: "running", Plan: &plan}
 	var result RunSummary
 	if err := readJSON(filepath.Join(directory, "result.json"), &result); err == nil {
+		upgradeResult(&result, plan)
 		status.Result = &result
 		if result.Complete {
 			status.State = "completed"
@@ -210,7 +211,26 @@ func LoadResult(root, runID string) (RunSummary, error) {
 	if os.IsNotExist(err) {
 		return RunSummary{}, ErrRunNotFound
 	}
+	if err == nil && result.Version == 0 {
+		var plan Plan
+		if err := readJSON(filepath.Join(root, runID, "plan.json"), &plan); err != nil {
+			return RunSummary{}, err
+		}
+		upgradeResult(&result, plan)
+	}
 	return result, err
+}
+
+// upgradeResult fills the version 1 fields of a result written by CLI 0.1.1
+// or earlier. Those runs did not record interruption, so a run is classified
+// from its plan and receipts alone; interrupted jobs still have canceled or
+// timed-out receipts.
+func upgradeResult(result *RunSummary, plan Plan) {
+	if result.Version != 0 {
+		return
+	}
+	result.Version, result.PlannedJobs, result.SkippedInputs = RunSummaryVersion, len(plan.Jobs), len(plan.Skipped)
+	result.Outcome = classifyRun(*result, false)
 }
 
 func readEvents(path string) ([]ProgressEvent, error) {

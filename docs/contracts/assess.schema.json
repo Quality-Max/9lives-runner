@@ -1,0 +1,267 @@
+{
+  "$defs": {
+    "AgentProvenance": {
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "repositorySHA256": {
+          "type": "string"
+        },
+        "sourcePathSHA256": {
+          "type": "string"
+        },
+        "sourceSHA256": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "agent",
+        "repositorySHA256",
+        "branch",
+        "commit",
+        "sourceSHA256",
+        "sourcePathSHA256"
+      ],
+      "type": "object"
+    },
+    "Finding": {
+      "properties": {
+        "classification": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "column": {
+          "type": "integer"
+        },
+        "dimension": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "requirement": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/Location"
+        },
+        "suggestion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule",
+        "classification",
+        "dimension",
+        "line",
+        "column",
+        "message",
+        "suggestion",
+        "code"
+      ],
+      "type": "object"
+    },
+    "Location": {
+      "properties": {
+        "column": {
+          "type": "integer"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
+    "ProvenanceAssessment": {
+      "properties": {
+        "after": {
+          "$ref": "#/$defs/AgentProvenance"
+        },
+        "before": {
+          "$ref": "#/$defs/AgentProvenance"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/AgentProvenance"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "branch",
+        "commit",
+        "source",
+        "repository"
+      ],
+      "type": "object"
+    },
+    "Test": {
+      "properties": {
+        "column": {
+          "type": "integer"
+        },
+        "dimensions": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "findings": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Finding"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line": {
+          "type": "integer"
+        },
+        "requirements": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "column",
+        "requirements",
+        "dimensions",
+        "findings"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/assess.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Advisory single-file source assessment. Static findings do not establish executed assertion coverage.",
+  "properties": {
+    "agentProvenance": {
+      "$ref": "#/$defs/ProvenanceAssessment"
+    },
+    "compiler": {
+      "type": "string"
+    },
+    "completeness": {
+      "type": "string"
+    },
+    "execution": {
+      "type": "string"
+    },
+    "limits": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy": {
+      "type": "string"
+    },
+    "requirementsSHA256": {
+      "type": "string"
+    },
+    "sourceSHA256": {
+      "type": "string"
+    },
+    "tests": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Test"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "const": 3,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "agentProvenance",
+    "version",
+    "policy",
+    "sourceSHA256",
+    "compiler",
+    "execution",
+    "completeness",
+    "limits",
+    "tests"
+  ],
+  "title": "9l assess \u003cone spec\u003e --format json",
+  "type": "object"
+}

@@ -24,7 +24,7 @@ type PlanOptions struct {
 // run-wide job budget up front.
 func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 	plan := Plan{
-		Version: 1, RunID: newRunID(), CreatedAt: time.Now().UTC(), Jobs: []Job{}, Skipped: []Skipped{},
+		Version: PlanVersion, RunID: newRunID(), CreatedAt: time.Now().UTC(), Jobs: []Job{}, Skipped: []Skipped{},
 		Limits: Limits{MaxJobs: opts.MaxJobs, MaxParallel: opts.MaxParallel, MaxAttempts: opts.MaxAttempts, MaxOutputBytes: opts.MaxOutputBytes, DeadlineMS: opts.Deadline.Milliseconds()},
 	}
 	seen := map[string]bool{}

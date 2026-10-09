@@ -86,6 +86,11 @@ jobs:
         with:
           go-version: 1.25.13
           cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install independent CLI schema validator
+        run: python -m pip install 'jsonschema==4.26.0'
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -100,6 +105,8 @@ jobs:
         run: go test ./cmd/9l -run '^TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured$' -count=1
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
+      - name: Validate emitted CLI documents against published schemas
+        run: npm run smoke:contracts
       - run: npm run smoke:assessment
       - name: Qualify 9l prove fault injection in real Chromium
         run: npm run smoke:prove
