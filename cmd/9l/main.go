@@ -50,8 +50,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return runCommand(args[0], args[1:], out, errOut)
 	case "status", "result", "cancel":
 		return stateCommand(args[0], args[1:], out, errOut)
-	case "heal":
-		return bridgePython(args[1:], out, errOut)
+	case "heal", "mcp":
+		return bridgePython(args[0], args[1:], out, errOut)
 	case "heal-native":
 		return nativeHealCommand(args[1:], out, errOut)
 	case "tier1":
@@ -82,6 +82,7 @@ Usage:
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <args...>  # delegates to the installed Python healing library
+  9l mcp [args...]   # delegates to the installed Python MCP server (heal_test, run_test)
   9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
@@ -887,12 +888,12 @@ func receiptReason(reason string) string {
 	return string(runes)
 }
 
-func bridgePython(args []string, out, errOut io.Writer) int {
+func bridgePython(command string, args []string, out, errOut io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	code, err := runner.RunPythonHealer(ctx, args, out, errOut)
+	code, err := runner.RunPython(ctx, command, args, os.Stdin, out, errOut)
 	if err != nil {
-		fmt.Fprintf(errOut, "9l: Python healing bridge: %v\n", err)
+		fmt.Fprintf(errOut, "9l: Python %s bridge: %v\n", command, err)
 		return 2
 	}
 	return code

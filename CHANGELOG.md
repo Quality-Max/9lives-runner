@@ -25,6 +25,11 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   A spec Playwright's configuration does not select, such as one outside
   `testDir`, now says so instead of only "no completed tests", and a spec
   that fails to load says that instead; the run stays incomplete (exit 3).
+- `9l mcp` delegates to the installed Python `9lives` MCP server, like
+  `9l heal`, so MCP hosts configured with `9l mcp` keep working when the Go
+  runner is first on PATH. Both prefer Python's `9lives` entry point, which
+  covers `uv tool` and `pipx` installs, and forward stdin. A missing package
+  exits 2 with an install hint instead of an ambiguous exit 1.
 
 ## CLI 0.1.5 — 2026-10-09
 

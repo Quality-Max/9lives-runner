@@ -69,8 +69,8 @@ restart, durable leases and crash recovery remain planned.
 ## Build and use
 
 Go 1.25.13 or newer is required; CI pins 1.25.13. The Go runner and local SDK
-do not require a platform account. Python is needed only for `9l heal` and the
-optional compatibility checks in the [development guide](development.md).
+do not require a platform account. Python is needed only for `9l heal`, `9l mcp`
+and the optional compatibility checks in the [development guide](development.md).
 
 ```bash
 go build -o 9l ./cmd/9l
@@ -89,7 +89,13 @@ recursively; shell-style globs use Go's `filepath.Glob` rules.
 ./9l result <run-id> --format json
 ```
 
-To select a particular Python interpreter for the compatibility bridge:
+`9l heal` and `9l mcp` delegate to the separately installed Python `9lives`
+package (`pip install 9lives` or `uv tool install 9lives`). `9l mcp` serves its
+`heal_test` and `run_test` MCP tools over stdio, so MCP host configurations
+written for the Python `9l mcp` keep working once the Go runner is first on
+PATH. The bridge uses Python's `9lives` entry point when it is on PATH, and
+otherwise `python3 -m ninelives.cli`. Without the package it exits 2 with an
+install hint rather than starting. To select a particular Python interpreter:
 
 ```bash
 NINELIVES_PYTHON=.venv/bin/python ./9l heal tests/login.spec.ts --yes
