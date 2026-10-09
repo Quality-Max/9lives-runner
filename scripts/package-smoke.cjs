@@ -86,7 +86,9 @@ try {
     const name = 'checkout[1]& copy';
     fs.copyFileSync(path.join(consumer, 'tests/checkout.spec.ts'), path.join(consumer, `tests/${name}.spec.ts`));
     run(binary, consumer, name, true, 'passed');
-    run(binary, consumer, name, false, 'passed');
+    const ordinaryName = 'ordinary[1]& copy';
+    fs.copyFileSync(path.join(consumer, 'tests/ordinary.spec.ts'), path.join(consumer, `tests/${ordinaryName}.spec.ts`));
+    run(binary, consumer, ordinaryName, false, 'passed');
   }
   stage = 'artifact admission';
   fs.mkdirSync(destination, {recursive: true});
