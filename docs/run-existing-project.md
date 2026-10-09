@@ -6,7 +6,7 @@ or intentionally adapt the goal and assertions to your reviewed requirements.
 It does not sign in or change application data. The harness lives outside the
 application repository and preserves its existing Playwright setup.
 
-Use Node 24 (Node 22 minimum), Playwright 1.61.1 and Chromium.
+Use Node 24 (Node 22 minimum), Playwright 1.61.1 through 1.64.0, and Chromium.
 The SDK is published as `@9l/playwright` 0.1.0.
 
 ## 1. Install the CLI and get the example
@@ -44,7 +44,7 @@ mkdir -p "$HOME/9lives-login-smoke"
 cp -R "$RUNNER_ROOT/examples/playwright-login/." "$HOME/9lives-login-smoke/"
 cd "$HOME/9lives-login-smoke"
 npm init -y
-npm install --save-dev @playwright/test@1.61.1 @9l/playwright@0.1.0
+npm install --save-dev @playwright/test@1.64.0 @9l/playwright@0.1.0
 npm exec playwright install chromium
 export QA_BASE_URL=http://127.0.0.1:8000
 ```
@@ -94,7 +94,7 @@ receipt. Live model correctness and cost remain unqualified.
 
 ## Use it in an existing Playwright suite
 
-Install the SDK beside the suite's pinned Playwright 1.61.1 dependency. Change
+Install the SDK beside the suite's pinned Playwright dependency (1.61.1 through 1.64.0). Change
 selected imports to `@9l/playwright` and add `n9l.goal(...)` where useful. Keep
 the existing configuration and explicit assertions. Run from the suite with
 `9l run ... --sdk` and one provider or script. Prepare authenticated state
