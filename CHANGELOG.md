@@ -11,6 +11,17 @@
   consumers on both Windows architectures. Windows arm64 tests omit `-race`.
 - Clarify the README comparison with qmax-code's broader terminal agent.
 
+Fixes from a CLI 0.1.5 trial on an 87-file suite:
+
+- `9l assess` reports a nested function as a `nested-function` limit only
+  when it holds a recognized assertion or wait, once, at the outermost such
+  function. Projections such as `(f) => f.token` no longer are; calls and
+  branches inside any nested function remain limits of their own. Functions
+  passed to `evaluate`, `$eval`, `waitForFunction`, `addInitScript` and the
+  other page-function methods on a browser fixture chain run in the browser
+  and are not scanned. On the trial suite, `nested-function` findings fell
+  from 280 to 79 with no other rule changing. Policy `assessment-source-v8`.
+
 ## CLI 0.1.5 — 2026-10-09
 
 A machine-readable contract for host integrations such as qmax-code (#27).

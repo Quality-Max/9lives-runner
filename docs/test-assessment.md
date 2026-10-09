@@ -131,7 +131,15 @@ identify recognized syntax; this inventory is not authoritative runtime
 discovery. Limit findings carry one bounded code and location per reason:
 `dynamic-callback`, `declaration-generation`, `nested-function`,
 `conditional-flow`, `shadowed-binding`, `runtime-skip`, `unresolved-helper` and
-`unknown-matcher`.
+`unknown-matcher`. A nested function, such as a callback, is a
+`nested-function` limit only when it holds a recognized assertion or wait,
+directly or through an inlined helper, because how often and when it runs is
+unknown; it is reported once, at the outermost such function. Calls, branches
+and shadowed bindings inside any nested function remain limits of their own, so
+a projection such as `(f) => f.token` adds none. A function passed to
+`evaluate`, `evaluateHandle`, `evaluateAll`, `$eval`, `$$eval`,
+`waitForFunction` or `addInitScript` on a browser fixture chain runs in the
+page, where no test assertion or helper is reachable, and is not scanned.
 
 Calls to helpers in the same file are resolved. A call to a non-generator
 function declaration or `const` function is inlined when that name is bound
@@ -239,8 +247,10 @@ gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Report version 3, helper version 6 and policy
-`assessment-source-v7` replace version 2/source-v3. Every finding now carries
+inputs invalidate prior assessments. Policy `assessment-source-v8` narrows
+the `nested-function` limit as described above; report version 3 and helper
+version 6 are unchanged. Report version 3, helper version 6 and policy
+`assessment-source-v7` replaced version 2/source-v3. Every finding now carries
 `code`: the limit reason for `analysis-limit` findings and the rule name for
 all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the

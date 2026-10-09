@@ -395,8 +395,50 @@ test('an awaited then/catch/finally chain consumes the matcher', () => {
       showMonth(page.locator('.cal'), page.locator('.next'));
     });`);
   assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.unawaited])), [[[3, false], [7, false], [8, false]], [[11, true], [3, true]]]);
-  // The callbacks are nested functions, which remain a limit.
-  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [['nested-function'], ['nested-function']]);
+  // The callbacks hold no assertion, so they are not a limit.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], []]);
+});
+
+test('a nested function is a limit only when it holds an assertion or wait', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    const settle = async page => { await page.waitForTimeout(100); };
+    test('projections', async ({page}) => {
+      const tokens = ['a', 'b'].map((f) => f.length);
+      const sorted = (a, b) => a - b;
+      expect(tokens.sort(sorted)).toEqual([1, 1]);
+    });
+    test('outermost location', async ({page}) => {
+      const run = async () => {
+        const inner = () => expect(1).toBe(1);
+        await inner();
+      };
+    });
+    test('inlined helper', async ({page}) => {
+      page.on('load', () => settle(page));
+    });
+    test('browser side', async ({page}) => {
+      const attributes = await page.evaluate((names) => {
+        const found = [];
+        for (const el of Array.from(document.querySelectorAll('*'))) if (el.title) found.push(names, helper(el));
+        return found;
+      }, ['title']);
+      await page.locator('a').evaluateAll(links => links.map(link => link.href));
+      await page.addInitScript(() => { if (window.flag) expect(1).toBe(2); });
+      expect(attributes).toEqual([]);
+    });`);
+  const limits = facts.tests.map(t => t.limits.map(l => [l.code, l.line]));
+  assert.deepEqual(limits, [
+    // Calls on unknown values stay limits; the projections themselves do not.
+    [['unresolved-helper', 4]],
+    // Reported once, at the outermost function holding the assertion.
+    [['unresolved-helper', 11], ['nested-function', 9]],
+    // An inlined helper's wait is held by the listener.
+    [['nested-function', 15]],
+    // Page functions are not scanned.
+    [],
+  ]);
+  assert.deepEqual(facts.tests.map(t => t.unsupported), [true, true, true, false]);
+  assert.deepEqual(facts.tests.map(t => [t.assertions.length, t.sleeps.length]), [[1, 0], [1, 0], [0, 1], [1, 0]]);
 });
 
 test('a nested function returning the matcher is not unawaited unless forEach discards it', () => {

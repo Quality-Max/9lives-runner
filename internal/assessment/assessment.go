@@ -24,7 +24,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v7"
+const Policy = "assessment-source-v8"
 
 // ReportVersion is the version of a single-file assess report.
 const ReportVersion = 3
