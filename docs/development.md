@@ -24,6 +24,7 @@ npm run demo
 npm run smoke
 npm run smoke:assessment
 npm run smoke:package
+npm run smoke:prove
 ```
 
 On Linux install browser system dependencies with
@@ -31,7 +32,10 @@ On Linux install browser system dependencies with
 The SDK smoke runs a real Chromium checkout, rejects a business defect, and
 verifies that timeout and cancellation terminate the owned worker and browser.
 Package qualification installs the exact packed SDK in an isolated consumer
-and separately exercises an ordinary Playwright spec. No model or platform
+and separately exercises an ordinary Playwright spec. The prove smoke proves
+the synthetic shop fixture with real Chromium and checks that faults on the
+asserted requests are caught and faults on the unasserted one survive, see
+[Prove](prove.md#qualification). No model or platform
 account is needed for these checks.
 
 ## Go and offline compatibility
