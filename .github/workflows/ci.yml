@@ -101,6 +101,8 @@ jobs:
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
       - run: npm run smoke:assessment
+      - name: Qualify headed visual mode in real Chromium (virtual display)
+        run: npm run smoke:visual
       - name: Qualify packed SDK in an isolated consumer
         run: npm run smoke:package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

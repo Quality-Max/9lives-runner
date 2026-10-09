@@ -19,6 +19,16 @@
   are forwarded only when named: `9l run tests/ --pass-env BASE_URL,TEST_USER`.
   Values are read from the caller's environment and never written to the plan
   or receipts.
+- Visual mode: `9l run --headed` shows the browser while tests run (both
+  adapters; Playwright's own `--headed` flag, which overrides `headless` in the
+  config). Headed runs execute one job at a time unless `--workers` is given,
+  so windows do not pile up. Linux needs an X11 or Wayland display; without one
+  the run is refused before planning, so use `xvfb-run -a 9l run --headed ...`
+  on a headless machine. Headed mode changes only how the browser is shown,
+  never what is asserted or how evidence is validated. To slow actions down
+  while watching, set `use: {launchOptions: {slowMo: 250}}` in the project's
+  Playwright config: a config's `launchOptions` replaces any value a fixture
+  library sets, so 9l does not offer a flag that could be silently ignored.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.

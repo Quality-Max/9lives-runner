@@ -1,5 +1,14 @@
 # Changelog
 
+## CLI unreleased
+
+- Visual mode: `9l run --headed` passes Playwright's `--headed` flag to every
+  job, for both adapters, and runs one job at a time unless `--workers` is
+  given. On Linux without `DISPLAY` or `WAYLAND_DISPLAY` the run is refused
+  before planning, pointing at `xvfb-run`; `9l plan --headed` needs no display.
+  `npm run smoke:visual` verifies from inside the page that the browser was
+  headed, with a headless control that must fail.
+
 ## SDK unreleased
 
 - Qualified with every published `@playwright/test` release from 1.61.1
