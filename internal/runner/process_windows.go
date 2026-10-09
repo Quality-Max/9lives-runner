@@ -107,8 +107,11 @@ func resumePrimaryThread(pid uint32) error {
 		}
 		previous, err := windows.ResumeThread(thread)
 		windows.CloseHandle(thread)
-		if err != nil || previous != 1 {
-			return fmt.Errorf("cannot resume owned process (suspend count %d): %w", previous, err)
+		if err != nil {
+			return fmt.Errorf("resume owned process: %w", err)
+		}
+		if previous != 1 {
+			return fmt.Errorf("unexpected owned process suspend count %d", previous)
 		}
 		return nil
 	}

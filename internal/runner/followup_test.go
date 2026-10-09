@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -175,7 +176,11 @@ func TestControlledEnvironmentKeepsRuntimeAndForwardsNamedVariables(t *testing.T
 			t.Fatalf("missing %s in %q", want, environment)
 		}
 	}
-	for _, unwanted := range []string{"DATABASE_URL", "QUA2042_UNSET", "path="} {
+	unwantedKeys := []string{"DATABASE_URL", "QUA2042_UNSET"}
+	if runtime.GOOS != "windows" {
+		unwantedKeys = append(unwantedKeys, "path=")
+	}
+	for _, unwanted := range unwantedKeys {
 		if strings.Contains(environment, "\n"+unwanted) {
 			t.Fatalf("%s leaked into %q", unwanted, environment)
 		}

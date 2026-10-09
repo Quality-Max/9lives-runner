@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -162,6 +163,17 @@ func proveProject(t *testing.T) string {
 		}
 		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		for _, name := range []string{"node_modules/.bin/playwright.cmd", "node_modules/@playwright/test/cli.js"} {
+			full := filepath.Join(project, name)
+			if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte("placeholder"), 0600); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	return project

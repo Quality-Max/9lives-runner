@@ -136,7 +136,10 @@ jobs:
     env:
       NINELIVES_REQUIRE_CONTRACT: '1'
       NINELIVES_REQUIRE_ASSESSMENT: '1'
+      NINELIVES_CONTRACT_PYTHON: python
     steps:
+      - name: Preserve source bytes for schemas and pinned compatibility fixtures
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
@@ -167,6 +170,7 @@ jobs:
       - run: npm exec playwright install chromium
       - run: npm run smoke
       - run: npm run smoke:contracts
+      - run: npm run smoke:assessment-portability
       - run: npm run smoke:assessment
       - run: npm run smoke:prove
       - run: npm run smoke:package

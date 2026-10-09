@@ -463,6 +463,10 @@ func TestHealApplyPreservesModeAndUsesVerifiedBytes(t *testing.T) {
 	if err := os.WriteFile(spec, []byte(original), 0750); err != nil {
 		t.Fatal(err)
 	}
+	originalInfo, err := os.Stat(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
 	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: &fakeProvider{responses: []string{"```javascript\n" + candidate + "```"}}, Apply: true, Run: func(_ context.Context, path, label string) RunResult {
 		if label == "original" {
 			return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
@@ -478,7 +482,7 @@ func TestHealApplyPreservesModeAndUsesVerifiedBytes(t *testing.T) {
 	}
 	got, _ := os.ReadFile(spec)
 	info, _ := os.Stat(spec)
-	if string(got) != candidate || info.Mode().Perm() != 0750 {
+	if string(got) != candidate || info.Mode().Perm() != originalInfo.Mode().Perm() {
 		t.Fatalf("apply bytes/mode wrong: %q %o", got, info.Mode().Perm())
 	}
 }
