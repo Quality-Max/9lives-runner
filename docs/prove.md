@@ -46,20 +46,34 @@ the intended behavior, only that it is not indifferent to this request.
    `--max-faults` (default 24, at most 256) bounds the runs; the rest are
    reported as `not-run`, never dropped.
 3. **Fault runs.** Each fault runs the spec again, alone, in its own receipted
-   run with Playwright retries disabled (`--retries=0`). The fault applies to
-   every request with the same method, origin and path in that run.
-4. **Classification**, from the run's validated engine evidence and the
-   fault's application count:
+   run with the project's Playwright retries disabled (`--retries=0`). The
+   fault applies to every request with the same method, origin and path in
+   that run. Retries configured inside the spec, with
+   `test.describe.configure({retries})`, still apply; see `retried` below.
+4. **Classification**, per test and then per fault. The SDK's prove records
+   name the test attempt they belong to with the engine's hashed test ID, so
+   each test is judged on its own evidence: whether the fault was applied to
+   one of its requests, its outcome, whether an assertion step failed, and how
+   many attempts Playwright ran.
 
-| Result | Meaning |
+| Test result | Meaning |
 | --- | --- |
-| `caught` | The fault was applied and a failed test contains a failed assertion step |
-| `survived` | The fault was applied and every test passed |
-| `failed-without-assertion` | The fault was applied and a test failed, but no assertion step failed (for example an action timed out) |
-| `not-exercised` | The fault was never applied in its run, so nothing is credited to it |
-| `not-applicable` | `empty-json` met a response that was not a JSON object or array |
-| `incomplete` | The run was canceled, timed out, errored or its evidence was invalid |
-| `not-run` | Beyond `--max-faults`, or the run was interrupted first |
+| `caught` | The fault was applied to the test's requests and the test failed with a failed assertion step |
+| `survived` | The fault was applied to the test's requests and the test passed |
+| `failed-without-assertion` | The fault was applied and the test failed, but no assertion step failed (for example an action timed out) |
+| `retried` | Playwright ran the test more than once in the fault run; a later attempt can hide what the first detected, so nothing is concluded |
+| `not-exercised` | The fault was never applied to this test's requests, so nothing is credited to it, whatever the test did |
+| `not-applicable` | `empty-json` met a response that was not a JSON object or array (`not-json`), or the upstream request failed in the fault run (`unreachable`) |
+
+The fault's result follows from its tests, counting only those the fault was
+applied to: `retried` if any was retried; otherwise `survived` if any passed,
+because a request that can fail while some test still passes is the finding;
+otherwise `caught` if any failed on an assertion; otherwise
+`failed-without-assertion`; and `not-applicable` or `not-exercised` when no
+test was exercised. A run that was canceled, timed out, errored or produced
+invalid evidence gives `incomplete`, and faults beyond `--max-faults` or after
+an interruption give `not-run`. Each fault lists its per-test results in the
+report, and the text output shows them when a spec has several tests.
 
 Only `caught` and `survived` are conclusive; the summary counts the rest as
 inconclusive.
@@ -76,13 +90,20 @@ or `context` fixture. Tests that never use a browser context are untouched.
 - **One spec at a time.** Each fault re-runs the whole spec; keep it focused.
 - **Limits.** `--timeout` bounds each run, `--deadline` the whole session,
   `--workers` each run's concurrency. `--pass-env` and `--pin-skip` behave as
-  in `9l run`.
-- **Exit status.** 0 when the proof finished, whatever it found; 1 when the
-  baseline was not green, nothing was instrumented, any run's prove records
-  failed validation (the report then has `invalidEvidence: true` and is never
-  complete), execution failed, or the session was interrupted; 2 for usage
-  errors such as a missing spec. Survived faults do not change the exit
-  status, as `9l assess` findings do not.
+  in `9l run`. `--max-faults` bounds the fault runs; the proof is then
+  incomplete, because faults it planned did not run.
+- **No retries in the spec.** Remove `test.describe.configure({retries})`
+  from a spec you prove, or every fault it affects reports `retried`.
+- **Completeness and exit status.** A proof is complete when every planned
+  fault ran with valid evidence and at least one fault was applied to a test.
+  The report carries `complete` and, when false, `incompleteReason`:
+  `interrupted`, `invalid-evidence`, `faults-not-run` or `nothing-exercised`.
+  Exit status is 0 only for a complete proof, whatever it found; survived
+  faults do not change it, as `9l assess` findings do not. It is 1 for an
+  incomplete proof, a baseline that was not green, canceled or timed out,
+  nothing instrumented, or an execution failure, and 2 for usage errors such
+  as a missing spec. A proof in which no fault was applied established
+  nothing, so it is incomplete rather than a success.
 
 ## Evidence and privacy
 
@@ -105,12 +126,15 @@ through unchanged.
   fixture are observed and faulted. Documents, scripts, styles, images,
   WebSockets, `APIRequestContext` and contexts created with
   `browser.newContext()` are not.
-- A request the test fulfills with its own `page.route` or `context.route` is
-  never faulted, because test routes take precedence.
+- A request the test handles with its own `page.route` or `context.route`,
+  whether it fulfills, continues or aborts it, is never faulted, because test
+  routes run first. A test route must call `route.fallback()` for the fault
+  to apply; a catch-all route that calls `route.continue()`, as request
+  loggers often do, makes every fault `not-exercised`.
 - Faults are network-level only. Delays, partial bodies, changed fields and
   application-side mutations are not implemented.
 - Results describe one execution per fault. A nondeterministic application
   can produce a different result on another run.
 
-The policy name `prove-network-v1` in each report identifies these fault kinds
+The policy name `prove-network-v2` in each report identifies these fault kinds
 and rules; it changes whenever either does.

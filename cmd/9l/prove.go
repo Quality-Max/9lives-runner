@@ -51,9 +51,13 @@ type proveRun struct {
 	receipt      runner.Receipt
 	observations prove.Observations
 	facts        prove.RunFacts
+	// passed reports a complete run whose receipt passed.
+	passed bool
 	// channelInvalid reports that the SDK's prove records failed validation,
 	// as distinct from the tests themselves failing.
-	channelInvalid bool
+	channelInvalid          bool
+	unexpected              int
+	unexpectedWithAssertion int
 }
 
 func proveCommand(args []string, out, errOut io.Writer) int {
@@ -121,7 +125,12 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "9l: prove: the baseline's prove records failed validation; nothing can be planned from them")
 		return 1
 	}
-	if !baseline.facts.Validated || !baseline.facts.Passed || !baseline.summary.Complete {
+	// An interrupted baseline is an operational stop, not a failing test.
+	if ctx.Err() != nil || baseline.receipt.Status == runner.StatusCanceled || baseline.receipt.Status == runner.StatusTimedOut {
+		fmt.Fprintln(errOut, "9l: prove: the baseline was canceled or timed out before it finished; nothing was proved")
+		return 1
+	}
+	if !baseline.facts.Validated || !baseline.passed || !baseline.summary.Complete {
 		fmt.Fprintln(errOut, "9l: prove needs a passing, complete baseline; a failing test proves nothing about faults")
 		return 1
 	}
@@ -157,9 +166,9 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		// Invalid worker records make this fault incomplete and the whole
 		// proof unsuccessful, not merely one inconclusive row.
 		report.InvalidEvidence = report.InvalidEvidence || result.channelInvalid
-		entry.RunID, entry.Applied = result.summary.RunID, result.facts.Applied
-		entry.FailedTests, entry.AssertionFailures = result.facts.Unexpected, result.facts.UnexpectedWithAssertion
-		entry.Result = prove.Classify(result.facts)
+		entry.RunID, entry.Applied = result.summary.RunID, result.observations.Applied()
+		entry.FailedTests, entry.AssertionFailures = result.unexpected, result.unexpectedWithAssertion
+		entry.Result, entry.Tests = prove.Classify(result.facts)
 		if ctx.Err() != nil && entry.Result == prove.Incomplete {
 			report.Interrupted = true
 		}
@@ -169,7 +178,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		report.Faults = append(report.Faults, prove.FaultReport{ID: fault.ID, Request: fault.Request, Kind: fault.Kind, Result: prove.NotRun})
 	}
 	report.Summary = prove.Summarize(report.Faults)
-	report.Complete = !report.Interrupted && !report.InvalidEvidence && report.Summary.NotRun == 0
+	report.Complete, report.IncompleteReason = prove.Completeness(report)
 	saved, saveErr := saveProof(settings.receiptDir, report)
 	if saveErr != nil {
 		fmt.Fprintln(errOut, "9l: prove: report could not be saved:", saveErr)
@@ -182,7 +191,13 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	} else {
 		printProof(out, report, saved, *paths)
 	}
-	if report.Interrupted || report.InvalidEvidence || saveErr != nil {
+	// An incomplete proof established less than it set out to, so it is not
+	// a success, whatever the faults it did run found.
+	if !report.Complete {
+		fmt.Fprintf(errOut, "9l: prove: the proof is incomplete (%s)\n", report.IncompleteReason)
+		return 1
+	}
+	if saveErr != nil {
 		return 1
 	}
 	return 0
@@ -230,16 +245,24 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 	result.receipt = summary.Receipts[0]
 	receipt := result.receipt
 	result.facts.Validated = execErr == nil && receipt.Validated && (receipt.Status == runner.StatusPassed || receipt.Status == runner.StatusFailed)
-	result.facts.Passed = receipt.Status == runner.StatusPassed && summary.Complete
+	result.passed = receipt.Status == runner.StatusPassed && summary.Complete
+	result.facts.Tests = map[string]prove.TestFacts{}
 	if result.facts.Validated {
 		raw, err := os.ReadFile(receipt.Evidence.StdoutPath)
 		facts, factsErr := playwrightsdk.Assertions(raw)
 		if err != nil || factsErr != nil {
 			result.facts.Validated = false
 		}
-		result.facts.Unexpected, result.facts.UnexpectedWithAssertion = facts.Unexpected, facts.UnexpectedWithAssertion
+		result.unexpected, result.unexpectedWithAssertion = facts.Unexpected, facts.UnexpectedWithAssertion
+		for id, test := range facts.Tests {
+			result.facts.Tests[id] = prove.TestFacts{Outcome: test.Outcome, Attempts: test.Attempts, AssertionFailed: test.AssertionFailed}
+		}
 	}
-	observations, err := prove.ReadChannel(dir, mode)
+	faultID := ""
+	if fault != nil {
+		faultID = fault.ID
+	}
+	observations, err := prove.ReadChannel(dir, mode, faultID)
 	if err != nil {
 		// Worker-written records are untrusted; an invalid stream proves nothing.
 		result.facts.Validated, result.channelInvalid = false, true
@@ -247,8 +270,16 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 	}
 	result.observations = observations
 	result.facts.Overflow = observations.Overflow
-	if fault != nil {
-		result.facts.Applied, result.facts.NotApplicable = observations.Applied[fault.ID], observations.NotApplicable[fault.ID]
+	// Join each instrumented test's fault facts to its engine outcome; a
+	// prove file for a test the engine never reported is invalid evidence.
+	for id, attempt := range observations.Tests {
+		test, ok := result.facts.Tests[id]
+		if !ok && result.facts.Validated {
+			result.facts.Validated, result.channelInvalid = false, true
+			return result, nil
+		}
+		test.Applied, test.NotApplicable = attempt.Applied, attempt.NotApplicable
+		result.facts.Tests[id] = test
 	}
 	return result, nil
 }
@@ -285,6 +316,7 @@ func printProof(w io.Writer, report prove.Report, saved string, paths bool) {
 		requests[request.ID] = request
 	}
 	fmt.Fprintf(w, "prove %s: %d request(s) observed in %d instrumented test attempt(s)\n", report.Spec, len(report.Requests), report.Baseline.Attempts)
+	retried := false
 	for _, fault := range report.Faults {
 		request := requests[fault.Request]
 		label := request.ID + " " + request.Method
@@ -292,6 +324,17 @@ func printProof(w io.Writer, report prove.Report, saved string, paths bool) {
 			label += " " + request.URL
 		}
 		fmt.Fprintf(w, "  %-26s %-10s %s\n", strings.ToUpper(fault.Result), fault.Kind, label)
+		retried = retried || fault.Result == prove.Retried
+		// With several tests, say which one each result comes from.
+		if len(fault.Tests) > 1 {
+			for _, test := range fault.Tests {
+				reason := ""
+				if test.Reason != "" {
+					reason = " (" + test.Reason + ")"
+				}
+				fmt.Fprintf(w, "    %-24s test %s%s\n", test.Result, test.TestID[:12], reason)
+			}
+		}
 	}
 	summary := report.Summary
 	fmt.Fprintf(w, "Summary: %d fault(s): %d caught, %d survived, %d inconclusive, %d not run\n", summary.Faults, summary.Caught, summary.Survived, summary.Inconclusive, summary.NotRun)
@@ -302,17 +345,19 @@ func printProof(w io.Writer, report prove.Report, saved string, paths bool) {
 	if !paths && len(report.Requests) > 0 {
 		fmt.Fprintln(w, "Use --paths to show request URLs locally.")
 	}
-	exercised := false
-	for _, fault := range report.Faults {
-		exercised = exercised || (fault.Result != prove.NotExercised && fault.Result != prove.NotRun)
+	if summary.Exercised == 0 && len(report.Faults) > 0 {
+		fmt.Fprintln(w, "No fault was exercised: a fault targets the baseline's method, origin and path, so an origin that changes between runs (such as a random port) never matches; a test route that fulfills, continues or aborts the request instead of calling route.fallback() also hides it.")
 	}
-	if !exercised && len(report.Faults) > 0 {
-		fmt.Fprintln(w, "No fault was exercised: a fault targets the baseline's method, origin and path, so an origin that changes between runs (such as a random port) never matches.")
+	if retried {
+		fmt.Fprintln(w, "A retried fault means Playwright ran a test more than once in that run, for example under test.describe.configure({retries}); a later attempt can hide what the first detected, so disable retries in the spec.")
 	}
 	if report.InvalidEvidence {
 		fmt.Fprintln(w, "  INVALID EVIDENCE: a fault run's prove records failed validation; the proof is incomplete")
 	}
 	if report.Interrupted {
 		fmt.Fprintln(w, "  INTERRUPTED: remaining faults were not run")
+	}
+	if !report.Complete {
+		fmt.Fprintf(w, "  INCOMPLETE (%s): this proof is not a success\n", report.IncompleteReason)
 	}
 }

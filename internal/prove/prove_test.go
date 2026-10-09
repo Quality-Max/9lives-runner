@@ -21,8 +21,12 @@ func writeChannel(t *testing.T, files ...string) string {
 	return dir
 }
 
-func hello(mode string) string {
-	return `{"type":"hello","protocol":"9l.prove/1","mode":"` + mode + `"}` + "\n"
+const testA, testB = "a000000000000000000000000000000000000000000000000000000000000000", "b000000000000000000000000000000000000000000000000000000000000000"
+
+func hello(mode string) string { return helloFor(mode, testA, 0) }
+
+func helloFor(mode, test string, retry int) string {
+	return `{"type":"hello","protocol":"9l.prove/1","mode":"` + mode + `","testId":"` + test + `","retry":` + itoa(retry) + `}` + "\n"
 }
 
 func observed(method, path string, status int, json bool) string {
@@ -35,6 +39,9 @@ func observed(method, path string, status int, json bool) string {
 }
 
 func itoa(value int) string {
+	if value == 0 {
+		return "0"
+	}
 	digits := ""
 	for ; value > 0; value /= 10 {
 		digits = string(rune('0'+value%10)) + digits
@@ -45,9 +52,9 @@ func itoa(value int) string {
 func TestReadChannelAggregatesRequestsAcrossAttempts(t *testing.T) {
 	dir := writeChannel(t,
 		hello("observe")+observed("GET", "/api/cart", 200, true)+observed("POST", "/api/orders", 201, true),
-		hello("observe")+observed("GET", "/api/cart", 200, true)+observed("GET", "/api/text", 200, false),
+		helloFor("observe", testB, 0)+observed("GET", "/api/cart", 200, true)+observed("GET", "/api/text", 200, false),
 	)
-	observations, err := ReadChannel(dir, "observe")
+	observations, err := ReadChannel(dir, "observe", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +75,9 @@ func TestReadChannelRejectsUntrustedRecords(t *testing.T) {
 	cases := map[string]string{
 		"missing handshake":     observed("GET", "/a", 200, true),
 		"wrong mode":            hello("fault") + observed("GET", "/a", 200, true),
-		"wrong protocol":        `{"type":"hello","protocol":"9l.prove/2","mode":"observe"}` + "\n",
+		"wrong protocol":        `{"type":"hello","protocol":"9l.prove/2","mode":"observe","testId":"` + testA + `","retry":0}` + "\n",
+		"short test id":         `{"type":"hello","protocol":"9l.prove/1","mode":"observe","testId":"abc","retry":0}` + "\n",
+		"negative retry":        helloFor("observe", testA, 0)[:len(helloFor("observe", testA, 0))-3] + "-1}\n",
 		"unknown field":         valid + `{"type":"request","method":"GET","origin":"` + origin + `","path":"/a","resourceType":"fetch","url":"x"}` + "\n",
 		"missing field":         valid + `{"type":"request","method":"GET","origin":"` + origin + `","path":"/a"}` + "\n",
 		"duplicate member":      valid + `{"type":"overflow","type":"overflow"}` + "\n",
@@ -89,7 +98,7 @@ func TestReadChannelRejectsUntrustedRecords(t *testing.T) {
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := ReadChannel(writeChannel(t, content), "observe"); err == nil {
+			if _, err := ReadChannel(writeChannel(t, content), "observe", ""); err == nil {
 				t.Fatal("accepted untrusted prove evidence")
 			}
 		})
@@ -101,27 +110,46 @@ func TestReadChannelRejectsForeignFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadChannel(dir, "observe"); err == nil {
+	if _, err := ReadChannel(dir, "observe", ""); err == nil {
 		t.Fatal("accepted an unexpected file in the evidence directory")
+	}
+	// Two files claiming the same test attempt would let a worker vouch twice.
+	if _, err := ReadChannel(writeChannel(t, hello("observe"), hello("observe")), "observe", ""); err == nil {
+		t.Fatal("accepted a duplicate test attempt")
 	}
 }
 
-func TestReadChannelCountsFaultApplications(t *testing.T) {
-	dir := writeChannel(t, hello("fault")+`{"type":"applied","fault":"fault-3"}`+"\n"+`{"type":"applied","fault":"fault-3"}`+"\n"+`{"type":"not-applicable","fault":"fault-3"}`+"\n")
-	observations, err := ReadChannel(dir, "fault")
+func TestReadChannelCountsFaultApplicationsPerTest(t *testing.T) {
+	dir := writeChannel(t,
+		hello("fault")+`{"type":"applied","fault":"fault-3"}`+"\n"+`{"type":"applied","fault":"fault-3"}`+"\n",
+		helloFor("fault", testA, 1)+`{"type":"not-applicable","fault":"fault-3","reason":"unreachable"}`+"\n",
+		helloFor("fault", testB, 0)+`{"type":"not-applicable","fault":"fault-3","reason":"not-json"}`+"\n",
+	)
+	observations, err := ReadChannel(dir, "fault", "fault-3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if observations.Applied["fault-3"] != 2 || observations.NotApplicable["fault-3"] != 1 {
-		t.Fatalf("unexpected fault counts: %#v", observations)
+	// Attempts of one test merge; tests stay apart.
+	if observations.Attempts != 3 || observations.Applied() != 2 || observations.Tests[testA].Applied != 2 || observations.Tests[testA].NotApplicable[ReasonUnreachable] != 1 || observations.Tests[testB].NotApplicable[ReasonNotJSON] != 1 {
+		t.Fatalf("unexpected fault counts: %#v", observations.Tests)
 	}
-	if _, err := ReadChannel(writeChannel(t, hello("fault")+observed("GET", "/a", 200, true)), "fault"); err == nil {
-		t.Fatal("accepted an observation during a fault run")
+	for name, content := range map[string]string{
+		"observation during a fault run": hello("fault") + observed("GET", "/a", 200, true),
+		"another fault's record":         hello("fault") + `{"type":"applied","fault":"fault-4"}` + "\n",
+		"unknown reason":                 hello("fault") + `{"type":"not-applicable","fault":"fault-3","reason":"other"}` + "\n",
+		"missing reason":                 hello("fault") + `{"type":"not-applicable","fault":"fault-3"}` + "\n",
+	} {
+		if _, err := ReadChannel(writeChannel(t, content), "fault", "fault-3"); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+	if _, err := ReadChannel(writeChannel(t, hello("fault")), "fault", ""); err == nil {
+		t.Fatal("fault mode without a fault id")
 	}
 }
 
 func TestPlanOrdersRequestsAndKeepsFaultsBeyondTheBudget(t *testing.T) {
-	observations, err := ReadChannel(writeChannel(t, hello("observe")+observed("POST", "/api/orders", 200, true)+observed("GET", "/api/text", 200, false)+observed("GET", "/api/cart", 200, true)), "observe")
+	observations, err := ReadChannel(writeChannel(t, hello("observe")+observed("POST", "/api/orders", 200, true)+observed("GET", "/api/text", 200, false)+observed("GET", "/api/cart", 200, true)), "observe", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,29 +185,79 @@ func TestPlanOrdersRequestsAndKeepsFaultsBeyondTheBudget(t *testing.T) {
 	}
 }
 
-func TestClassify(t *testing.T) {
+func TestClassifyIsPerTestAndAFaultSurvivesWhenAnyExercisedTestPasses(t *testing.T) {
+	passed := TestFacts{Outcome: "expected", Attempts: 1, Applied: 2}
+	caught := TestFacts{Outcome: "unexpected", Attempts: 1, AssertionFailed: true, Applied: 1}
+	action := TestFacts{Outcome: "unexpected", Attempts: 1, Applied: 1}
+	untouched := TestFacts{Outcome: "unexpected", Attempts: 1, AssertionFailed: true}
+	retried := TestFacts{Outcome: "flaky", Attempts: 2, AssertionFailed: true, Applied: 2}
+	notJSON := TestFacts{Outcome: "expected", Attempts: 1, NotApplicable: map[string]int{ReasonNotJSON: 1}}
+	down := TestFacts{Outcome: "expected", Attempts: 1, NotApplicable: map[string]int{ReasonUnreachable: 1}}
+	valid := func(tests ...TestFacts) RunFacts {
+		facts := RunFacts{Validated: true, Tests: map[string]TestFacts{}}
+		for index, test := range tests {
+			facts.Tests[string(rune('a'+index))] = test
+		}
+		return facts
+	}
 	cases := []struct {
 		name  string
 		facts RunFacts
 		want  string
+		tests []string
 	}{
-		{"assertion failed under the fault", RunFacts{Validated: true, Applied: 1, Unexpected: 1, UnexpectedWithAssertion: 1}, Caught},
-		{"tests passed under the fault", RunFacts{Validated: true, Passed: true, Applied: 2}, Survived},
-		{"failed only on an action", RunFacts{Validated: true, Applied: 1, Unexpected: 1}, FailedWithoutAssertion},
-		{"fault never matched", RunFacts{Validated: true, Passed: true}, NotExercised},
-		{"failure without the fault is not credited", RunFacts{Validated: true, Unexpected: 1, UnexpectedWithAssertion: 1}, NotExercised},
-		{"response was not JSON", RunFacts{Validated: true, Passed: true, NotApplicable: 1}, NotApplicable},
-		{"invalid evidence", RunFacts{Applied: 1, Unexpected: 1, UnexpectedWithAssertion: 1}, Incomplete},
-		{"overflowed channel", RunFacts{Validated: true, Overflow: true, Applied: 1, Passed: true}, Incomplete},
+		{"assertion failed under the fault", valid(caught), Caught, []string{Caught}},
+		{"test passed under the fault", valid(passed), Survived, []string{Survived}},
+		{"failed only on an action", valid(action), FailedWithoutAssertion, []string{FailedWithoutAssertion}},
+		{"fault never matched", valid(TestFacts{Outcome: "expected", Attempts: 1}), NotExercised, []string{NotExercised}},
+		{"failure without the fault is not credited", valid(untouched), NotExercised, []string{NotExercised}},
+		{"response was not JSON", valid(notJSON), NotApplicable, []string{NotApplicable}},
+		{"upstream unreachable", valid(down), NotApplicable, []string{NotApplicable}},
+		{"a retried test hides what its first attempt saw", valid(retried), Retried, []string{Retried}},
+		// Multi-test specs: the unrelated failure in b does not hide that a survived.
+		{"one test survives while an unexercised one fails", valid(passed, untouched), Survived, []string{Survived, NotExercised}},
+		{"one test survives while another catches", valid(caught, passed), Survived, []string{Caught, Survived}},
+		{"every exercised test catches", valid(caught, action, untouched), Caught, []string{Caught, FailedWithoutAssertion, NotExercised}},
+		{"a retried test outranks a caught one", valid(caught, retried), Retried, []string{Caught, Retried}},
+		{"invalid evidence", RunFacts{Tests: map[string]TestFacts{"a": caught}}, Incomplete, nil},
+		{"overflowed channel", RunFacts{Validated: true, Overflow: true, Tests: map[string]TestFacts{"a": passed}}, Incomplete, nil},
 	}
 	for _, test := range cases {
-		if got := Classify(test.facts); got != test.want {
-			t.Errorf("%s: got %s, want %s", test.name, got, test.want)
+		got, tests := Classify(test.facts)
+		results := make([]string, len(tests))
+		for index, result := range tests {
+			results[index] = result.Result
+		}
+		if got != test.want || strings.Join(results, ",") != strings.Join(test.tests, ",") {
+			t.Errorf("%s: got %s %v, want %s %v", test.name, got, results, test.want, test.tests)
 		}
 	}
-	summary := Summarize([]FaultReport{{Result: Caught}, {Result: Survived}, {Result: NotRun}, {Result: NotExercised}, {Result: Incomplete}})
-	if summary != (Summary{Faults: 5, Caught: 1, Survived: 1, Inconclusive: 2, NotRun: 1}) {
+	if _, tests := Classify(valid(down)); tests[0].Reason != ReasonUnreachable {
+		t.Fatalf("reason %q", tests[0].Reason)
+	}
+	summary := Summarize([]FaultReport{{Result: Caught}, {Result: Survived}, {Result: NotRun}, {Result: NotExercised}, {Result: Incomplete}, {Result: Retried}})
+	if summary != (Summary{Faults: 6, Caught: 1, Survived: 1, Inconclusive: 3, NotRun: 1, Exercised: 3}) {
 		t.Fatalf("summary %#v", summary)
+	}
+}
+
+func TestCompletenessNeedsEveryFaultRunAndOneExercised(t *testing.T) {
+	cases := []struct {
+		name   string
+		report Report
+		want   string
+	}{
+		{"complete", Report{Summary: Summary{Faults: 2, Exercised: 2}}, ""},
+		{"interrupted", Report{Interrupted: true, Summary: Summary{Faults: 2, Exercised: 1}}, IncompleteInterrupted},
+		{"invalid evidence", Report{InvalidEvidence: true, Summary: Summary{Faults: 2, Exercised: 2}}, IncompleteInvalidEvidence},
+		{"beyond the budget", Report{Summary: Summary{Faults: 3, Exercised: 2, NotRun: 1}}, IncompleteFaultsNotRun},
+		{"nothing exercised", Report{Summary: Summary{Faults: 3}}, IncompleteNothingExercised},
+	}
+	for _, test := range cases {
+		complete, reason := Completeness(test.report)
+		if complete != (test.want == "") || reason != test.want {
+			t.Errorf("%s: complete=%v reason=%q", test.name, complete, reason)
+		}
 	}
 }
 
@@ -187,8 +265,8 @@ func TestReadChannelPairsResponsesWithinEachAttempt(t *testing.T) {
 	response := `{"type":"response","method":"GET","origin":"` + origin + `","path":"/api/cart","status":200,"json":true}` + "\n"
 	// The second attempt's response has no request of its own; an earlier
 	// attempt's request for the same target must not vouch for it.
-	dir := writeChannel(t, hello("observe")+observed("GET", "/api/cart", 500, false), hello("observe")+response)
-	if _, err := ReadChannel(dir, "observe"); err == nil {
+	dir := writeChannel(t, hello("observe")+observed("GET", "/api/cart", 500, false), helloFor("observe", testA, 1)+response)
+	if _, err := ReadChannel(dir, "observe", ""); err == nil {
 		t.Fatal("accepted a response-only stream because another attempt recorded the request")
 	}
 }

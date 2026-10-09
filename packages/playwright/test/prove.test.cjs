@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 const {matches, openProveChannel, proveProtocol, readFault, requestTarget} = require('../dist/prove.js');
 const {protocolVersion} = require('../dist/protocol.js');
 
@@ -63,9 +64,11 @@ test('the prove channel is off outside 9l prove and exclusive per attempt inside
     const [file] = fs.readdirSync(dir);
     assert.match(file, /^[a-f0-9]{32}\.ndjson$/);
     assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
-    // An oversized record ends the stream with an overflow marker.
+    // The handshake carries the engine's hashed test ID and the retry index;
+    // an oversized record ends the stream with an overflow marker.
+    const testId = createHash('sha256').update('abc').digest('hex');
     assert.deepEqual(fs.readFileSync(path.join(dir, file), 'utf8').trim().split('\n').map(line => JSON.parse(line)), [
-      {type: 'hello', protocol: proveProtocol, mode: 'fault'}, {type: 'applied', fault: 'fault-1'}, {type: 'overflow'},
+      {type: 'hello', protocol: proveProtocol, mode: 'fault', testId, retry: 0}, {type: 'applied', fault: 'fault-1'}, {type: 'overflow'},
     ]);
     assert.throws(() => openProveChannel({...env, NINELIVES_PROVE_FAULT: '{}'}, {testId: 'other', retry: 0}), /invalid fault/);
   } finally {
@@ -89,6 +92,55 @@ test('a fault is credited only after Playwright delivers it', async () => {
       const applied = fs.readFileSync(file, 'utf8').split('\n').filter(line => line.includes('"applied"')).length;
       assert.equal(applied, credited, `${kind} ${settle}`);
     }
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('empty-json replaces a JSON body, says why it could not, and leaves other requests to the test', async () => {
+  const {instrument, ProveChannel} = require('../dist/prove.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-empty-'));
+  try {
+    const cases = [
+      ['array', {text: '[{"name":"Book"}]'}, [{type: 'applied', fault: 'fault-1'}], [{body: '[]'}]],
+      ['object', {text: '{"count":2}'}, [{type: 'applied', fault: 'fault-1'}], [{body: '{}'}]],
+      ['scalar', {text: '"ok"'}, [{type: 'not-applicable', fault: 'fault-1', reason: 'not-json'}], [{}]],
+      ['not json', {text: '<html>'}, [{type: 'not-applicable', fault: 'fault-1', reason: 'not-json'}], [{}]],
+      ['unreachable', {fetchFails: true}, [{type: 'not-applicable', fault: 'fault-1', reason: 'unreachable'}], []],
+    ];
+    for (const [name, upstream, records, fulfilled] of cases) {
+      const file = path.join(dir, `${name.replace(' ', '-')}.ndjson`);
+      const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'empty-json'});
+      let handler;
+      await instrument({route: async (_pattern, h) => { handler = h; }}, channel);
+      const calls = {fulfill: [], continued: 0, fallback: 0};
+      const response = {text: async () => upstream.text};
+      const route = {
+        request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
+        fetch: async () => { if (upstream.fetchFails) throw new Error('ECONNREFUSED'); return response; },
+        fulfill: async options => { calls.fulfill.push(options.body === undefined ? {} : {body: options.body}); },
+        continue: async () => { calls.continued++; },
+        fallback: async () => { calls.fallback++; },
+      };
+      await handler(route);
+      channel.close();
+      // A channel built directly writes no handshake, so every line is a record.
+      const written = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+      assert.deepEqual(written, records, name);
+      assert.deepEqual(calls.fulfill, fulfilled, name);
+      assert.equal(calls.continued, upstream.fetchFails ? 1 : 0, name);
+      assert.equal(calls.fallback, 0, name);
+    }
+    // A request the fault does not match is handed to the test's own routes.
+    const file = path.join(dir, 'other.ndjson');
+    const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'empty-json'});
+    let handler;
+    await instrument({route: async (_pattern, h) => { handler = h; }}, channel);
+    let fallback = 0;
+    await handler({request: () => request('http://127.0.0.1:4100/api/cart', 'GET'), fallback: async () => { fallback++; }});
+    channel.close();
+    assert.equal(fallback, 1);
+    assert.equal(fs.readFileSync(file, 'utf8'), '');
   } finally {
     fs.rmSync(dir, {recursive: true, force: true});
   }

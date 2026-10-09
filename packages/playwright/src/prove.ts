@@ -94,7 +94,10 @@ export function openProveChannel(env: NodeJS.ProcessEnv, testInfo: {testId: stri
   // One exclusive file per worker process and test attempt; never appended to.
   const name = createHash('sha256').update(`${process.pid}\0${testInfo.testId}\0${testInfo.retry}`).digest('hex').slice(0, 32);
   const channel = new ProveChannel(openSync(join(dir, `${name}.ndjson`), 'wx', 0o600), fault);
-  channel.record({type: 'hello', protocol: proveProtocol, mode: fault ? 'fault' : 'observe'});
+  // The handshake names the test attempt with the same hashed ID the engine
+  // reporter uses, so Go can judge each test separately and notice retries.
+  const testId = createHash('sha256').update(testInfo.testId).digest('hex');
+  channel.record({type: 'hello', protocol: proveProtocol, mode: fault ? 'fault' : 'observe', testId, retry: testInfo.retry});
   return channel;
 }
 
@@ -133,16 +136,19 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
     const applied = () => channel.record({type: 'applied', fault: fault.id});
     if (fault.kind === 'abort') return route.abort('failed').then(applied);
     if (fault.kind === 'http-500') return route.fulfill({status: 500, body: ''}).then(applied);
+    // empty-json needs the real response first; say why when it cannot be
+    // replaced: the upstream was unreachable, or the body was not an object
+    // or array.
     let response;
     try {
       response = await route.fetch();
     } catch {
-      channel.record({type: 'not-applicable', fault: fault.id});
+      channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
       return route.continue().catch(() => {});
     }
     const empty = emptyLike(await response.text().catch(() => ''));
     if (empty === undefined) {
-      channel.record({type: 'not-applicable', fault: fault.id});
+      channel.record({type: 'not-applicable', fault: fault.id, reason: 'not-json'});
       return route.fulfill({response});
     }
     return route.fulfill({response, body: empty}).then(applied);

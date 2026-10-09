@@ -35,6 +35,13 @@ var (
 	methodPattern = regexp.MustCompile(`^[A-Z]{1,16}$`)
 	faultPattern  = regexp.MustCompile(`^fault-[1-9][0-9]{0,3}$`)
 	filePattern   = regexp.MustCompile(`^[a-f0-9]{32}\.ndjson$`)
+	testPattern   = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
+// Reasons an empty-json fault was not applicable to a request.
+const (
+	ReasonNotJSON     = "not-json"
+	ReasonUnreachable = "unreachable"
 )
 
 // Target is a request identity: one fault covers every request with the same
@@ -57,14 +64,40 @@ type Request struct {
 	JSON2xx bool
 }
 
+// Attempt is what one test attempt's file recorded about the run's fault.
+type Attempt struct {
+	Applied int
+	// NotApplicable counts, per reason, requests the fault matched but could
+	// not change.
+	NotApplicable map[string]int
+}
+
+func (attempt Attempt) notApplicable() int {
+	total := 0
+	for _, count := range attempt.NotApplicable {
+		total += count
+	}
+	return total
+}
+
 type Observations struct {
 	// Attempts counts per-test files whose handshake matched the mode. Zero
 	// means the SDK never instrumented a browser context.
-	Attempts      int
-	Requests      map[string]*Request
-	Applied       map[string]int
-	NotApplicable map[string]int
-	Overflow      bool
+	Attempts int
+	Requests map[string]*Request
+	// Tests holds each instrumented test's fault facts by its hashed engine
+	// test ID, merged over its attempts.
+	Tests    map[string]*Attempt
+	Overflow bool
+}
+
+// Applied sums the fault's applications over every test.
+func (observations Observations) Applied() int {
+	total := 0
+	for _, attempt := range observations.Tests {
+		total += attempt.Applied
+	}
+	return total
 }
 
 type record struct {
@@ -78,25 +111,30 @@ type record struct {
 	Status       int    `json:"status"`
 	JSON         bool   `json:"json"`
 	Fault        string `json:"fault"`
+	Reason       string `json:"reason"`
+	TestID       string `json:"testId"`
+	Retry        int    `json:"retry"`
 }
 
 var recordFields = map[string][]string{
-	"hello":          {"type", "protocol", "mode"},
+	"hello":          {"type", "protocol", "mode", "testId", "retry"},
 	"request":        {"type", "method", "origin", "path", "resourceType"},
 	"response":       {"type", "method", "origin", "path", "status", "json"},
 	"applied":        {"type", "fault"},
-	"not-applicable": {"type", "fault"},
+	"not-applicable": {"type", "fault", "reason"},
 	"overflow":       {"type"},
 }
 
 // ReadChannel validates every per-test file the SDK wrote into dir. mode is
-// "observe" or "fault"; records belonging to the other mode are rejected.
-// Errors never echo worker-controlled values.
-func ReadChannel(dir, mode string) (Observations, error) {
-	observations := Observations{Requests: map[string]*Request{}, Applied: map[string]int{}, NotApplicable: map[string]int{}}
-	if mode != "observe" && mode != "fault" {
+// "observe" or "fault"; records belonging to the other mode are rejected, and
+// in fault mode only records for the named fault are accepted. Errors never
+// echo worker-controlled values.
+func ReadChannel(dir, mode, fault string) (Observations, error) {
+	observations := Observations{Requests: map[string]*Request{}, Tests: map[string]*Attempt{}}
+	if mode != "observe" && mode != "fault" || (mode == "fault") != faultPattern.MatchString(fault) {
 		return observations, errors.New("unsupported prove mode")
 	}
+	seen := map[string]bool{}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return observations, errors.New("prove evidence directory unavailable")
@@ -116,7 +154,7 @@ func ReadChannel(dir, mode string) (Observations, error) {
 		if total += len(raw); total > maxTotalBytes {
 			return observations, errors.New("prove evidence size limit exceeded")
 		}
-		if err := observations.add(raw, mode); err != nil {
+		if err := observations.add(raw, mode, fault, seen); err != nil {
 			return observations, err
 		}
 	}
@@ -136,7 +174,7 @@ func readBounded(path string) ([]byte, error) {
 	return raw, nil
 }
 
-func (observations *Observations) add(raw []byte, mode string) error {
+func (observations *Observations) add(raw []byte, mode, fault string, seen map[string]bool) error {
 	if len(raw) == 0 || !bytes.HasSuffix(raw, []byte("\n")) || !utf8.Valid(raw) {
 		return errors.New("missing or unfinished prove evidence")
 	}
@@ -147,16 +185,28 @@ func (observations *Observations) add(raw []byte, mode string) error {
 	// Each file is one test attempt's context, where a response always
 	// follows its request; pair them here, before attempts are merged.
 	requested := map[string]bool{}
+	var test *Attempt
 	for index, line := range lines {
 		entry, err := decodeRecord(line)
 		if err != nil {
 			return err
 		}
 		if index == 0 {
-			if entry.Type != "hello" || entry.Protocol != Protocol || entry.Mode != mode {
+			if entry.Type != "hello" || entry.Protocol != Protocol || entry.Mode != mode || !testPattern.MatchString(entry.TestID) || entry.Retry < 0 || entry.Retry > 1024 {
 				return errors.New("missing or mismatched prove handshake")
 			}
+			// One file per test attempt: a second file for the same attempt
+			// would let a worker vouch for itself twice.
+			key := fmt.Sprintf("%s:%d", entry.TestID, entry.Retry)
+			if seen[key] {
+				return errors.New("duplicate prove attempt")
+			}
+			seen[key] = true
 			observations.Attempts++
+			if test = observations.Tests[entry.TestID]; test == nil {
+				test = &Attempt{NotApplicable: map[string]int{}}
+				observations.Tests[entry.TestID] = test
+			}
 			continue
 		}
 		switch entry.Type {
@@ -190,13 +240,16 @@ func (observations *Observations) add(raw []byte, mode string) error {
 				request.JSON2xx = request.JSON2xx || (entry.JSON && entry.Status >= 200 && entry.Status < 300)
 			}
 		case "applied", "not-applicable":
-			if mode != "fault" || !faultPattern.MatchString(entry.Fault) {
+			if mode != "fault" || entry.Fault != fault {
 				return errors.New("invalid fault record")
 			}
 			if entry.Type == "applied" {
-				observations.Applied[entry.Fault]++
+				test.Applied++
 			} else {
-				observations.NotApplicable[entry.Fault]++
+				if entry.Reason != ReasonNotJSON && entry.Reason != ReasonUnreachable {
+					return errors.New("invalid fault record")
+				}
+				test.NotApplicable[entry.Reason]++
 			}
 		case "overflow":
 			if index != len(lines)-1 {

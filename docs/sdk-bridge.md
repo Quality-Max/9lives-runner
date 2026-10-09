@@ -103,10 +103,12 @@ The SDK overrides Playwright's `context` fixture. Outside `9l prove`, where
 `NINELIVES_PROVE` is unset, it passes the context through unchanged. Under it,
 the fixture requires `9l.prove/1`, the attempt identity and an absolute
 `NINELIVES_PROVE_DIR`, and writes one exclusive `0600` file per worker process
-and test attempt. A baseline records fetch/XHR method, origin and path (no
-query, headers or bodies) and response status and JSON media type; a fault run
-records only how often its one fault, from the closed `NINELIVES_PROVE_FAULT`
-schema, was applied. These records never enter `9l.engine/1`. Go validates
+and test attempt, whose handshake names the attempt by the engine's hashed
+test ID and retry index. A baseline records fetch/XHR method, origin and path
+(no query, headers or bodies) and response status and JSON media type; a fault
+run records only how often its one fault, from the closed
+`NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` fault was
+not applicable (`not-json` or `unreachable`). These records never enter `9l.engine/1`. Go validates
 them against a closed schema and size limits and removes the directory after
 each run. See [Prove](prove.md).
 

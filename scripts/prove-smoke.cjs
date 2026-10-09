@@ -47,7 +47,7 @@ async function main() {
   const report = JSON.parse(proved.stdout);
   stage = 'report';
   assert.equal(report.version, 1);
-  assert.equal(report.policy, 'prove-network-v1');
+  assert.equal(report.policy, 'prove-network-v2');
   assert.equal(report.complete, true);
   assert.equal(report.baseline.status, 'passed');
   const byPath = Object.fromEntries(report.requests.map(request => [new URL(request.url).pathname, request.id]));
@@ -58,8 +58,10 @@ async function main() {
   assert.deepEqual(results('/api/orders'), ['abort:caught', 'http-500:caught', 'empty-json:caught']);
   stage = 'unasserted request';
   assert.deepEqual(results('/api/recommendations'), ['abort:survived', 'http-500:survived', 'empty-json:survived']);
-  assert.deepEqual(report.summary, {faults: 9, caught: 6, survived: 3, inconclusive: 0, notRun: 0});
+  assert.deepEqual(report.summary, {faults: 9, caught: 6, survived: 3, inconclusive: 0, notRun: 0, exercised: 9});
   assert(report.faults.every(fault => fault.applied > 0 && fault.runId));
+  // One test in the spec: each fault carries exactly its result for that test.
+  assert(report.faults.every(fault => fault.tests.length === 1 && fault.tests[0].result === fault.result && /^[a-f0-9]{64}$/.test(fault.tests[0].testId)));
   stage = 'receipts';
   for (const runId of [report.baseline.runId, ...report.faults.map(fault => fault.runId)]) {
     const result = invoke(engine, ['result', runId, '--receipt-dir', receipts]);
