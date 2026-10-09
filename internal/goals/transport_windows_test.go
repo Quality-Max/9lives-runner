@@ -5,9 +5,9 @@ package goals
 import (
 	"context"
 	"net"
-	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/Microsoft/go-winio"
 	"golang.org/x/sys/windows"
@@ -43,7 +43,13 @@ func TestWindowsGoalPipeRestrictsAccessToEngineUser(t *testing.T) {
 	if err != nil {
 		t.Fatal("engine identity unavailable")
 	}
-	if !strings.Contains(security.String(), ";;;"+user.User.Sid.String()+")") {
+	var entry *windows.ACCESS_ALLOWED_ACE
+	if err := windows.GetAce(acl, 0, &entry); err != nil || entry.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+		t.Fatal("goal pipe access rule unavailable")
+	}
+	// SDDL may abbreviate well-known SIDs; compare the kernel SID itself.
+	principal := (*windows.SID)(unsafe.Pointer(&entry.SidStart))
+	if !principal.Equals(user.User.Sid) {
 		t.Fatal("goal pipe grants another principal")
 	}
 	control, _, err := security.Control()
