@@ -38,7 +38,11 @@ isolated copy first. Without `apply`, a verified candidate is saved as
 `<spec>.healed`; `apply: true` is the caller's explicit approval to write it
 in place, which still happens only if the spec is unchanged since it was
 tested. An assertion failure returns `needs_human`: a possible real bug that
-healing does not mask. Heal calls run one at a time.
+healing does not mask. A session that ends in an error, such as a provider
+failure or a verified candidate that could not be saved or applied, returns
+`isError: true` with its evidence and an `error` message; only `savedPath` or
+`applied` means something was written. Heal calls run one at a time; a heal
+waiting for its turn can be cancelled.
 
 ## Boundaries
 
@@ -48,7 +52,8 @@ healing does not mask. Heal calls run one at a time.
 - Test processes receive only the environment variables named with
   `--pass-env` when the server starts. Tools cannot add names.
 - Up to four tool calls run at once; more are refused rather than queued.
-  `notifications/cancelled` stops the named call and its test processes, and
+  `notifications/cancelled` stops the named call, including a queued heal and
+  the analysis helper of an assessment, along with its test processes, and
   that call gets no response. Closing stdin cancels running calls, waits for
   them and exits 0.
 - Stdout carries only protocol messages. Returned failure context and reasons

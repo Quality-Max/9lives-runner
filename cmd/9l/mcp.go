@@ -112,17 +112,24 @@ type mcpServer struct {
 	log         io.Writer
 
 	writeMu sync.Mutex
-	// Heals of one source tree run one at a time.
-	healMu sync.Mutex
-	mu     sync.Mutex
-	calls  map[string]context.CancelFunc
-	wg     sync.WaitGroup
+	// Heals run one at a time. A queued heal waits on this one-slot channel
+	// rather than a mutex, so cancelling it frees its request slot at once.
+	healSlot chan struct{}
+	mu       sync.Mutex
+	calls    map[string]context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 // toolError is returned to the agent as an isError tool result.
 type toolError struct{ message string }
 
 func (e toolError) Error() string { return e.message }
+
+// failedResult is a complete tool result reported with isError, so a failed
+// call still returns its evidence.
+type failedResult struct{ payload any }
+
+func (failedResult) Error() string { return "tool failed" }
 
 func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
@@ -150,7 +157,7 @@ func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 		return exitUsage
 	}
 	server := &mcpServer{passEnv: passEnv, provider: provider, model: *model, runTimeout: nativeRunTimeout(),
-		receiptDir: *receiptDir, healReceipt: *healReceipts, out: out, log: errOut, calls: map[string]context.CancelFunc{}}
+		receiptDir: *receiptDir, healReceipt: *healReceipts, out: out, log: errOut, calls: map[string]context.CancelFunc{}, healSlot: make(chan struct{}, 1)}
 	if os.Getenv("NINELIVES_MCP_UNRESTRICTED") != "1" {
 		cwd, err := os.Getwd()
 		if err == nil {
@@ -333,6 +340,11 @@ func (s *mcpServer) call(ctx context.Context, message mcpMessage) {
 		if callCtx.Err() != nil {
 			return
 		}
+		var failed failedResult
+		if errors.As(err, &failed) {
+			s.toolResult(message.ID, failed.payload, true)
+			return
+		}
 		if err != nil {
 			var tool toolError
 			text := "tool failed"
@@ -403,7 +415,7 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 				return nil, err
 			}
 		}
-		return s.assessTest(path, requirements)
+		return s.assessTest(ctx, path, requirements)
 	}
 }
 
@@ -489,13 +501,21 @@ type mcpHealResult struct {
 	Version int    `json:"version"`
 	Spec    string `json:"spec"`
 	tier2.Session
-	Diff string `json:"diff,omitempty"`
-	Note string `json:"note,omitempty"`
+	Diff  string `json:"diff,omitempty"`
+	Note  string `json:"note,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, proposals int, timeout time.Duration) (any, error) {
-	s.healMu.Lock()
-	defer s.healMu.Unlock()
+	select {
+	case s.healSlot <- struct{}{}:
+		defer func() { <-s.healSlot }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	original, err := os.ReadFile(spec)
 	if err != nil {
 		return nil, toolError{"spec cannot be read"}
@@ -519,16 +539,22 @@ func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, propo
 	if session.State == "needs_human" {
 		result.Note = "possible real bug: an assertion failed, and healing does not rewrite assertions to force a pass"
 	}
+	if err != nil {
+		// The session's evidence stays in the result; nothing was saved or
+		// applied unless savedPath or applied says so.
+		result.Error = healFailure(session, apply)
+		return nil, failedResult{result}
+	}
 	return result, nil
 }
 
-func (s *mcpServer) assessTest(path, requirements string) (any, error) {
+func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (any, error) {
 	args := []string{path, "--format", "json"}
 	if requirements != "" {
 		args = append(args, "--requirements", requirements)
 	}
 	var out, errOut bytes.Buffer
-	code := assessCommand(args, &out, &errOut)
+	code := assessContext(ctx, args, &out, &errOut)
 	var report json.RawMessage
 	if json.Unmarshal(out.Bytes(), &report) != nil {
 		return nil, toolError{"assessment failed: " + bounded(strings.TrimSpace(strings.TrimPrefix(errOut.String(), "9l: ")))}

@@ -36,8 +36,10 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
 - `9l mcp` is a native MCP stdio server with `run_test`, `heal_test` and
   `assess_test`, so MCP hosts configured with `9l mcp` work without Python.
   Paths stay inside the server's working directory, test processes receive
-  only `--pass-env` names, calls are cancellable, and `heal_test` applies only
-  with `apply: true`. See [MCP server](docs/mcp.md).
+  only `--pass-env` names, calls (including queued heals and assessments) are
+  cancellable, and `heal_test` applies only with `apply: true`. A heal that
+  verifies a candidate but cannot save or apply it, or whose provider fails,
+  is an error result that keeps its evidence. See [MCP server](docs/mcp.md).
 
 ## CLI 0.1.5 — 2026-10-09
 

@@ -98,6 +98,14 @@ It never reports an incomplete run green. run exits 0 passed, 1 failed,
 }
 
 func assessCommand(args []string, out, errOut io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return assessContext(ctx, args, out, errOut)
+}
+
+// assessContext runs `9l assess` until ctx ends, which stops the analysis
+// helper; the MCP assess_test tool passes its request context.
+func assessContext(ctx context.Context, args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("assess", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	requirements := fs.String("requirements", "", "shared reviewed requirement contract; without it, requirement checks are not run")
@@ -145,8 +153,6 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 			return 2
 		}
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	// One regular file keeps the single-file report. Several inputs, a
 	// directory or a pattern give one combined suite report.
 	if info, err := os.Stat(fs.Arg(0)); fs.NArg() > 1 || assessment.IsPattern(fs.Arg(0)) || (err == nil && info.IsDir()) {

@@ -153,10 +153,30 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	if encodeErr := json.NewEncoder(out).Encode(result); encodeErr != nil {
 		return 1
 	}
+	if err != nil && ctx.Err() == nil {
+		fmt.Fprintln(errOut, "9l: heal:", healFailure(result, *yes))
+	}
 	if err != nil || (!result.Applied && result.SavedPath == "" && result.State != "passed") {
 		return 1
 	}
 	return 0
+}
+
+// healFailure describes a session that ended with an error, without the
+// raw error, which can carry local paths.
+func healFailure(session tier2.Session, apply bool) string {
+	switch {
+	case session.Reason != "":
+		return session.Reason
+	case session.State == "concurrent_edit":
+		return "source changed during healing; the verified candidate was not applied"
+	case session.State == "verified" && apply:
+		return "the verified candidate could not be applied"
+	case session.State == "verified":
+		return "the verified candidate could not be saved"
+	default:
+		return "healing did not complete"
+	}
 }
 
 // unifiedLines is the line-pair diff previewDiff prints, as a string.

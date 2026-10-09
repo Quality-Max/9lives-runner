@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 )
 
 type mcpHarness struct {
@@ -23,7 +25,7 @@ type mcpHarness struct {
 }
 
 // startMCP serves from root, which is also the working directory.
-func startMCP(t *testing.T, root string) *mcpHarness {
+func startMCP(t *testing.T, root string, configure ...func(*mcpServer)) *mcpHarness {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -34,7 +36,10 @@ func startMCP(t *testing.T, root string) *mcpHarness {
 	outR, outW := io.Pipe()
 	h := &mcpHarness{in: inW, lines: make(chan map[string]any, 16), done: make(chan struct{})}
 	server := &mcpServer{root: root, runTimeout: time.Minute, receiptDir: ".9lives/receipts", healReceipt: ".9lives/healing-receipts",
-		out: outW, log: io.Discard, calls: map[string]context.CancelFunc{}}
+		out: outW, log: io.Discard, calls: map[string]context.CancelFunc{}, healSlot: make(chan struct{}, 1)}
+	for _, apply := range configure {
+		apply(server)
+	}
 	go func() {
 		server.serve(context.Background(), inR)
 		outW.Close()
@@ -275,4 +280,137 @@ func waitForPID(t *testing.T, path string) int {
 func processAlive(pid int) bool {
 	process, err := os.FindProcess(pid)
 	return err == nil && process.Signal(syscall.Signal(0)) == nil
+}
+
+// writeProject writes a Playwright project whose installed CLI is a shell
+// script standing in for Playwright.
+func writeProject(t *testing.T, playwright string, files map[string]string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script Playwright stand-in")
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "node_modules", ".bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files["package.json"] = `{"devDependencies":{"@playwright/test":"1.61.1"}}`
+	files["node_modules/.bin/playwright"] = "#!/bin/sh\n" + playwright
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+type scriptedProvider struct{ response string }
+
+var _ tier2.Provider = scriptedProvider{}
+
+func (scriptedProvider) Name() string { return "scripted" }
+func (p scriptedProvider) Complete(context.Context, string, string) (string, error) {
+	return p.response, nil
+}
+
+// A verified candidate that cannot be saved is an error result that keeps
+// the verification evidence, not a successful one.
+func TestMCPHealReportsAFailedSave(t *testing.T) {
+	original := "import { test, expect } from '@playwright/test';\ntest('save', async ({ page }) => {\n  await page.locator('#old').click();\n  await expect(page.locator('#other')).toBeVisible();\n});\n"
+	candidate := strings.Replace(original, "#old", "#new", 1)
+	passed := `{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{"status":"expected","results":[{"status":"passed"}]}]}]}]}`
+	failed := `{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{"status":"unexpected","results":[{"status":"failed","error":{"message":"TimeoutError: locator.click: Timeout 1000ms exceeded.\nCall log:\n  - waiting for locator(\u0027#old\u0027)"}}]}]}]}]}`
+	root := writeProject(t, "if grep -q '#new' \"$2\"; then printf '%s' '"+passed+"' > \"$PLAYWRIGHT_JSON_OUTPUT_FILE\"; exit 0; fi\nprintf '%s' '"+failed+"' > \"$PLAYWRIGHT_JSON_OUTPUT_FILE\"\nexit 1\n",
+		map[string]string{"login.spec.ts": original})
+	if err := os.Mkdir(filepath.Join(root, "login.spec.ts.healed"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := startMCP(t, root, func(s *mcpServer) { s.provider = scriptedProvider{"```typescript\n" + candidate + "```"} })
+	payload, isError := h.toolCall(t, 1, "heal_test", map[string]any{"spec": "login.spec.ts"})
+	verified, _ := payload["verified"].(map[string]any)
+	if !isError || payload["error"] != "the verified candidate could not be saved" || payload["state"] != "verified" ||
+		verified["passed"] != true || payload["savedPath"] != nil || payload["applied"] != false {
+		t.Fatalf("failed save reported as %v (isError=%v)", payload, isError)
+	}
+	if source, _ := os.ReadFile(filepath.Join(root, "login.spec.ts")); string(source) != original {
+		t.Fatal("source changed")
+	}
+	// The same session saves once the path is free.
+	if err := os.Remove(filepath.Join(root, "login.spec.ts.healed")); err != nil {
+		t.Fatal(err)
+	}
+	payload, isError = h.toolCall(t, 2, "heal_test", map[string]any{"spec": "login.spec.ts"})
+	if isError || payload["error"] != nil || !strings.HasSuffix(payload["savedPath"].(string), "login.spec.ts.healed") || !strings.Contains(payload["diff"].(string), "+  await page.locator('#new')") {
+		t.Fatalf("save after fix: %v (isError=%v)", payload, isError)
+	}
+}
+
+// Cancelling an assessment stops its analysis helper; it does not run to the
+// helper's own deadline.
+func TestMCPAssessTestIsCancellable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script Node stand-in")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "node"), []byte("#!/bin/sh\necho $$ > \"$0.pid\"\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.spec.ts"), []byte("test('t', () => {});\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := startMCP(t, root)
+	h.send(t, `{"jsonrpc":"2.0","id":"assess","method":"tools/call","params":{"name":"assess_test","arguments":{"path":"a.spec.ts"}}}`)
+	pid := waitForPID(t, filepath.Join(bin, "node.pid"))
+	h.send(t, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"assess"}}`)
+	// The helper's own deadline is ten seconds.
+	deadline := time.Now().Add(5 * time.Second)
+	for processAlive(pid) {
+		if time.Now().After(deadline) {
+			t.Fatal("cancelled assessment helper still running")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	h.in.Close()
+	select {
+	case <-h.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not stop promptly")
+	}
+	if message, ok := <-h.lines; ok {
+		t.Fatalf("cancelled assessment answered: %v", message)
+	}
+}
+
+// Queued heals that are cancelled free their request slots while another
+// heal is still running.
+func TestMCPCancelledQueuedHealsFreeTheirSlots(t *testing.T) {
+	root := writeProject(t, "echo $$ > \"$0.pid\"\nexec sleep 30\n", map[string]string{"slow.spec.ts": "test('slow', async () => {});\n"})
+	h := startMCP(t, root)
+	call := func(id string) string {
+		return `{"jsonrpc":"2.0","id":"` + id + `","method":"tools/call","params":{"name":"heal_test","arguments":{"spec":"slow.spec.ts"}}}`
+	}
+	h.send(t, call("active"))
+	waitForPID(t, filepath.Join(root, "node_modules", ".bin", "playwright.pid"))
+	for _, id := range []string{"q1", "q2", "q3"} {
+		h.send(t, call(id))
+	}
+	// All four slots are taken.
+	if payload, isError := h.toolCall(t, 1, "run_test", map[string]any{"spec": "missing.spec.ts"}); !isError || !strings.Contains(payload["error"].(string), "too many tool calls") {
+		t.Fatalf("slots were not full: %v", payload)
+	}
+	for _, id := range []string{"q1", "q2", "q3"} {
+		h.send(t, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"`+id+`"}}`)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for id := 2; ; id++ {
+		payload, _ := h.toolCall(t, id, "run_test", map[string]any{"spec": "missing.spec.ts"})
+		if strings.Contains(payload["error"].(string), "path not found") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cancelled queued heals still hold their slots: %v", payload)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
