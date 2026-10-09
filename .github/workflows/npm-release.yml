@@ -78,14 +78,19 @@ jobs:
       - name: Push the sdk-v tag on the published commit with the release deploy key
         env:
           SDK_RELEASE_TAG_KEY: ${{ secrets.SDK_RELEASE_TAG_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$SDK_RELEASE_TAG_KEY" ]; then
             echo "::error::secret SDK_RELEASE_TAG_KEY is not set; push the tag by hand: git push origin $GITHUB_SHA:refs/tags/sdk-v$VERSION"
             exit 1
           fi
           umask 077
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SDK_RELEASE_TAG_KEY" > ~/.ssh/sdk_release_tag
-          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
-          GIT_SSH_COMMAND='ssh -i ~/.ssh/sdk_release_tag -o IdentitiesOnly=yes' git push "git@github.com:$GITHUB_REPOSITORY.git" "$GITHUB_SHA:refs/tags/sdk-v$VERSION"
-          rm -f ~/.ssh/sdk_release_tag
+          mkdir -p "$HOME/.ssh"
+          # The key file goes away on every exit path, not only after a push.
+          trap 'rm -f "$HOME/.ssh/sdk_release_tag"' EXIT
+          printf '%s\n' "$SDK_RELEASE_TAG_KEY" > "$HOME/.ssh/sdk_release_tag"
+          # GitHub's SSH host keys come from its API over TLS; the push then
+          # requires a matching host key rather than trusting the first answer.
+          gh api meta --jq '.ssh_keys[] | "github.com \(.)"' > "$HOME/.ssh/sdk_release_known_hosts"
+          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/sdk_release_tag -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/sdk_release_known_hosts" \
+            git push "git@github.com:$GITHUB_REPOSITORY.git" "$GITHUB_SHA:refs/tags/sdk-v$VERSION"

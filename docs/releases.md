@@ -114,10 +114,18 @@ private half is the Actions secret `SDK_RELEASE_TAG_KEY`, because the
 (`Resource not accessible by integration`) and GitHub does not accept the
 Actions app as a ruleset bypass actor. The ruleset lets deploy keys bypass it;
 the `main` ruleset has no bypass, so the key cannot push to `main`. Secrets are
-not exposed to workflows from forks. To rotate: generate an ed25519 key, add
-the public half with `gh repo deploy-key add --allow-write`, store the private
-half with `gh secret set SDK_RELEASE_TAG_KEY`, then delete the old key. If the
-tag job fails, push the tag by hand from the published commit:
+not exposed to workflows from forks. To rotate:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C '9lives-runner sdk-release-tag' -f sdk-release-tag
+gh repo deploy-key add sdk-release-tag.pub --allow-write --title sdk-release-tag
+gh secret set SDK_RELEASE_TAG_KEY < sdk-release-tag
+rm sdk-release-tag sdk-release-tag.pub
+gh repo deploy-key delete <old-key-id>
+```
+
+Keep the key files out of the repository and shell history. If the tag job
+fails, push the tag by hand from the published commit:
 `git push origin <sha>:refs/tags/sdk-v<version>`.
 
 Do not push `sdk-v0.0.0`: npm will reject that
