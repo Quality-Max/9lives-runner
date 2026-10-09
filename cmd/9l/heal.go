@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,12 +38,19 @@ type healOptions struct {
 	Preview      func(original, candidate string)
 }
 
+var receiptLabel = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
 // healSpec runs the original spec, then verifies each candidate in its own
 // owned copy before saving or applying it.
 func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 	runCount := 0
 	runSpec := func(ctx context.Context, spec, label string) tier2.RunResult {
 		runCount++
+		// tier2.Heal labels runs "original", "tier1" and "tier2-<n>"; anything
+		// else must not become a path component of the receipt directory.
+		if !receiptLabel.MatchString(label) {
+			label = "run"
+		}
 		plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{MaxJobs: 1, MaxParallel: 1, MaxAttempts: 1, MaxOutputBytes: 4 << 20, Adapters: []runner.Adapter{playwright.New()}})
 		if err != nil || len(plan.Jobs) != 1 {
 			return tier2.RunResult{Failure: "spec is not an installed Playwright project"}

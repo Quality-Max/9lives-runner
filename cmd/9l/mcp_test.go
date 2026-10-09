@@ -429,3 +429,11 @@ func TestMCPCancelledQueuedHealsFreeTheirSlots(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestReceiptLabelsCannotLeaveTheReceiptDirectory(t *testing.T) {
+	for label, ok := range map[string]bool{"original": true, "tier1": true, "tier2-3": true, "../x": false, "a/b": false, "": false, "..": false} {
+		if receiptLabel.MatchString(label) != ok {
+			t.Errorf("%q accepted=%v", label, !ok)
+		}
+	}
+}
