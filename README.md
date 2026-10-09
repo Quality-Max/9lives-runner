@@ -26,11 +26,12 @@ See [how it is recorded](demo/README.md#recording).
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.61.1
+npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
-Use Node 24 for the qualified runtime (Node 22 minimum). On Linux, use
+Use Node 24 for the qualified runtime (Node 22 minimum) and Playwright 1.61.1
+through 1.64.0; an existing project can keep its version in that range. On Linux, use
 `npm exec playwright install --with-deps chromium` for browser dependencies.
 
 Install the Go CLI separately. With Go 1.25.13 or newer:

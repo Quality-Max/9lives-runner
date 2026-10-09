@@ -9,13 +9,13 @@ separately; the SDK does not bundle the runner or a browser.
 From your Playwright project, with Node 24 (Node 22 minimum):
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.61.1
+npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
 On Linux use `npm exec playwright install --with-deps chromium`.
 The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified versions:
-1.61.1 with Chromium. Other versions in that range install but are unqualified,
+every published release from 1.61.1 through 1.64.0 (1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0), with Chromium. Later versions in that range install but are unqualified,
 as are other engines. Preserve the existing project configuration and assertions.
 The [SDK contract](sdk-bridge.md) describes supported settings and limits.
 

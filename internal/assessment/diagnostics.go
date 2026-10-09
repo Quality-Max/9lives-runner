@@ -31,5 +31,5 @@ var analysisLimits = map[string]string{
 	"shadowed-binding":       "An imported test or expect binding is shadowed; affected matcher calls were excluded.",
 	"runtime-skip":           "A body-level skip or fixme depends on runtime behavior that was not evaluated.",
 	"unresolved-helper":      "A helper call was not resolved; assertions inside that helper remain unknown.",
-	"unknown-matcher":        "A matcher outside the pinned Playwright 1.61.1 API, or an imported assertion helper, is neither awaited nor returned; whether it returns a promise is unknown.",
+	"unknown-matcher":        "A matcher outside the Playwright 1.61.1–1.64.0 API, or an imported assertion helper, is neither awaited nor returned; whether it returns a promise is unknown.",
 }

@@ -10,14 +10,16 @@ completing does not verify that behavior.
 Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
-npm install --save-dev @9l/playwright@0.0.0 @playwright/test@1.61.1
+npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
-Use Node 24 for the qualified runtime (Node 22 minimum), Playwright 1.61.1,
-and Chromium. macOS and Linux on amd64/arm64 are the qualified runner targets.
-The peer range is `@playwright/test` `>=1.61.1 <2`; versions in it other than
-1.61.1, and other browser engines, install but are unqualified.
+Use Node 24 for the qualified runtime (Node 22 minimum), Playwright 1.61.1
+through 1.64.0, and Chromium. macOS and Linux on amd64/arm64 are the qualified
+runner targets. The peer range is `@playwright/test` `>=1.61.1 <2`; CI qualifies
+every published release from 1.61.1 through 1.64.0 (1.61.1, 1.62.0, 1.62.1,
+1.63.0 and 1.64.0). Later versions, and other browser engines, install but are
+unqualified.
 
 The Go `9l` executable is also required. Use the
 [CLI installation guide](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)

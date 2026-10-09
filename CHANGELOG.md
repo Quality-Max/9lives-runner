@@ -1,5 +1,15 @@
 # Changelog
 
+## SDK unreleased
+
+- Qualified with every published `@playwright/test` release from 1.61.1
+  through 1.64.0: 1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0. A new
+  `playwright-compat` CI job runs the unit, browser, assessment and
+  packed-consumer checks on each release, after
+  `scripts/select-playwright.cjs` repins every workspace and fixture and
+  verifies that each resolves exactly that release. The peer range is
+  unchanged (`>=1.61.1 <2`); later releases install but are unqualified.
+
 ## CLI 0.1.1 — 2026-10-08
 
 `9l assess` changes from the second external trial, on the same 87-file suite
@@ -24,6 +34,8 @@ and a new helper-function spec.
   the file covers it for every test that references the requirement and maps
   at least one of its outcomes. A test mapping none of them is still reported
   for every outcome. The finding counts once per requirement and outcome.
+- The async matcher list is checked against Playwright 1.61.1 through 1.64.0,
+  whose matchers are identical, and `unknown-matcher` names that range.
 - Helper facts version 6, policy `assessment-source-v7`; report version 3 gains
   the optional finding `site`.
 
