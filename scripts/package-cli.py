@@ -23,12 +23,12 @@ subprocess.run(['go', 'build', '-trimpath', f'-ldflags=-s -w -X main.version={ve
 assert subprocess.check_output([str(binary), '--version'], cwd=root, text=True).strip() == f'9l {version} (Go runner)'
 subprocess.run([str(binary), '--help'], cwd=root, stdout=subprocess.DEVNULL, check=True)
 subprocess.run([str(binary), 'plan', 'testdata/sdk/tests/checkout.spec.ts', '--format', 'json'], cwd=root, stdout=subprocess.DEVNULL, check=True)
-for name in ('LICENSE', 'NOTICE'):
+for name in ('LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.txt'):
     shutil.copyfile(root / name, destination / name)
 if system == 'windows':
     with zipfile.ZipFile(root / f'{bundle}.zip', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(destination, bundle + '/')
-        for name in ('9l.exe', 'LICENSE', 'NOTICE'):
+        for name in ('9l.exe', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.txt'):
             archive.write(destination / name, f'{bundle}/{name}')
 else:
     with tarfile.open(root / f'{bundle}.tar.gz', 'w:gz') as archive:

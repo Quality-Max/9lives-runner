@@ -93,7 +93,7 @@ Expand-Archive "$Bundle.zip" -DestinationPath . -Force
 & ".\$Bundle\9l.exe" --version
 ```
 
-Keep `LICENSE` and `NOTICE` with the binary. Add its directory to your user
+Keep `LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` with the binary. Add its directory to your user
 `PATH`, or invoke `9l.exe` by its full path. Install Node 24, project dependencies
 and Chromium as above. Native Windows CI covers both architectures with the
 workspace Playwright pin (1.61.1); later Playwright releases are separately

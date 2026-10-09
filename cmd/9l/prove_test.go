@@ -337,8 +337,8 @@ func TestProveRecordsWhyEmptyJSONWasNotApplicable(t *testing.T) {
 func TestProveReportsAnInterruptedBaselineAsSuch(t *testing.T) {
 	project := proveProject(t)
 	worker := shopWorker()
-	worker.delay = 2 * time.Second
-	code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--deadline", "100ms", "--receipt-dir", t.TempDir())
+	worker.delay = 5 * time.Second
+	code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--deadline", "1s", "--receipt-dir", t.TempDir())
 	if code != 1 || !strings.Contains(stderr, "canceled or timed out") || strings.Contains(stderr, "failing test") || len(worker.commands) != 1 {
 		t.Fatalf("code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
 	}

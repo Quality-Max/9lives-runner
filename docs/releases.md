@@ -30,7 +30,7 @@ reusable CI workflow before building release executables.
 Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup
 and fixture planning, and packages the executable with the root `LICENSE` and
-`NOTICE`. Release artifact names are separate from CI's raw binaries and npm
+`NOTICE` and `THIRD-PARTY-NOTICES.txt` (Go dependencies). Release artifact names are separate from CI's raw binaries and npm
 package, so only the six intended CLI archives reach the release.
 
 Before upload, archive validation checks exact member paths, regular file

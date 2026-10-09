@@ -21,7 +21,7 @@ class ArchiveAdmission(unittest.TestCase):
             for arch in ('amd64', 'arm64'):
                 bundle = f'9l-{system}-{arch}'
                 binary = '9l.exe' if system == 'windows' else '9l'
-                files = {binary: b'fixture executable', 'LICENSE': (root / 'LICENSE').read_bytes(), 'NOTICE': (root / 'NOTICE').read_bytes()}
+                files = {binary: b'fixture executable', 'LICENSE': (root / 'LICENSE').read_bytes(), 'NOTICE': (root / 'NOTICE').read_bytes(), 'THIRD-PARTY-NOTICES.txt': (root / 'THIRD-PARTY-NOTICES.txt').read_bytes()}
                 if system == 'windows':
                     with zipfile.ZipFile(directory / (bundle + '.zip'), 'w') as zip:
                         zip.writestr(bundle + '/', b'')

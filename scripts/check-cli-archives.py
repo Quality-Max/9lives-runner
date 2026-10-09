@@ -19,11 +19,11 @@ def check(directory: Path) -> None:
             bundle = name.removesuffix('.zip')
             with zipfile.ZipFile(archive) as zip:
                 members = zip.infolist()
-                assert len(members) == 4, "Unexpected archive member count"
+                assert len(members) == 5, "Unexpected archive member count"
                 by_name = {member.filename: member for member in members}
-                assert set(by_name) == {bundle + '/', *(f"{bundle}/{file}" for file in ("9l.exe", "LICENSE", "NOTICE"))}, "Unexpected archive layout"
+                assert set(by_name) == {bundle + '/', *(f"{bundle}/{file}" for file in ("9l.exe", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"))}, "Unexpected archive layout"
                 assert by_name[bundle + '/'].is_dir(), "Missing bundle directory"
-                for file in ("9l.exe", "LICENSE", "NOTICE"):
+                for file in ("9l.exe", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"):
                     member = by_name[f"{bundle}/{file}"]
                     mode = member.external_attr >> 16
                     assert not member.is_dir() and not stat.S_ISLNK(mode) and member.file_size > 0, "Invalid archive file"
@@ -34,11 +34,11 @@ def check(directory: Path) -> None:
             bundle = name.removesuffix(".tar.gz")
             with tarfile.open(archive, "r:gz") as tar:
                 members = tar.getmembers()
-                assert len(members) == 4, "Unexpected archive member count"
+                assert len(members) == 5, "Unexpected archive member count"
                 by_name = {member.name.rstrip("/"): member for member in members}
-                assert set(by_name) == {bundle, *(f"{bundle}/{file}" for file in ("9l", "LICENSE", "NOTICE"))}, "Unexpected archive layout"
+                assert set(by_name) == {bundle, *(f"{bundle}/{file}" for file in ("9l", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"))}, "Unexpected archive layout"
                 assert by_name[bundle].isdir(), "Missing bundle directory"
-                for file in ("9l", "LICENSE", "NOTICE"):
+                for file in ("9l", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"):
                     member = by_name[f"{bundle}/{file}"]
                     assert member.isfile() and member.size > 0, "Invalid archive file"
                     if file == "9l":

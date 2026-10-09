@@ -9,10 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -131,15 +129,8 @@ func (f Factory) Start(parent context.Context, identity runner.AttemptIdentity) 
 	if err := f.ValidateBudget(); err != nil {
 		return nil, err
 	}
-	directory, err := os.MkdirTemp("", "9lg-")
+	listener, socket, directory, err := listenGoalTransport()
 	if err != nil {
-		return nil, errors.New("goal transport unavailable")
-	}
-	// Unix sockets can have short OS limits; macOS's temp directory is long.
-	socket := filepath.Join(directory, "s")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		os.RemoveAll(directory)
 		return nil, errors.New("goal transport unavailable")
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -168,7 +159,9 @@ func (s *service) Close() []runner.GoalReceipt {
 	defer func() {
 		s.cancel()
 		_ = s.server.Close()
-		_ = os.RemoveAll(s.directory)
+		if s.directory != "" {
+			_ = os.RemoveAll(s.directory)
+		}
 	}()
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -23,13 +23,13 @@ cannot corrupt it. The fixture requires a supported engine identity when
 Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
 the protocol and capabilities in a `hello` frame. Go controls the worker through
-the existing owned process group and cancellation/deadline mechanisms. Browser
+an owned Unix process group or Windows Job Object and cancellation/deadline mechanisms. Browser
 handles never cross the bridge. This first version is a startup-control and
 worker-evidence protocol. Interactive goals use the separate attempt-owned
-`9l.goal/1` Unix socket protocol; see [goals.md](goals.md).
+`9l.goal/1` local IPC protocol (Unix socket or Windows named pipe); see [goals.md](goals.md).
 
 Evidence is newline-delimited JSON in a private per-attempt file. Go creates a
-mode-0700 temporary directory for each attempt and names the file in
+temporary directory for each attempt (mode 0700 on Unix; inherited directory ACLs on Windows) and names the file in
 `NINELIVES_ENGINE_EVENTS`; the reporter creates it exclusively and writes nothing
 to stdout. Configuration, `globalSetup`, hooks and dependencies (dotenv logs its
 startup line, for example) can print to stdout freely without affecting the

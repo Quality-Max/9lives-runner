@@ -48,7 +48,7 @@ func control(label string) []Candidate {
 func TestOwnedTransportRejectsForeignMalformedEvidence(t *testing.T) {
 	s := setup(t, decision(`{"action":"complete"}`), Defaults())
 	client := http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", s.socket)
+		return dialGoalTransport(ctx, s.socket)
 	}}}
 	defer client.CloseIdleConnections()
 	for _, body := range []string{`{"version":"9l.goal/1","runId":"foreign","jobId":"job","attemptId":"attempt","op":"start","instruction":"Continue"}`, `{"version":"9l.goal/1","version":"9l.goal/1"}`, `{"op":null}`} {

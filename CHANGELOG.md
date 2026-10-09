@@ -6,6 +6,7 @@
   SHA-256 checksums, for the next CLI release after v0.1.5.
 - Own Windows launcher and descendant processes through kill-on-close Job
   Objects; launch the installed Playwright JavaScript CLI with Node directly.
+  Goals use an owner-restricted Windows named pipe with the existing SDK protocol.
   Native CI covers real Chromium execution, timeout/cancel cleanup and isolated
   consumers on both Windows architectures. Windows arm64 tests omit `-race`.
 - Clarify the README comparison with qmax-code's broader terminal agent.
