@@ -9,6 +9,7 @@
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |
 | [CLI contract](contracts.md) | You are integrating `9l` into another tool through its JSON output and exit codes |
 | [Agent setup](agent-setup.md) | You want the optional QA skill workflow |
+| [MCP server](mcp.md) | You want an agent to run, heal and assess specs through MCP tools |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
 | [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |
 | [Goals](goals.md) | You are configuring bounded observed-control execution |

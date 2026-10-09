@@ -20,10 +20,10 @@ import (
 // receipts or accidentally reuse an earlier run's artifacts.
 type RunFunc func(context.Context, string, string) RunResult
 type RunResult struct {
-	Passed        bool
-	ExecutedTests int
-	Failure       string
-	Receipt       string
+	Passed        bool   `json:"passed"`
+	ExecutedTests int    `json:"executedTests"`
+	Failure       string `json:"failure,omitempty"`
+	Receipt       string `json:"receipt,omitempty"`
 }
 
 type SessionOptions struct {
@@ -62,11 +62,11 @@ type Session struct {
 }
 
 // Heal runs original, then at most one caller-provided Tier 1 verification,
-// then each Tier 2 candidate in a fresh owned copy. A candidate is verified
+// then, when a provider is given, each Tier 2 candidate in a fresh owned copy. A candidate is verified
 // only when a non-zero test count passed in its own run.
 func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (string, bool)) (result Session, err error) {
-	if opts.Run == nil || opts.Provider == nil || opts.Spec == "" {
-		return result, errors.New("native healing requires spec, provider, and runner")
+	if opts.Run == nil || opts.Spec == "" {
+		return result, errors.New("native healing requires spec and runner")
 	}
 	if opts.MaxProposals <= 0 {
 		opts.MaxProposals = 1
@@ -128,6 +128,12 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 	if ctx.Err() != nil {
 		result.State = "canceled"
 		return result, ctx.Err()
+	}
+	// Without a provider, healing is offline Tier 1 only.
+	if opts.Provider == nil {
+		result.State = "unverified"
+		result.Reason = "Tier 1 found no verified candidate and no Tier 2 provider is available"
+		return result, nil
 	}
 	latestSource, latestFailure := string(original), result.Original.Failure
 	for attempt := 0; attempt < opts.MaxProposals; attempt++ {

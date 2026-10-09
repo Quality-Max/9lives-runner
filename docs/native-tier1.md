@@ -6,7 +6,7 @@ files, providers or application adapters. A changed proposal always reports
 `apply: false`, `requiresApproval: true` and `metadata.provenance: "unverified"`.
 The original source is immutable. A refusal exits zero with no proposed code;
 invalid JSON/schema input exits nonzero with a bounded diagnostic. The command
-does not replace the installed Python healing bridge.
+is also the first step of `9l heal`.
 
 `selectedTier` records the historical strategy choice; `attemptedTier` records
 the direct native operation. For example, a bare `#save` with moved-ID HTML

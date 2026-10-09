@@ -1,8 +1,9 @@
 # Native Tier 2 healing
 
-`9l heal-native <spec> --provider NAME` is an explicit experimental native
-healing command. The existing `9l heal` Python bridge and normal `9l run`
-distribution remain unchanged.
+`9l heal <spec>` (alias `heal-native`) is the native healing command; it
+replaced the Python bridge. Normal `9l run` is unchanged. Without a provider,
+healing is offline Tier 1 only: a spec Tier 1 cannot repair ends `unverified`
+without any provider call.
 
 The command executes the original spec through the Go Playwright kernel. A
 passing, non-zero test result makes no provider call. It tries exactly one
@@ -31,8 +32,10 @@ owned copy with valid same-spec ownership metadata whose recorded process no
 longer exists; malformed, foreign, live, and potentially reused-PID files are
 preserved. Cancellation during terminal approval selects cancellation independently
 of a terminal read, so the command exits without blocking source mutation; any
-blocked command-owned reader is reclaimed with the terminating CLI process. The native command has no MCP entry point; any future MCP
-caller must supply its own explicit approval before applying a candidate.
+blocked command-owned reader is reclaimed with the terminating CLI process. The MCP `heal_test` tool runs the same session with no
+terminal approval: it applies only when the caller passes `apply: true`, and
+otherwise saves the verified candidate as `<spec>.healed` (see
+[MCP server](mcp.md)).
 
 Providers resolve in explicit option, `NINELIVES_PROVIDER`, installed CLI,
 then configured-key order. `--pass-env` forwards explicitly named values only to test processes, never to a provider. `claude-code` remains an alias for `claude`.

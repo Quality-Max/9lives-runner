@@ -589,3 +589,33 @@ func TestTier2AcceptsExactEightKiBCompleteCandidate(t *testing.T) {
 		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
 	}
 }
+
+func TestHealWithoutProviderIsOfflineTier1Only(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "login.spec.ts")
+	original := "import { test, expect } from '@playwright/test';\ntest('save', async ({ page }) => {\n  await page.locator('#old').click();\n  await expect(page.locator('#other')).toBeVisible();\n});\n"
+	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := strings.Replace(original, "#old", "#new", 1)
+	run := func(_ context.Context, path, label string) RunResult {
+		data, _ := os.ReadFile(path)
+		if string(data) == candidate {
+			return RunResult{Passed: true, ExecutedTests: 1}
+		}
+		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
+	}
+	// A verified Tier 1 candidate needs no provider.
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: run}, func(string, string) (string, bool) { return candidate, true })
+	if err != nil || result.State != "verified" || result.SavedPath != spec+".healed" {
+		t.Fatalf("offline Tier 1: result=%+v err=%v", result, err)
+	}
+	// Without a Tier 1 candidate it stops, unverified, instead of calling Tier 2.
+	result, err = Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: run}, func(string, string) (string, bool) { return "", false })
+	if err != nil || result.State != "unverified" || !strings.Contains(result.Reason, "no Tier 2 provider") || result.Applied {
+		t.Fatalf("no provider: result=%+v err=%v", result, err)
+	}
+	if source, _ := os.ReadFile(spec); string(source) != original {
+		t.Fatal("source changed")
+	}
+}

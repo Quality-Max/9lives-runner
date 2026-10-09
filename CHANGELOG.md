@@ -25,11 +25,19 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   A spec Playwright's configuration does not select, such as one outside
   `testDir`, now says so instead of only "no completed tests", and a spec
   that fails to load says that instead; the run stays incomplete (exit 3).
-- `9l mcp` delegates to the installed Python `9lives` MCP server, like
-  `9l heal`, so MCP hosts configured with `9l mcp` keep working when the Go
-  runner is first on PATH. Both prefer Python's `9lives` entry point, which
-  covers `uv tool` and `pipx` installs, and forward stdin. A missing package
-  exits 2 with an install hint instead of an ambiguous exit 1.
+- `9l heal` is native and no longer needs Python: it runs the verified
+  selector-healing session of `heal-native`, which stays as an alias. Without
+  a provider it heals with offline Tier 1 only instead of refusing to start.
+  `--run-timeout` also accepts whole seconds, as the Python CLI did. Output is
+  the native JSON session result. Python-only options such as `--framework`
+  exit 2 and name `9lives heal`; Cypress, Selenium, watch and report remain in
+  the Python package. Heal session run results now use lowercase JSON keys
+  (`passed`, `executedTests`, `failure`, `receipt`).
+- `9l mcp` is a native MCP stdio server with `run_test`, `heal_test` and
+  `assess_test`, so MCP hosts configured with `9l mcp` work without Python.
+  Paths stay inside the server's working directory, test processes receive
+  only `--pass-env` names, calls are cancellable, and `heal_test` applies only
+  with `apply: true`. See [MCP server](docs/mcp.md).
 
 ## CLI 0.1.5 — 2026-10-09
 
