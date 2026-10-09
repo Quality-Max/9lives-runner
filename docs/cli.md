@@ -22,6 +22,11 @@
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
+- Exit codes: `run` exits 0 when every planned job passed, 1 when every job
+  ran and a test failed, 2 for usage or setup errors and 3 when the run is
+  incomplete. The JSON `outcome` field carries the same classification. See
+  the [machine-readable contract](contracts.md) for hosts, schemas and
+  `9l version --format json`.
 - `9l assess`: advisory source assessment of a spec, or a combined report for
   several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles

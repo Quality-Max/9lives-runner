@@ -41,8 +41,7 @@ func run(args []string, out, errOut io.Writer) int {
 		return 0
 	}
 	if args[0] == "--version" || args[0] == "version" {
-		fmt.Fprintf(out, "9l %s (Go runner)\n", version)
-		return 0
+		return versionCommand(args[1:], out, errOut)
 	}
 
 	switch args[0] {
@@ -83,10 +82,12 @@ Usage:
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l provenance <spec> --agent <id>  # creation snapshot JSON
+  9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
 The Go runner currently executes Playwright specs from existing projects.
-It never reports an incomplete run green.
+It never reports an incomplete run green. run exits 0 passed, 1 failed,
+2 usage or setup error, 3 incomplete.
 `)
 }
 
@@ -727,10 +728,30 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	} else {
 		printResult(out, result)
 	}
-	if !executionFailed && result.Complete && result.Failed == 0 && result.Canceled == 0 && result.Errors == 0 {
-		return 0
+	return runExitCode(result, executionFailed)
+}
+
+// Exit codes of `9l run`, part of the host contract in docs/contracts.md.
+const (
+	exitPassed     = 0
+	exitFailed     = 1
+	exitUsage      = 2
+	exitIncomplete = 3
+)
+
+// runExitCode never reports more than the run proved: an execution error
+// makes even an all-passed or failed result incomplete.
+func runExitCode(result runner.RunSummary, executionFailed bool) int {
+	switch {
+	case executionFailed:
+		return exitIncomplete
+	case result.Outcome == runner.OutcomePassed && result.Complete:
+		return exitPassed
+	case result.Outcome == runner.OutcomeFailed:
+		return exitFailed
+	default:
+		return exitIncomplete
 	}
-	return 1
 }
 
 func stateCommand(command string, args []string, out, errOut io.Writer) int {
@@ -814,7 +835,10 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		}
 		fmt.Fprintln(w)
 	}
-	if !result.Complete {
+	switch {
+	case result.Outcome == runner.OutcomeFailed:
+		fmt.Fprintln(w, "  FAILED: every planned job ran and at least one test failed")
+	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
 }

@@ -1,0 +1,687 @@
+{
+  "$defs": {
+    "AgentProvenance": {
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "repositorySHA256": {
+          "type": "string"
+        },
+        "sourcePathSHA256": {
+          "type": "string"
+        },
+        "sourceSHA256": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "agent",
+        "repositorySHA256",
+        "branch",
+        "commit",
+        "sourceSHA256",
+        "sourcePathSHA256"
+      ],
+      "type": "object"
+    },
+    "ArtifactReference": {
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "bytes",
+        "required",
+        "present"
+      ],
+      "type": "object"
+    },
+    "Evidence": {
+      "properties": {
+        "artifacts": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ArtifactReference"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stderrPath": {
+          "type": "string"
+        },
+        "stderrSha256": {
+          "type": "string"
+        },
+        "stderrTruncated": {
+          "type": "boolean"
+        },
+        "stdoutPath": {
+          "type": "string"
+        },
+        "stdoutSha256": {
+          "type": "string"
+        },
+        "stdoutTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "GoalDecisionReceipt": {
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "outputTokens": {
+          "type": "integer"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "usageAvailable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "outcome",
+        "inputTokens",
+        "outputTokens",
+        "usageAvailable"
+      ],
+      "type": "object"
+    },
+    "GoalReceipt": {
+      "properties": {
+        "costAvailable": {
+          "type": "boolean"
+        },
+        "decisions": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/GoalDecisionReceipt"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "estimatedCostMicros": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "reservedTokens": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "provider",
+        "durationMs",
+        "reservedTokens",
+        "estimatedCostMicros",
+        "costAvailable",
+        "decisions"
+      ],
+      "type": "object"
+    },
+    "Job": {
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dependsOn": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "workDir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "input",
+        "spec",
+        "workDir",
+        "adapter",
+        "command",
+        "dependsOn"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "properties": {
+        "deadlineMs": {
+          "type": "integer"
+        },
+        "maxAttempts": {
+          "type": "integer"
+        },
+        "maxJobs": {
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "type": "integer"
+        },
+        "maxParallel": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maxJobs",
+        "maxParallel",
+        "maxAttempts",
+        "maxOutputBytes",
+        "deadlineMs"
+      ],
+      "type": "object"
+    },
+    "Plan": {
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "jobs": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Job"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "skipped": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Skipped"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "runId",
+        "createdAt",
+        "jobs",
+        "skipped",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "ProgressEvent": {
+      "properties": {
+        "attemptId": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "sequence": {
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "sequence",
+        "runId",
+        "type",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "ProvenanceAssessment": {
+      "properties": {
+        "after": {
+          "$ref": "#/$defs/AgentProvenance"
+        },
+        "before": {
+          "$ref": "#/$defs/AgentProvenance"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/AgentProvenance"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "branch",
+        "commit",
+        "source",
+        "repository"
+      ],
+      "type": "object"
+    },
+    "Receipt": {
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "agentProvenance": {
+          "$ref": "#/$defs/ProvenanceAssessment"
+        },
+        "assertionCoverage": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "executed": {
+          "type": "boolean"
+        },
+        "executedTests": {
+          "type": "integer"
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "failureCount": {
+          "type": "integer"
+        },
+        "finishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "goalFailed": {
+          "type": "boolean"
+        },
+        "goals": {
+          "items": {
+            "$ref": "#/$defs/GoalReceipt"
+          },
+          "type": "array"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "receiptPath": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "skippedTests": {
+          "type": "integer"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "canceled",
+            "timed_out",
+            "error"
+          ],
+          "type": "string"
+        },
+        "termination": {
+          "$ref": "#/$defs/Termination"
+        },
+        "validated": {
+          "type": "boolean"
+        },
+        "validation": {
+          "type": "string"
+        },
+        "verifiedAssertions": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "runId",
+        "jobId",
+        "attemptId",
+        "attempt",
+        "spec",
+        "adapter",
+        "status",
+        "startedAt",
+        "finishedAt",
+        "durationMs",
+        "exitCode",
+        "executed",
+        "validated",
+        "failureCount",
+        "executedTests",
+        "skippedTests",
+        "verifiedAssertions",
+        "assertionCoverage",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "RunSummary": {
+      "properties": {
+        "canceled": {
+          "type": "integer"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "errors": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "finishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "passed",
+            "failed",
+            "incomplete"
+          ],
+          "type": "string"
+        },
+        "passed": {
+          "type": "integer"
+        },
+        "plannedJobs": {
+          "type": "integer"
+        },
+        "receipts": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Receipt"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "type": "string"
+        },
+        "skippedInputs": {
+          "type": "integer"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "timedOut": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "outcome",
+        "runId",
+        "startedAt",
+        "finishedAt",
+        "durationMs",
+        "complete",
+        "plannedJobs",
+        "skippedInputs",
+        "passed",
+        "failed",
+        "canceled",
+        "timedOut",
+        "errors",
+        "receipts"
+      ],
+      "type": "object"
+    },
+    "Skipped": {
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "Termination": {
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "escalationAfterMs": {
+          "type": "integer"
+        },
+        "escalationSignal": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "observedSignal": {
+          "type": "integer"
+        },
+        "signal": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/run-status.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Run state from persisted plan, result and events.",
+  "properties": {
+    "lastEvent": {
+      "$ref": "#/$defs/ProgressEvent"
+    },
+    "plan": {
+      "$ref": "#/$defs/Plan"
+    },
+    "result": {
+      "$ref": "#/$defs/RunSummary"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "runId",
+    "state"
+  ],
+  "title": "9l status --format json",
+  "type": "object"
+}

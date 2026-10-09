@@ -75,8 +75,9 @@ async function interrupted(kind) {
       assert.equal(states.length, 1);
       assert.equal(sync(engine, ['cancel', states[0], '--receipt-dir', receipts]).status, 0);
     }
-    assert.equal(await completion, 1);
+    assert.equal(await completion, 3); // incomplete, not a test failure
     const summary = JSON.parse(output);
+    assert.equal(summary.outcome, 'incomplete');
     const receipt = summary.receipts[0];
     assert.equal(receipt.status, kind === 'cancel' ? 'canceled' : 'timed_out');
     assert.equal(receipt.validated, false);
@@ -100,6 +101,9 @@ async function main() {
   const passing = invoke('testdata/sdk/tests/checkout.spec.ts');
   assert.equal(passing.code, 0);
   assert.equal(passing.summary.complete, true);
+  assert.equal(passing.summary.version, 1);
+  assert.equal(passing.summary.outcome, 'passed');
+  assert.equal(passing.summary.plannedJobs, 1);
   const receipt = passing.summary.receipts[0];
   assert.equal(receipt.status, 'passed');
   assert.equal(receipt.validated, true);
@@ -121,10 +125,12 @@ async function main() {
   assert.equal(canonical.counts.availability, 'available');
   const failing = invoke('testdata/sdk/tests/defect.spec.ts');
   assert.equal(failing.code, 1);
+  assert.equal(failing.summary.outcome, 'failed');
   assert.equal(failing.summary.receipts[0].status, 'failed');
   assert.equal(failing.summary.receipts[0].failureCount, 1);
   const skipped = invoke('testdata/sdk/tests/skipped.spec.ts');
-  assert.equal(skipped.code, 1);
+  assert.equal(skipped.code, 3);
+  assert.equal(skipped.summary.outcome, 'incomplete');
   assert.equal(skipped.summary.complete, false);
   assert.equal(skipped.summary.receipts[0].validated, false);
   assert.equal(skipped.summary.receipts[0].evidence.stdoutPath || '', '');
@@ -139,7 +145,7 @@ async function main() {
   assert.equal(pinnedCanonical.counts.skipped, 1);
   assert.equal(pinnedCanonical.counts.passed, 1);
   const wrongPin = invoke('testdata/sdk/tests/skipped.spec.ts', ['--pin-skip', 'skipped.spec.ts › some other test']);
-  assert.equal(wrongPin.code, 1);
+  assert.equal(wrongPin.code, 3);
   assert.equal(wrongPin.summary.complete, false);
   const nested = invoke('testdata/sdk/tests/nested/config.spec.ts');
   assert.equal(nested.code, 0);
@@ -156,7 +162,7 @@ async function main() {
   assert(serialFrames.some(frame => frame.type === 'test_end' && frame.retry === 0 && frame.status === 'skipped'));
   console.log('SDK checkout: browser assertions, step/artifact metadata and canonical receipts verified; business defect stays red');
   const missingProvider = invoke('testdata/sdk/tests/goal-start-failure.spec.ts');
-  assert.equal(missingProvider.code, 1);
+  assert.equal(missingProvider.code, 3); // a goal that never ran proves no defect
   assert.equal(missingProvider.summary.receipts[0].goalFailed, true);
   assert.equal(missingProvider.summary.receipts[0].failureCount, 0);
   const failedGoalCanonical = JSON.parse(fs.readFileSync(path.join(path.dirname(missingProvider.summary.receipts[0].receiptPath), 'execution-receipt-1.0.json')));
@@ -166,7 +172,7 @@ async function main() {
   process.env.NINELIVES_SMOKE_INVALID_GOAL = '1';
   const invalidGoal = invoke('testdata/sdk/tests/goal-start-failure.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json', '--pass-env', 'NINELIVES_SMOKE_INVALID_GOAL']);
   delete process.env.NINELIVES_SMOKE_INVALID_GOAL;
-  assert.equal(invalidGoal.code, 1);
+  assert.equal(invalidGoal.code, 3);
   assert.equal(invalidGoal.summary.receipts[0].goalFailed, true);
   assert.equal(invalidGoal.summary.receipts[0].failureCount, 0);
   const goal = invoke('testdata/sdk/tests/goal.spec.ts', ['--goal-script', 'testdata/sdk/goal-script.json']);
@@ -180,23 +186,24 @@ async function main() {
   const defect = invoke('testdata/sdk/tests/goal.spec.ts', ['--goal-script', 'testdata/sdk/goal-script.json', '--pass-env', 'NINELIVES_SMOKE_DEFECT']);
   delete process.env.NINELIVES_SMOKE_DEFECT;
   assert.equal(defect.code, 1);
+  assert.equal(defect.summary.outcome, 'failed');
   assert.equal(defect.summary.receipts[0].status, 'failed');
   assert.equal(defect.summary.receipts[0].goals[0].status, 'completed');
   const policy = invoke('testdata/sdk/tests/goal-policy.spec.ts', ['--goal-script', 'testdata/sdk/policy-script.json']);
-  assert.equal(policy.code, 1);
+  assert.equal(policy.code, 3);
   assert.equal(policy.summary.receipts[0].goals[0].status, 'policy_blocked');
   const redactedPolicy = invoke('testdata/sdk/tests/goal-redaction-policy.spec.ts', ['--goal-script', 'testdata/sdk/redaction-policy-script.json']);
-  assert.equal(redactedPolicy.code, 1);
+  assert.equal(redactedPolicy.code, 3);
   assert.equal(redactedPolicy.summary.receipts[0].goals[0].status, 'policy_blocked');
   const cuePolicy = invoke('testdata/sdk/tests/goal-cue-policy.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json']);
-  assert.equal(cuePolicy.code, 1);
+  assert.equal(cuePolicy.code, 3);
   assert.equal(cuePolicy.summary.receipts[0].goals[0].status, 'policy_blocked');
   const deadlineGoal = invoke('testdata/sdk/tests/goal-deadline.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json']);
-  assert.equal(deadlineGoal.code, 1);
+  assert.equal(deadlineGoal.code, 3);
   assert.equal(deadlineGoal.summary.receipts[0].goals[0].status, 'budget_exhausted');
   assert(readEvents(deadlineGoal.summary.receipts[0]).some(event => event.type === 'test_end' && event.status === 'passed'));
   const abortedGoal = invoke('testdata/sdk/tests/goal-abort.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json']);
-  assert.equal(abortedGoal.code, 1);
+  assert.equal(abortedGoal.code, 3);
   assert.equal(abortedGoal.summary.receipts[0].goals[0].status, 'interrupted');
   assert(abortedGoal.summary.receipts[0].goals[0].decisions.some(decision => decision.action === 'click' && decision.outcome === 'pending'));
   assert(readEvents(abortedGoal.summary.receipts[0]).some(event => event.type === 'test_end' && event.status === 'passed'));
@@ -204,7 +211,7 @@ async function main() {
   process.env.NINELIVES_SMOKE_COUNTER = counter;
   const retriedGoal = invoke('testdata/sdk/tests/goal-retry.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json', '--pass-env', 'NINELIVES_SMOKE_COUNTER']);
   delete process.env.NINELIVES_SMOKE_COUNTER;
-  assert.equal(retriedGoal.code, 1);
+  assert.equal(retriedGoal.code, 3);
   assert.equal(fs.readFileSync(counter, 'utf8'), 'click\n');
   assert.equal(retriedGoal.summary.receipts[0].goals.length, 1);
   // Page text reaching the provider: a value padded to straddle the old

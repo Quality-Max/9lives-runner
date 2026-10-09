@@ -24,6 +24,9 @@ import (
 var analyzer string
 
 const Policy = "assessment-source-v7"
+
+// ReportVersion is the version of a single-file assess report.
+const ReportVersion = 3
 const MaxSource = 1 << 20
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$`)
@@ -330,7 +333,7 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 // Build derives findings from parsed facts. A nil contract means none was
 // supplied: requirement references stay unchecked and purpose stays unknown.
 func Build(source, contract []byte, c Contract, facts Facts) Report {
-	report := Report{AgentProvenance: runner.UnknownAgentProvenance(), Version: 3, Policy: Policy, SourceSHA256: digest(source), Compiler: facts.Compiler, Execution: "not_run", Completeness: "partial", Tests: []Test{}, Limits: []string{
+	report := Report{AgentProvenance: runner.UnknownAgentProvenance(), Version: ReportVersion, Policy: Policy, SourceSHA256: digest(source), Compiler: facts.Compiler, Execution: "not_run", Completeness: "partial", Tests: []Test{}, Limits: []string{
 		"Named test/expect imports and inline tests only; dynamic generation, custom fixtures and helper assertions may be omitted.",
 		"Outcome annotations are reviewed coverage claims, not semantic or behavioral proof. Source-only assessment cannot establish correctness.",
 		"No test, configuration or application module is executed. Runtime evidence requires a separate attributed control experiment.",

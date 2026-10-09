@@ -35,7 +35,7 @@ type ExecuteOptions struct {
 
 func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, error) {
 	started := time.Now().UTC()
-	summary := RunSummary{RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, Receipts: []Receipt{}}
+	summary := RunSummary{Version: RunSummaryVersion, Outcome: OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Receipts: []Receipt{}}
 	if err := validateRunID(plan.RunID); err != nil {
 		summary.Complete = false
 		return summary, err
@@ -170,7 +170,7 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 				}
 			}
 			if blocked != "" {
-				receipt := Receipt{Version: 1, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: "blocked by unsuccessful dependency " + blocked, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
+				receipt := Receipt{Version: ReceiptVersion, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: "blocked by unsuccessful dependency " + blocked, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
 				receipt = persistAttempt(receipt, store, nil, nil)
 				completed[job.ID] = receipt
 				summary.Receipts = append(summary.Receipts, receipt)
@@ -230,7 +230,9 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	summary.FinishedAt = time.Now().UTC()
 	summary.DurationMS = summary.FinishedAt.Sub(started).Milliseconds()
+	summary.Outcome = classifyRun(summary, runCtx.Err() != nil)
 	if err := store.Finalize(summary); err != nil {
+		summary.Outcome = OutcomeIncomplete
 		return summary, err
 	}
 	_ = store.AppendEvent(ProgressEvent{Type: "run_finished"})
@@ -317,7 +319,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 func executeAttempt(parent context.Context, runID string, job Job, attempt int, opts ExecuteOptions, store Store, executor ProcessExecutor) Receipt {
 	started := time.Now().UTC()
 	receipt := Receipt{
-		Version: 1, RunID: runID, JobID: job.ID, Spec: job.Spec,
+		Version: ReceiptVersion, RunID: runID, JobID: job.ID, Spec: job.Spec,
 		Attempt: attempt, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, attempt),
 		Adapter: job.Adapter, StartedAt: started, ExitCode: -1,
 		Evidence: Evidence{Command: redactArguments(job.Command), Artifacts: []ArtifactReference{}},
@@ -482,6 +484,30 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	receipt = persistAttempt(receipt, store, output.Stdout, output.Stderr)
 	_ = store.AppendEvent(ProgressEvent{Type: "attempt_finished", JobID: job.ID, AttemptID: receipt.AttemptID, Detail: string(receipt.Status)})
 	return receipt
+}
+
+// classifyRun separates a run that proved a failure from one that proved
+// nothing. Only validated receipts count, and every planned job must have one.
+// A failure must be a reported test failure: a goal that did not complete
+// (policy, budget, provider) shows the run could not exercise the behavior,
+// not that the behavior is broken, so it stays incomplete even if a later
+// assertion failed because of it.
+func classifyRun(summary RunSummary, interrupted bool) RunOutcome {
+	if interrupted || summary.PlannedJobs == 0 || summary.SkippedInputs > 0 || len(summary.Receipts) != summary.PlannedJobs {
+		return OutcomeIncomplete
+	}
+	outcome := OutcomePassed
+	for _, receipt := range summary.Receipts {
+		switch {
+		case !receipt.Validated:
+			return OutcomeIncomplete
+		case receipt.Status == StatusFailed && receipt.FailureCount > 0 && !receipt.GoalFailed:
+			outcome = OutcomeFailed
+		case receipt.Status != StatusPassed:
+			return OutcomeIncomplete
+		}
+	}
+	return outcome
 }
 
 func validateValidation(validation Validation) error {
