@@ -12,18 +12,17 @@ publication has no GitHub Actions provenance. Its source commit is
 ## Release the Go CLI
 
 CLI releases use stable `v<major.minor.patch>` tags. Set `var version` in
-`cmd/9l/main.go` to the intended version in a reviewed change; the initial
-version is 0.0.0. Merge it to `main` and ensure CI passes before tagging the
-reviewed main commit:
+`cmd/9l/main.go` to the intended version in a reviewed change. Merge it to
+`main` and ensure CI passes before tagging the reviewed main commit:
 
 ```sh
 git fetch origin
-git tag v0.0.0 origin/main
-git push origin v0.0.0
+git tag v0.1.5 origin/main
+git push origin v0.1.5
 ```
 
-Run those commands only for the first CLI release, after the release workflow
-changes have merged. Never move a published tag to different source.
+The commands above publish CLI 0.1.5; choose the matching version for a later
+release. Never move a published tag to different source.
 The workflow rejects a private repository, a mismatched source version,
 noncanonical repository or a tag outside main's history. It runs the entire
 reusable CI workflow before building release executables.
