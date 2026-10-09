@@ -21,6 +21,10 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   other page-function methods on a browser fixture chain run in the browser
   and are not scanned. On the trial suite, `nested-function` findings fell
   from 280 to 79 with no other rule changing. Policy `assessment-source-v8`.
+- `9l run` text output prints each unsuccessful receipt's reason under it.
+  A spec Playwright's configuration does not select, such as one outside
+  `testDir`, now says so instead of only "no completed tests", and a spec
+  that fails to load says that instead; the run stays incomplete (exit 3).
 
 ## CLI 0.1.5 — 2026-10-09
 

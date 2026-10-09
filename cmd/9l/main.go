@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
@@ -859,6 +860,9 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			fmt.Fprintf(w, "  %s", filepath.Clean(receipt.ReceiptPath))
 		}
 		fmt.Fprintln(w)
+		if receipt.Error != "" {
+			fmt.Fprintf(w, "           %s\n", receiptReason(receipt.Error))
+		}
 	}
 	switch {
 	case result.Outcome == runner.OutcomeFailed:
@@ -866,6 +870,21 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
+}
+
+// receiptReason is the receipt's error on one line of at most 300 characters,
+// with control characters replaced, for the text summary.
+func receiptReason(reason string) string {
+	runes := []rune(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, reason))
+	if len(runes) > 300 {
+		return string(runes[:299]) + "…"
+	}
+	return string(runes)
 }
 
 func bridgePython(args []string, out, errOut io.Writer) int {
