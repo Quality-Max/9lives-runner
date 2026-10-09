@@ -49,10 +49,12 @@
   commit and test source for later assessment/execution checks.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
   proposals remain unverified and require approval.
-- Experimental `9l heal-native`: execute a failing Playwright spec, verify a
-  selector-only candidate in isolation, and save it or apply it with approval.
-- `9l heal`: compatibility bridge to `python3 -m ninelives.cli heal`; this
-  command requires the separately installed Python package.
+- `9l heal`: execute a failing Playwright spec, verify a selector-only
+  candidate from offline Tier 1 or a Tier 2 provider in isolation, and save it
+  or apply it with approval. `heal-native` is an alias. See
+  [Native Tier 2](native-tier2.md).
+- `9l mcp`: serve `run_test`, `heal_test` and `assess_test` to coding agents
+  over MCP stdio. See [MCP server](mcp.md).
 
 Playwright execution supports existing projects with a local
 `@playwright/test` dependency. It never uses `npx` to download tooling during a
@@ -69,8 +71,8 @@ restart, durable leases and crash recovery remain planned.
 ## Build and use
 
 Go 1.25.13 or newer is required; CI pins 1.25.13. The Go runner and local SDK
-do not require a platform account. Python is needed only for `9l heal` and the
-optional compatibility checks in the [development guide](development.md).
+do not require a platform account. Python is needed only for the optional
+compatibility checks in the [development guide](development.md).
 
 ```bash
 go build -o 9l ./cmd/9l
@@ -89,8 +91,15 @@ recursively; shell-style globs use Go's `filepath.Glob` rules.
 ./9l result <run-id> --format json
 ```
 
-To select a particular Python interpreter for the compatibility bridge:
+`9l heal` and `9l mcp` are native and need no Python. Healing uses the
+provider named with `--provider` or `NINELIVES_PROVIDER`, else an installed
+`claude`, `codex` or `opencode` CLI, else a configured API key; with none it is
+offline Tier 1 only. `--run-timeout` takes a duration or, like the Python CLI,
+whole seconds. The Python CLI's other healing options, its Cypress and
+Selenium adapters and its watch/report commands remain in the Python package:
+run them with `9lives`.
 
 ```bash
-NINELIVES_PYTHON=.venv/bin/python ./9l heal tests/login.spec.ts --yes
+./9l heal tests/login.spec.ts --run-timeout 900 --pass-env BASE_URL
+./9l heal tests/login.spec.ts --provider claude --yes
 ```

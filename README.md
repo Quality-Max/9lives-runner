@@ -152,7 +152,7 @@ Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
 | Tool | Use it for |
 | --- | --- |
 | [qmax-mcp](https://github.com/Quality-Max/qmax-mcp) | Browser scanning, page inspection and focused Playwright reproductions |
-| [9lives Python](https://github.com/Quality-Max/9lives) | The separately installed Python healing compatibility path |
+| [9lives Python](https://github.com/Quality-Max/9lives) | Python-only healing options, Cypress/Selenium adapters and watch/report commands |
 
 These are separate distributions. Installing this runner or SDK does not
 install or configure them. The Python package also provides a `9l` command;

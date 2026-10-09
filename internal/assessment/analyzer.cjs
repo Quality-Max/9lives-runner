@@ -30,6 +30,9 @@ function createAnalyzer(ts) {
     'toEqual', 'toHaveLength', 'toHaveProperty', 'toMatch', 'toMatchObject',
     'toStrictEqual', 'toThrow', 'toThrowError', 'toMatchSnapshot',
   ]);
+  // Page, frame, locator, handle and context methods whose function arguments
+  // Playwright serializes and runs in the browser.
+  const browserMethods = new Set(['evaluate', 'evaluateHandle', 'evaluateAll', '$eval', '$$eval', 'waitForFunction', 'addInitScript']);
 
   function analyze(source, options = {}) {
     const file = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -347,6 +350,11 @@ function createAnalyzer(ts) {
                 return !ctx.floating && (ts.isAwaitExpression(outer.parent) || returnedHere(outer));
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
+              // The outermost nested function being scanned, if any.
+              let nested = null;
+              const browserSide = child => ts.isCallExpression(child.parent) && child.parent.arguments.includes(child)
+                && ts.isPropertyAccessExpression(child.parent.expression) && browserMethods.has(child.parent.expression.name.text)
+                && roots.has(root(child.parent.expression));
               const assertion = (child, outcomes, unawaited, isAbsence) => {
                 record();
                 fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited });
@@ -354,8 +362,23 @@ function createAnalyzer(ts) {
               };
               function scan(child) {
                 spend();
+                if (ts.isFunctionLike(child)) {
+                  // A page function runs serialized in the browser, where no test
+                  // assertion or helper is reachable.
+                  if (browserSide(child)) return;
+                  // A nested function is a limit only when it holds a recognized
+                  // assertion or wait, whose execution count and timing cannot be
+                  // read from source. Calls and branches in it are limits of their own.
+                  if (!nested) {
+                    nested = child;
+                    const before = fact.assertions.length + fact.sleeps.length;
+                    ts.forEachChild(child, scan);
+                    nested = null;
+                    if (fact.assertions.length + fact.sleeps.length > before) limited('nested-function', child);
+                    return;
+                  }
+                }
                 // Helpers, branches and shadowed identifiers prevent complete analysis.
-                if (ts.isFunctionLike(child)) limited('nested-function', child);
                 if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
                   || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
                 if (ts.isCallExpression(child)) {

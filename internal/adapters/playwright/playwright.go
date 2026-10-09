@@ -143,6 +143,11 @@ type report struct {
 		Duration float64 `json:"duration"`
 	} `json:"stats"`
 	Suites []suite `json:"suites"`
+	// Errors are reported outside any test, such as a spec that fails to load.
+	// Only whether they exist is used; their messages are not retained.
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
 }
 type suite struct {
 	Suites []suite `json:"suites"`
@@ -167,11 +172,12 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		return runner.Validation{}, fmt.Errorf("invalid Playwright JSON report: required stats or suites field is missing")
 	}
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "Playwright JSON report; assertion count unavailable"}
-	unsupported, incomplete, flaky := "", "", 0
+	unsupported, incomplete, flaky, found := "", "", 0, 0
 	var walk func(suite)
 	walk = func(current suite) {
 		for _, spec := range current.Specs {
 			for _, test := range spec.Tests {
+				found++
 				// Counts are per test, not per retry attempt. A test that failed
 				// and then passed on retry is flaky, not failed.
 				outcome := test.Status
@@ -215,6 +221,18 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	}
 	if incomplete != "" {
 		return runner.Validation{}, fmt.Errorf("%s", incomplete)
+	}
+	// Playwright selects files through the project's own configuration, so a
+	// spec outside its testDir, or excluded by testMatch or testIgnore, runs
+	// nothing rather than failing to plan. A spec that fails to load reports
+	// its own error as well as finding no tests.
+	if found == 0 {
+		for _, reported := range parsed.Errors {
+			if !strings.HasPrefix(reported.Message, "Error: No tests found") {
+				return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright reported an error before finding any test, such as a spec or import that fails to load; see the attempt's structured report")
+			}
+		}
+		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright found no tests in this spec; check that the project's Playwright config includes it (testDir, testMatch, testIgnore)")
 	}
 	if validation.ExecutedTests == 0 {
 		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests")

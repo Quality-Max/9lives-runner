@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 func TestFlagsFirstAllowsFlagsAfterSpecs(t *testing.T) {
@@ -134,5 +136,19 @@ func TestRejectInvalidSkipPinsBeforeExecution(t *testing.T) {
 		if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "pin-skip") {
 			t.Fatalf("invalid skip pin executed: code %d %q", code, stderr.String())
 		}
+	}
+}
+
+func TestPrintResultShowsWhyAJobDidNotPass(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeIncomplete, Errors: 2, Receipts: []runner.Receipt{
+		{Status: runner.StatusPassed, Spec: "tests/ok.spec.ts"},
+		{Status: runner.StatusError, Spec: ".context/a.spec.ts", Error: "Playwright found no tests in this spec\n\x1b[31mtestDir"},
+		{Status: runner.StatusError, Spec: "tests/long.spec.ts", Error: strings.Repeat("x", 400)},
+	}})
+	text := out.String()
+	if !strings.Contains(text, "  ERROR    .context/a.spec.ts\n           Playwright found no tests in this spec  [31mtestDir\n") ||
+		!strings.Contains(text, "           "+strings.Repeat("x", 299)+"…\n") || strings.Count(text, "\n") != 7 {
+		t.Fatalf("text summary:\n%s", text)
 	}
 }

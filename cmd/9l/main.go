@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
@@ -49,10 +50,10 @@ func run(args []string, out, errOut io.Writer) int {
 		return runCommand(args[0], args[1:], out, errOut)
 	case "status", "result", "cancel":
 		return stateCommand(args[0], args[1:], out, errOut)
-	case "heal":
-		return bridgePython(args[1:], out, errOut)
-	case "heal-native":
-		return nativeHealCommand(args[1:], out, errOut)
+	case "heal", "heal-native":
+		return healCommand(args[1:], out, errOut)
+	case "mcp":
+		return mcpCommand(args[1:], os.Stdin, out, errOut)
 	case "tier1":
 		return tier1Command(args[1:], os.Stdin, out, errOut)
 	case "assess":
@@ -80,8 +81,9 @@ Usage:
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <args...>  # delegates to the installed Python healing library
-  9l heal-native <spec> --provider NAME [--model NAME] [--yes]
+  9l heal <spec> [--provider NAME] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
+          # verified selector healing: offline Tier 1, then an agent CLI or API (heal-native is an alias)
+  9l mcp [--pass-env NAME]... [--provider NAME]  # MCP server on stdio: run_test, heal_test, assess_test
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
@@ -96,6 +98,14 @@ It never reports an incomplete run green. run exits 0 passed, 1 failed,
 }
 
 func assessCommand(args []string, out, errOut io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return assessContext(ctx, args, out, errOut)
+}
+
+// assessContext runs `9l assess` until ctx ends, which stops the analysis
+// helper; the MCP assess_test tool passes its request context.
+func assessContext(ctx context.Context, args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("assess", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	requirements := fs.String("requirements", "", "shared reviewed requirement contract; without it, requirement checks are not run")
@@ -143,8 +153,6 @@ func assessCommand(args []string, out, errOut io.Writer) int {
 			return 2
 		}
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	// One regular file keeps the single-file report. Several inputs, a
 	// directory or a pattern give one combined suite report.
 	if info, err := os.Stat(fs.Arg(0)); fs.NArg() > 1 || assessment.IsPattern(fs.Arg(0)) || (err == nil && info.IsDir()) {
@@ -310,75 +318,6 @@ func nativeRunTimeout() time.Duration {
 		}
 	}
 	return 5 * time.Minute
-}
-
-func nativeHealCommand(args []string, out, errOut io.Writer) int {
-	fs := flag.NewFlagSet("heal-native", flag.ContinueOnError)
-	fs.SetOutput(errOut)
-	providerName := fs.String("provider", "", "native provider (claude, codex, opencode, anthropic, openai)")
-	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
-	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
-	yes := fs.Bool("yes", false, "apply verified candidate without interactive approval")
-	maxProposals := fs.Int("max-proposals", 1, "maximum Tier 2 proposals")
-	runTimeout := fs.Duration("run-timeout", nativeRunTimeout(), "per verification run timeout")
-	deadline := fs.Duration("deadline", 0, "session deadline")
-	receipts := fs.String("receipt-dir", ".9lives/healing-receipts", "isolated verification receipts")
-	var passEnv envNames
-	fs.Var(&passEnv, "pass-env", "forward this environment variable only to test processes (repeatable or comma-separated)")
-	normalized := flagsFirst(args, map[string]bool{"--provider": true, "--model": true, "--provider-url": true, "--max-proposals": true, "--run-timeout": true, "--deadline": true, "--receipt-dir": true, "--pass-env": true})
-	if err := fs.Parse(normalized); err != nil {
-		return 2
-	}
-	if fs.NArg() != 1 || *maxProposals < 1 || *runTimeout <= 0 || *deadline < 0 {
-		fmt.Fprintln(errOut, "9l: heal-native requires one spec and valid limits")
-		return 2
-	}
-	provider, err := tier2.Resolve(tier2.Options{Name: *providerName, Model: *model, BaseURL: *providerURL})
-	if err != nil {
-		fmt.Fprintln(errOut, "9l: heal-native provider unavailable")
-		return 2
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if *deadline > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, *deadline)
-		defer cancel()
-	}
-	runCount := 0
-	runSpec := func(ctx context.Context, spec, label string) tier2.RunResult {
-		runCount++
-		plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{MaxJobs: 1, MaxParallel: 1, MaxAttempts: 1, MaxOutputBytes: 4 << 20, Adapters: []runner.Adapter{playwright.New()}})
-		if err != nil || len(plan.Jobs) != 1 {
-			return tier2.RunResult{Failure: "spec is not an installed Playwright project"}
-		}
-		dir := filepath.Join(*receipts, fmt.Sprintf("%02d-%s", runCount, label))
-		summary, execErr := runner.Execute(ctx, plan, runner.ExecuteOptions{Workers: 1, Timeout: *runTimeout, MaxAttempts: 1, MaxOutputBytes: 4 << 20, PassEnv: passEnv, ReceiptDir: dir, Adapters: []runner.Adapter{playwright.New()}})
-		if execErr != nil || len(summary.Receipts) != 1 {
-			return tier2.RunResult{Failure: "verification did not complete"}
-		}
-		receipt := summary.Receipts[0]
-		failure := string(receipt.Status)
-		if receipt.Evidence.StdoutPath != "" && receipt.Status != runner.StatusPassed {
-			if raw, readErr := os.ReadFile(receipt.Evidence.StdoutPath); readErr == nil {
-				if diagnostic := playwright.FailureContext(raw); diagnostic != "" {
-					failure = diagnostic
-				}
-			}
-		}
-		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath}
-	}
-	result, err := tier2.Heal(ctx, tier2.SessionOptions{Spec: fs.Arg(0), Framework: "playwright", Model: *model, MaxProposals: *maxProposals, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut), Provider: provider, Run: runSpec}, func(source, failure string) (string, bool) {
-		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.ExtractSelector(failure, ""), TestCode: source})
-		return proposal.ProposedCode, proposal.Decision == "propose"
-	})
-	if encodeErr := json.NewEncoder(out).Encode(result); encodeErr != nil {
-		return 1
-	}
-	if err != nil || (!result.Applied && result.SavedPath == "" && result.State != "passed") {
-		return 1
-	}
-	return 0
 }
 
 func terminalApproval(in *os.File, out io.Writer) func(context.Context) bool {
@@ -859,6 +798,9 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			fmt.Fprintf(w, "  %s", filepath.Clean(receipt.ReceiptPath))
 		}
 		fmt.Fprintln(w)
+		if receipt.Error != "" {
+			fmt.Fprintf(w, "           %s\n", receiptReason(receipt.Error))
+		}
 	}
 	switch {
 	case result.Outcome == runner.OutcomeFailed:
@@ -868,15 +810,19 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	}
 }
 
-func bridgePython(args []string, out, errOut io.Writer) int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	code, err := runner.RunPythonHealer(ctx, args, out, errOut)
-	if err != nil {
-		fmt.Fprintf(errOut, "9l: Python healing bridge: %v\n", err)
-		return 2
+// receiptReason is the receipt's error on one line of at most 300 characters,
+// with control characters replaced, for the text summary.
+func receiptReason(reason string) string {
+	runes := []rune(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, reason))
+	if len(runes) > 300 {
+		return string(runes[:299]) + "…"
 	}
-	return code
+	return string(runes)
 }
 
 // envNames collects --pass-env values. Only names are accepted; values are

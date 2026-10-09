@@ -11,6 +11,36 @@
   consumers on both Windows architectures. Windows arm64 tests omit `-race`.
 - Clarify the README comparison with qmax-code's broader terminal agent.
 
+Fixes from a CLI 0.1.5 trial on an 87-file suite:
+
+- `9l assess` reports a nested function as a `nested-function` limit only
+  when it holds a recognized assertion or wait, once, at the outermost such
+  function. Projections such as `(f) => f.token` no longer are; calls and
+  branches inside any nested function remain limits of their own. Functions
+  passed to `evaluate`, `$eval`, `waitForFunction`, `addInitScript` and the
+  other page-function methods on a browser fixture chain run in the browser
+  and are not scanned. On the trial suite, `nested-function` findings fell
+  from 280 to 79 with no other rule changing. Policy `assessment-source-v8`.
+- `9l run` text output prints each unsuccessful receipt's reason under it.
+  A spec Playwright's configuration does not select, such as one outside
+  `testDir`, now says so instead of only "no completed tests", and a spec
+  that fails to load says that instead; the run stays incomplete (exit 3).
+- `9l heal` is native and no longer needs Python: it runs the verified
+  selector-healing session of `heal-native`, which stays as an alias. Without
+  a provider it heals with offline Tier 1 only instead of refusing to start.
+  `--run-timeout` also accepts whole seconds, as the Python CLI did. Output is
+  the native JSON session result. Python-only options such as `--framework`
+  exit 2 and name `9lives heal`; Cypress, Selenium, watch and report remain in
+  the Python package. Heal session run results now use lowercase JSON keys
+  (`passed`, `executedTests`, `failure`, `receipt`).
+- `9l mcp` is a native MCP stdio server with `run_test`, `heal_test` and
+  `assess_test`, so MCP hosts configured with `9l mcp` work without Python.
+  Paths stay inside the server's working directory, test processes receive
+  only `--pass-env` names, calls (including queued heals and assessments) are
+  cancellable, and `heal_test` applies only with `apply: true`. A heal that
+  verifies a candidate but cannot save or apply it, or whose provider fails,
+  is an error result that keeps its evidence. See [MCP server](docs/mcp.md).
+
 ## CLI 0.1.5 — 2026-10-09
 
 A machine-readable contract for host integrations such as qmax-code (#27).

@@ -24,7 +24,7 @@ runner and its contract versions before decoding anything else:
     "progressEvent": 1, "assess": 3, "assessSuite": 1,
     "executionReceipt": "execution-receipt/1.0", "engine": "9l.engine/1"
   },
-  "commands": ["plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "tier1", "heal-native", "heal", "version"]
+  "commands": ["plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "tier1", "heal-native", "heal", "mcp", "version"]
 }
 ```
 

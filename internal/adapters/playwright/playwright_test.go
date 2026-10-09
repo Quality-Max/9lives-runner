@@ -71,8 +71,18 @@ func TestFailureContextIsStructuredAndBounded(t *testing.T) {
 
 func TestValidateRejectsReportsWithoutCompletedTests(t *testing.T) {
 	_, err := New().Validate([]byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"results":[{"status":"skipped"}]}]}]}]}`))
-	if err == nil {
-		t.Fatal("report containing only skipped results must not validate as an executed test run")
+	if err == nil || strings.Contains(err.Error(), "config") {
+		t.Fatalf("report containing only skipped results must not validate as an executed test run: %v", err)
+	}
+	// Playwright 1.61.1's report for a spec its config does not select.
+	_, err = New().Validate([]byte(`{"config":{},"suites":[],"errors":[{"message":"Error: No tests found."}],"stats":{"duration":5.8,"expected":0,"skipped":0,"unexpected":0,"flaky":0}}`))
+	if err == nil || !strings.Contains(err.Error(), "found no tests in this spec") || !strings.Contains(err.Error(), "testDir") {
+		t.Fatalf("a spec the config does not select must name the config as the likely cause: %v", err)
+	}
+	// A spec that throws while loading is not blamed on the config.
+	_, err = New().Validate([]byte(`{"config":{},"suites":[],"errors":[{"message":"Error: import boom"},{"message":"Error: No tests found."}],"stats":{"duration":5.8}}`))
+	if err == nil || !strings.Contains(err.Error(), "fails to load") || strings.Contains(err.Error(), "testDir") || strings.Contains(err.Error(), "boom") {
+		t.Fatalf("a load error must be reported without its message and without the config hint: %v", err)
 	}
 }
 

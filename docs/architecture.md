@@ -48,5 +48,6 @@ The runner uses these contracts:
 
 The Go runner does not duplicate healing. `internal/healingbridge` defines the
 version-1 request/response seam and fixtures for selector repair, assertion
-refusal, and review/apply semantics. `9l heal` delegates to the installed Python
-package. The current Python API consumers remain unchanged.
+refusal, and review/apply semantics. `9l heal` runs native healing and no longer
+delegates to the installed Python package; the Python CLI and its API consumers
+remain unchanged.

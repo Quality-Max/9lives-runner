@@ -2,7 +2,8 @@
 
 Install the CLI and SDK using the [installation guide](install.md). The
 optional [9lives QA skill](../skills/9lives-qa/SKILL.md) adds a requirements,
-provenance, assessment and execution workflow; it is not an MCP server.
+provenance, assessment and execution workflow. To give an agent tools
+instead, run the [MCP server](mcp.md): `claude mcp add 9lives -- 9l mcp`.
 
 Copy the repository's `skills/9lives-qa/` directory into your project's
 `.agents/skills/9lives-qa/` for Codex or `.claude/skills/9lives-qa/` for Claude
