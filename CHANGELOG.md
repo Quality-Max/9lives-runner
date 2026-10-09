@@ -2,6 +2,12 @@
 
 ## CLI unreleased
 
+- Visual mode: `9l run --headed` passes Playwright's `--headed` flag to every
+  job, for both adapters, and runs one job at a time unless `--workers` is
+  given. On Linux without `DISPLAY` or `WAYLAND_DISPLAY` the run is refused
+  before planning, pointing at `xvfb-run`; `9l plan --headed` needs no display.
+  `npm run smoke:visual` verifies from inside the page that the browser was
+  headed, with a headless control that must fail.
 - Experimental `9l prove <spec>`: a passing baseline records the spec's
   fetch/XHR requests, then each request is re-run under `abort`, `http-500`
   and, for successful JSON responses, `empty-json` faults, one receipted run
