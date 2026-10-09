@@ -7,7 +7,7 @@ import "golang.org/x/sys/windows"
 // Preserve inaccessible processes. Only a missing PID or a signaled process
 // handle establishes that a stale, owned healing copy may be removed.
 func pidMayBeAlive(pid int) bool {
-	if pid <= 0 {
+	if pid <= 0 || uint64(pid) > uint64(^uint32(0)) {
 		return true
 	}
 	process, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))

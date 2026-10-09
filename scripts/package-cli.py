@@ -13,7 +13,7 @@ arch = {'AMD64': 'amd64', 'x86_64': 'amd64', 'ARM64': 'arm64', 'aarch64': 'arm64
 # Do not label a cross-build as a native qualification.
 assert os.environ['GOOS'] == system and os.environ['GOARCH'] == arch
 host = subprocess.check_output(['go', 'env', 'GOHOSTOS', 'GOHOSTARCH'], cwd=root, text=True).splitlines()
-assert host == [system, arch], 'Native Go toolchain architecture required' 
+assert host == [system, arch], 'Native Go toolchain architecture required'
 version = os.environ['RELEASE_VERSION']
 bundle = f'9l-{system}-{arch}'
 destination = root / 'dist' / bundle
