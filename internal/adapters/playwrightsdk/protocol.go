@@ -316,3 +316,39 @@ func decodeEvent(raw []byte) (event, error) {
 	}
 	return frame, nil
 }
+
+// AssertionFacts counts failed tests and, among them, those in which an
+// assertion step failed. Call it only on evidence ValidateAttempt accepted;
+// it re-reads frames but does not re-check identity or ordering.
+type AssertionFacts struct {
+	Unexpected              int
+	UnexpectedWithAssertion int
+}
+
+func Assertions(raw []byte) (AssertionFacts, error) {
+	var facts AssertionFacts
+	if len(raw) == 0 || len(raw) > maxProtocolBytes || !bytes.HasSuffix(raw, []byte("\n")) {
+		return facts, fmt.Errorf("invalid SDK engine evidence")
+	}
+	failedAssertion := map[string]bool{}
+	for _, line := range bytes.Split(raw[:len(raw)-1], []byte("\n")) {
+		frame, err := decodeEvent(line)
+		if err != nil {
+			return facts, fmt.Errorf("invalid SDK engine evidence")
+		}
+		switch frame.Type {
+		case "step_end":
+			if frame.Category == "assertion" && frame.Status == "failed" {
+				failedAssertion[frame.TestID] = true
+			}
+		case "test_result":
+			if frame.Outcome == "unexpected" {
+				facts.Unexpected++
+				if failedAssertion[frame.TestID] {
+					facts.UnexpectedWithAssertion++
+				}
+			}
+		}
+	}
+	return facts, nil
+}

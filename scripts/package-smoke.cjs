@@ -43,7 +43,7 @@ try {
   assert.equal(packed.length, 1);
   assert.equal(packed[0].name, manifest.name);
   assert.equal(packed[0].version, manifest.version);
-  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'reporter'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
+  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
   assert.deepEqual(packed[0].files.map(file => file.path).sort(), expectedFiles);
   const tarball = path.join(work, packed[0].filename);
   const packedManifest = JSON.parse(call('tar', ['-xOf', tarball, 'package/package.json']));

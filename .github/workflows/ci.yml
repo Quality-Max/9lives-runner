@@ -101,6 +101,8 @@ jobs:
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
       - run: npm run smoke:assessment
+      - name: Qualify 9l prove fault injection in real Chromium
+        run: npm run smoke:prove
       - name: Qualify packed SDK in an isolated consumer
         run: npm run smoke:package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

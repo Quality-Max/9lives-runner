@@ -94,9 +94,10 @@ Independent behavioral verification remains planned.
 | SDK steps | `n9l.step(...)` with normal browser fixtures and assertions | Opt in with `--sdk`; existing execution stays available separately |
 | Bounded goals | `n9l.goal(...)` over finite observed controls | Completion is unverified; live model accuracy and cost are unqualified |
 | Test assessment | `assess` and source/branch provenance | Advisory static review; it does not establish executed assertion coverage |
+| Fault proof | Experimental `prove`: re-run a spec once per injected fetch/XHR fault and report which an assertion caught | Needs an unreleased SDK build; a caught fault shows an assertion failed, not that it checks the right thing |
 | Healing | Offline Tier 1 proposals and experimental native Tier 2 verification | Preserve assertions; verify candidates in isolation before application |
 
-See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md),
+See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md), [prove](docs/prove.md),
 [native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
 Verified replay and native mobile qualification remain subsequent milestones.
 Windows support is not declared; owned process-tree cancellation is qualified

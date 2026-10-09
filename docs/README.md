@@ -9,6 +9,7 @@
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |
 | [Agent setup](agent-setup.md) | You want the optional QA skill workflow |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
+| [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |
 | [Goals](goals.md) | You are configuring bounded observed-control execution |
 | [SDK bridge](sdk-bridge.md) | You need protocol, privacy and evidence boundaries |
 | [Native Tier 1](native-tier1.md) / [Native Tier 2](native-tier2.md) | You are evaluating healing proposals and isolated candidate verification |

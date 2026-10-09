@@ -337,3 +337,34 @@ func TestCaughtGoalFailurePreservesObservedTestCounts(t *testing.T) {
 		t.Fatal("ordinary caught steps are not goal failures")
 	}
 }
+
+func TestAssertionsCountsFailedTestsWithAFailedAssertion(t *testing.T) {
+	other := strings.Repeat("b", 64)
+	frames := []map[string]any{
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 2},
+		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "failed"},
+		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
+		{"type": "test_begin", "testId": other, "retry": 0},
+		{"type": "step_end", "testId": other, "retry": 0, "stepId": "step-2", "category": "browser", "status": "failed"},
+		{"type": "test_end", "testId": other, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
+		{"type": "test_result", "testId": testKey, "outcome": "unexpected"},
+		{"type": "test_result", "testId": other, "outcome": "unexpected"},
+		{"type": "end", "status": "failed"},
+	}
+	raw := stream(frames)
+	if _, err := New().ValidateAttempt(raw, owner); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := Assertions(raw)
+	if err != nil || facts != (AssertionFacts{Unexpected: 2, UnexpectedWithAssertion: 1}) {
+		t.Fatalf("facts %+v, %v", facts, err)
+	}
+	// A passing assertion step inside a passing test is not a detection.
+	if facts, err := Assertions(stream(passingFrames())); err != nil || facts != (AssertionFacts{}) {
+		t.Fatalf("passing facts %+v, %v", facts, err)
+	}
+	if _, err := Assertions([]byte("{\"type\":\"end\"}")); err == nil {
+		t.Fatal("accepted unfinished evidence")
+	}
+}

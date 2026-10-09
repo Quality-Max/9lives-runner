@@ -1,0 +1,74 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const {matches, openProveChannel, proveProtocol, readFault, requestTarget} = require('../dist/prove.js');
+const {protocolVersion} = require('../dist/protocol.js');
+
+const request = (url, method = 'GET', resourceType = 'fetch') => ({url: () => url, method: () => method, resourceType: () => resourceType});
+const fault = {id: 'fault-1', kind: 'abort', method: 'POST', origin: 'http://127.0.0.1:4100', path: '/api/orders'};
+
+test('prove targets fetch and XHR over http(s) without query strings', () => {
+  assert.deepEqual(requestTarget(request('http://127.0.0.1:4100/api/orders?token=secret#x', 'POST')), {method: 'POST', origin: 'http://127.0.0.1:4100', path: '/api/orders'});
+  assert.deepEqual(requestTarget(request('https://shop.test/api/cart', 'GET', 'xhr')), {method: 'GET', origin: 'https://shop.test', path: '/api/cart'});
+  assert.equal(requestTarget(request('http://shop.test/', 'GET', 'document')), undefined);
+  assert.equal(requestTarget(request('http://shop.test/app.js', 'GET', 'script')), undefined);
+  assert.equal(requestTarget(request('data:application/json,{}')), undefined);
+  assert.equal(requestTarget(request('not a url')), undefined);
+});
+
+test('a fault matches only its method, origin and path', () => {
+  assert(matches(fault, requestTarget(request('http://127.0.0.1:4100/api/orders?retry=1', 'POST'))));
+  assert(!matches(fault, requestTarget(request('http://127.0.0.1:4100/api/orders', 'GET'))));
+  assert(!matches(fault, requestTarget(request('http://127.0.0.1:4101/api/orders', 'POST'))));
+  assert(!matches(fault, requestTarget(request('http://127.0.0.1:4100/api/orders/1', 'POST'))));
+  assert(!matches(fault, undefined));
+});
+
+test('the fault schema is closed', () => {
+  assert.deepEqual(readFault(JSON.stringify(fault)), fault);
+  for (const bad of [
+    'not json', '[]', 'null',
+    JSON.stringify({...fault, extra: 1}),
+    JSON.stringify({...fault, kind: 'delay'}),
+    JSON.stringify({...fault, id: 'fault-0'}),
+    JSON.stringify({...fault, method: 'post'}),
+    JSON.stringify({...fault, origin: 'http://user@host'}),
+    JSON.stringify({...fault, path: '/api?x=1'}),
+    JSON.stringify({id: fault.id, kind: fault.kind, method: fault.method, origin: fault.origin}),
+  ]) {
+    assert.throws(() => readFault(bad), /invalid fault/, bad);
+  }
+});
+
+test('the prove channel is off outside 9l prove and exclusive per attempt inside it', () => {
+  const info = {testId: 'abc', retry: 0};
+  assert.equal(openProveChannel({}, info), undefined);
+  assert.throws(() => openProveChannel({NINELIVES_PROVE: '9l.prove/0'}, info), /supported Go engine/);
+  const identity = {NINELIVES_ENGINE_PROTOCOL: protocolVersion, NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001', NINELIVES_ATTEMPT_ID: 'job-001-attempt-001'};
+  assert.throws(() => openProveChannel({NINELIVES_PROVE: proveProtocol}, info), /attempt identity|Go engine/);
+  assert.throws(() => openProveChannel({...identity, NINELIVES_PROVE: proveProtocol, NINELIVES_PROVE_DIR: 'relative'}, info), /evidence directory/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-test-'));
+  try {
+    const env = {...identity, NINELIVES_PROVE: proveProtocol, NINELIVES_PROVE_DIR: dir, NINELIVES_PROVE_FAULT: JSON.stringify(fault)};
+    const channel = openProveChannel(env, info);
+    assert.equal(channel.fault.id, 'fault-1');
+    channel.record({type: 'applied', fault: 'fault-1'});
+    channel.record({type: 'x'.repeat(5000)});
+    channel.record({type: 'applied', fault: 'fault-1'});
+    channel.close();
+    channel.record({type: 'applied', fault: 'fault-1'});
+    assert.throws(() => openProveChannel(env, info), /EEXIST/);
+    const [file] = fs.readdirSync(dir);
+    assert.match(file, /^[a-f0-9]{32}\.ndjson$/);
+    assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
+    // An oversized record ends the stream with an overflow marker.
+    assert.deepEqual(fs.readFileSync(path.join(dir, file), 'utf8').trim().split('\n').map(line => JSON.parse(line)), [
+      {type: 'hello', protocol: proveProtocol, mode: 'fault'}, {type: 'applied', fault: 'fault-1'}, {type: 'overflow'},
+    ]);
+    assert.throws(() => openProveChannel({...env, NINELIVES_PROVE_FAULT: '{}'}, {testId: 'other', retry: 0}), /invalid fault/);
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
