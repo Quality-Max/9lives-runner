@@ -59,6 +59,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return assessCommand(args[1:], out, errOut)
 	case "provenance":
 		return provenanceCommand(args[1:], out, errOut)
+	case "prove":
+		return proveCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -74,6 +76,7 @@ Usage:
   9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
           [--sdk]  # opt-in @9l/playwright engine protocol
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
+          [--headed]  # show the browser, one job at a time unless --workers is set
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
@@ -81,6 +84,7 @@ Usage:
   9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
+  9l prove <spec> [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
@@ -586,6 +590,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
+	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
 	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
@@ -636,6 +641,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	explicitWorkers := false
+	fs.Visit(func(f *flag.Flag) { explicitWorkers = explicitWorkers || f.Name == "workers" })
+	visual, err := visualOptions(*headed, command == "run" && !*dryRun)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", err)
+		return 2
+	}
+	if *headed && !explicitWorkers {
+		*workers = 1
 	}
 	var agentProvenance *runner.AgentProvenance
 	if *agentRecord != "" {
@@ -704,6 +719,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
 	}
+	visual.apply(&plan)
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}

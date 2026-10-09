@@ -59,6 +59,7 @@ npm exec playwright install chromium
 npm run smoke
 npm run smoke:assessment
 npm run smoke:package
+npm run smoke:prove
 ```
 
 The last command installs the packed SDK in an isolated consumer, exercises
@@ -94,12 +95,38 @@ first (`npm trust list`, then `npm trust revoke --id=<id>`) and creating it
 again with `--allow-publish --allow-stage-publish`. After a configuration fix,
 rerun the failed publish job; the qualified tarball artifact is reused.
 
-For a future release, update the SDK version and lockfile in a reviewed change,
-merge it to `main`, and push a matching `sdk-v<version>` tag. The workflow
-rejects private repositories, mismatched versions and commits outside main's
-history. It runs the complete CI workflow, then publishes the exact qualified
-tarball using short-lived OIDC authentication on a GitHub-hosted runner.
-Public trusted publication automatically receives npm provenance.
+For a future release, update the SDK version, lockfile, fixtures, docs and
+changelog in a reviewed change and merge it to `main`. The publish workflow
+runs on every push to `main` that touches `packages/playwright/package.json`:
+it reads the version, skips when the registry already has it, otherwise runs
+the complete CI workflow, publishes the exact qualified tarball using
+short-lived OIDC authentication on a GitHub-hosted runner, and then pushes
+the `sdk-v<version>` tag on the published commit. Pushing a matching
+`sdk-v<version>` tag by hand still works, for example to retry after a
+registry outage; a tag for a version the registry already has is verified and
+skipped. The workflow rejects private repositories, mismatched tags and
+commits outside main's history. Public trusted publication automatically
+receives npm provenance. SDK 0.1.1 was the first automatic publication.
+
+The tag is pushed with the repository deploy key `sdk-release-tag`, whose
+private half is the Actions secret `SDK_RELEASE_TAG_KEY`, because the
+"Protect release tags" ruleset refuses tag creation by the workflow token
+(`Resource not accessible by integration`) and GitHub does not accept the
+Actions app as a ruleset bypass actor. The ruleset lets deploy keys bypass it;
+the `main` ruleset has no bypass, so the key cannot push to `main`. Secrets are
+not exposed to workflows from forks. To rotate:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C '9lives-runner sdk-release-tag' -f sdk-release-tag
+gh repo deploy-key add sdk-release-tag.pub --allow-write --title sdk-release-tag
+gh secret set SDK_RELEASE_TAG_KEY < sdk-release-tag
+rm sdk-release-tag sdk-release-tag.pub
+gh repo deploy-key delete <old-key-id>
+```
+
+Keep the key files out of the repository and shell history. If the tag job
+fails, push the tag by hand from the published commit:
+`git push origin <sha>:refs/tags/sdk-v<version>`.
 
 Do not push `sdk-v0.0.0`: npm will reject that
 duplicate version. Go binary releases use separate `v*` tags and include the

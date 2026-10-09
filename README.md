@@ -26,7 +26,7 @@ See [how it is recorded](demo/README.md#recording).
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.1.1 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -93,11 +93,13 @@ Independent behavioral verification remains planned.
 | Plan and run | Discover specs, inspect plans, bound concurrency and deadlines | Runs locally installed Playwright; no automatic tooling downloads |
 | Inspect and cancel | `status`, `result`, `cancel`, and terminal receipts | Interrupted runs are classified; automatic crash recovery is planned |
 | SDK steps | `n9l.step(...)` with normal browser fixtures and assertions | Opt in with `--sdk`; existing execution stays available separately |
+| Visual mode | `run --headed` shows the browser, one job at a time by default | Linux needs a display (`xvfb-run -a` on headless machines); slow motion comes from the project's `launchOptions` |
 | Bounded goals | `n9l.goal(...)` over finite observed controls | Completion is unverified; live model accuracy and cost are unqualified |
 | Test assessment | `assess` and source/branch provenance | Advisory static review; it does not establish executed assertion coverage |
+| Fault proof | Experimental `prove`: re-run a spec once per injected fetch/XHR fault and report which an assertion caught | Needs `@9l/playwright` 0.1.1; a caught fault shows an assertion failed, not that it checks the right thing |
 | Healing | Offline Tier 1 proposals and experimental native Tier 2 verification | Preserve assertions; verify candidates in isolation before application |
 
-See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md),
+See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md), [prove](docs/prove.md),
 [native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
 Verified replay and native mobile qualification remain subsequent milestones.
 Windows support is not declared; owned process-tree cancellation is qualified
@@ -126,7 +128,7 @@ outreach controls stop by default. See [goal contracts](docs/goals.md).
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
 | CLI | 0.1.1 on macOS and Linux, amd64 and arm64 | Windows is not declared |
-| SDK | `@9l/playwright` 0.1.0 | Installing the SDK does not install the CLI or browsers |
+| SDK | `@9l/playwright` 0.1.1 | Installing the SDK does not install the CLI or browsers |
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
@@ -199,7 +201,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.1.0](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.1.1](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions. SDK releases use `sdk-v<version>`;
 CLI releases use `v<version>`. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)

@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.1.0`; no registry publication is performed. The
+npm workspace at version `0.1.1`; no registry publication is performed. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.0. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.
@@ -96,6 +96,21 @@ worker's own stdout is not evidence and is not retained. Invalid/interrupted
 streams and arbitrary stderr are omitted before persistence; the receipt keeps
 the safe validation/termination reason. Core attempt progress remains in run events;
 step progress is in the attempt evidence stream after persistence.
+
+## Prove channel
+
+The SDK overrides Playwright's `context` fixture. Outside `9l prove`, where
+`NINELIVES_PROVE` is unset, it passes the context through unchanged. Under it,
+the fixture requires `9l.prove/1`, the attempt identity and an absolute
+`NINELIVES_PROVE_DIR`, and writes one exclusive `0600` file per worker process
+and test attempt, whose handshake names the attempt by the engine's hashed
+test ID and retry index. A baseline records fetch/XHR method, origin and path
+(no query, headers or bodies) and response status and JSON media type; a fault
+run records only how often its one fault, from the closed
+`NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` fault was
+not applicable (`not-json` or `unreachable`). These records never enter `9l.engine/1`. Go validates
+them against a closed schema and size limits and removes the directory after
+each run. See [Prove](prove.md).
 
 Real-browser smoke validates checkout assertions, a defective outcome and owned
 worker/browser cleanup on timeout and explicit cancellation. Protocol regressions

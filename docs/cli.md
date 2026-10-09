@@ -19,6 +19,16 @@
   are forwarded only when named: `9l run tests/ --pass-env BASE_URL,TEST_USER`.
   Values are read from the caller's environment and never written to the plan
   or receipts.
+- Visual mode: `9l run --headed` shows the browser while tests run (both
+  adapters; Playwright's own `--headed` flag, which overrides `headless` in the
+  config). Headed runs execute one job at a time unless `--workers` is given,
+  so windows do not pile up. Linux needs an X11 or Wayland display; without one
+  the run is refused before planning, so use `xvfb-run -a 9l run --headed ...`
+  on a headless machine. Headed mode changes only how the browser is shown,
+  never what is asserted or how evidence is validated. To slow actions down
+  while watching, set `use: {launchOptions: {slowMo: 250}}` in the project's
+  Playwright config: a config's `launchOptions` replaces any value a fixture
+  library sets, so 9l does not offer a flag that could be silently ignored.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
@@ -31,6 +41,10 @@
   several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles
   for local use. Static findings do not establish executed assertion coverage.
+- Experimental `9l prove`: run one spec, then re-run it once per injected
+  network fault (`abort`, `http-500`, `empty-json`) on each fetch/XHR request
+  it made, and report which faults an assertion caught and which survived.
+  Requires `@9l/playwright` 0.1.1 or newer; see [Prove](prove.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
   commit and test source for later assessment/execution checks.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;

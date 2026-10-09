@@ -3,6 +3,8 @@ name: Publish Playwright SDK
 on:
   push:
     tags: ['sdk-v*']
+    branches: [main]
+    paths: ['packages/playwright/package.json']
 
 permissions:
   contents: read
@@ -10,6 +12,9 @@ permissions:
 jobs:
   check-tag:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      publish: ${{ steps.identity.outputs.publish }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -19,16 +24,19 @@ jobs:
         with:
           node-version: '24'
       - name: Verify release identity and main ancestry
+        id: identity
         env:
           REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: node scripts/verify-sdk-release.cjs
 
   qualification:
     needs: check-tag
+    if: needs.check-tag.outputs.publish == 'true'
     uses: ./.github/workflows/ci.yml
 
   publish:
     needs: [check-tag, qualification]
+    if: needs.check-tag.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -49,3 +57,40 @@ jobs:
           path: .context/npm-pack/
       - name: Publish qualified tarball using npm trusted publishing
         run: node scripts/publish-sdk.cjs
+
+  # Record the published commit. The "Protect release tags" ruleset refuses
+  # tag creation by the workflow token, so the tag is pushed with the
+  # repository's write deploy key, which the ruleset lets bypass; secrets are
+  # not available to workflows from forks. A deploy-key push triggers this
+  # workflow again on the tag, which check-tag then skips as already published.
+  tag:
+    needs: [check-tag, publish]
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.check-tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Push the sdk-v tag on the published commit with the release deploy key
+        env:
+          SDK_RELEASE_TAG_KEY: ${{ secrets.SDK_RELEASE_TAG_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$SDK_RELEASE_TAG_KEY" ]; then
+            echo "::error::secret SDK_RELEASE_TAG_KEY is not set; push the tag by hand: git push origin $GITHUB_SHA:refs/tags/sdk-v$VERSION"
+            exit 1
+          fi
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          # The key file goes away on every exit path, not only after a push.
+          trap 'rm -f "$HOME/.ssh/sdk_release_tag"' EXIT
+          printf '%s\n' "$SDK_RELEASE_TAG_KEY" > "$HOME/.ssh/sdk_release_tag"
+          # GitHub's SSH host keys come from its API over TLS; the push then
+          # requires a matching host key rather than trusting the first answer.
+          gh api meta --jq '.ssh_keys[] | "github.com \(.)"' > "$HOME/.ssh/sdk_release_known_hosts"
+          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/sdk_release_tag -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/sdk_release_known_hosts" \
+            git push "git@github.com:$GITHUB_REPOSITORY.git" "$GITHUB_SHA:refs/tags/sdk-v$VERSION"
