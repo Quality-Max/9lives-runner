@@ -9,6 +9,7 @@
     "smoke": "npm run build && node scripts/sdk-smoke.cjs",
     "smoke:package": "npm run build && node scripts/package-smoke.cjs",
     "smoke:assessment": "node scripts/assessment-smoke.cjs",
+    "smoke:prove": "npm run build && node scripts/prove-smoke.cjs",
     "smoke:assessment-portability": "node scripts/assessment-portability-smoke.cjs",
     "parser:check": "node scripts/bundle-assessment-parser.cjs --check",
     "demo": "npm run build && go run ./cmd/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json"
