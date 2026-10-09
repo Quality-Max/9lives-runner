@@ -127,7 +127,7 @@ outreach controls stop by default. See [goal contracts](docs/goals.md).
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.1.1 on macOS and Linux, amd64 and arm64 | Windows is not declared |
+| CLI | 0.1.5 on macOS and Linux, amd64 and arm64 | Windows is not declared |
 | SDK | `@9l/playwright` 0.1.1 | Installing the SDK does not install the CLI or browsers |
 
 Keep your project's existing Playwright version if it is in the qualified

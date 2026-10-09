@@ -1,6 +1,6 @@
 # Changelog
 
-## CLI unreleased
+## CLI 0.1.5 — 2026-10-09
 
 A machine-readable contract for host integrations such as qmax-code (#27).
 
@@ -25,7 +25,6 @@ A machine-readable contract for host integrations such as qmax-code (#27).
 - Setup validation errors exit 2 without a result or startup/cancel hint.
   Operational storage errors remain exit 3; dependency-blocked plans remain
   incomplete because their descendants never ran.
-
 
 - Visual mode: `9l run --headed` passes Playwright's `--headed` flag to every
   job, for both adapters, and runs one job at a time unless `--workers` is
