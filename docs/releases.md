@@ -59,6 +59,7 @@ npm exec playwright install chromium
 npm run smoke
 npm run smoke:assessment
 npm run smoke:package
+npm run smoke:prove
 ```
 
 The last command installs the packed SDK in an isolated consumer, exercises

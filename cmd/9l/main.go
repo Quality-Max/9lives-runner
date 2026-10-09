@@ -60,6 +60,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return assessCommand(args[1:], out, errOut)
 	case "provenance":
 		return provenanceCommand(args[1:], out, errOut)
+	case "prove":
+		return proveCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -83,6 +85,7 @@ Usage:
   9l heal-native <spec> --provider NAME [--model NAME] [--yes]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
+  9l prove <spec> [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 

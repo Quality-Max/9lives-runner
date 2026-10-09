@@ -316,3 +316,59 @@ func decodeEvent(raw []byte) (event, error) {
 	}
 	return frame, nil
 }
+
+// TestAssertionFacts is one test's outcome in an attempt's evidence.
+type TestAssertionFacts struct {
+	// Outcome is Playwright's final outcome: expected, unexpected, flaky or
+	// skipped.
+	Outcome string
+	// Attempts counts Playwright attempts of the test, so 2 or more means it
+	// was retried inside this run.
+	Attempts int
+	// AssertionFailed reports that an assertion step failed in any attempt.
+	AssertionFailed bool
+}
+
+// AssertionFacts counts failed tests and, among them, those in which an
+// assertion step failed, and keeps the same facts per test. Call it only on
+// evidence ValidateAttempt accepted; it re-reads frames but does not re-check
+// identity or ordering.
+type AssertionFacts struct {
+	Unexpected              int
+	UnexpectedWithAssertion int
+	Tests                   map[string]TestAssertionFacts
+}
+
+func Assertions(raw []byte) (AssertionFacts, error) {
+	facts := AssertionFacts{Tests: map[string]TestAssertionFacts{}}
+	if len(raw) == 0 || len(raw) > maxProtocolBytes || !bytes.HasSuffix(raw, []byte("\n")) {
+		return facts, fmt.Errorf("invalid SDK engine evidence")
+	}
+	for _, line := range bytes.Split(raw[:len(raw)-1], []byte("\n")) {
+		frame, err := decodeEvent(line)
+		if err != nil {
+			return facts, fmt.Errorf("invalid SDK engine evidence")
+		}
+		test := facts.Tests[frame.TestID]
+		switch frame.Type {
+		case "test_begin":
+			test.Attempts++
+		case "step_end":
+			if frame.Category == "assertion" && frame.Status == "failed" {
+				test.AssertionFailed = true
+			}
+		case "test_result":
+			test.Outcome = frame.Outcome
+			if frame.Outcome == "unexpected" {
+				facts.Unexpected++
+				if test.AssertionFailed {
+					facts.UnexpectedWithAssertion++
+				}
+			}
+		default:
+			continue
+		}
+		facts.Tests[frame.TestID] = test
+	}
+	return facts, nil
+}

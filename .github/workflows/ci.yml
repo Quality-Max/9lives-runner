@@ -101,6 +101,8 @@ jobs:
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
       - run: npm run smoke:assessment
+      - name: Qualify 9l prove fault injection in real Chromium
+        run: npm run smoke:prove
       - name: Qualify headed visual mode in real Chromium (virtual display)
         run: |
           npm ci --prefix testdata/playwright
@@ -145,6 +147,8 @@ jobs:
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
       - run: npm run smoke:assessment
+      - name: Qualify 9l prove fault injection in real Chromium
+        run: npm run smoke:prove
       - name: Qualify packed SDK in an isolated consumer
         run: npm run smoke:package
       - name: Exercise Playwright fixture

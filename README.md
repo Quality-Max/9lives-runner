@@ -96,9 +96,10 @@ Independent behavioral verification remains planned.
 | Visual mode | `run --headed` shows the browser, one job at a time by default | Linux needs a display (`xvfb-run -a` on headless machines); slow motion comes from the project's `launchOptions` |
 | Bounded goals | `n9l.goal(...)` over finite observed controls | Completion is unverified; live model accuracy and cost are unqualified |
 | Test assessment | `assess` and source/branch provenance | Advisory static review; it does not establish executed assertion coverage |
+| Fault proof | Experimental `prove`: re-run a spec once per injected fetch/XHR fault and report which an assertion caught | Needs an unreleased SDK build; a caught fault shows an assertion failed, not that it checks the right thing |
 | Healing | Offline Tier 1 proposals and experimental native Tier 2 verification | Preserve assertions; verify candidates in isolation before application |
 
-See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md),
+See the [CLI reference](docs/cli.md), [assessment guide](docs/test-assessment.md), [prove](docs/prove.md),
 [native Tier 1](docs/native-tier1.md) and [native Tier 2](docs/native-tier2.md).
 Verified replay and native mobile qualification remain subsequent milestones.
 Windows support is not declared; owned process-tree cancellation is qualified

@@ -1,6 +1,6 @@
 # Changelog
 
-## CLI unreleased
+## CLI and SDK unreleased
 
 - Visual mode: `9l run --headed` passes Playwright's `--headed` flag to every
   job, for both adapters, and runs one job at a time unless `--workers` is
@@ -8,9 +8,29 @@
   before planning, pointing at `xvfb-run`; `9l plan --headed` needs no display.
   `npm run smoke:visual` verifies from inside the page that the browser was
   headed, with a headless control that must fail.
-
-## SDK unreleased
-
+- Experimental `9l prove <spec>`: a passing baseline records the spec's
+  fetch/XHR requests, then each request is re-run under `abort`, `http-500`
+  and, for successful JSON responses, `empty-json` faults, one receipted run
+  per fault with the project's Playwright retries disabled. Each test is
+  judged on its own evidence, so a fault is `caught` only when every test it
+  reached failed on an assertion and `survived` when any passed; a test that
+  Playwright retried inside the run (`test.describe.configure({retries})`)
+  gives `retried`, never `survived`. The other inconclusive results are
+  `failed-without-assertion`, `not-exercised`, `not-applicable` (with the
+  reason `not-json` or `unreachable`) and `incomplete`; faults beyond
+  `--max-faults` are `not-run`. A proof is complete only when every planned
+  fault ran with valid evidence and at least one was applied; an incomplete
+  proof names its reason and exits 1. The report (version 1, policy
+  `prove-network-v2`) is saved under `<receipt-dir>/proofs/` without request
+  URLs; `--paths` prints them locally.
+- `@9l/playwright` overrides the `context` fixture: outside `9l prove` it
+  passes the context through unchanged; under it, it records requests or
+  applies the one named fault through a private `9l.prove/1` channel, separate
+  from `9l.engine/1`, naming each test attempt by the engine's hashed test ID.
+  Prove needs this unreleased SDK build.
+- `npm run smoke:prove` qualifies the command against a synthetic shop with
+  real Chromium: 6 faults caught on asserted requests, 3 survived on an
+  unasserted one.
 - Qualified with every published `@playwright/test` release from 1.61.1
   through 1.64.0: 1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0. A new
   `playwright-compat` CI job runs the unit, browser, assessment and
