@@ -175,6 +175,11 @@ func assertDiagnostic(t *testing.T, err error, code string) {
 	}
 }
 
+// generous is the budget for helper runs whose outcome does not depend on
+// time: Node startup under the race detector on a loaded runner has exceeded
+// one second, which turned an expected diagnostic into a timeout.
+const generous = 10 * time.Second
+
 func TestHelperFailureModes(t *testing.T) {
 	node := requireNode(t)
 	parser, cleanup, err := materializeParser()
@@ -184,7 +189,7 @@ func TestHelperFailureModes(t *testing.T) {
 	defer cleanup()
 	c, _ := ParseContract([]byte(contractJSON))
 	t.Run("missing parser", func(t *testing.T) {
-		_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, Options{}, filepath.Join(t.TempDir(), "missing.cjs"), time.Second)
+		_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, Options{}, filepath.Join(t.TempDir(), "missing.cjs"), generous)
 		assertDiagnostic(t, err, "parser-unavailable")
 	})
 	for _, test := range []struct {
@@ -192,9 +197,9 @@ func TestHelperFailureModes(t *testing.T) {
 		timeout             time.Duration
 	}{
 		{"timeout", "setInterval(() => {}, 1000)", "timeout", 200 * time.Millisecond},
-		{"overflow", "process.stdout.write('x'.repeat(2*1024*1024))", "output-limit", time.Second},
-		{"malformed", "process.stdout.write('{}')", "invalid-evidence", time.Second},
-		{"failed", "process.stderr.write('private fixture diagnostic'); process.exit(2)", "helper-failed", time.Second},
+		{"overflow", "process.stdout.write('x'.repeat(2*1024*1024))", "output-limit", generous},
+		{"malformed", "process.stdout.write('{}')", "invalid-evidence", generous},
+		{"failed", "process.stderr.write('private fixture diagnostic'); process.exit(2)", "helper-failed", generous},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
