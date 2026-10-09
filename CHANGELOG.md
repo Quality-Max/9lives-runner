@@ -31,8 +31,9 @@
 
 - Published automatically: merging an SDK version bump to `main` now runs the
   full qualification and publishes the qualified tarball with npm trusted
-  publishing, then creates the matching `sdk-v<version>` tag. Pushing the tag
-  by hand still works.
+  publishing, then pushes the matching `sdk-v<version>` tag with the release
+  deploy key. Pushing the tag by hand still works, and a tag for a version
+  already on the registry is skipped rather than published twice.
 - `@9l/playwright` overrides the `context` fixture: outside `9l prove` it
   passes the context through unchanged; under it, it records requests or
   applies the one named fault through a private `9l.prove/1` channel, separate

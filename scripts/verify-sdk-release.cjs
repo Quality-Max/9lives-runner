@@ -16,16 +16,17 @@ try {
   assert.equal(manifest.license, 'Apache-2.0');
   assert.equal(manifest.repository.url, 'git+https://github.com/Quality-Max/9lives-runner.git');
   assert.notEqual(manifest.private, true);
-  let publish = true;
   if (process.env.GITHUB_REF_TYPE === 'tag') {
     assert.equal(process.env.GITHUB_REF_NAME, `sdk-v${version}`);
   } else {
     assert.equal(process.env.GITHUB_REF_TYPE, 'branch');
     assert.equal(process.env.GITHUB_REF_NAME, 'main');
-    // A push to main that leaves the version on the registry is not a release.
-    const view = spawnSync('npm', ['view', `${manifest.name}@${version}`, 'version'], {cwd: root, encoding: 'utf8', timeout: 60000});
-    if (view.status === 0 && view.stdout.trim() === version) publish = false;
   }
+  // A version already on the registry is not published again, whether the
+  // trigger is a push to main or a tag pushed by hand after an automatic
+  // publication whose tag step could not create the tag.
+  const view = spawnSync('npm', ['view', `${manifest.name}@${version}`, 'version'], {cwd: root, encoding: 'utf8', timeout: 60000});
+  const publish = !(view.status === 0 && view.stdout.trim() === version);
   const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], {cwd: root, stdio: 'ignore'});
   assert.equal(ancestor.status, 0);
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\npublish=${publish}\n`);
