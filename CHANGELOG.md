@@ -1,7 +1,11 @@
 # Changelog
 
-## SDK unreleased
+## SDK 0.1.1 — 2026-10-09
 
+- Published automatically: merging an SDK version bump to `main` now runs the
+  full qualification and publishes the qualified tarball with npm trusted
+  publishing, then creates the matching `sdk-v<version>` tag. Pushing the tag
+  by hand still works.
 - Qualified with every published `@playwright/test` release from 1.61.1
   through 1.64.0: 1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0. A new
   `playwright-compat` CI job runs the unit, browser, assessment and

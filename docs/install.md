@@ -1,6 +1,6 @@
 # Install the CLI and Playwright SDK
 
-The published npm package is [@9l/playwright 0.1.0](https://www.npmjs.com/package/@9l/playwright).
+The published npm package is [@9l/playwright 0.1.1](https://www.npmjs.com/package/@9l/playwright).
 It supplies TypeScript fixtures and the reporter. Install the Go `9l` CLI
 separately; the SDK does not bundle the runner or a browser.
 
@@ -9,7 +9,7 @@ separately; the SDK does not bundle the runner or a browser.
 From your Playwright project, with Node 24 (Node 22 minimum):
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.0 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.1.1 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
