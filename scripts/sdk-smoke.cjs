@@ -169,6 +169,19 @@ async function main() {
   assert.equal(failedGoalCanonical.verdict, 'failed');
   assert.equal(failedGoalCanonical.failure.code, 'goal.failed');
   assert.equal(failedGoalCanonical.counts.failed, 0);
+  for (const caught of [false, true]) {
+    process.env.NINELIVES_SMOKE_CATCH_GOAL = caught ? '1' : '0';
+    const mixed = invoke('testdata/sdk/tests/goal-mixed-failure.spec.ts', ['--pass-env', 'NINELIVES_SMOKE_CATCH_GOAL']);
+    delete process.env.NINELIVES_SMOKE_CATCH_GOAL;
+    assert.equal(mixed.code, 1);
+    assert.equal(mixed.summary.outcome, 'failed');
+    assert.equal(mixed.summary.complete, false);
+    assert.equal(mixed.summary.receipts[0].validated, true);
+    assert.equal(mixed.summary.receipts[0].goalFailed, true);
+    assert.equal(mixed.summary.receipts[0].failureCount, caught ? 1 : 2);
+    assert.equal(mixed.summary.receipts[0].nonGoalFailureCount, 1);
+  }
+  console.log('SDK mixed goal failure: independent browser assertion stays failed with caught and uncaught goal errors');
   process.env.NINELIVES_SMOKE_INVALID_GOAL = '1';
   const invalidGoal = invoke('testdata/sdk/tests/goal-start-failure.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json', '--pass-env', 'NINELIVES_SMOKE_INVALID_GOAL']);
   delete process.env.NINELIVES_SMOKE_INVALID_GOAL;

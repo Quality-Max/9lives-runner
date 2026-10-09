@@ -24,7 +24,7 @@ runner and its contract versions before decoding anything else:
     "progressEvent": 1, "assess": 3, "assessSuite": 1,
     "executionReceipt": "execution-receipt/1.0", "engine": "9l.engine/1"
   },
-  "commands": ["plan", "run", "status", "result", "cancel", "assess", "provenance", "tier1", "heal-native", "heal", "version"]
+  "commands": ["plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "tier1", "heal-native", "heal", "version"]
 }
 ```
 
@@ -38,13 +38,28 @@ its one-line text output.
 | --- | --- | --- |
 | 0 | `passed` | Every planned job has a validated passing receipt |
 | 1 | `failed` | Every planned job ran to a validated receipt and at least one reported a test failure |
-| 2 | — | Usage or setup error before execution: invalid flags, no specs, an unavailable provider, an invalid provenance record |
+| 2 | — | Usage or setup error before execution: invalid flags, no specs, an unavailable provider, invalid provenance, provenance selecting several specs, or an invalid/over-budget supplied plan |
 | 3 | `incomplete` | The run proves neither: skipped inputs, cancellation, run or job timeouts, infrastructure errors, missing or invalid evidence, provenance drift, or a goal that did not complete |
 
 A goal that is policy-blocked, out of budget, interrupted or without a
-provider makes the run incomplete, not failed, even if a later assertion failed
-because the goal did not act. Playwright test timeouts and hook errors are
-reported by Playwright as test failures, and 9l counts them as failures.
+provider does not establish a defect in the test that called it. Failures in
+that test remain inconclusive even if a later assertion failed because the
+goal did not act. An unexpected failure in a sibling test with no failed goal
+still establishes `failed`, including when the first test caught the goal
+error and passed. Receipts carry `nonGoalFailureCount`, derived from the
+attempt-bound SDK test events; older goal-failure receipts without this field
+remain conservative and incomplete. Playwright test timeouts and hook errors
+are reported by Playwright as test failures, and 9l counts them as failures.
+
+Dependency plans are currently available only through the Go API. If a failed
+prerequisite blocks descendants, the plan remains `incomplete`: those jobs
+never ran and have no validated evidence. The prerequisite's failing receipt
+and the run's `failed` count remain available to a host. Blocked receipts are
+never promoted to executed or validated outcomes.
+
+Setup errors exit 2 with a diagnostic, no JSON result and no startup/cancel
+hint. The startup message is emitted only after run storage is initialized.
+Storage failures remain operational errors (exit 3).
 
 `9l plan` and `9l run --dry-run` exit 0 or 2. `9l status` and `9l result`
 exit 0 whenever they could read the run, whatever its outcome, and 2
@@ -68,7 +83,11 @@ findings and 2 when any input could not be assessed.
 ## Schemas and versioning
 
 JSON Schemas (draft 2020-12) are generated from the Go output types and
-checked by `go test ./cmd/9l`, so they cannot drift from what the CLI writes:
+checked by `go test ./cmd/9l`. Separately, `npm run smoke:contracts` uses
+Python `jsonschema==4.26.0` to validate real CLI, receipt and event documents
+against all eight schemas, and rejects invalid version, outcome, required
+field, receipt status and attribution-count mutations. CI requires this
+independent validation in the SDK job:
 
 | Output | Schema |
 | --- | --- |

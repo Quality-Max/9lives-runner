@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Quality-Max/9lives-runner/internal/assessment"
@@ -109,6 +110,39 @@ func TestRunExitCodeSeparatesFailureFromIncomplete(t *testing.T) {
 	} {
 		if got := runExitCode(test.result, test.executionFailed); got != test.want {
 			t.Errorf("%s: exit %d, want %d", test.name, got, test.want)
+		}
+	}
+}
+
+func TestRunSetupErrorsWriteNoResultOrCancelHint(t *testing.T) {
+	// A syntactically valid creation record with two selected specs reaches
+	// Execute's setup validation without launching Playwright or requiring npm.
+	dir := t.TempDir()
+	specs := []string{filepath.Join(dir, "a.spec.ts"), filepath.Join(dir, "b.spec.ts")}
+	for _, spec := range specs {
+		if err := os.WriteFile(spec, []byte("// setup-only fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record := runner.AgentProvenance{Version: 1, Agent: "codex", Branch: "fixture", Commit: strings.Repeat("a", 40), Repository: strings.Repeat("b", 64), Source: strings.Repeat("c", 64), SourcePath: strings.Repeat("d", 64)}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := filepath.Join(dir, "creation.json")
+	if err := os.WriteFile(snapshot, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"text", "json"} {
+		receipts := filepath.Join(dir, format)
+		var stdout, stderr bytes.Buffer
+		args := append([]string{"run"}, specs...)
+		args = append(args, "--agent-provenance", snapshot, "--receipt-dir", receipts, "--format", format)
+		if code := run(args, &stdout, &stderr); code != exitUsage || stdout.Len() != 0 || !strings.Contains(stderr.String(), "requires one exact spec") || strings.Contains(stderr.String(), "cancel") || strings.Contains(stderr.String(), "started") {
+			t.Fatalf("setup error produced a run: exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		}
+		if _, err := os.Stat(receipts); !os.IsNotExist(err) {
+			t.Fatalf("setup error created run storage: %v", err)
 		}
 	}
 }

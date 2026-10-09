@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,6 +79,47 @@ func TestRunOutcomeRequiresValidatedReceiptForEveryPlannedJob(t *testing.T) {
 	}
 	if got := classifyRun(RunSummary{PlannedJobs: 1, Receipts: []Receipt{failed}}, true); got != OutcomeIncomplete {
 		t.Errorf("interrupted run classified %q", got)
+	}
+	// One failed goal in a file does not hide an assertion failure in another
+	// test of that file: the second failure was proved without the goal.
+	beside := Receipt{Status: StatusFailed, Validated: true, FailureCount: 2, GoalFailed: true, NonGoalFailureCount: 1}
+	if got := classifyRun(RunSummary{PlannedJobs: 1, Receipts: []Receipt{beside}}, false); got != OutcomeFailed {
+		t.Errorf("assertion failure beside a failed goal classified %q, want failed", got)
+	}
+	beside.FailureCount = 1 // The test that caught the goal error passed.
+	if got := classifyRun(RunSummary{PlannedJobs: 1, Receipts: []Receipt{beside}}, false); got != OutcomeFailed {
+		t.Errorf("assertion failure beside a caught goal error classified %q, want failed", got)
+	}
+}
+
+func TestInvalidGoalAttributionCountsCannotValidate(t *testing.T) {
+	for _, count := range []int{-1, 2} {
+		if err := validateValidation(Validation{ExecutedTests: 2, FailureCount: 1, NonGoalFailureCount: count}); err == nil {
+			t.Fatalf("accepted non-goal failure count %d outside failure count", count)
+		}
+	}
+}
+
+func TestExecuteReportsSetupProblemsAsSetupErrors(t *testing.T) {
+	plan := Plan{Version: PlanVersion, RunID: "run-setup", Jobs: []Job{fakeJob("a", "success", 100), fakeJob("b", "success", 100)}, Skipped: []Skipped{}, Limits: Limits{MaxJobs: 1}}
+	_, err := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: time.Second, MaxAttempts: 1, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
+	var setup SetupError
+	if !errors.As(err, &setup) {
+		t.Fatalf("job budget overflow is not a setup error: %v", err)
+	}
+	record := AgentProvenance{}
+	_, err = Execute(context.Background(), plan, ExecuteOptions{AgentProvenance: &record, Workers: 1, Timeout: time.Second, MaxAttempts: 1, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
+	if !errors.As(err, &setup) {
+		t.Fatalf("invalid provenance is not a setup error: %v", err)
+	}
+	// An unwritable receipt directory is operational, not a usage error.
+	blocked := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Execute(context.Background(), Plan{Version: PlanVersion, RunID: "run-blocked", Jobs: []Job{fakeJob("a", "success", 100)}, Skipped: []Skipped{}}, ExecuteOptions{Workers: 1, Timeout: time.Second, MaxAttempts: 1, ReceiptDir: blocked, Adapters: []Adapter{fakeAdapter{}}})
+	if err == nil || errors.As(err, &setup) {
+		t.Fatalf("unwritable receipt directory reported as %v", err)
 	}
 }
 

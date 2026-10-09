@@ -25,12 +25,18 @@ npm run smoke
 npm run smoke:assessment
 npm run smoke:package
 npm run smoke:prove
+# Independent CLI schema qualification (Python 3.11+ with jsonschema==4.26.0):
+npm run smoke:contracts
 ```
 
 On Linux install browser system dependencies with
 `npm exec playwright install --with-deps chromium`.
 The SDK smoke runs a real Chromium checkout, rejects a business defect, and
 verifies that timeout and cancellation terminate the owned worker and browser.
+It also checks that a failed goal in one test cannot hide a sibling browser
+assertion failure, whether or not the goal error was caught. The contract
+smoke validates emitted JSON against every published schema with a separate
+Python validator and rejects deliberately malformed documents.
 Package qualification installs the exact packed SDK in an isolated consumer
 and separately exercises an ordinary Playwright spec. The prove smoke proves
 the synthetic shop fixture with real Chromium and checks that faults on the

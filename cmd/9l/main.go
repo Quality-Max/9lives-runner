@@ -723,18 +723,27 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}
-	if *format == "json" {
-		fmt.Fprintf(errOut, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
-	} else {
-		fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
+		OnStarted: func() {
+			if *format == "json" {
+				fmt.Fprintf(errOut, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
+			} else {
+				fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
+			}
+		},
 		AgentProvenance: agentProvenance,
 		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
+	// A setup error is found before any process starts: no run exists to
+	// report, cancel or retry, so it is a usage error without a result.
+	var setup runner.SetupError
+	if errors.As(err, &setup) {
+		fmt.Fprintf(errOut, "9l: %v\n", err)
+		return exitUsage
+	}
 	executionFailed := err != nil
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		fmt.Fprintf(errOut, "9l: execution: %v\n", err)

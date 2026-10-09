@@ -146,6 +146,33 @@ func TestFailureExpectedFailureAndRetryOutcomes(t *testing.T) {
 	}
 }
 
+func TestGoalFailuresDoNotHideOtherTests(t *testing.T) {
+	for _, caught := range []bool{false, true} {
+		frames := passingFrames()
+		frames[0]["totalTests"] = 2
+		frames[2]["category"], frames[2]["status"] = "goal", "failed"
+		if !caught {
+			frames[3]["status"], frames[4]["outcome"] = "failed", "unexpected"
+		}
+		other := strings.Repeat("b", 64)
+		frames[5]["status"] = "failed"
+		frames = append(frames[:4], append([]map[string]any{
+			{"type": "test_begin", "testId": other, "retry": 0},
+			{"type": "step_end", "testId": other, "retry": 0, "stepId": "step-2", "category": "assertion", "status": "failed"},
+			{"type": "test_end", "testId": other, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
+		}, frames[4:]...)...)
+		frames = append(frames[:8], append([]map[string]any{{"type": "test_result", "testId": other, "outcome": "unexpected"}}, frames[8:]...)...)
+		v, err := New().ValidateAttempt(stream(frames), owner)
+		want := 2
+		if caught {
+			want = 1
+		}
+		if err != nil || !v.GoalFailed || v.FailureCount != want || v.NonGoalFailureCount != 1 || v.ExecutedTests != 2 {
+			t.Fatalf("caught=%v: wrong per-test attribution: %+v, %v", caught, v, err)
+		}
+	}
+}
+
 func TestSerialGroupCanRetryExpectedAndSkippedAttempts(t *testing.T) {
 	for name, test := range map[string]struct {
 		status         string

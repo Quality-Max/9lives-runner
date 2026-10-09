@@ -290,6 +290,9 @@
         "jobId": {
           "type": "string"
         },
+        "nonGoalFailureCount": {
+          "type": "integer"
+        },
         "receiptPath": {
           "type": "string"
         },

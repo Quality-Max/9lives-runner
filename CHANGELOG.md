@@ -17,7 +17,14 @@ A machine-readable contract for host integrations such as qmax-code (#27).
 - `9l version --format json` reports the implementation, CLI version and the
   version of every machine-readable output.
 - JSON Schemas for every output under `docs/contracts/`, generated from the
-  output types and checked in tests; see `docs/contracts.md`.
+  output types and checked in tests; real CLI documents are independently
+  validated by `npm run smoke:contracts` in CI; see `docs/contracts.md`.
+- Goal-failure classification is per test: a failed or caught goal in one
+  test cannot hide an unexpected failure in a sibling test. SDK receipts add
+  `nonGoalFailureCount`; old receipts without attribution stay conservative.
+- Setup validation errors exit 2 without a result or startup/cancel hint.
+  Operational storage errors remain exit 3; dependency-blocked plans remain
+  incomplete because their descendants never ran.
 
 
 - Visual mode: `9l run --headed` passes Playwright's `--headed` flag to every

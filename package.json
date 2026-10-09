@@ -7,6 +7,7 @@
     "build": "npm run build --workspace @9l/playwright",
     "test": "npm run build && node --test packages/playwright/test/*.test.cjs internal/assessment/analyzer.test.cjs scripts/bundle-assessment-parser.test.cjs",
     "smoke": "npm run build && node scripts/sdk-smoke.cjs",
+    "smoke:contracts": "npm run build && node scripts/contracts-smoke.cjs",
     "smoke:package": "npm run build && node scripts/package-smoke.cjs",
     "smoke:assessment": "node scripts/assessment-smoke.cjs",
     "smoke:prove": "npm run build && node scripts/prove-smoke.cjs",
