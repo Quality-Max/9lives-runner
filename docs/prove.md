@@ -1,9 +1,10 @@
 # Prove: can this test fail?
 
 Status: experimental. `9l prove` needs an `@9l/playwright` build that includes
-prove support; the published SDK 0.1.0 does not. Qualified with real Chromium
-on one synthetic fixture. No accuracy, latency or cost claim is made for other
-applications.
+prove support; the published SDK 0.1.1 does not. Qualified with real Chromium
+on one synthetic fixture and one retry control, see
+[Qualification](#qualification). No accuracy, latency or cost claim is made
+for other applications.
 
 A passing run shows that a test's assertions passed. It does not show that
 they would fail if the application broke. `9l prove` checks that directly: it
@@ -138,3 +139,63 @@ through unchanged.
 
 The policy name `prove-network-v2` in each report identifies these fault kinds
 and rules; it changes whenever either does.
+
+## Qualification
+
+The [shop fixture](../testdata/sdk/tests/prove-shop.spec.ts) is a synthetic
+local shop with no real order, account or external server: one test asserts
+the cart and the order confirmation, and the page also fetches
+recommendations that nothing asserts. The server listens on a fixed port
+passed through `--pass-env`, so every run shares one origin.
+
+```sh
+npm exec playwright install chromium
+npm run smoke:prove
+```
+
+The smoke builds the CLI, proves the fixture with real Chromium and checks the
+report, the receipts and the persisted file:
+
+| Request | Asserted | `abort` | `http-500` | `empty-json` |
+| --- | --- | --- | --- | --- |
+| `GET /api/cart` | yes | caught | caught | caught |
+| `POST /api/orders` | yes | caught | caught | caught |
+| `GET /api/recommendations` | no | survived | survived | survived |
+
+Nine isolated fault runs, every fault applied, the proof complete with policy
+`prove-network-v2`, each fault carrying one per-test result, all ten receipts
+validated with one executed test, and no URL in the saved report.
+
+A second control, run by hand with the same fixture plus
+`test.describe.configure({retries: 1})`, gives `retried` for all six cart and
+order faults and `survived` for the three recommendation faults. Before
+per-test classification those six were reported as `survived`: the first
+attempt failed its assertion under the fault and the retry passed, which
+Playwright reports as flaky and the engine as passed. The control is not part
+of CI.
+
+What this does and does not establish: one fixture, one defect family
+(network faults on fetch/XHR) and one execution per fault. It shows that the
+classification tells an asserted request from an unasserted one and that a
+retried test is not mistaken for a survivor. It is not a benchmark, says
+nothing about other applications, and does not show that any caught assertion
+checks the intended behavior.
+
+## Review history
+
+An adversarial review of the first version (2026-10-09) found eight defects,
+all fixed before merge:
+
+| Finding | Severity | Resolution |
+| --- | --- | --- |
+| `--retries=0` does not disable `test.describe.configure({retries})`; a retried test became a `survived` fault | high | Per-test attempts from the engine evidence; a retried test gives `retried`, never `survived` |
+| A proof in which no fault was exercised was `complete: true` and exited 0 | medium | Completeness needs at least one applied fault; otherwise `nothing-exercised` and exit 1 |
+| Classification per run: one test's assertion failure hid survivors in another, and unrelated failures were credited to the fault | medium | The prove handshake names the test attempt; each test is classified on its own evidence and the fault follows from the tests it reached |
+| `--max-faults` truncation saved `complete: false` but exited 0 | low | Any incomplete proof exits 1 with its reason |
+| A test route calling `route.continue()` silently disabled faults; docs mentioned only fulfilled requests | low | Documented in Boundaries, the report limits and the nothing-exercised hint |
+| An `empty-json` fault whose upstream fetch failed was labelled "not JSON" | low | Not-applicable records carry `not-json` or `unreachable` |
+| A canceled or timed-out baseline was reported as a failing test | low | Reported as canceled or timed out |
+| No tests for interruption, timeout, not-exercised, truncation or the `empty-json` fetch path | low | Added in the CLI, prove, protocol and SDK test suites |
+
+Review evidence for merged work lives with the pull request; the fixture and
+controls above are what later changes must keep passing.
