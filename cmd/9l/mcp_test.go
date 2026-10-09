@@ -148,8 +148,19 @@ func TestMCPProtocolFraming(t *testing.T) {
 			t.Fatalf("%.40s: code %v, want %v", line, got, code)
 		}
 	}
-	if payload, isError := h.toolCall(t, 8, "run_test", map[string]any{"spec": "a.spec.ts", "unknown": true}); !isError || !strings.Contains(payload["error"].(string), "invalid arguments") {
-		t.Fatalf("unknown argument accepted: %v", payload)
+	// Each tool takes only its own arguments, including ones another tool takes.
+	for i, call := range []struct {
+		name      string
+		arguments map[string]any
+	}{
+		{"run_test", map[string]any{"spec": "a.spec.ts", "unknown": true}},
+		{"run_test", map[string]any{"spec": "a.spec.ts", "apply": true}},
+		{"assess_test", map[string]any{"spec": "a.spec.ts"}},
+		{"heal_test", map[string]any{"spec": "a.spec.ts", "path": "a.spec.ts"}},
+	} {
+		if payload, isError := h.toolCall(t, 8+i, call.name, call.arguments); !isError || !strings.Contains(payload["error"].(string), "invalid arguments") {
+			t.Fatalf("%s accepted %v: %v", call.name, call.arguments, payload)
+		}
 	}
 }
 
@@ -166,6 +177,9 @@ func TestMCPToolPathsStayInsideTheWorkingDirectory(t *testing.T) {
 	if err := os.Symlink(outside, link); err != nil {
 		t.Skip("symlinks unavailable")
 	}
+	if err := os.WriteFile(filepath.Join(root, "large.spec.ts"), make([]byte, tier2.MaxSourceBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	h := startMCP(t, root)
 	for i, call := range []struct {
 		name, key, path, want string
@@ -176,6 +190,7 @@ func TestMCPToolPathsStayInsideTheWorkingDirectory(t *testing.T) {
 		{"run_test", "spec", "tests", "not a regular file"},
 		{"run_test", "spec", "missing.spec.ts", "path not found"},
 		{"heal_test", "spec", "", "a path is required"},
+		{"heal_test", "spec", "large.spec.ts", "exceeds the 1 MiB healing input limit"},
 	} {
 		payload, isError := h.toolCall(t, i+1, call.name, map[string]any{call.key: call.path})
 		if !isError || !strings.Contains(payload["error"].(string), call.want) {

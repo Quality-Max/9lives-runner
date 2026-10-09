@@ -26,6 +26,9 @@ type RunResult struct {
 	Receipt       string `json:"receipt,omitempty"`
 }
 
+// MaxSourceBytes is the largest spec native healing reads.
+const MaxSourceBytes = 1 << 20
+
 type SessionOptions struct {
 	Spec, Framework, Model string
 	MaxProposals           int
@@ -39,7 +42,7 @@ type SessionOptions struct {
 const (
 	// Original and Tier 1 retain the broad local-file limit. Tier 2 additionally
 	// limits provider admission so an argv/API prompt is predictably bounded.
-	maxPromptSourceBytes = 1 << 20
+	maxPromptSourceBytes = MaxSourceBytes
 	maxTier2SourceBytes  = 8 << 10
 	maxTier2PromptBytes  = 32 << 10
 	maxFailureBytes      = 4 << 10

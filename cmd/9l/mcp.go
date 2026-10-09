@@ -358,37 +358,64 @@ func (s *mcpServer) call(ctx context.Context, message mcpMessage) {
 	}()
 }
 
+// decodeArguments decodes a tool's arguments into its own struct, so an
+// argument another tool takes is refused like any unknown one, as each
+// schema's additionalProperties: false declares.
+func decodeArguments(name string, raw json.RawMessage, target any) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(target) != nil {
+		return toolError{"invalid arguments for " + name}
+	}
+	return nil
+}
+
+func (s *mcpServer) timeoutArgument(seconds *int) (time.Duration, error) {
+	if seconds == nil {
+		return s.runTimeout, nil
+	}
+	if *seconds < 1 {
+		return 0, toolError{"run_timeout must be at least 1 second"}
+	}
+	return time.Duration(*seconds) * time.Second, nil
+}
+
 func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
-	var args struct {
-		Spec         string `json:"spec"`
-		Path         string `json:"path"`
-		Requirements string `json:"requirements"`
-		Apply        bool   `json:"apply"`
-		MaxProposals *int   `json:"max_proposals"`
-		RunTimeout   *int   `json:"run_timeout"`
-	}
-	if len(raw) > 0 {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(&args) != nil {
-			return nil, toolError{"invalid arguments for " + name}
-		}
-	}
-	timeout := s.runTimeout
-	if args.RunTimeout != nil {
-		if *args.RunTimeout < 1 {
-			return nil, toolError{"run_timeout must be at least 1 second"}
-		}
-		timeout = time.Duration(*args.RunTimeout) * time.Second
-	}
 	switch name {
 	case "run_test":
+		var args struct {
+			Spec       string `json:"spec"`
+			RunTimeout *int   `json:"run_timeout"`
+		}
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
+		}
+		timeout, err := s.timeoutArgument(args.RunTimeout)
+		if err != nil {
+			return nil, err
+		}
 		spec, err := s.contained(args.Spec, false)
 		if err != nil {
 			return nil, err
 		}
 		return s.runTest(ctx, spec, timeout)
 	case "heal_test":
+		var args struct {
+			Spec         string `json:"spec"`
+			Apply        bool   `json:"apply"`
+			MaxProposals *int   `json:"max_proposals"`
+			RunTimeout   *int   `json:"run_timeout"`
+		}
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
+		}
+		timeout, err := s.timeoutArgument(args.RunTimeout)
+		if err != nil {
+			return nil, err
+		}
 		spec, err := s.contained(args.Spec, false)
 		if err != nil {
 			return nil, err
@@ -402,8 +429,12 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 		}
 		return s.healTest(ctx, spec, args.Apply, proposals, timeout)
 	default:
-		if args.Path == "" {
-			args.Path = args.Spec
+		var args struct {
+			Path         string `json:"path"`
+			Requirements string `json:"requirements"`
+		}
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
 		}
 		path, err := s.contained(args.Path, true)
 		if err != nil {
@@ -515,6 +546,11 @@ func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, propo
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	// Native healing reads at most 1 MiB of source; refuse a larger file
+	// before reading it.
+	if info, err := os.Stat(spec); err != nil || info.Size() > tier2.MaxSourceBytes {
+		return nil, toolError{"spec cannot be read or exceeds the 1 MiB healing input limit"}
 	}
 	original, err := os.ReadFile(spec)
 	if err != nil {
