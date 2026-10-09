@@ -43,7 +43,9 @@ function run(fixture, {headed, expectHeaded, display}) {
   const result = invoke(args, {display, headed: expectHeaded});
   // xvfb-run merges the program's stderr, which carries the run-started line,
   // into stdout; the summary is the last line either way.
-  const [receipt] = JSON.parse(result.stdout.trim().split('\n').pop()).receipts;
+  const planned = JSON.parse(result.stdout.trim().split('\n').pop()).receipts;
+  assert.equal(planned.length, 1, `${fixture.spec} was not planned; install its project dependencies first`);
+  const [receipt] = planned;
   assert.equal(receipt.adapter, fixture.adapter);
   assert.equal(receipt.evidence.command.includes('--headed'), headed);
   return {code: result.status, receipt};
