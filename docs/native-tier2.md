@@ -7,7 +7,9 @@ without any provider call.
 
 The command executes the original spec through the Go Playwright kernel. A
 passing, non-zero test result makes no provider call. It tries exactly one
-offline Tier 1 proposal before Tier 2. A Tier 1 proposal executes only when it
+offline Tier 1 proposal before Tier 2; a proposal that selects exactly the
+same elements, such as `#save` rewritten as `[id="save"]`, is skipped rather
+than verified, because it cannot fix a missing element. A Tier 1 proposal executes only when it
 meets the same direct-action selector-only boundary as Tier 2; broader Tier 1
 wait/control-flow transforms are refused for native verified healing. Each Tier 2
 proposal uses the pinned `REASONING:` / `CHANGES:` / `CODE:` fenced complete-file

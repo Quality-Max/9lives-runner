@@ -389,6 +389,15 @@ func transform(selector string) string {
 	}
 	return ""
 }
+// EquivalentSelectors reports a Tier 1 transformation that selects exactly
+// the same elements, such as #save and [id="save"] for a valid CSS
+// identifier. Verifying it can never fix a missing element, so native healing
+// skips it; the Python-parity tier1 response still reports it.
+func EquivalentSelectors(old, next string) bool {
+	m := regexp.MustCompile(`^#([A-Za-z][\w-]*)$`).FindStringSubmatch(old)
+	return len(m) == 2 && validCSSIdentifier(m[1]) && next == `[id="`+m[1]+`"]`
+}
+
 func timing(message string) bool {
 	s := strings.ToLower(message)
 	return strings.Contains(s, "timeout") || strings.Contains(s, "waiting") || strings.Contains(s, "not visible") || strings.Contains(s, "viewport")

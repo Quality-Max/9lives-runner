@@ -233,3 +233,25 @@ func TestTier1TransformationsAreCompleteOrRefused(t *testing.T) {
 		t.Fatalf("partial class accepted: %+v", partial)
 	}
 }
+
+func TestEquivalentSelectorsNamesOnlyTheNoOpIDRewrite(t *testing.T) {
+	for _, tc := range []struct {
+		old, next string
+		want      bool
+	}{
+		{"#emailAddress", `[id="emailAddress"]`, true},
+		{"#email-address", `[id="email-address"]`, true},
+		{"#emailAddress", `[id="email"]`, false},
+		{".btn-primary", `[class*="btn"]`, false},
+		{`[data-testid="save"]`, `[data-testid*="save"]`, false},
+	} {
+		if got := EquivalentSelectors(tc.old, tc.next); got != tc.want {
+			t.Errorf("EquivalentSelectors(%q, %q) = %v", tc.old, tc.next, got)
+		}
+	}
+	// The tier1 response itself is unchanged for Python parity.
+	response := Heal(Request{Version: Version, Framework: "playwright", ErrorMessage: "TimeoutError: waiting for locator('#save')", TestCode: "await page.locator('#save').click();\n"})
+	if response.Decision != "propose" || response.Metadata["newSelector"] != `[id="save"]` {
+		t.Fatalf("tier1 transformation changed: %+v", response)
+	}
+}

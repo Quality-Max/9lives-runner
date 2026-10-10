@@ -75,6 +75,9 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 	}
 	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure, snapshot string) (string, bool) {
 		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source, AriaSnapshot: snapshot})
+		if old, _ := proposal.Metadata["oldSelector"].(string); healing.EquivalentSelectors(old, fmt.Sprint(proposal.Metadata["newSelector"])) {
+			return "", false // selects the same missing element; skip its verification run
+		}
 		return proposal.ProposedCode, proposal.Decision == "propose"
 	})
 }
