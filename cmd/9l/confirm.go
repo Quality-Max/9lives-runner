@@ -261,7 +261,9 @@ func runRevision(ctx context.Context, repo confirm.Repository, commit string, op
 	}
 	receipt := summary.Receipts[0]
 	revision.Status, revision.ExecutedTests = string(receipt.Status), receipt.ExecutedTests
-	facts.Validated = execErr == nil && receipt.Validated && (receipt.Status == runner.StatusPassed || receipt.Status == runner.StatusFailed)
+	// A goal that failed or stopped leaves the run incomplete even when
+	// Playwright reports the test as expected; neither side may count it.
+	facts.Validated = execErr == nil && receipt.Validated && !receipt.GoalFailed && (receipt.Status == runner.StatusPassed || receipt.Status == runner.StatusFailed)
 	if !facts.Validated {
 		return facts, nil
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -245,6 +246,12 @@ func (repo Repository) Checkout(ctx context.Context, commit string) (*Checkout, 
 		if info, err := os.Stat(source); err != nil || !info.IsDir() {
 			continue
 		}
+		// The revision controls every path below the tree: a parent it
+		// committed as a link would carry the new link out of the checkout.
+		if err := realDirectories(checkout.tree, directory); err != nil {
+			checkout.Close()
+			return nil, err
+		}
 		if _, err := os.Lstat(target); err == nil {
 			continue
 		}
@@ -259,6 +266,12 @@ func (repo Repository) Checkout(ctx context.Context, commit string) (*Checkout, 
 		checkout.links = append(checkout.links, target)
 	}
 	checkout.Spec = filepath.Join(checkout.tree, filepath.FromSlash(repo.SpecPath))
+	// Removing and writing the spec through a linked parent would change a
+	// file outside the checkout.
+	if err := realDirectories(checkout.tree, path.Dir(repo.SpecPath)); err != nil {
+		checkout.Close()
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(checkout.Spec), 0o755); err != nil {
 		checkout.Close()
 		return nil, errors.New("checkout directory could not be prepared")
@@ -270,6 +283,28 @@ func (repo Repository) Checkout(ctx context.Context, commit string) (*Checkout, 
 		return nil, errors.New("reproduction spec could not be written into the checkout")
 	}
 	return checkout, nil
+}
+
+// realDirectories refuses relative (slash-separated, below root) when any of
+// its existing components is not a plain directory: a symbolic link, a
+// Windows junction or other reparse point, or a file. Components that do not
+// exist yet are created by the caller as fresh directories.
+func realDirectories(root, relative string) error {
+	current := root
+	for _, part := range strings.Split(relative, "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil || !info.IsDir() || info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+			return SetupError{"the revision has a link or file where the reproduction needs a directory (" + relative + "); confirm does not follow it out of the checkout"}
+		}
+	}
+	return nil
 }
 
 // Close removes the worktree and its registration. It is safe to call more

@@ -21,6 +21,9 @@
   differs is flagged. Exit 0 only for confirmed, 1 for another conclusive
   verdict, 2 for usage or setup errors and 3 when inconclusive. Finding text
   is stored only as its SHA-256. `9l mcp` serves it as `confirm_finding`.
+  A revision that commits a link or file in place of one of the spec's
+  parent directories is refused before anything is written, and a run whose
+  goal failed counts as incomplete on either side.
   `npm run smoke:confirm` qualifies it with real Chromium (#42).
 
 Fixes from a CLI 0.1.5 trial on an 87-file suite:

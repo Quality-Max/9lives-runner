@@ -21,7 +21,8 @@ import (
 // that passes proves each revision ran its own code.
 type fakeConfirmWorker struct {
 	// outcome maps app/shop.ts content to "passed", "assertion" (an
-	// assertion step failed) or "action" (only an action failed).
+	// assertion step failed), "action" (only an action failed) or
+	// "goal-stopped" (the test passed but its goal step failed).
 	outcome  func(app string) string
 	workDirs []string
 	commands [][]string
@@ -43,7 +44,10 @@ func (worker *fakeConfirmWorker) Run(_ context.Context, job runner.Job, _ int) r
 	result := worker.outcome(string(app))
 	identity := fmt.Sprintf(`"version":"9l.engine/1","runId":"%s","jobId":"%s","attemptId":"%s"`, job.Env["NINELIVES_RUN_ID"], job.Env["NINELIVES_JOB_ID"], job.Env["NINELIVES_ATTEMPT_ID"])
 	category, step, status, outcome, end := "assertion", "passed", "passed", "expected", "passed"
-	if result != "passed" {
+	if result == "goal-stopped" {
+		// The test is reported as expected, but its goal step failed.
+		category, step, result = "goal", "failed", "passed"
+	} else if result != "passed" {
 		step, status, outcome, end = "failed", "failed", "unexpected", "failed"
 		if result == "action" {
 			category = "action"
@@ -267,5 +271,23 @@ func TestConfirmRejectsInvalidUsage(t *testing.T) {
 		if code, _, stderr := runConfirm(t, worker, append(args, "--receipt-dir", t.TempDir())...); code != exitUsage || len(worker.workDirs) != 0 {
 			t.Errorf("%s: code=%d runs=%d stderr=%s", name, code, len(worker.workDirs), stderr)
 		}
+	}
+}
+
+func TestConfirmDoesNotCountARunWhoseGoalFailed(t *testing.T) {
+	_, spec, _ := confirmRepository(t)
+	// The fixed revision's test passes only because its goal stopped early;
+	// the runner treats that run as incomplete, so confirm must not count it.
+	worker := &fakeConfirmWorker{outcome: func(app string) string {
+		if strings.Contains(app, "- 1") {
+			return "assertion"
+		}
+		return "goal-stopped"
+	}}
+	code, stdout, stderr := runConfirm(t, worker, spec, "--unfixed", "HEAD~1", "--fixed", "HEAD", "--format", "json", "--receipt-dir", t.TempDir())
+	skipWithoutSymlinks(t, code, stderr)
+	report := confirmReport(t, stdout, stderr)
+	if code != exitIncomplete || report.Verdict != confirm.Inconclusive || report.InconclusiveReason != confirm.ReasonRunIncomplete {
+		t.Fatalf("code=%d report=%+v stderr=%s", code, report, stderr)
 	}
 }

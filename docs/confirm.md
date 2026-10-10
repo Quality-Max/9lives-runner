@@ -51,7 +51,11 @@ reported finding; that is still a review of the spec.
    spec is read from the working tree and written at the same path into each
    checkout, so both sides run identical spec bytes, whether or not the spec
    exists at that revision. Every `node_modules` directory from the
-   repository root down to the spec is linked from the working tree.
+   repository root down to the spec is linked from the working tree. A
+   revision that commits a symbolic link, junction or file where one of the
+   spec's parent directories should be is refused (exit 2) before anything is
+   written, so neither the spec nor a dependency link can land outside the
+   checkout.
 3. **Runs.** The spec runs on the unfixed checkout, then on the fixed side, as
    two ordinary receipted `9l run --sdk` runs with the project's Playwright
    retries disabled (`--retries=0`). Each checkout is removed after its run;
@@ -74,7 +78,9 @@ regressed; otherwise `fix-ineffective` if any test still fails on the fixed
 side; otherwise `confirmed` if any test was confirmed; otherwise
 `not-reproduced`. A passing sanity test beside the reproduction does not hide
 a confirmation, but a reproduction that still fails after the fix does. An
-inconclusive report carries `inconclusiveReason`: `run-incomplete`,
+inconclusive report carries `inconclusiveReason`: `run-incomplete` (also
+when a goal failed or stopped, even if Playwright reported the test as
+passed),
 `no-tests`, `tests-differ`, `retried`, `skipped` or
 `failed-without-assertion`.
 
@@ -84,7 +90,7 @@ inconclusive report carries `inconclusiveReason`: `run-incomplete`,
 | --- | --- |
 | 0 | `confirmed` |
 | 1 | A conclusive verdict other than confirmed: `not-reproduced`, `fix-ineffective` or `regressed` |
-| 2 | Usage or setup error: missing or unknown revision, a spec outside the repository, the same revision twice, a spec this runner cannot plan, or links that could not be created |
+| 2 | Usage or setup error: missing or unknown revision, a spec outside the repository, the same revision twice, a spec this runner cannot plan, a revision with a linked parent directory, or links that could not be created |
 | 3 | `inconclusive`, an operational failure, or a report that could not be saved |
 
 ## Use it

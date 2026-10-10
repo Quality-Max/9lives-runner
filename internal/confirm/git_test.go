@@ -200,3 +200,64 @@ func TestCheckoutIsolatesARevisionAndCleansUpWithoutTouchingDependencies(t *test
 		t.Fatalf("worktree registration left behind: %s %v", list, err)
 	}
 }
+
+func TestCheckoutRefusesALinkedParentDirectoryFromTheRevision(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("committed symbolic links need core.symlinks, which Windows checkouts disable")
+	}
+	for _, dependencies := range []bool{false, true} {
+		root, _, _ := repository(t)
+		ctx := context.Background()
+		git := func(args ...string) string {
+			t.Helper()
+			output, err := exec.Command("git", append([]string{"-C", root, "-c", "user.name=9lives", "-c", "user.email=9lives@example.invalid", "-c", "commit.gpgsign=false"}, args...)...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %v: %v %s", args, err, output)
+			}
+			return strings.TrimSpace(string(output))
+		}
+		// A revision that commits tests/ as a link to a directory outside the
+		// checkout, holding a file at the reproduction spec's path.
+		outside := t.TempDir()
+		victim := filepath.Join(outside, "existing.spec.ts")
+		writeFile(t, victim, "// outside the checkout\n")
+		git("rm", "-r", "--quiet", "tests")
+		if err := os.Symlink(outside, filepath.Join(root, "tests")); err != nil {
+			t.Fatal(err)
+		}
+		git("add", "tests")
+		git("commit", "--quiet", "-m", "link tests outside")
+		linked := git("rev-parse", "HEAD")
+		// The working tree has a real tests/ again.
+		if err := os.Remove(filepath.Join(root, "tests")); err != nil {
+			t.Fatal(err)
+		}
+		spec := filepath.Join(root, "tests", "existing.spec.ts")
+		writeFile(t, spec, "// reproduction from the working tree\n")
+		if dependencies {
+			// tests/node_modules makes the dependency link go through tests/ first.
+			writeFile(t, filepath.Join(root, "tests", "node_modules", "marker"), "x")
+		}
+		repo, err := Open(ctx, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkout, err := repo.Checkout(ctx, linked)
+		if err == nil {
+			checkout.Close()
+			t.Fatalf("dependencies=%v: checkout followed a linked parent out of the tree", dependencies)
+		}
+		if !errors.As(err, new(SetupError)) || !strings.Contains(err.Error(), "does not follow it") {
+			t.Fatalf("dependencies=%v: unexpected error %v", dependencies, err)
+		}
+		entries, _ := os.ReadDir(outside)
+		content, _ := os.ReadFile(victim)
+		if len(entries) != 1 || string(content) != "// outside the checkout\n" {
+			t.Fatalf("dependencies=%v: the linked directory was changed: %v %q", dependencies, entries, content)
+		}
+		list, _ := exec.Command("git", "-C", root, "worktree", "list", "--porcelain").Output()
+		if strings.Count(string(list), "worktree ") != 1 {
+			t.Fatalf("dependencies=%v: refused checkout left a worktree: %s", dependencies, list)
+		}
+	}
+}
