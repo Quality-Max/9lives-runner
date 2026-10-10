@@ -630,7 +630,7 @@ func TestHealRecordsWhyTheProviderCallFailed(t *testing.T) {
 	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult {
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 	}}, func(string, string, string) (string, bool) { return "", false })
-	if err == nil || result.State != "provider_error" || result.ProviderDiagnostic != "claude provider failed (exit 1): Not logged in · Please run /login" || !strings.Contains(result.Reason, "Not logged in") {
+	if err == nil || result.State != "provider_error" || result.Provider != "fake" || result.ProviderCalls != 1 || result.ProviderDiagnostic != "claude provider failed (exit 1): Not logged in · Please run /login" || !strings.Contains(result.Reason, "Not logged in") {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
@@ -650,7 +650,7 @@ func TestHealDoesNotAskProviderForAnUneditableSourceShape(t *testing.T) {
 			result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: func(context.Context, string, string) RunResult {
 				return RunResult{ExecutedTests: 1, Failure: "TimeoutError: waiting for locator('#old')"}
 			}}, func(string, string, string) (string, bool) { return "", false })
-			if err != nil || provider.calls != 0 || result.State != "unverified" || !strings.Contains(result.Reason, "Tier 2 was not asked") || !strings.Contains(result.Reason, tc.reason) {
+			if err != nil || provider.calls != 0 || result.ProviderCalls != 0 || result.Provider != "fake" || result.State != "unverified" || !strings.Contains(result.Reason, "Tier 2 was not asked") || !strings.Contains(result.Reason, tc.reason) {
 				t.Fatalf("calls=%d result=%+v err=%v", provider.calls, result, err)
 			}
 		})

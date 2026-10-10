@@ -87,6 +87,12 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 // CLI or configured API key is used when present, and nil means healing is
 // offline Tier 1 only.
 func resolveHealProvider(name, model, baseURL string) (tier2.Provider, error) {
+	// "none" keeps healing offline even when an agent CLI or API key is
+	// present, without stripping PATH or the environment.
+	explicit := strings.ToLower(strings.TrimSpace(name))
+	if explicit == "none" || explicit == "" && tier2.EnvironmentProvider() == "none" {
+		return nil, nil
+	}
 	provider, err := tier2.Resolve(tier2.Options{Name: name, Model: model, BaseURL: baseURL})
 	if err != nil {
 		if name != "" || os.Getenv("NINELIVES_PROVIDER") != "" {
@@ -124,7 +130,7 @@ func (f runTimeoutFlag) Set(raw string) error {
 func healCommand(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("heal", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	providerName := fs.String("provider", "", "Tier 2 provider (claude, codex, opencode, anthropic, openai); default: an installed agent CLI or configured API key, else offline Tier 1 only")
+	providerName := fs.String("provider", "", "Tier 2 provider (claude, codex, opencode, anthropic, openai, or none for offline Tier 1 only); default: an installed agent CLI or configured API key")
 	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
 	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
 	yes := fs.Bool("yes", false, "apply verified candidate without interactive approval")
@@ -152,7 +158,14 @@ func healCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "9l: heal provider unavailable")
 		return 2
 	}
-	if provider == nil {
+	switch {
+	case provider != nil:
+		// A provider call sends the spec source and failure text off the
+		// machine and may bill the account; say which before any call.
+		fmt.Fprintf(errOut, "9l: healing provider: %s; --provider none heals offline\n", tier2.Describe(provider))
+	case strings.EqualFold(strings.TrimSpace(*providerName), "none") || *providerName == "" && tier2.EnvironmentProvider() == "none":
+		fmt.Fprintln(errOut, "9l: provider none: healing with offline Tier 1 only")
+	default:
 		fmt.Fprintln(errOut, "9l: no Tier 2 provider found; healing with offline Tier 1 only")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

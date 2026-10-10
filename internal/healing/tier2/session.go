@@ -66,6 +66,10 @@ type Session struct {
 	Applied       bool      `json:"applied"`
 	SavedPath     string    `json:"savedPath,omitempty"`
 	Reason        string    `json:"reason,omitempty"`
+	// Provider is the Tier 2 provider's name ("" when healing was offline) and
+	// ProviderCalls how many proposals it was asked for.
+	Provider      string `json:"provider,omitempty"`
+	ProviderCalls int    `json:"providerCalls"`
 	// ProviderDiagnostic is a bounded, redacted account of a failed provider
 	// call, such as the CLI's exit code and its last output lines.
 	ProviderDiagnostic string `json:"providerDiagnostic,omitempty"`
@@ -89,6 +93,9 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 		return result, errors.New("source file exceeds native healing input limit")
 	}
 	cleanupStaleOwnedCopies(opts.Spec)
+	if opts.Provider != nil {
+		result.Provider = opts.Provider.Name()
+	}
 	result.OriginalHash = hash(original)
 	result.Original = opts.Run(ctx, opts.Spec, "original")
 	if err := ctx.Err(); err != nil {
@@ -177,6 +184,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 			result.Reason = "native Tier 2 prompt exceeds provider limit"
 			return result, nil
 		}
+		result.ProviderCalls++
 		response, callErr := opts.Provider.Complete(ctx, prompt, opts.Model)
 		if callErr != nil {
 			if errors.Is(callErr, context.Canceled) || errors.Is(callErr, context.DeadlineExceeded) || ctx.Err() != nil {

@@ -5,7 +5,9 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -182,5 +184,30 @@ func TestPrintResultExplainsSkippedInputs(t *testing.T) {
 		Receipts: []runner.Receipt{{Status: runner.StatusPassed, Spec: "tests/ok.spec.ts"}}})
 	if !strings.Contains(out.String(), "  SKIP     tests/missing.spec.ts — no matching files\n  INCOMPLETE: 1 input(s) were skipped and not run; a skipped input is never a pass\n") {
 		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
+func TestProviderNoneKeepsHealingOfflineWithAnAgentCLIInstalled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell stand-in for an agent CLI")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NINELIVES_PROVIDER", "")
+	if provider, err := resolveHealProvider("", "", ""); err != nil || provider == nil || provider.Name() != "claude" {
+		t.Fatalf("auto-detection: %v %v", provider, err)
+	}
+	if provider, err := resolveHealProvider("none", "", ""); err != nil || provider != nil {
+		t.Fatalf("--provider none: %v %v", provider, err)
+	}
+	t.Setenv("NINELIVES_PROVIDER", "none")
+	if provider, err := resolveHealProvider("", "", ""); err != nil || provider != nil {
+		t.Fatalf("NINELIVES_PROVIDER=none: %v %v", provider, err)
+	}
+	if provider, err := resolveHealProvider("claude", "", ""); err != nil || provider == nil {
+		t.Fatalf("an explicit flag overrides the environment: %v %v", provider, err)
 	}
 }

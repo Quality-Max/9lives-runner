@@ -34,7 +34,10 @@ project's own Playwright configuration, exactly like `9l run` and `9l heal`.
 `heal_test` is the [native healing session](native-tier2.md): one offline
 Tier 1 attempt, then Tier 2 proposals from the provider `9l mcp` was started
 with (`--provider`, `NINELIVES_PROVIDER`, an installed agent CLI or a
-configured API key; none means Tier 1 only). Every candidate runs in an
+configured API key; no provider, or `--provider none`, means Tier 1 only).
+The server names that provider in its `initialize` instructions, and each
+result records `provider` and `providerCalls`; a failed call carries
+`providerDiagnostic`. Every candidate runs in an
 isolated copy first. Without `apply`, a verified candidate is saved as
 `<spec>.healed`; `apply: true` is the caller's explicit approval to write it
 in place, which still happens only if the spec is unchanged since it was

@@ -51,7 +51,14 @@ otherwise saves the verified candidate as `<spec>.healed` (see
 [MCP server](mcp.md)).
 
 Providers resolve in explicit option, `NINELIVES_PROVIDER`, installed CLI,
-then configured-key order. `--pass-env` forwards explicitly named values only to test processes, never to a provider. `claude-code` remains an alias for `claude`.
+then configured-key order. `--provider none` (or `NINELIVES_PROVIDER=none`)
+heals with offline Tier 1 only even when an agent CLI or API key is present.
+Before healing starts, the command prints the resolved provider and how it is
+reached to stderr, for example
+`9l: healing provider: claude (CLI, its own login); --provider none heals offline`.
+The session JSON records `provider` and `providerCalls`, the number of
+proposals requested; the MCP `heal_test` result carries the same fields, and
+the MCP server names its provider in its `initialize` instructions. `--pass-env` forwards explicitly named values only to test processes, never to a provider. `claude-code` remains an alias for `claude`.
 CLI prompts use stdin for Claude/Codex and OpenCode receives its documented
 argument with closed stdin. A CLI runs in an empty temporary directory with
 only what it needs to find its own login and reach its service: `PATH`,

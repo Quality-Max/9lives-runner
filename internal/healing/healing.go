@@ -389,6 +389,7 @@ func transform(selector string) string {
 	}
 	return ""
 }
+
 // EquivalentSelectors reports a Tier 1 transformation that selects exactly
 // the same elements, such as #save and [id="save"] for a valid CSS
 // identifier. Verifying it can never fix a missing element, so native healing

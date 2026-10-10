@@ -155,7 +155,7 @@ func (failedResult) Error() string { return "tool failed" }
 func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	providerName := fs.String("provider", "", "heal_test Tier 2 provider; default: an installed agent CLI or configured API key, else offline Tier 1 only")
+	providerName := fs.String("provider", "", "heal_test Tier 2 provider, or none for offline Tier 1 only; default: an installed agent CLI or configured API key")
 	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
 	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "run_test receipts")
@@ -297,7 +297,7 @@ func (s *mcpServer) handle(ctx context.Context, line []byte) {
 			"protocolVersion": protocol,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "9lives", "title": "9lives Go runner", "version": version},
-			"instructions":    mcpInstructions,
+			"instructions":    mcpInstructions + " heal_test provider: " + tier2.Describe(s.provider) + ".",
 		})
 	case "ping":
 		s.result(message.ID, map[string]any{})

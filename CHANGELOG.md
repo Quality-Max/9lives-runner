@@ -18,6 +18,12 @@ SDK versions.
   `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR` now reach
   the CLI. Codex runs with `--sandbox read-only --color never` and OpenCode
   with its read-only `plan` agent.
+- Provider use is explicit: `9l heal` prints the resolved provider and how
+  it is reached before healing starts, `--provider none` /
+  `NINELIVES_PROVIDER=none` keeps healing offline with an agent CLI
+  installed, and the session JSON and MCP `heal_test` result record
+  `provider` and `providerCalls`. `9l mcp` names its heal provider in its
+  `initialize` instructions.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".

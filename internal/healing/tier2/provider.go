@@ -53,7 +53,7 @@ func Resolve(options Options) (Provider, error) {
 		name = "claude"
 	}
 	if name == "" {
-		name = strings.ToLower(strings.TrimSpace(os.Getenv("NINELIVES_PROVIDER")))
+		name = EnvironmentProvider()
 		if name == "claude-code" {
 			name = "claude"
 		}
@@ -94,6 +94,11 @@ func Resolve(options Options) (Provider, error) {
 	}
 }
 
+// EnvironmentProvider is NINELIVES_PROVIDER, normalised.
+func EnvironmentProvider() string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("NINELIVES_PROVIDER")))
+}
+
 func availableHTTPProvider(options Options, timeout time.Duration) Provider {
 	if os.Getenv("ANTHROPIC_API_KEY") != "" {
 		return httpProvider("anthropic", options.BaseURL, timeout)
@@ -113,6 +118,24 @@ func httpProvider(name, baseURL string, timeout time.Duration) HTTPProvider {
 		}
 	}
 	return HTTPProvider{name: name, baseURL: baseURL, timeout: timeout, model: DefaultModel(name)}
+}
+
+// Describe names a provider and how it is reached, for the user to see
+// before any call: "claude (CLI, its own login)", "anthropic (API key)", or
+// both when a CLI falls back to an API.
+func Describe(provider Provider) string {
+	switch p := provider.(type) {
+	case nil:
+		return "none (offline Tier 1 only)"
+	case CLIProvider:
+		return p.name + " (CLI, its own login)"
+	case HTTPProvider:
+		return p.name + " (API key " + p.CredentialNames()[0] + ")"
+	case fallbackProvider:
+		return Describe(p.primary) + ", then " + Describe(p.fallback) + " if the CLI fails"
+	default:
+		return provider.Name()
+	}
 }
 
 type fallbackProvider struct{ primary, fallback Provider }

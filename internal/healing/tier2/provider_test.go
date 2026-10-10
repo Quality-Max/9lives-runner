@@ -371,3 +371,20 @@ func TestCodexAndOpenCodeFindFileLoginsWithoutCredentials(t *testing.T) {
 		t.Fatalf("logged-out codex err=%v", err)
 	}
 }
+
+func TestDescribeNamesHowEachProviderIsReached(t *testing.T) {
+	cli := CLIProvider{name: "claude"}
+	api := httpProvider("anthropic", "", time.Second)
+	for provider, want := range map[Provider]string{
+		cli: "claude (CLI, its own login)",
+		api: "anthropic (API key ANTHROPIC_API_KEY)",
+		fallbackProvider{primary: cli, fallback: api}: "claude (CLI, its own login), then anthropic (API key ANTHROPIC_API_KEY) if the CLI fails",
+	} {
+		if got := Describe(provider); got != want {
+			t.Errorf("Describe = %q, want %q", got, want)
+		}
+	}
+	if got := Describe(nil); got != "none (offline Tier 1 only)" {
+		t.Errorf("Describe(nil) = %q", got)
+	}
+}

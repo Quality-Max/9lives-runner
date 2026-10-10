@@ -117,8 +117,10 @@ recursively; shell-style globs use Go's `filepath.Glob` rules.
 
 `9l heal` and `9l mcp` are native and need no Python. Healing uses the
 provider named with `--provider` or `NINELIVES_PROVIDER`, else an installed
-`claude`, `codex` or `opencode` CLI, else a configured API key; with none it is
-offline Tier 1 only. `--provider claude`, `codex` or `opencode` uses that
+`claude`, `codex` or `opencode` CLI, else a configured API key; with none, or
+with `--provider none`, it is offline Tier 1 only. The resolved provider is
+printed before healing starts, and the session JSON records `provider` and
+`providerCalls`. `--provider claude`, `codex` or `opencode` uses that
 CLI's own login, so a Claude, ChatGPT or OpenCode subscription works without
 an API key; see
 [native Tier 2](native-tier2.md#healing-on-a-claude-chatgpt-or-opencode-subscription). `--run-timeout` takes a duration or, like the Python CLI,
