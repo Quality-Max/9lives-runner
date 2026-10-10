@@ -75,7 +75,8 @@ Right column, "Model is opt-in":
 - API keys stay in the Go process. They are never written to plans or receipts.
 
 Small callout: "An agent such as Claude can help author a spec. Once written,
-the spec is a file that runs without the agent."
+the spec is a file that runs without the agent. The MCP server runs that file
+for the agent; it never gives the agent a browser."
 
 ### 4. How it compares
 
@@ -89,18 +90,22 @@ Use filled, half and empty markers, no text in cells. Rows:
 - Per-attempt evidence receipts, redacted, stored locally
 - Runs locally with no account
 - Browser driver layer (BiDi or CDP)
-- Agent-facing MCP surface
+- Agent-facing MCP surface (9lives: yes, with the note "four test-level
+  tools, not browser commands")
 - Model completion counts as a pass
 
 Under the matrix, one paragraph: Vibium replaces the browser driver and gives
 agents a compact command surface. 9lives sits one layer up, on top of
 Playwright, and owns execution policy and evidence. They are complements, not
-competitors; Vibium could in principle become a 9lives backend.
+competitors; Vibium could in principle become a 9lives backend. Both expose
+an MCP server, but to different ends: Vibium hands an agent about 75 browser
+commands; `9l mcp` hands it four verdicts: run, heal, assess and confirm a spec.
 
 ### 5. Shipped today vs planned
 
 Two honest lists. This section is mandatory and must be visually equal in
-weight to the comparison.
+weight to the comparison. Under the heading, one muted line: "As of v0.2.0,
+released 2026-10-10. Experimental commands are marked."
 
 **Shipped today**
 - `n9l.step` and bounded `n9l.goal` in `@9l/playwright`
@@ -111,12 +116,20 @@ weight to the comparison.
 - Scrubbed test environment; env vars forwarded only when named
 - A skipped test fails the attempt unless explicitly pinned
 - `9l assess`: opt-in advisory assessment of a Playwright spec against shared requirements
+- `9l run --headed`: visual mode, one job at a time by default
+- `9l prove` (experimental): re-run a spec once per injected network fault and report which faults an assertion caught
+- `9l confirm` (experimental): run a reproduction spec on the unfixed and fixed Git revisions in separate worktrees and classify the pair
+- `9l heal`: native, offline Tier 1 by default, every candidate verified in isolation; an assertion failure is handed to a human, not masked
+- `9l mcp`: MCP stdio server with run, heal, assess and confirm tools; paths stay inside the project, env vars only when named
+- Exit codes 0, 1, 2 and 3 for pass, fail, usage error and incomplete, with JSON Schemas for every output
+- macOS, Linux and Windows builds for amd64 and arm64, with owned process trees on each
 
 **Planned, not shipped**
 - Independent behavioral verification (the `result.verified` field exists but is always false today)
 - Replay of verified actions
 - Native mobile execution
 - Measured correctness, latency and cost of live model runs
+- Automatic recovery of interrupted runs
 - General semantic review of generated tests
 
 ### 6. Why build it this way

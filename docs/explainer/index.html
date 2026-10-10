@@ -112,7 +112,7 @@
       </div>
       <div style="display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; padding: 16px 20px; border: 1px solid rgba(124, 108, 240, 0.28); background: rgba(124, 108, 240, 0.08); border-radius: 8px; font-size: 14px; color: var(--brand-text-dim);">
         <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary);">Note</span>
-        <span style="flex: 1 1 0%; min-width: 240px;">An agent such as Claude can help author a spec. Once written, the spec is a file that runs without the agent.</span>
+        <span style="flex: 1 1 0%; min-width: 240px;">An agent such as Claude can help author a spec. Once written, the spec is a file that runs without the agent. The MCP server runs that file for the agent; it never gives the agent a browser.</span>
       </div>
     </section>
 
@@ -304,11 +304,11 @@
             <div style="display: grid; grid-template-columns: minmax(0px, 2.4fr) repeat(4, minmax(0px, 1fr)); border-bottom: 1px solid var(--brand-border);">
               <div style="padding: 16px 20px; font-size: 14px; color: var(--brand-text); display: flex; flex-direction: column; gap: 2px; justify-content: center;">
                 <span>Agent-facing MCP surface</span>
-                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);">9lives: four test-level tools, not browser commands</span>
               </div>
               
                 <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: rgba(124, 108, 240, 0.08);">
-                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
                 </div>
               
                 <div style="display: flex; align-items: center; justify-content: center; padding: 16px 12px; background: transparent;">
@@ -486,12 +486,12 @@
             <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
               <div style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="font-size: 15px; font-weight: 500;">Agent-facing MCP surface</span>
-                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);"></span>
+                <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11px; color: var(--text-tertiary);">9lives: four test-level tools, not browser commands</span>
               </div>
               <div style="display: grid; grid-template-columns: minmax(0px, 1fr) auto; gap: 10px 16px; align-items: center;">
                 
                   <span style="font-size: 13px; color: var(--brand-text-dim);">9lives</span>
-                  <span title="9lives: No" aria-label="9lives: No" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid var(--text-muted);"></span>
+                  <span title="9lives: Yes" aria-label="9lives: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
                 
                   <span style="font-size: 13px; color: var(--brand-text-dim);">Vibium</span>
                   <span title="Vibium: Yes" aria-label="Vibium: Yes" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--brand-text);"></span>
@@ -532,7 +532,7 @@
 
       
 
-      <p style="margin: 0px; max-width: 760px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">Vibium replaces the browser driver and gives agents a compact command surface. 9lives sits one layer up, on top of Playwright, and owns execution policy and evidence. They are complements, not competitors; Vibium could in principle become a 9lives backend.</p>
+      <p style="margin: 0px; max-width: 760px; font-size: 15px; color: var(--brand-text-dim); text-wrap: pretty;">Vibium replaces the browser driver and gives agents a compact command surface. 9lives sits one layer up, on top of Playwright, and owns execution policy and evidence. They are complements, not competitors; Vibium could in principle become a 9lives backend. Both expose an MCP server, but to different ends: Vibium hands an agent about 75 browser commands; <span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l mcp</span> hands it four verdicts: run, heal, assess and confirm a spec.</p>
     </section>
 
     
@@ -540,6 +540,7 @@
       <div style="display: flex; flex-direction: column; gap: 12px; max-width: 640px;">
         <div style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: rgb(184, 168, 255);">04 · Status</div>
         <h2 style="margin: 0px; font-family: var(--font-heading); font-weight: 700; font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em;">Shipped today vs planned</h2>
+        <p style="margin: 0px; font-size: 14px; color: var(--brand-text-dim);">As of v0.2.0, released 2026-10-10. Experimental commands are marked.</p>
       </div>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 16px;">
         <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 28px; display: flex; flex-direction: column; gap: 20px;">
@@ -553,6 +554,13 @@
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>Scrubbed test environment; env vars forwarded only when named</span></div>
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>A skipped test fails the attempt unless explicitly pinned</span></div>
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l assess</span>: opt-in advisory assessment of a Playwright spec against shared requirements</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l run --headed</span>: visual mode, one job at a time by default</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l prove</span> (experimental): re-run a spec once per injected network fault and report which faults an assertion caught</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l confirm</span> (experimental): run a reproduction spec on the unfixed and fixed Git revisions in separate worktrees and classify the pair</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l heal</span>: native, offline Tier 1 by default, every candidate verified in isolation; an assertion failure is handed to a human, not masked</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span><span style="font-family: var(--font-code); font-variant-ligatures: none; font-size: 13px;">9l mcp</span>: MCP stdio server with run, heal, assess and confirm tools; paths stay inside the project, env vars only when named</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>Exit codes 0, 1, 2 and 3 for pass, fail, usage error and incomplete, with JSON Schemas for every output</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--brand-violet); transform: translateY(-1px);"></span><span>macOS, Linux and Windows builds for amd64 and arm64, with owned process trees on each</span></div>
           </div>
         </div>
         <div style="background: var(--brand-card-tint); border: 1px solid var(--brand-border); border-radius: 14px; transition: 200ms; padding: 28px; display: flex; flex-direction: column; gap: 20px;">
@@ -562,6 +570,7 @@
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Replay of verified actions</span></div>
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Native mobile execution</span></div>
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Measured correctness, latency and cost of live model runs</span></div>
+            <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>Automatic recovery of interrupted runs</span></div>
             <div style="display: grid; grid-template-columns: 8px minmax(0px, 1fr); gap: 14px; align-items: baseline; padding: 11px 0px; border-top: 1px solid var(--brand-border);"><span style="width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-tertiary); transform: translateY(-1px);"></span><span>General semantic review of generated tests</span></div>
           </div>
         </div>
