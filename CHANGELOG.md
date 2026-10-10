@@ -27,6 +27,10 @@ SDK versions.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".
+- Refusals name the boundary: "not an editable locator action" now says
+  what the call log waited for (or how the failure was classified) and which
+  call shapes healing repairs. `9l heal` prints the reason of an
+  `unverified` or `needs_human` session on stderr.
 - A refused provider answer says why: the parse error (for example "must
   return exactly one fenced complete file", with the response's first 160
   characters as `providerDiagnostic`), or the lines it changed beyond the

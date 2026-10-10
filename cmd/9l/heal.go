@@ -181,6 +181,8 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	}
 	if err != nil && ctx.Err() == nil {
 		fmt.Fprintln(errOut, "9l: heal:", healFailure(result, *yes))
+	} else if err == nil && (result.State == "unverified" || result.State == "needs_human") && result.Reason != "" {
+		fmt.Fprintf(errOut, "9l: heal: %s: %s\n", result.State, result.Reason)
 	}
 	if err != nil || (!result.Applied && result.SavedPath == "" && result.State != "passed") {
 		return 1

@@ -720,3 +720,23 @@ func TestHealExplainsWhyAProviderCandidateWasRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestRefusalReasonsNameTheBoundaryAndTheWaitedLocator(t *testing.T) {
+	for failure, want := range map[string]string{
+		"TimeoutError: locator.click: Timeout\nCall log:\n\x1b[2m  - waiting for getByRole('form').getByRole('button', { name: 'Go' })\x1b[22m": "it waited for getByRole('form').getByRole('button', { name: 'Go' }), which is not an editable locator",
+		"TimeoutError: locator.click: Timeout\nCall log:\n  - waiting for getByRole('button', { name: /go/i })":                                 "it waited for getByRole('button', { name: /go/i })",
+		"page.goto: net::ERR_NAME_NOT_RESOLVED; navigation failed":                                                                              "navigation problem",
+		"Error: something unexpected": "classified as unknown",
+	} {
+		if _, editable := editableFailure(failure); editable {
+			t.Fatalf("%q treated as editable", failure)
+		}
+		got := notEditableReason(failure)
+		if !strings.Contains(got, want) {
+			t.Errorf("reason for %q = %q, want it to contain %q", failure, got, want)
+		}
+		if !strings.Contains(want, "navigation") && !strings.Contains(got, "page.getBy*(") {
+			t.Errorf("reason does not name the editable shapes: %q", got)
+		}
+	}
+}

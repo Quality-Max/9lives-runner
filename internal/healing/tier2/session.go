@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -119,7 +120,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 	}
 	if _, editable := editableFailure(result.Original.Failure); !editable {
 		result.State = "unverified"
-		result.Reason = "original failure is not an editable locator action"
+		result.Reason = "original failure is not an editable locator action: " + notEditableReason(result.Original.Failure)
 		return result, nil
 	}
 	// Tier 1 is one attempt only. Its broader heuristic proposal must satisfy the
@@ -167,7 +168,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 				result.Reason = "candidate verification reached an assertion failure"
 			} else {
 				result.State = "unverified"
-				result.Reason = "failed run is not an editable locator action"
+				result.Reason = "failed run is not an editable locator action: " + notEditableReason(latestFailure)
 			}
 			return result, nil
 		}
@@ -289,7 +290,7 @@ func (result *Session) stopAfterFailedVerification(verified RunResult, expectedT
 	}
 	if _, editable := editableFailure(verified.Failure); !editable {
 		result.State = "unverified"
-		result.Reason = "failed run is not an editable locator action"
+		result.Reason = "candidate run is not an editable locator action: " + notEditableReason(verified.Failure)
 		return true
 	}
 	return false
@@ -498,6 +499,30 @@ func preserveNewlines(original, candidate string) string {
 		return strings.ReplaceAll(candidate, "\n", "\r\n")
 	}
 	return candidate
+}
+
+// editableShapes is the healing boundary, named in refusals.
+const editableShapes = "healing repairs a timed-out or missing locator in page.locator('…').<action>(), page.<action>('…') or a single page.getBy*(…) call with literal arguments"
+
+var waitedFor = regexp.MustCompile(`(?m)waiting for (.+?)[ \t]*$`)
+
+// notEditableReason says why editableFailure refused a failure: what the
+// call log waited for, or what kind of failure it was, and the boundary.
+func notEditableReason(failure string) string {
+	clean := terminalEscape.ReplaceAllString(failure, "")
+	lower := strings.ToLower(clean)
+	for _, unsafe := range []string{"network", "syntax", "navigation", "flow changed"} {
+		if strings.Contains(lower, unsafe) {
+			return "the failure reports a " + unsafe + " problem, which a locator edit cannot fix"
+		}
+	}
+	if m := waitedFor.FindStringSubmatch(clean); len(m) == 2 && healing.FailedLocator(failure) == "" {
+		return "it waited for " + truncate(m[1], 200) + ", which is not an editable locator (chained or regular-expression locators are not edited); " + editableShapes
+	}
+	if kind := healing.Classify(failure, ""); kind != "locator_not_found" && kind != "locator_timeout" && kind != "element_not_visible" {
+		return "the failure is classified as " + strings.ReplaceAll(kind, "_", " ") + "; " + editableShapes
+	}
+	return "the failure names no locator; " + editableShapes
 }
 
 func editableFailure(failure string) (string, bool) {
