@@ -36,7 +36,7 @@ func FailureContext(raw []byte) string {
 			if message, ok := node["message"].(string); ok && message != "" {
 				// Playwright reports each error as result.error and in
 				// result.errors; keep one copy, without terminal escapes.
-				message = withoutSourceFrames(terminalEscape.ReplaceAllString(message, ""))
+				message = withoutSourceFrames(runner.StripTerminalEscapes(message))
 				if !seen[message] {
 					seen[message] = true
 					values = append(values, message)
@@ -57,7 +57,9 @@ func FailureContext(raw []byte) string {
 		}
 	}
 	visit(payload)
-	context := strings.TrimSpace(strings.Join(values, "\n"))
+	// Redact before clipping: a clip through a key/value pair would dodge the
+	// redaction patterns.
+	context := runner.RedactText(strings.TrimSpace(strings.Join(values, "\n")))
 	if len(context) > 3000 {
 		// Classify the complete diagnostics before clipping. Otherwise a long
 		// locator call log can hide a later assertion or infrastructure failure.
@@ -73,9 +75,22 @@ func FailureContext(raw []byte) string {
 				summary += "Reported failure: " + unsafe + "\n"
 			}
 		}
-		return summary + context[:3000-len(summary)]
+		return summary + boundText(context, 3000-len(summary))
 	}
 	return context
+}
+
+// boundText cuts text at limit bytes on a rune boundary, so bounded evidence
+// stays valid UTF-8.
+func boundText(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
 }
 
 var sourceFrame = regexp.MustCompile(`(?m)^\s*(?:>|\|)?\s*\d+\s*\|`)
@@ -442,8 +457,6 @@ type failureSuite struct {
 	} `json:"specs"`
 }
 
-var terminalEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
-
 // Failures lists each unexpected test of a validated report with its failing
 // line, the start of its error and the files Playwright attached, such as
 // error-context.md with the page's ARIA snapshot. It reads the last failed
@@ -465,6 +478,8 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 				if test.ProjectName != "" {
 					failure.Title = "[" + test.ProjectName + "] " + failure.Title
 				}
+				// A spec controls its own titles; keep the bound on evidence.
+				failure.Title = boundText(failure.Title, 512)
 				if spec.File != "" && spec.Line > 0 {
 					failure.Location = fmt.Sprintf("%s:%d", filepath.ToSlash(spec.File), spec.Line)
 				}
@@ -518,15 +533,11 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 // failureMessage is the start of an error without terminal escapes or source
 // frames, redacted and cut on a rune boundary.
 func failureMessage(message string) string {
-	message = runner.RedactText(withoutSourceFrames(terminalEscape.ReplaceAllString(message, "")))
+	message = runner.RedactText(withoutSourceFrames(runner.StripTerminalEscapes(message)))
 	if len(message) <= runner.MaxFailureMessageBytes {
 		return message
 	}
-	cut := runner.MaxFailureMessageBytes
-	for cut > 0 && !utf8.RuneStart(message[cut]) {
-		cut--
-	}
-	return message[:cut] + "…"
+	return boundText(message, runner.MaxFailureMessageBytes) + "…"
 }
 
 // attachmentInProject keeps attachment references inside the project, also
@@ -585,6 +596,13 @@ func ReadAttachment(path string, limit int64) ([]byte, error) {
 
 var pageSnapshotBlock = regexp.MustCompile("(?s)(?:^|\n)# Page snapshot\\s*\n```yaml\n(.*?)\n```")
 
+// SanitizeAttachmentText prepares page-snapshot text taken from an attachment
+// to leave the machine: values typed into fields are dropped and the rest is
+// redacted like evidence. Callers bound the result.
+func SanitizeAttachmentText(text string) string {
+	return runner.RedactText(typedValue.ReplaceAllString(text, "$1"))
+}
+
 // PageSnapshot returns the ARIA snapshot of the page from a failed test's
 // error-context.md, at most 64 KiB, or "" when it has none.
 func PageSnapshot(failures []runner.TestFailure) string {
@@ -603,7 +621,7 @@ func PageSnapshot(failures []runner.TestFailure) string {
 			}
 			// The snapshot leaves the machine in a provider prompt: drop values
 			// typed into fields and redact what looks like a secret.
-			return runner.RedactText(typedValue.ReplaceAllString(string(m[1]), "$1"))
+			return SanitizeAttachmentText(string(m[1]))
 		}
 	}
 	return ""
