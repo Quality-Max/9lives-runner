@@ -229,7 +229,7 @@ func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
 				continue
 			}
 			call, ok := parseGetByArguments(tokens, i+2)
-			if !ok || call.role != want.role || call.exact != want.exact || call.value != old && call.value != want.value {
+			if !ok || call.role != want.role || call.exact != want.exact || call.value != want.value {
 				continue
 			}
 			literal := i + 4 // getByText('value' ...

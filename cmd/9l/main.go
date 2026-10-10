@@ -731,7 +731,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	return runExitCode(result, executionFailed)
 }
 
-var reporterName = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9@/._-]{0,127}$`)
+var reporterName = regexp.MustCompile(`^[A-Za-z0-9@./][A-Za-z0-9@/._-]{0,127}$`)
 
 // reporterList validates --reporter: names or module paths, comma-separated.
 // json is the evidence channel and cannot be added twice.

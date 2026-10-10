@@ -221,7 +221,7 @@ func TestPrintPlanShowsTheTestSelection(t *testing.T) {
 }
 
 func TestReporterListKeepsJSONForEvidence(t *testing.T) {
-	if got, err := reporterList("html, list"); err != nil || strings.Join(got, ",") != "html,list" {
+	if got, err := reporterList("html, list, ./reporters/slack.ts, @acme/reporter"); err != nil || strings.Join(got, ",") != "html,list,./reporters/slack.ts,@acme/reporter" {
 		t.Fatalf("got=%v err=%v", got, err)
 	}
 	for _, bad := range []string{"json", "html,json", "html --grep x", "../reporter.js", ""} {
