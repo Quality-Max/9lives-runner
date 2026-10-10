@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -51,10 +53,17 @@ func Resolve(options Options) (Provider, error) {
 		name = "claude"
 	}
 	if name == "" {
-		name = strings.ToLower(strings.TrimSpace(os.Getenv("NINELIVES_PROVIDER")))
+		name = EnvironmentProvider()
 		if name == "claude-code" {
 			name = "claude"
 		}
+	}
+	autoDetect, err := AutoDetectEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if name == "" && !autoDetect {
+		return nil, ErrAutoDetectOff
 	}
 	if name == "" {
 		for _, candidate := range []string{"claude", "codex", "opencode"} {
@@ -81,7 +90,9 @@ func Resolve(options Options) (Provider, error) {
 	switch name {
 	case "claude", "codex", "opencode":
 		primary := CLIProvider{name: name, timeout: timeout}
-		if fallback := availableHTTPProvider(options, timeout); fallback != nil {
+		// The API-key fallback is a provider nobody named; it follows the
+		// auto-detection setting.
+		if fallback := availableHTTPProvider(options, timeout); fallback != nil && autoDetect {
 			return fallbackProvider{primary: primary, fallback: fallback}, nil
 		}
 		return primary, nil
@@ -90,6 +101,29 @@ func Resolve(options Options) (Provider, error) {
 	default:
 		return nil, fmt.Errorf("unknown healing provider %q", name)
 	}
+}
+
+// ErrAutoDetectOff means no provider was named and auto-detection is off.
+var ErrAutoDetectOff = errors.New("healing provider auto-detection is off (NINELIVES_AUTODETECT_PROVIDER)")
+
+// AutoDetectEnabled reads NINELIVES_AUTODETECT_PROVIDER. On (the default),
+// healing picks an installed agent CLI or a configured API key when no
+// provider is named, and a CLI falls back to a configured API. Off, only a
+// provider named with --provider or NINELIVES_PROVIDER is used.
+func AutoDetectEnabled() (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("NINELIVES_AUTODETECT_PROVIDER"))) {
+	case "", "1", "on", "true", "yes":
+		return true, nil
+	case "0", "off", "false", "no":
+		return false, nil
+	default:
+		return false, errors.New("NINELIVES_AUTODETECT_PROVIDER must be on or off")
+	}
+}
+
+// EnvironmentProvider is NINELIVES_PROVIDER, normalised.
+func EnvironmentProvider() string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("NINELIVES_PROVIDER")))
 }
 
 func availableHTTPProvider(options Options, timeout time.Duration) Provider {
@@ -113,6 +147,24 @@ func httpProvider(name, baseURL string, timeout time.Duration) HTTPProvider {
 	return HTTPProvider{name: name, baseURL: baseURL, timeout: timeout, model: DefaultModel(name)}
 }
 
+// Describe names a provider and how it is reached, for the user to see
+// before any call: "claude (CLI, its own login)", "anthropic (API key)", or
+// both when a CLI falls back to an API.
+func Describe(provider Provider) string {
+	switch p := provider.(type) {
+	case nil:
+		return "none (offline Tier 1 only)"
+	case CLIProvider:
+		return p.name + " (CLI, its own login)"
+	case HTTPProvider:
+		return p.name + " (API key " + p.CredentialNames()[0] + ")"
+	case fallbackProvider:
+		return Describe(p.primary) + ", then " + Describe(p.fallback) + " if the CLI fails"
+	default:
+		return provider.Name()
+	}
+}
+
 type fallbackProvider struct{ primary, fallback Provider }
 
 func (p fallbackProvider) Name() string { return p.primary.Name() }
@@ -121,7 +173,12 @@ func (p fallbackProvider) Complete(ctx context.Context, prompt, model string) (s
 	if err == nil || ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return response, err
 	}
-	return p.fallback.Complete(ctx, prompt, model)
+	response, fallbackErr := p.fallback.Complete(ctx, prompt, model)
+	if fallbackErr != nil {
+		// Keep the primary's diagnostic: it is usually the actionable one.
+		return response, fmt.Errorf("%w; %s fallback: %w", err, p.fallback.Name(), fallbackErr)
+	}
+	return response, nil
 }
 
 // DefaultModel preserves the pinned upstream API defaults. CLI providers own
@@ -158,14 +215,18 @@ func (p CLIProvider) Complete(ctx context.Context, prompt, model string) (string
 		}
 		command = exec.Command("claude", args...)
 	case "codex":
-		args := []string{"exec", "--skip-git-repo-check"}
+		// A read-only sandbox: the answer is text, and model-generated shell
+		// commands must not write anything.
+		args := []string{"exec", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"}
 		if model != "" {
 			args = append(args, "--model", model)
 		}
 		args = append(args, "-")
 		command = exec.Command("codex", args...)
 	case "opencode":
-		args := []string{"run"}
+		// The built-in plan agent cannot edit files and asks before running
+		// commands, which a non-interactive run declines.
+		args := []string{"run", "--agent", "plan"}
 		if model != "" {
 			args = append(args, "--model", model)
 		}
@@ -189,19 +250,104 @@ func (p CLIProvider) Complete(ctx context.Context, prompt, model string) (string
 	command.Dir = workDir
 	command.Env = providerEnvironment()
 	var output limitedBuffer
-	command.Stdout, command.Stderr = &output, io.Discard
+	stderr := &tailBuffer{limit: maxDiagnosticBytes}
+	command.Stdout, command.Stderr = &output, stderr
 	err = runner.RunOwnedCommand(ctx, command)
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
 	if err != nil {
-		return "", fmt.Errorf("%s provider failed", p.name)
+		exitCode := -1
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+		// A CLI that fails prints why on stderr or, like `claude -p` when it is
+		// logged out, on stdout. Neither is a candidate after a failed exit.
+		diagnostic := cliDiagnostic(stderr.String())
+		if diagnostic == "" {
+			diagnostic = cliDiagnostic(output.String())
+		}
+		return "", &CallError{Provider: p.name, ExitCode: exitCode, Diagnostic: diagnostic}
 	}
-	if output.overflow || strings.TrimSpace(output.String()) == "" {
-		return "", fmt.Errorf("%s provider returned no usable response", p.name)
+	if output.overflow {
+		return "", &CallError{Provider: p.name, Diagnostic: fmt.Sprintf("response exceeded the %d byte limit", maxResponseBytes)}
+	}
+	if strings.TrimSpace(output.String()) == "" {
+		return "", &CallError{Provider: p.name, Diagnostic: "empty response" + diagnosticSuffix(cliDiagnostic(stderr.String()))}
 	}
 	return output.String(), nil
 }
+
+// CallError is a failed provider call. Diagnostic is a bounded, redacted tail
+// of what the provider printed, so "Not logged in" is visible to the user; it
+// never contains the prompt.
+type CallError struct {
+	Provider string
+	// ExitCode is the CLI's exit status, or -1 when it did not exit normally
+	// or the failure was not a process exit.
+	ExitCode   int
+	Diagnostic string
+}
+
+func (e *CallError) Error() string {
+	message := e.Provider + " provider failed"
+	if e.ExitCode >= 0 {
+		message += fmt.Sprintf(" (exit %d)", e.ExitCode)
+	}
+	return message + diagnosticSuffix(e.Diagnostic)
+}
+
+func diagnosticSuffix(diagnostic string) string {
+	if diagnostic == "" {
+		return ""
+	}
+	return ": " + diagnostic
+}
+
+const (
+	maxDiagnosticBytes = 4 << 10
+	maxDiagnosticText  = 512
+)
+
+var terminalEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// cliDiagnostic keeps the last lines of CLI output as one redacted line of at
+// most maxDiagnosticText bytes.
+func cliDiagnostic(raw string) string {
+	raw = runner.RedactText(terminalEscape.ReplaceAllString(raw, ""))
+	var lines []string
+	for _, line := range strings.Split(raw, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	text := strings.Join(lines, " | ")
+	if len(text) <= maxDiagnosticText {
+		return text
+	}
+	cut := len(text) - maxDiagnosticText
+	for cut < len(text) && !utf8.RuneStart(text[cut]) {
+		cut++
+	}
+	return "…" + text[cut:]
+}
+
+// tailBuffer keeps the last limit bytes written to it.
+type tailBuffer struct {
+	data  []byte
+	limit int
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.data = append(b.data, p...)
+	if over := len(b.data) - b.limit; over > 0 {
+		b.data = append(b.data[:0], b.data[over:]...)
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string { return string(b.data) }
 
 func validateProviderPrompt(prompt string) error {
 	if len(prompt) > maxProviderPromptBytes {
@@ -210,12 +356,24 @@ func validateProviderPrompt(prompt string) error {
 	return nil
 }
 
+// providerEnvironmentKeys is what an agent CLI needs to find its own login
+// and reach its service. USER is how Claude Code finds a subscription login in
+// the macOS keychain; without it the CLI runs logged out. Codex and OpenCode
+// keep their logins in files under HOME, CODEX_HOME or XDG_DATA_HOME. The
+// proxy and CA variables let a CLI work behind a corporate proxy. API keys and
+// other credentials are deliberately not inherited.
+var providerEnvironmentKeys = []string{
+	"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+	"CLAUDE_CONFIG_DIR", "CODEX_HOME", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR",
+	"USER", "LOGNAME", "USERNAME", "TMPDIR", "TEMP", "TMP", "LANG",
+	"USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+	"NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+}
+
 func providerEnvironment() []string {
-	// Keep only path and local agent configuration locations. Credentials and
-	// unrelated process state are deliberately not inherited.
-	keys := []string{"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"}
-	env := make([]string, 0, len(keys))
-	for _, key := range keys {
+	env := make([]string, 0, len(providerEnvironmentKeys))
+	for _, key := range providerEnvironmentKeys {
 		if value := os.Getenv(key); value != "" {
 			env = append(env, key+"="+value)
 		}

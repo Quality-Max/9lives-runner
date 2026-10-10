@@ -179,3 +179,23 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestAssessSuiteCountsUnrecognizedTestImportsAsNotAssessed(t *testing.T) {
+	requireNode(t)
+	inputs := []SuiteInput{
+		{Path: "ok.spec.ts", Source: []byte("import {test,expect} from '@playwright/test';\ntest('a', () => { expect(1).toBe(1); });\n")},
+		{Path: "e2e.spec.ts", Source: []byte("import {test,expect} from 'e2e';\ntest('b', () => { expect(1).toBe(1); });\n")},
+	}
+	suite, err := AssessSuite(context.Background(), inputs, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := suite.Summary
+	if s.Files != 2 || s.Assessed != 1 || s.Unrecognized != 1 || s.Failed != 0 || s.Tests != 1 {
+		t.Fatalf("summary %+v", s)
+	}
+	report := suite.Files[1].Report
+	if report == nil || strings.Join(report.UnrecognizedTestImports, ",") != "e2e" || !strings.Contains(strings.Join(report.Limits, "\n"), "unrecognized-test-import e2e") {
+		t.Fatalf("e2e file report %+v", report)
+	}
+}

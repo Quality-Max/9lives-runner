@@ -91,6 +91,14 @@ copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
 
+`9l run --sdk --failure-details` is the opt-in exception for receipts, not for
+the protocol: Playwright's JSON reporter runs beside the engine reporter and
+writes to a separate private per-attempt file. After the attempt validates
+from the engine stream, the runner reads each failed test's title, failing
+line, bounded redacted error and attachment paths from that file into the
+receipt's `failures`, then deletes it. It never validates or replaces engine
+evidence.
+
 The runner persists validated bounded protocol output beside its local and
 canonical execution receipts and applies its existing output redaction. The
 worker's own stdout is not evidence and is not retained. Invalid/interrupted

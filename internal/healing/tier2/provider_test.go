@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // CLI success tests verify transport behavior, not startup latency. Allow
@@ -117,7 +118,7 @@ func TestCLIProviderForwardsExplicitModel(t *testing.T) {
 	}
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "codex")
-	script := "#!/bin/sh\n[ \"$1\" = exec ] && [ \"$2\" = --skip-git-repo-check ] && [ \"$3\" = --model ] && [ \"$4\" = chosen ] && [ \"$5\" = - ] || exit 7\ncat\n"
+	script := "#!/bin/sh\n[ \"$*\" = \"exec --skip-git-repo-check --sandbox read-only --color never --model chosen -\" ] || exit 7\ncat\n"
 	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +211,7 @@ func TestProviderPromptBudgetUsesLocalHTTPAndCLI(t *testing.T) {
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "opencode")
 	record := filepath.Join(dir, "bytes")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s' \"$2\" | wc -c > '"+record+"'\nprintf ok\n"), 0700); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n[ \"$1 $2 $3\" = \"run --agent plan\" ] || exit 7\nprintf '%s' \"$4\" | wc -c > '"+record+"'\nprintf ok\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -286,5 +287,134 @@ func TestDecisionTransportCancellation(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("HTTP request not canceled")
+	}
+}
+
+// fakeLoginCLI behaves like `claude -p` resolving a subscription login: it
+// answers only when USER is present and otherwise reports the logged-out state
+// on stdout with exit 1, as Claude Code does.
+func fakeLoginCLI(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\n[ -n \"$USER\" ] || { echo 'Not logged in · Please run /login'; exit 1; }\necho \"key=${ANTHROPIC_API_KEY:-absent} user=$USER\"\ncat\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestCLIProviderFindsSubscriptionLoginWithoutCredentials(t *testing.T) {
+	fakeLoginCLI(t)
+	t.Setenv("USER", "tester")
+	t.Setenv("ANTHROPIC_API_KEY", "must-not-reach-the-cli")
+	got, err := (CLIProvider{name: "claude", timeout: cliTestTimeout}).Complete(context.Background(), "prompt", "")
+	if err != nil || got != "key=absent user=tester\nprompt" {
+		t.Fatalf("got=%q err=%v", got, err)
+	}
+}
+
+func TestCLIProviderReportsWhyTheCallFailed(t *testing.T) {
+	fakeLoginCLI(t)
+	t.Setenv("USER", "")
+	_, err := (CLIProvider{name: "claude", timeout: cliTestTimeout}).Complete(context.Background(), "secret prompt", "")
+	var callErr *CallError
+	if !errors.As(err, &callErr) || callErr.ExitCode != 1 || callErr.Diagnostic != "Not logged in · Please run /login" {
+		t.Fatalf("err=%#v", err)
+	}
+	if want := "claude provider failed (exit 1): Not logged in · Please run /login"; err.Error() != want || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("message=%q", err.Error())
+	}
+}
+
+func TestCLIDiagnosticIsBoundedRedactedAndPlain(t *testing.T) {
+	raw := "\x1b[31mstarting\x1b[0m\n\nfailed: token=abc123 at https://u:pw@proxy.example\n" + strings.Repeat("é", 400)
+	got := cliDiagnostic(raw)
+	if strings.Contains(got, "abc123") || strings.Contains(got, "pw@") || strings.Contains(got, "\x1b") || strings.Contains(got, "\n") {
+		t.Fatalf("diagnostic leaked or kept formatting: %q", got)
+	}
+	if len(got) > maxDiagnosticText+len("…") || !strings.HasPrefix(got, "…") || !utf8.ValidString(got) {
+		t.Fatalf("diagnostic not bounded on a rune boundary: %d bytes", len(got))
+	}
+	if short := cliDiagnostic("line one\n  line two  \n"); short != "line one | line two" {
+		t.Fatalf("short=%q", short)
+	}
+}
+
+func TestCodexAndOpenCodeFindFileLoginsWithoutCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
+	dir := t.TempDir()
+	// Each fake answers only when its login location reached it and no API key
+	// did, as a subscription login requires.
+	for name, location := range map[string]string{"codex": "CODEX_HOME", "opencode": "XDG_DATA_HOME"} {
+		script := "#!/bin/sh\n[ -n \"$" + location + "\" ] && [ -z \"$OPENAI_API_KEY\" ] || { echo 'ERROR: unexpected status 401 Unauthorized' >&2; exit 1; }\necho answered\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OPENAI_API_KEY", "must-not-reach-the-cli")
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex-home"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+	for _, name := range []string{"codex", "opencode"} {
+		if got, err := (CLIProvider{name: name, timeout: cliTestTimeout}).Complete(context.Background(), "prompt", ""); err != nil || got != "answered\n" {
+			t.Fatalf("%s got=%q err=%v", name, got, err)
+		}
+	}
+	t.Setenv("CODEX_HOME", "")
+	_, err := (CLIProvider{name: "codex", timeout: cliTestTimeout}).Complete(context.Background(), "prompt", "")
+	if err == nil || err.Error() != "codex provider failed (exit 1): ERROR: unexpected status 401 Unauthorized" {
+		t.Fatalf("logged-out codex err=%v", err)
+	}
+}
+
+func TestDescribeNamesHowEachProviderIsReached(t *testing.T) {
+	cli := CLIProvider{name: "claude"}
+	api := httpProvider("anthropic", "", time.Second)
+	for provider, want := range map[Provider]string{
+		cli: "claude (CLI, its own login)",
+		api: "anthropic (API key ANTHROPIC_API_KEY)",
+		fallbackProvider{primary: cli, fallback: api}: "claude (CLI, its own login), then anthropic (API key ANTHROPIC_API_KEY) if the CLI fails",
+	} {
+		if got := Describe(provider); got != want {
+			t.Errorf("Describe = %q, want %q", got, want)
+		}
+	}
+	if got := Describe(nil); got != "none (offline Tier 1 only)" {
+		t.Errorf("Describe(nil) = %q", got)
+	}
+}
+
+func TestAutoDetectOffUsesOnlyANamedProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NINELIVES_PROVIDER", "")
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "off")
+	if provider, err := Resolve(Options{}); !errors.Is(err, ErrAutoDetectOff) || provider != nil {
+		t.Fatalf("auto-detected with the setting off: %v %v", provider, err)
+	}
+	// A named CLI still works, without the unnamed API-key fallback.
+	provider, err := Resolve(Options{Name: "claude"})
+	if _, cli := provider.(CLIProvider); err != nil || !cli {
+		t.Fatalf("named provider: %#v %v", provider, err)
+	}
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "")
+	if provider, err := Resolve(Options{Name: "claude"}); err != nil || Describe(provider) != "claude (CLI, its own login), then openai (API key OPENAI_API_KEY) if the CLI fails" {
+		t.Fatalf("default keeps the fallback: %v %v", Describe(provider), err)
+	}
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "maybe")
+	if _, err := Resolve(Options{Name: "claude"}); err == nil {
+		t.Fatal("invalid setting accepted")
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -97,6 +98,9 @@ type Facts struct {
 	Version  int    `json:"version"`
 	Compiler string `json:"compiler"`
 	Tests    []Fact `json:"tests"`
+	// UnrecognizedTestImports names modules a `test` binding was imported
+	// from when none came from @playwright/test or @9l/playwright.
+	UnrecognizedTestImports []string `json:"unrecognizedTestImports,omitempty"`
 }
 type Finding struct {
 	Rule           string `json:"rule"`
@@ -131,7 +135,10 @@ type Report struct {
 	Execution          string                      `json:"execution"`
 	Completeness       string                      `json:"completeness"`
 	Limits             []string                    `json:"limits"`
-	Tests              []Test                      `json:"tests"`
+	// UnrecognizedTestImports names the modules this file imports `test`
+	// from that assess does not recognise; its tests were not assessed.
+	UnrecognizedTestImports []string `json:"unrecognizedTestImports,omitempty"`
+	Tests                   []Test   `json:"tests"`
 }
 
 func Decode(data []byte, target any) error {
@@ -286,9 +293,16 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 
 func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
+var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
+
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 6 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 {
+	if f.Version != 6 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
+	}
+	for _, module := range f.UnrecognizedTestImports {
+		if !moduleName.MatchString(module) {
+			return false
+		}
 	}
 	lines := bytes.Split(source, []byte("\n"))
 	valid := func(p Location) bool {
@@ -351,6 +365,10 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		"Outcome annotations are reviewed coverage claims, not semantic or behavioral proof. Source-only assessment cannot establish correctness.",
 		"No test, configuration or application module is executed. Runtime evidence requires a separate attributed control experiment.",
 	}}
+	if len(facts.UnrecognizedTestImports) > 0 {
+		report.UnrecognizedTestImports = facts.UnrecognizedTestImports
+		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise (only @playwright/test and @9l/playwright), so its tests were not assessed.")
+	}
 	checked := contract != nil
 	if checked {
 		report.RequirementsSHA256 = digest(contract)

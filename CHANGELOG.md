@@ -4,6 +4,109 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### CLI
+
+- `9l heal --provider claude` works on a Claude subscription. Provider CLIs
+  now receive the user name (`USER`, `LOGNAME`, `USERNAME`), temp, locale,
+  Windows profile, proxy and CA-certificate variables. Without `USER`,
+  Claude Code could not find a macOS keychain login and every call failed
+  as logged out. API keys are still not inherited.
+- `--provider codex` and `--provider opencode` heal on a ChatGPT or OpenCode
+  subscription through the CLI's own login; `CODEX_HOME`,
+  `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR` now reach
+  the CLI. Codex runs with `--sandbox read-only --color never` and OpenCode
+  with its read-only `plan` agent.
+- Provider use is explicit: `9l heal` prints the resolved provider and how
+  it is reached before healing starts, `--provider none` /
+  `NINELIVES_PROVIDER=none` keeps healing offline with an agent CLI
+  installed, and the session JSON and MCP `heal_test` result record
+  `provider` and `providerCalls`. `9l mcp` names its heal provider in its
+  `initialize` instructions. Auto-detection of an installed CLI or API key
+  stays on by default; the setting `NINELIVES_AUTODETECT_PROVIDER=off` turns
+  it (and a named CLI's API-key fallback) off, so only a named provider is
+  used.
+- A failed provider call records why: the session's `providerDiagnostic` and
+  `reason` carry the exit code and the last output lines, redacted and capped
+  at 512 bytes, instead of "provider did not return a usable candidate".
+- Refusals name the boundary: "not an editable locator action" now says
+  what the call log waited for (or how the failure was classified) and which
+  call shapes healing repairs. `9l heal` prints the reason of an
+  `unverified` or `needs_human` session on stderr.
+- Heal failure text (`original.failure` and the others in the session JSON,
+  and the Tier 2 prompt) keeps one copy of each Playwright error, without
+  terminal escapes and in a stable order. Before, each error appeared twice
+  with ANSI codes, using half of the 4 KiB failure budget.
+- A refused provider answer says why: the parse error (for example "must
+  return exactly one fenced complete file", with the response's first 160
+  characters as `providerDiagnostic`), or the lines it changed beyond the
+  failed locator's literal.
+- Healing edits `getByRole` and other `getBy*` locators. A renamed button,
+  `page.getByRole('button', { name: 'Anmelden' })` failing in the call log,
+  can be repaired by changing only the name literal; the role, `exact`
+  option and everything else must stay the same. Before, such failures were
+  refused as "not an editable locator action" before any provider call.
+  Chained and regular-expression locators are still not edited.
+- Offline Tier 1 re-finds a renamed `getByRole` or `getByLabel` name from
+  the ARIA snapshot in the failed run's `error-context.md`, when exactly one
+  matching element remains (or exactly one shares a word with the old name).
+  A renamed button now heals with no provider at all. The `9l tier1` request
+  gains an optional `ariaSnapshot` field. The same snapshot, with values typed
+  into fields dropped, redacted and bounded to 3,000 bytes, is the page
+  state in the Tier 2 prompt.
+- Healing accepts the `page.fill('#id', …)` / `page.click('#id')` shorthand
+  for the repairable actions. A correct provider answer for that shape used
+  to be paid for and then discarded.
+- Native healing skips Tier 1's `#id` -> `[id="id"]` rewrite, which selects
+  the same missing element, instead of spending a verification run on it.
+  `9l tier1` still reports it.
+- Tier 2 no longer asks a provider when the spec has no source shape a
+  proposal could be admitted for, such as `page.fill('#id', …)` shorthand,
+  a locator used twice or an action sharing its line. Those sessions end
+  `unverified` with a reason naming the boundary and make no provider call;
+  before, the call was made and its answer always discarded.
+
+- `9l run` without `--sdk`, `9l heal` and MCP `run_test`/`heal_test` find a
+  workspace-hoisted Playwright in an ancestor `node_modules/.bin`, as the
+  SDK adapter already did. In an npm-workspace monorepo they used to skip
+  every spec with "local binary is missing".
+- `9l --help` lists `confirm_finding` among the MCP tools, and the run and
+  heal options added in this release; a test keeps the MCP line in sync
+  with the advertised tools.
+- `9l run` selects tests: `spec.ts:LINE` inputs and `--grep` /
+  `--grep-invert` pass Playwright's filters through, recorded in each job's
+  `selection` (plan, additive) and the receipt's evidence command. A
+  selection that matches nothing stays incomplete and says so.
+- `9l run --reporter html` (comma-separated) runs the project's reporters
+  beside 9l's evidence reporter, so the HTML report is still produced;
+  `json` is reserved for evidence.
+- `9l run` and `9l result` name each failed test below its job: title,
+  failing line, the first lines of the error, and Playwright's
+  `error-context.md`, screenshot and trace paths. Receipts carry the same as
+  `failures` (additive; receipt version 1). MCP `run_test` returns
+  `failures` and the first failure's `error-context.md` as `failureContext`.
+- `9l run --sdk --failure-details` reports the same per-test failures. The
+  engine protocol still carries no titles or errors; they come from
+  Playwright's JSON reporter, written to a separate private file beside the
+  evidence stream that never validates the attempt.
+- `9l run --keep-attachments` copies those attachments into the receipt
+  directory with SHA-256 digests, so the project's next run cannot delete
+  them. Without it they are only referenced.
+
+- `9l run` and `9l result` list each skipped input with its reason
+  (`SKIP <input> — <reason>`), and the run result carries them as `skipped`.
+  A run that is incomplete only because inputs were skipped now says so
+  instead of blaming planned jobs.
+
+### Assess
+
+- A file that imports `test` only from a module assess does not recognise
+  (a fixture file or another test runner) now names it: the report carries
+  `unrecognizedTestImports` and an `unrecognized-test-import` limit, and
+  suite summaries count it as `unrecognized` and "not assessed" instead of
+  assessed with 0 tests. Exit codes are unchanged.
+
 ## 0.2.0 — 2026-10-10
 
 ### Release process

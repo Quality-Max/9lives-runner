@@ -177,7 +177,31 @@ type literalMatch struct {
 	lineStart     int
 	awaitPrefix   bool
 	call, literal int
-	tokens        []sourceToken
+	// callEnd is the locator call's closing parenthesis; an action follows it.
+	callEnd int
+	// css is false for a getBy* locator, whose editable literal is a name or
+	// text rather than a selector.
+	css bool
+	// shorthand marks page.<action>('<selector>', ...), where the locator call
+	// is the action itself.
+	shorthand bool
+	tokens    []sourceToken
+}
+
+// directActions are the Playwright actions a native heal may repair.
+var directActions = map[string]bool{"click": true, "fill": true, "check": true, "uncheck": true, "hover": true, "press": true, "focus": true, "dblclick": true, "selectOption": true}
+
+// actionCall returns the action's name and the index of its opening
+// parenthesis: `.action(` after the locator call, or the page shorthand.
+func actionCall(t []sourceToken, m literalMatch) (string, int, bool) {
+	if m.shorthand {
+		return t[m.call+2].text, m.call + 3, true
+	}
+	a := m.callEnd + 1
+	if a+2 >= len(t) || t[a].text != "." || t[a+2].text != "(" || t[a+2].pair < 0 {
+		return "", 0, false
+	}
+	return t[a+1].text, a + 2, true
 }
 
 func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
@@ -185,9 +209,41 @@ func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
 	if !ok {
 		return nil, false
 	}
+	var want editableLocator
+	if framework != "selenium" && framework != "cypress" {
+		parsed, ok := parseLocatorExpression(old)
+		if !ok {
+			return nil, true
+		}
+		want = parsed
+	}
 	var found []literalMatch
 	for i := 0; i < len(tokens); i++ {
 		if i > 0 && (tokens[i-1].text == "." || tokens[i-1].text == "function") {
+			continue
+		}
+		if want.method != "" && want.method != "locator" {
+			// page.getBy*(...) with the same method, role and options; only
+			// its name or text literal is the editable span.
+			if tokens[i].text != "page" || i+3 >= len(tokens) || tokens[i+1].text != "." || tokens[i+2].text != want.method {
+				continue
+			}
+			call, ok := parseGetByArguments(tokens, i+2)
+			if !ok || call.role != want.role || call.exact != want.exact || call.value != want.value {
+				continue
+			}
+			literal := i + 4 // getByText('value' ...
+			if want.method == "getByRole" {
+				for j := i + 4; j < tokens[i+3].pair; j++ {
+					if tokens[j].text == "name" && tokens[j+1].text == ":" {
+						literal = j + 2
+						break
+					}
+				}
+			}
+			arg := tokens[literal]
+			lineStart := strings.LastIndex(code[:tokens[i].start], "\n") + 1
+			found = append(found, literalMatch{start: arg.start + 1, end: arg.end - 1, quote: arg.quote, lineStart: lineStart, awaitPrefix: i > 0 && tokens[i-1].text == "await", call: i, literal: literal, callEnd: tokens[i+3].pair, tokens: tokens})
 			continue
 		}
 		var pattern []string
@@ -201,6 +257,15 @@ func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
 		default:
 			if tokens[i].text == "locator" {
 				pattern = []string{"locator", "("}
+			} else if tokens[i].text == "page" && i+4 < len(tokens) && tokens[i+1].text == "." && directActions[tokens[i+2].text] && tokens[i+3].text == "(" && tokens[i+3].pair > i+4 {
+				// page.fill('<selector>', value): the selector is the first argument.
+				arg := tokens[i+4]
+				if arg.quote == 0 || arg.value != old || (tokens[i+5].text != "," && tokens[i+5].text != ")") {
+					continue
+				}
+				lineStart := strings.LastIndex(code[:tokens[i].start], "\n") + 1
+				found = append(found, literalMatch{start: arg.start + 1, end: arg.end - 1, quote: arg.quote, lineStart: lineStart, awaitPrefix: i > 0 && tokens[i-1].text == "await", call: i, literal: i + 4, callEnd: tokens[i+3].pair, css: true, shorthand: true, tokens: tokens})
+				continue
 			} else {
 				pattern = []string{"page", ".", "locator", "("}
 			}
@@ -224,7 +289,7 @@ func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
 			continue
 		}
 		lineStart := strings.LastIndex(code[:tokens[i].start], "\n") + 1
-		found = append(found, literalMatch{start: arg.start + 1, end: arg.end - 1, quote: arg.quote, lineStart: lineStart, awaitPrefix: i > 0 && tokens[i-1].text == "await", call: i, literal: literal, tokens: tokens})
+		found = append(found, literalMatch{start: arg.start + 1, end: arg.end - 1, quote: arg.quote, lineStart: lineStart, awaitPrefix: i > 0 && tokens[i-1].text == "await", call: i, literal: literal, callEnd: literal + 1, css: true, tokens: tokens})
 	}
 	return found, true
 }
@@ -357,15 +422,57 @@ func ExactLocatorSelectorReplacement(source, candidate, old, framework string) b
 		return false
 	}
 	m := matches[0]
-	if !strings.HasPrefix(candidate, source[:m.start]) || !strings.HasSuffix(candidate, source[m.end:]) || len(candidate) <= len(source)-len(old) {
+	if !strings.HasPrefix(candidate, source[:m.start]) || !strings.HasSuffix(candidate, source[m.end:]) || len(candidate) <= m.start+len(source)-m.end {
 		return false
 	}
 	replacement := candidate[m.start : len(candidate)-len(source[m.end:])]
-	if strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
+	// A different, non-empty value only: an empty getBy name or text would
+	// match every element instead of re-finding one.
+	if replacement == source[m.start:m.end] || strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
 		return false
 	}
 	expected, ok := replaceSelector(source, old, replacement, framework)
 	return ok && expected == candidate
+}
+
+// EditableLocatorAction reports whether ExactLocatorSelectorReplacement can
+// accept any candidate for this failed selector: the source must hold exactly
+// one direct `await page.locator('<selector>').<action>(…)` statement outside
+// an assertion. Tier 2 checks this before asking a provider, so a proposal
+// that can never be admitted is not requested. The reason names the boundary.
+func EditableLocatorAction(source, selector, framework string) (bool, string) {
+	if selector == "" {
+		return false, "the failure names no locator selector"
+	}
+	locator, parsed := parseLocatorExpression(selector)
+	if !parsed {
+		return false, "the failed locator is not a page.locator(...) or single page.getBy*(...) call with literal arguments"
+	}
+	form := locator.sourceForm()
+	matches, ok := sourceLocators(source, selector, framework)
+	switch {
+	case !ok:
+		return false, "the spec uses syntax outside the editable source subset (escaped identifiers, template interpolation, JSX or unbalanced brackets)"
+	case len(matches) == 0:
+		if locator.method == "locator" {
+			form = "page.locator(" + quoteSelector(locator.value) + ") or page.<action>(" + quoteSelector(locator.value) + ", ...)"
+		}
+		return false, "no " + form + " call in the spec matches the failed locator"
+	case len(matches) > 1:
+		return false, "the failed locator appears more than once as " + form
+	case assertionOwnsMatch(source, matches[0], framework):
+		return false, "the failed locator is inside an assertion, which healing does not edit"
+	case !sourceArgumentContextSafe(matches[0]) || !directActionMatch(source, matches[0]):
+		return false, "the failed locator is not a direct `await " + form + ".<action>(...)` statement on one line"
+	}
+	return true, ""
+}
+
+func quoteSelector(selector string) string {
+	if len(selector) > 120 {
+		selector = selector[:120] + "…"
+	}
+	return "'" + selector + "'"
 }
 
 func directActionMatch(code string, m literalMatch) bool {
@@ -386,16 +493,11 @@ func directActionMatch(code string, m literalMatch) bool {
 			return false
 		}
 	}
-	action := m.literal + 2
-	if action+2 >= len(tokens) || tokens[action].text != "." || tokens[action+2].text != "(" || tokens[action+2].pair < 0 {
+	name, open, ok := actionCall(tokens, m)
+	if !ok || !directActions[name] {
 		return false
 	}
-	switch tokens[action+1].text {
-	case "click", "fill", "check", "uncheck", "hover", "press", "focus", "dblclick", "selectOption":
-	default:
-		return false
-	}
-	end := tokens[action+2].pair + 1
+	end := tokens[open].pair + 1
 	if end < len(tokens) && tokens[end].text == ";" {
 		end++
 	}
@@ -507,7 +609,7 @@ func addWait(code, selector string) (string, bool) {
 	}
 	m := matches[0]
 	t := m.tokens
-	if !m.awaitPrefix || assertionOwnsMatch(code, m, "playwright") || t[m.call].text != "page" {
+	if !m.css || !m.awaitPrefix || assertionOwnsMatch(code, m, "playwright") || t[m.call].text != "page" {
 		return "", false
 	}
 	await := m.call - 1
@@ -536,16 +638,11 @@ func addWait(code, selector string) (string, bool) {
 	}
 	// Complete chain action with zero/opaque arguments, terminating at the end
 	// of this physical line. Never split a multiline expression or ASI hazard.
-	end := m.literal + 2
-	if end+3 >= len(t) || t[end].text != "." || t[end+2].text != "(" || t[end+2].pair < 0 {
+	name, open, ok := actionCall(t, m)
+	if !ok || !directActions[name] || open+1 >= len(t) {
 		return "", false
 	}
-	switch t[end+1].text {
-	case "click", "fill", "check", "uncheck", "hover", "press", "focus", "dblclick", "selectOption":
-	default:
-		return "", false
-	}
-	end = t[end+2].pair + 1
+	end := t[open].pair + 1
 	if end < len(t) && t[end].text == ";" {
 		end++
 	}

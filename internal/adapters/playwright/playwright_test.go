@@ -206,3 +206,54 @@ func TestConfigStdoutDoesNotCorruptTheReport(t *testing.T) {
 		t.Fatalf("config stdout invalidated the run: %+v", receipt)
 	}
 }
+
+func TestPlanSelectsALineAndPassesGrepThrough(t *testing.T) {
+	project := t.TempDir()
+	write(t, filepath.Join(project, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
+	binary := filepath.Join(project, "node_modules", ".bin", "playwright")
+	if runtime.GOOS == "windows" {
+		binary += ".cmd"
+		write(t, filepath.Join(project, "node_modules", "@playwright", "test", "cli.js"), "placeholder", 0o600)
+	}
+	write(t, binary, "#!/bin/sh\n", 0o700)
+	spec := filepath.Join(project, "tests", "a.spec.ts")
+	write(t, spec, "", 0o600)
+	plan, err := runner.BuildPlan([]string{spec + ":12", spec + ":30", spec + ":12", filepath.Join(project, "tests", "missing.spec.ts") + ":3"}, runner.PlanOptions{Adapters: []runner.Adapter{New()}, ExtraArgs: []string{"--grep", "login"}, Selection: `--grep "login"`})
+	if err != nil || len(plan.Jobs) != 2 || len(plan.Skipped) != 1 {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	filter := TestFileFilter(project, filepath.Join("tests", "a.spec.ts"))
+	job := plan.Jobs[0]
+	if !slices.Contains(job.Command, filter+":12") || slices.Contains(job.Command, filter) || !slices.Equal(job.Command[len(job.Command)-2:], []string{"--grep", "login"}) || job.Selection != `line 12, --grep "login"` {
+		t.Fatalf("job=%+v", job)
+	}
+	if !slices.Contains(plan.Jobs[1].Command, filter+":30") {
+		t.Fatalf("second line job=%+v", plan.Jobs[1])
+	}
+	plan, err = runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}, Reporters: []string{"html"}})
+	if err != nil || len(plan.Jobs) != 1 || !slices.Contains(plan.Jobs[0].Command, "--reporter=json,html") {
+		t.Fatalf("reporters not added: %+v %v", plan, err)
+	}
+}
+
+func TestPlanFindsWorkspaceHoistedPlaywright(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "package.json"), `{"private":true,"workspaces":["packages/*"]}`, 0o600)
+	binary := filepath.Join(root, "node_modules", ".bin", "playwright")
+	if runtime.GOOS == "windows" {
+		binary += ".cmd"
+		write(t, filepath.Join(root, "node_modules", "@playwright", "test", "cli.js"), "placeholder", 0o600)
+	}
+	write(t, binary, "#!/bin/sh\n", 0o700)
+	app := filepath.Join(root, "packages", "app")
+	write(t, filepath.Join(app, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
+	spec := filepath.Join(app, "tests", "a.spec.ts")
+	write(t, spec, "", 0o600)
+	plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}})
+	if err != nil || len(plan.Jobs) != 1 {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	if job := plan.Jobs[0]; job.WorkDir != app || (runtime.GOOS != "windows" && job.Command[0] != binary) {
+		t.Fatalf("job=%+v", job)
+	}
+}

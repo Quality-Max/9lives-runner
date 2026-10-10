@@ -134,6 +134,18 @@ async function main() {
   assert.equal(failing.summary.outcome, 'failed');
   assert.equal(failing.summary.receipts[0].status, 'failed');
   assert.equal(failing.summary.receipts[0].failureCount, 1);
+  assert.equal(failing.summary.receipts[0].failures, undefined); // titles and errors stay out by default
+  // Opt-in failure details come from Playwright's JSON reporter beside the
+  // evidence stream; the validated stream itself still carries no titles.
+  const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details']);
+  assert.equal(detailed.code, 1);
+  assert.equal(detailed.summary.receipts[0].status, 'failed');
+  const [detail] = detailed.summary.receipts[0].failures;
+  assert.equal(detail.title, 'business failure remains a failure');
+  assert.match(detail.location, /defect\.spec\.ts:\d+$/);
+  assert.match(detail.message, /toHaveText/);
+  assert(detail.attachments.some(attachment => attachment.name === 'error-context' && !attachment.retained));
+  readEvents(detailed.summary.receipts[0]);
   const skipped = invoke('testdata/sdk/tests/skipped.spec.ts');
   assert.equal(skipped.code, 3);
   assert.equal(skipped.summary.outcome, 'incomplete');

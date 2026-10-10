@@ -40,7 +40,7 @@ func TestHealGatesEveryCandidateVerification(t *testing.T) {
 						return RunResult{ExecutedTests: 1, Failure: "waiting for locator('[data-testid=\"old\"]')"}
 					}
 					return tc.verified
-				}}, func(source, failure string) (string, bool) {
+				}}, func(source, failure, _ string) (string, bool) {
 					if stage != "tier1" {
 						return "", false
 					}
@@ -83,7 +83,7 @@ func TestHealEscalatesEditableTier1Failure(t *testing.T) {
 			return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 		}
 		return RunResult{Passed: true, ExecutedTests: 1}
-	}}, func(source, _ string) (string, bool) { return strings.Replace(source, "#old", "#tier1", 1), true })
+	}}, func(source, _, _ string) (string, bool) { return strings.Replace(source, "#old", "#tier1", 1), true })
 	if err != nil || len(labels) != 3 || labels[1] != "tier1" || provider.calls != 1 || !result.Applied || result.State != "applied" {
 		t.Fatalf("editable Tier1 did not escalate: result=%+v labels=%v calls=%d err=%v", result, labels, provider.calls, err)
 	}

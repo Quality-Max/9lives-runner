@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 // RunFunc executes exactly the supplied physical spec and returns a verified
@@ -24,6 +27,10 @@ type RunResult struct {
 	ExecutedTests int    `json:"executedTests"`
 	Failure       string `json:"failure,omitempty"`
 	Receipt       string `json:"receipt,omitempty"`
+	// Snapshot is the page's ARIA snapshot at failure, when the run captured
+	// one. It is page content: it feeds Tier 1 and the provider prompt and is
+	// never part of the session result.
+	Snapshot string `json:"-"`
 }
 
 // MaxSourceBytes is the largest spec native healing reads.
@@ -62,12 +69,19 @@ type Session struct {
 	Applied       bool      `json:"applied"`
 	SavedPath     string    `json:"savedPath,omitempty"`
 	Reason        string    `json:"reason,omitempty"`
+	// Provider is the Tier 2 provider's name ("" when healing was offline) and
+	// ProviderCalls how many proposals it was asked for.
+	Provider      string `json:"provider,omitempty"`
+	ProviderCalls int    `json:"providerCalls"`
+	// ProviderDiagnostic is a bounded, redacted account of a failed provider
+	// call, such as the CLI's exit code and its last output lines.
+	ProviderDiagnostic string `json:"providerDiagnostic,omitempty"`
 }
 
 // Heal runs original, then at most one caller-provided Tier 1 verification,
 // then, when a provider is given, each Tier 2 candidate in a fresh owned copy. A candidate is verified
 // only when a non-zero test count passed in its own run.
-func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (string, bool)) (result Session, err error) {
+func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, snapshot string) (string, bool)) (result Session, err error) {
 	if opts.Run == nil || opts.Spec == "" {
 		return result, errors.New("native healing requires spec and runner")
 	}
@@ -82,6 +96,9 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 		return result, errors.New("source file exceeds native healing input limit")
 	}
 	cleanupStaleOwnedCopies(opts.Spec)
+	if opts.Provider != nil {
+		result.Provider = opts.Provider.Name()
+	}
 	result.OriginalHash = hash(original)
 	result.Original = opts.Run(ctx, opts.Spec, "original")
 	if err := ctx.Err(); err != nil {
@@ -104,12 +121,12 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 	}
 	if _, editable := editableFailure(result.Original.Failure); !editable {
 		result.State = "unverified"
-		result.Reason = "original failure is not an editable locator action"
+		result.Reason = "original failure is not an editable locator action: " + notEditableReason(result.Original.Failure)
 		return result, nil
 	}
 	// Tier 1 is one attempt only. Its broader heuristic proposal must satisfy the
 	// same exact source boundary before it is allowed to execute.
-	if proposal, ok := tier1(string(original), result.Original.Failure); ok {
+	if proposal, ok := tier1(string(original), result.Original.Failure, result.Original.Snapshot); ok {
 		selector, editable := editableFailure(result.Original.Failure)
 		if editable && SafeCandidate(string(original), preserveNewlines(string(original), proposal), selector, opts.Framework) == nil {
 			proposal = preserveNewlines(string(original), proposal)
@@ -138,7 +155,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 		result.Reason = "Tier 1 found no verified candidate and no Tier 2 provider is available"
 		return result, nil
 	}
-	latestSource, latestFailure := string(original), result.Original.Failure
+	latestSource, latestFailure, latestSnapshot := string(original), result.Original.Failure, result.Original.Snapshot
 	for attempt := 0; attempt < opts.MaxProposals; attempt++ {
 		if len(latestSource) > maxTier2SourceBytes {
 			result.State = "unverified"
@@ -152,16 +169,25 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 				result.Reason = "candidate verification reached an assertion failure"
 			} else {
 				result.State = "unverified"
-				result.Reason = "failed run is not an editable locator action"
+				result.Reason = "failed run is not an editable locator action: " + notEditableReason(latestFailure)
 			}
 			return result, nil
 		}
-		prompt := Prompt(opts.Framework, latestSource, latestFailure)
+		// SafeCandidate can only admit a selector change in a direct locator
+		// action. Asking a provider for any other source shape spends a paid
+		// call whose answer must be discarded.
+		if ok, why := healing.EditableLocatorAction(latestSource, failedSelector, opts.Framework); !ok {
+			result.State = "unverified"
+			result.Reason = "Tier 2 was not asked: " + why
+			return result, nil
+		}
+		prompt := PromptWithContext(opts.Framework, latestSource, latestFailure, latestSnapshot, nil)
 		if len(prompt) > maxTier2PromptBytes {
 			result.State = "unverified"
 			result.Reason = "native Tier 2 prompt exceeds provider limit"
 			return result, nil
 		}
+		result.ProviderCalls++
 		response, callErr := opts.Provider.Complete(ctx, prompt, opts.Model)
 		if callErr != nil {
 			if errors.Is(callErr, context.Canceled) || errors.Is(callErr, context.DeadlineExceeded) || ctx.Err() != nil {
@@ -169,17 +195,23 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 				return result, callErr
 			}
 			result.State = "provider_error"
-			result.Reason = "provider did not return a usable candidate"
+			result.Reason = "provider call failed"
+			result.ProviderDiagnostic = providerDiagnostic(callErr)
+			if result.ProviderDiagnostic != "" {
+				result.Reason += ": " + result.ProviderDiagnostic
+			}
 			return result, callErr
 		}
 		candidate, parseErr := ParseCandidate(response, latestSource)
 		if parseErr != nil {
-			result.Reason = "provider candidate refused"
+			result.Reason = "provider candidate refused: " + parseErr.Error()
+			result.ProviderDiagnostic = "response began: " + responseStart(response)
 			continue
 		}
 		candidate = preserveNewlines(string(original), candidate)
 		if SafeCandidate(latestSource, candidate, failedSelector, opts.Framework) != nil {
-			result.Reason = "provider candidate is not an exact failed-locator selector replacement"
+			result.Reason = "provider candidate changed more than the failed locator's literal (changed " + changedLines(latestSource, candidate) + ")"
+			result.ProviderDiagnostic = ""
 			continue
 		}
 		verified := verify(ctx, opts, original, candidate, fmt.Sprintf("tier2-%d", attempt+1))
@@ -187,7 +219,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 			return finish(ctx, opts, original, candidate, verified, result)
 		}
 		result.Verified = verified
-		latestSource, latestFailure = candidate, verified.Failure
+		latestSource, latestFailure, latestSnapshot = candidate, verified.Failure, verified.Snapshot
 		if ctx.Err() != nil {
 			result.State = "canceled"
 			return result, ctx.Err()
@@ -198,6 +230,50 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 	}
 	result.State = "unverified"
 	return result, nil
+}
+
+// responseStart is the first 160 bytes of a provider response on one line,
+// so a refusal or prose answer is recognisable without storing the response.
+func responseStart(response string) string {
+	text := runner.RedactText(strings.Join(strings.Fields(response), " "))
+	if len(text) <= 160 {
+		return text
+	}
+	cut := 160
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "…"
+}
+
+// changedLines names the first lines where candidate differs from source,
+// such as "lines 2, 3", or "the line count" when lines were added or removed.
+func changedLines(source, candidate string) string {
+	a, b := strings.Split(source, "\n"), strings.Split(candidate, "\n")
+	if len(a) != len(b) {
+		return fmt.Sprintf("the line count from %d to %d", len(a), len(b))
+	}
+	var lines []string
+	for i := range a {
+		if a[i] != b[i] {
+			if len(lines) == 5 {
+				lines = append(lines, "…")
+				break
+			}
+			lines = append(lines, fmt.Sprint(i+1))
+		}
+	}
+	if len(lines) == 1 {
+		return "line " + lines[0]
+	}
+	return "lines " + strings.Join(lines, ", ")
+}
+
+// providerDiagnostic describes a failed call without the prompt or local
+// paths: CallError text is bounded and redacted, and HTTP transport errors
+// are fixed strings such as "provider returned HTTP 401".
+func providerDiagnostic(err error) string {
+	return truncate(err.Error(), 1<<10)
 }
 
 // Every executed candidate must remain an editable locator failure before
@@ -215,7 +291,7 @@ func (result *Session) stopAfterFailedVerification(verified RunResult, expectedT
 	}
 	if _, editable := editableFailure(verified.Failure); !editable {
 		result.State = "unverified"
-		result.Reason = "failed run is not an editable locator action"
+		result.Reason = "candidate run is not an editable locator action: " + notEditableReason(verified.Failure)
 		return true
 	}
 	return false
@@ -426,6 +502,30 @@ func preserveNewlines(original, candidate string) string {
 	return candidate
 }
 
+// editableShapes is the healing boundary, named in refusals.
+const editableShapes = "healing repairs a timed-out or missing locator in page.locator('…').<action>(), page.<action>('…') or a single page.getBy*(…) call with literal arguments"
+
+var waitedFor = regexp.MustCompile(`(?m)waiting for (.+?)[ \t]*$`)
+
+// notEditableReason says why editableFailure refused a failure: what the
+// call log waited for, or what kind of failure it was, and the boundary.
+func notEditableReason(failure string) string {
+	clean := terminalEscape.ReplaceAllString(failure, "")
+	lower := strings.ToLower(clean)
+	for _, unsafe := range []string{"network", "syntax", "navigation", "flow changed"} {
+		if strings.Contains(lower, unsafe) {
+			return "the failure reports a " + unsafe + " problem, which a locator edit cannot fix"
+		}
+	}
+	if m := waitedFor.FindStringSubmatch(clean); len(m) == 2 && healing.FailedLocator(failure) == "" {
+		return "it waited for " + truncate(m[1], 200) + ", which is not an editable locator (chained or regular-expression locators are not edited); " + editableShapes
+	}
+	if kind := healing.Classify(failure, ""); kind != "locator_not_found" && kind != "locator_timeout" && kind != "element_not_visible" {
+		return "the failure is classified as " + strings.ReplaceAll(kind, "_", " ") + "; " + editableShapes
+	}
+	return "the failure names no locator; " + editableShapes
+}
+
 func editableFailure(failure string) (string, bool) {
 	// A locator quoted in a network/syntax/navigation failure is contextual
 	// evidence, not an editable locator action. Fail closed before escalation.
@@ -435,7 +535,7 @@ func editableFailure(failure string) (string, bool) {
 			return "", false
 		}
 	}
-	selector := healing.ExtractSelector(failure, "")
+	selector := healing.FailedLocator(failure)
 	if selector == "" {
 		return "", false
 	}

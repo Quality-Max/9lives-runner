@@ -53,7 +53,7 @@ var mcpTools = []map[string]any{
 	{
 		"name":        "run_test",
 		"title":       "Run a Playwright spec",
-		"description": "Run one Playwright spec through the installed project with a bounded timeout. Returns status passed, failed or incomplete, test counts, the failure context and the receipt path. incomplete is never a pass.",
+		"description": "Run one Playwright spec through the installed project with a bounded timeout. Returns status passed, failed or incomplete, test counts, each failed test with its failing line and error, Playwright's error context for the first failure (error, ARIA snapshot of the page, marked source) and the receipt path. incomplete is never a pass.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -155,7 +155,7 @@ func (failedResult) Error() string { return "tool failed" }
 func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	providerName := fs.String("provider", "", "heal_test Tier 2 provider; default: an installed agent CLI or configured API key, else offline Tier 1 only")
+	providerName := fs.String("provider", "", "heal_test Tier 2 provider, or none for offline Tier 1 only; default: an installed agent CLI or configured API key")
 	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
 	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "run_test receipts")
@@ -174,7 +174,11 @@ func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	}
 	provider, err := resolveHealProvider(*providerName, *model, *providerURL)
 	if err != nil {
-		fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		if _, settingErr := tier2.AutoDetectEnabled(); settingErr != nil {
+			fmt.Fprintln(errOut, "9l:", settingErr)
+		} else {
+			fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		}
 		return exitUsage
 	}
 	server := &mcpServer{passEnv: passEnv, provider: provider, model: *model, runTimeout: nativeRunTimeout(),
@@ -297,7 +301,7 @@ func (s *mcpServer) handle(ctx context.Context, line []byte) {
 			"protocolVersion": protocol,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "9lives", "title": "9lives Go runner", "version": version},
-			"instructions":    mcpInstructions,
+			"instructions":    mcpInstructions + " heal_test provider: " + tier2.Describe(s.provider) + ".",
 		})
 	case "ping":
 		s.result(message.ID, map[string]any{})
@@ -535,8 +539,15 @@ type mcpRunResult struct {
 	SkippedTests  int    `json:"skippedTests"`
 	Reason        string `json:"reason,omitempty"`
 	Failure       string `json:"failure,omitempty"`
-	Receipt       string `json:"receipt,omitempty"`
+	// Failures names each failed test with its failing line, error start and
+	// attachments; FailureContext is the first failure's Playwright
+	// error-context.md (error, ARIA snapshot of the page, marked source).
+	Failures       []runner.TestFailure `json:"failures,omitempty"`
+	FailureContext string               `json:"failureContext,omitempty"`
+	Receipt        string               `json:"receipt,omitempty"`
 }
+
+const mcpMaxFailureContext = 8 << 10
 
 func (s *mcpServer) runTest(ctx context.Context, spec string, timeout time.Duration) (any, error) {
 	adapters := []runner.Adapter{playwright.New()}
@@ -570,6 +581,8 @@ func (s *mcpServer) runTest(ctx context.Context, spec string, timeout time.Durat
 				result.Failure = bounded(playwright.FailureContext(raw))
 			}
 		}
+		result.Failures = receipt.Failures
+		result.FailureContext = firstFailureContext(receipt.Failures)
 	} else if err != nil {
 		result.Reason = "execution did not complete"
 	}
@@ -669,14 +682,35 @@ func (s *mcpServer) confirmFinding(ctx context.Context, options confirmOptions) 
 // writes into its error messages.
 var terminalEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
+// firstFailureContext reads the first error-context attachment, redacted
+// and bounded. The file holds page content, so it is returned to the caller
+// and never persisted by this path.
+func firstFailureContext(failures []runner.TestFailure) string {
+	for _, failure := range failures {
+		for _, attachment := range failure.Attachments {
+			if attachment.Name != "error-context" || attachment.Bytes > 1<<20 {
+				continue
+			}
+			raw, err := playwright.ReadAttachment(attachment.Path, 1<<20)
+			if err != nil {
+				return ""
+			}
+			return boundedTo(runner.RedactText(string(raw)), mcpMaxFailureContext)
+		}
+	}
+	return ""
+}
+
 // bounded keeps returned diagnostics small, free of terminal escapes and on
 // valid UTF-8 boundaries.
-func bounded(text string) string {
+func bounded(text string) string { return boundedTo(text, mcpMaxText) }
+
+func boundedTo(text string, limit int) string {
 	text = terminalEscape.ReplaceAllString(text, "")
-	if len(text) <= mcpMaxText {
+	if len(text) <= limit {
 		return text
 	}
-	cut := mcpMaxText
+	cut := limit
 	for cut > 0 && !utf8RuneStart(text[cut]) {
 		cut--
 	}

@@ -19,7 +19,7 @@ PATH; use the Go binary's absolute path in the host configuration.
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `run_test` | `spec`, optional `run_timeout` (seconds) | `status` `passed`, `failed` or `incomplete`; test counts; `reason`; bounded `failure` context; receipt path |
+| `run_test` | `spec`, optional `run_timeout` (seconds) | `status` `passed`, `failed` or `incomplete`; test counts; `reason`; bounded `failure` context; `failures` (each failed test's title, failing line, error start and attachments); `failureContext` (the first failure's Playwright `error-context.md`, redacted, at most 8 KiB); receipt path |
 | `heal_test` | `spec`, optional `apply` (default false), `max_proposals` (1–5, default 1), `run_timeout` | Native healing session: `state`, run results, `savedPath` or `applied`, `diff`, and a `note` for `needs_human` |
 | `assess_test` | `path` (spec or directory), optional `requirements` | The [assessment](test-assessment.md) report under `report`; a suite with unassessed files also carries `error` |
 | `confirm_finding` | `spec`, `unfixed` (Git revision), optional `fixed` (default the working tree), `finding_id`, `finding`, `run_timeout` (seconds, per run) | The [confirmation](confirm.md) report under `report` and its `reportPath`; only `verdict` `confirmed` means the reproduction failed before and passed after |
@@ -34,7 +34,12 @@ project's own Playwright configuration, exactly like `9l run` and `9l heal`.
 `heal_test` is the [native healing session](native-tier2.md): one offline
 Tier 1 attempt, then Tier 2 proposals from the provider `9l mcp` was started
 with (`--provider`, `NINELIVES_PROVIDER`, an installed agent CLI or a
-configured API key; none means Tier 1 only). Every candidate runs in an
+configured API key; no provider, or `--provider none`, means Tier 1 only;
+`NINELIVES_AUTODETECT_PROVIDER=off` in the server's environment disables the
+installed-CLI and API-key detection).
+The server names that provider in its `initialize` instructions, and each
+result records `provider` and `providerCalls`; a failed call carries
+`providerDiagnostic`. Every candidate runs in an
 isolated copy first. Without `apply`, a verified candidate is saved as
 `<spec>.healed`; `apply: true` is the caller's explicit approval to write it
 in place, which still happens only if the spec is unchanged since it was

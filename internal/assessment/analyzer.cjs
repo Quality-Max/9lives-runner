@@ -37,11 +37,20 @@ function createAnalyzer(ts) {
   function analyze(source, options = {}) {
     const file = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     if (file.parseDiagnostics.length) throw new AnalysisError('syntax');
-    const tests = new Set(), expects = new Set();
+    const tests = new Set(), expects = new Set(), foreignTests = new Set();
     for (const statement of file.statements) {
-      if (!ts.isImportDeclaration(statement) || !['@playwright/test', '@9l/playwright'].includes(statement.moduleSpecifier.text)) continue;
+      if (!ts.isImportDeclaration(statement)) continue;
       const bindings = statement.importClause?.namedBindings;
       if (!bindings || !ts.isNamedImports(bindings)) continue;
+      if (!['@playwright/test', '@9l/playwright'].includes(statement.moduleSpecifier.text)) {
+        // A `test` from another module (a fixture package, another test runner) is
+        // not assessed; only its module name, if package-like, is reported.
+        if (bindings.elements.some(binding => (binding.propertyName || binding.name).text === 'test')) {
+          const name = statement.moduleSpecifier.text;
+          foreignTests.add(/^[@A-Za-z0-9._/-]{1,214}$/.test(name) ? name : '(unnamed module)');
+        }
+        continue;
+      }
       for (const binding of bindings.elements) {
         const imported = (binding.propertyName || binding.name).text;
         if (imported === 'test') tests.add(binding.name.text);
@@ -484,7 +493,8 @@ function createAnalyzer(ts) {
     // A shared modifier counts once, however many tests it applies to.
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
-    return { version: 6, compiler: ts.version, tests: results };
+    const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
+    return { version: 6, compiler: ts.version, tests: results, ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
