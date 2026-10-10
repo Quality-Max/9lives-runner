@@ -24,6 +24,10 @@ type RunResult struct {
 	ExecutedTests int    `json:"executedTests"`
 	Failure       string `json:"failure,omitempty"`
 	Receipt       string `json:"receipt,omitempty"`
+	// Snapshot is the page's ARIA snapshot at failure, when the run captured
+	// one. It is page content: it feeds Tier 1 and the provider prompt and is
+	// never part of the session result.
+	Snapshot string `json:"-"`
 }
 
 // MaxSourceBytes is the largest spec native healing reads.
@@ -70,7 +74,7 @@ type Session struct {
 // Heal runs original, then at most one caller-provided Tier 1 verification,
 // then, when a provider is given, each Tier 2 candidate in a fresh owned copy. A candidate is verified
 // only when a non-zero test count passed in its own run.
-func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (string, bool)) (result Session, err error) {
+func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, snapshot string) (string, bool)) (result Session, err error) {
 	if opts.Run == nil || opts.Spec == "" {
 		return result, errors.New("native healing requires spec and runner")
 	}
@@ -112,7 +116,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 	}
 	// Tier 1 is one attempt only. Its broader heuristic proposal must satisfy the
 	// same exact source boundary before it is allowed to execute.
-	if proposal, ok := tier1(string(original), result.Original.Failure); ok {
+	if proposal, ok := tier1(string(original), result.Original.Failure, result.Original.Snapshot); ok {
 		selector, editable := editableFailure(result.Original.Failure)
 		if editable && SafeCandidate(string(original), preserveNewlines(string(original), proposal), selector, opts.Framework) == nil {
 			proposal = preserveNewlines(string(original), proposal)
@@ -141,7 +145,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 		result.Reason = "Tier 1 found no verified candidate and no Tier 2 provider is available"
 		return result, nil
 	}
-	latestSource, latestFailure := string(original), result.Original.Failure
+	latestSource, latestFailure, latestSnapshot := string(original), result.Original.Failure, result.Original.Snapshot
 	for attempt := 0; attempt < opts.MaxProposals; attempt++ {
 		if len(latestSource) > maxTier2SourceBytes {
 			result.State = "unverified"
@@ -167,7 +171,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 			result.Reason = "Tier 2 was not asked: " + why
 			return result, nil
 		}
-		prompt := Prompt(opts.Framework, latestSource, latestFailure)
+		prompt := PromptWithContext(opts.Framework, latestSource, latestFailure, latestSnapshot, nil)
 		if len(prompt) > maxTier2PromptBytes {
 			result.State = "unverified"
 			result.Reason = "native Tier 2 prompt exceeds provider limit"
@@ -202,7 +206,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 			return finish(ctx, opts, original, candidate, verified, result)
 		}
 		result.Verified = verified
-		latestSource, latestFailure = candidate, verified.Failure
+		latestSource, latestFailure, latestSnapshot = candidate, verified.Failure, verified.Snapshot
 		if ctx.Err() != nil {
 			result.State = "canceled"
 			return result, ctx.Err()

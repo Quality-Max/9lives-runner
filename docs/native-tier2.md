@@ -72,9 +72,12 @@ files as Python + pytest. The current native execution kernel only executes
 installed Playwright projects; Cypress and Selenium execution adapters remain
 explicitly deferred to QUA-2153/QUA-2155. `NINELIVES_RUN_TIMEOUT` supplies the
 per-run default when `--run-timeout` is absent (positive whole seconds;
-otherwise five minutes). Optional page HTML is bounded to 3,000 bytes, error diagnostics to 4 KiB,
-and console diagnostics to ten 1 KiB entries with a 4 KiB aggregate when a
-future adapter provides them. The complete source remains intact within the one
+otherwise five minutes). The page state in the prompt is the failed run's ARIA
+snapshot from Playwright's `error-context.md` (roles and accessible names, no
+HTML), bounded to 3,000 bytes; it goes to the provider with the source and is
+never stored in the session. Error diagnostics are bounded to 4 KiB, and
+console diagnostics to ten 1 KiB entries with a 4 KiB aggregate when a future
+adapter provides them. The complete source remains intact within the one
 MiB native input limit for original execution and Tier 1. Before Tier 2 calls a
 provider, native healing admits complete files through 8 KiB only; larger files
 return an unverified result without a provider call or mutation. Provider

@@ -69,3 +69,40 @@ func TestTier1RefusesGetByAssertionAndDoesNotAddCSSWait(t *testing.T) {
 		t.Fatalf("assertion-owned getBy locator: %+v", response)
 	}
 }
+
+func TestAriaAlternativeReFindsOnlyASingleRenamedCandidate(t *testing.T) {
+	snapshot := "- generic [ref=e2]:\n  - text: E-mail\n  - textbox \"E-mail Adresse\" [ref=e3]\n  - button \"Einloggen\" [ref=e4]\n  - link \"Passwort vergessen\" [ref=e5]\n"
+	role := editableLocator{method: "getByRole", role: "button", value: "Anmelden"}
+	if got := ariaAlternative(role, snapshot); got != "Einloggen" {
+		t.Fatalf("unique role: %q", got)
+	}
+	if got := ariaAlternative(editableLocator{method: "getByLabel", value: "Email"}, snapshot); got != "E-mail Adresse" {
+		t.Fatalf("labelled control: %q", got)
+	}
+	two := snapshot + "  - button \"Registrieren\" [ref=e6]\n"
+	if got := ariaAlternative(role, two); got != "" {
+		t.Fatalf("two unrelated buttons must not pick one: %q", got)
+	}
+	if got := ariaAlternative(editableLocator{method: "getByRole", role: "button", value: "Jetzt einloggen"}, two); got != "Einloggen" {
+		t.Fatalf("shared word: %q", got)
+	}
+	if got := ariaAlternative(editableLocator{method: "getByRole", role: "button", value: "einloggen"}, snapshot); got != "" {
+		t.Fatalf("a still-matching name is not a rename: %q", got)
+	}
+	if got := ariaAlternative(editableLocator{method: "getByText", value: "Hi"}, snapshot); got != "" {
+		t.Fatalf("getByText is not re-found from roles: %q", got)
+	}
+}
+
+func TestTier1RepairsRenamedButtonFromAriaSnapshot(t *testing.T) {
+	source := "test('x', async ({ page }) => {\n  await page.getByRole('button', { name: 'Anmelden' }).click();\n});\n"
+	request := Request{Version: Version, Framework: "playwright", ErrorMessage: "TimeoutError: locator.click: Timeout 500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Anmelden' })", FailedSelector: "getByRole('button', { name: 'Anmelden' })", TestCode: source}
+	if response := Heal(request); response.Decision != "refuse" || !strings.Contains(response.Reason, "ARIA snapshot") {
+		t.Fatalf("without snapshot: %+v", response)
+	}
+	request.AriaSnapshot = "- button \"Einloggen\" [ref=e2]\n"
+	response := Heal(request)
+	if response.Decision != "propose" || response.ProposedCode != strings.Replace(source, "Anmelden", "Einloggen", 1) || !ExactLocatorSelectorReplacement(source, response.ProposedCode, request.FailedSelector, "playwright") {
+		t.Fatalf("with snapshot: %+v", response)
+	}
+}

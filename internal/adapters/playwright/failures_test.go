@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 func TestFailuresNameEachFailedTestWithLocationErrorAndAttachments(t *testing.T) {
@@ -81,5 +83,17 @@ func TestFailuresDoNotFollowSymlinkedDirectoriesOutOfTheProject(t *testing.T) {
 	}}}}}}}})
 	if failures := New().Failures(raw, project); len(failures) != 1 || len(failures[0].Attachments) != 0 {
 		t.Fatalf("followed a symlink out of the project: %+v", failures)
+	}
+}
+
+func TestPageSnapshotReadsTheAriaBlockOfErrorContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "error-context.md")
+	write(t, path, "# Error details\n\n```\nTimeoutError\n```\n\n# Page snapshot\n\n```yaml\n- button \"Einloggen\" [ref=e2]\n- status\n```\n\n# Test source\n", 0o600)
+	failures := []runner.TestFailure{{Attachments: []runner.TestAttachment{{Name: "screenshot", Path: "x.png"}, {Name: "error-context", Path: path, Bytes: 10}}}}
+	if got := PageSnapshot(failures); got != "- button \"Einloggen\" [ref=e2]\n- status" {
+		t.Fatalf("snapshot=%q", got)
+	}
+	if got := PageSnapshot(nil); got != "" {
+		t.Fatalf("no failures: %q", got)
 	}
 }

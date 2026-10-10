@@ -465,3 +465,30 @@ func withinDirectory(directory, path string) (string, bool) {
 	}
 	return relative, true
 }
+
+// maxPageSnapshotBytes bounds the ARIA snapshot read for healing.
+const maxPageSnapshotBytes = 64 << 10
+
+var pageSnapshotBlock = regexp.MustCompile("(?s)(?:^|\n)# Page snapshot\\s*\n```yaml\n(.*?)\n```")
+
+// PageSnapshot returns the ARIA snapshot of the page from a failed test's
+// error-context.md, at most 64 KiB, or "" when it has none.
+func PageSnapshot(failures []runner.TestFailure) string {
+	for _, failure := range failures {
+		for _, attachment := range failure.Attachments {
+			if attachment.Name != "error-context" || attachment.Bytes > 1<<20 {
+				continue
+			}
+			raw, err := os.ReadFile(attachment.Path)
+			if err != nil {
+				return ""
+			}
+			m := pageSnapshotBlock.FindSubmatch(raw)
+			if m == nil || len(m[1]) > maxPageSnapshotBytes {
+				return ""
+			}
+			return string(m[1])
+		}
+	}
+	return ""
+}

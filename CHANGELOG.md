@@ -27,6 +27,12 @@ SDK versions.
   option and everything else must stay the same. Before, such failures were
   refused as "not an editable locator action" before any provider call.
   Chained and regular-expression locators are still not edited.
+- Offline Tier 1 re-finds a renamed `getByRole` or `getByLabel` name from
+  the ARIA snapshot in the failed run's `error-context.md`, when exactly one
+  matching element remains (or exactly one shares a word with the old name).
+  A renamed button now heals with no provider at all. The `9l tier1` request
+  gains an optional `ariaSnapshot` field. The same snapshot, bounded to
+  3,000 bytes, is the page state in the Tier 2 prompt.
 - Tier 2 no longer asks a provider when the spec has no source shape a
   proposal could be admitted for, such as `page.fill('#id', …)` shorthand,
   a locator used twice or an action sharing its line. Those sessions end

@@ -69,10 +69,12 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 				}
 			}
 		}
-		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath}
+		// Read the ARIA snapshot now: the next verification run clears
+		// Playwright's output directory.
+		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath, Snapshot: playwright.PageSnapshot(receipt.Failures)}
 	}
-	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure string) (string, bool) {
-		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source})
+	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure, snapshot string) (string, bool) {
+		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source, AriaSnapshot: snapshot})
 		return proposal.ProposedCode, proposal.Decision == "propose"
 	})
 }

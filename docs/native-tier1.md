@@ -35,6 +35,18 @@ source quote. The lexer scans the whole file, keeps balanced delimiters and
 skips comments, ordinary strings, regex bodies and Python triple quoted strings.
 Locator-like documentation does not count as an executable occurrence.
 
+Playwright `page.getByRole('<role>', { name: '…' })` and single
+`getByText`/`getByLabel`/`getByPlaceholder`/`getByAltText`/`getByTitle`/`getByTestId`
+calls are recognised when `failedSelector` names them in Playwright's call-log
+form, such as `getByRole('button', { name: 'Anmelden' })`; only the name or
+text literal is replaceable. CSS strategies never apply to them. With the
+optional `ariaSnapshot` (Playwright's ARIA snapshot of the page at failure), a
+`getByRole` or `getByLabel` locator whose name no longer matches is re-found
+when exactly one element of that role, or labelled control, remains, or
+exactly one shares a word with the old name. Without a snapshot, or with no
+single candidate, the request is refused. `9l heal` supplies the snapshot from
+the failed run's `error-context.md`.
+
 A locator passed as an argument to an unknown outer call is refused: source
 syntax cannot establish whether that call is an assertion alias. Direct actions
 inside recognized arrow/function callback bodies remain eligible. Separate

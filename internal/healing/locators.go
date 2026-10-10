@@ -3,6 +3,7 @@ package healing
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // editableLocator is one Playwright locator a native heal may edit: the CSS
@@ -162,4 +163,69 @@ func (call editableLocator) sourceForm() string {
 		return "page.locator(" + quoteSelector(call.value) + ")"
 	}
 	return "page." + call.String()
+}
+
+// ariaLine reads one line of a Playwright ARIA snapshot: `- role "name" [...]`.
+var ariaLine = regexp.MustCompile(`^\s*- ([a-z]+)(?: "((?:\\.|[^"\\])*)")?`)
+
+// labelledRoles are the controls getByLabel finds by their accessible name.
+var labelledRoles = map[string]bool{"textbox": true, "searchbox": true, "combobox": true, "checkbox": true, "radio": true, "spinbutton": true, "slider": true, "switch": true, "listbox": true}
+
+// ariaAlternative re-finds a getByRole or getByLabel locator in an ARIA
+// snapshot: the only candidate element of that role (or labelled control),
+// else the only candidate whose name shares a word with the old name. It
+// returns "" while the old name still matches, or when no single candidate
+// is left. The candidate is unverified until the spec runs with it.
+func ariaAlternative(call editableLocator, snapshot string) string {
+	if call.method != "getByRole" && call.method != "getByLabel" {
+		return ""
+	}
+	var names []string
+	for _, line := range strings.Split(snapshot, "\n") {
+		m := ariaLine.FindStringSubmatch(line)
+		if len(m) != 3 || m[2] == "" {
+			continue
+		}
+		role, name := m[1], strings.ReplaceAll(m[2], `\"`, `"`)
+		if call.method == "getByRole" && role != call.role || call.method == "getByLabel" && !labelledRoles[role] {
+			continue
+		}
+		if strings.Contains(strings.ToLower(name), strings.ToLower(call.value)) {
+			return "" // the old name still matches; this is not a rename
+		}
+		if safeAttributeValue(name) && len(name) <= 200 && !strings.Contains(name, "\\") {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	var sharing []string
+	for _, name := range names {
+		if sharesWord(name, call.value) {
+			sharing = append(sharing, name)
+		}
+	}
+	if len(sharing) == 1 {
+		return sharing[0]
+	}
+	return ""
+}
+
+func sharesWord(a, b string) bool {
+	words := map[string]bool{}
+	split := func(s string) []string {
+		return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	}
+	for _, word := range split(a) {
+		if len([]rune(word)) > 2 {
+			words[word] = true
+		}
+	}
+	for _, word := range split(b) {
+		if words[word] {
+			return true
+		}
+	}
+	return false
 }
