@@ -33,6 +33,13 @@ and measured model correctness or cost are planned and must stay under
 "Planned, not shipped" until they land with evidence. Do not add accuracy,
 latency or cost numbers to the page; none are qualified.
 
+## Versioning
+
+The status section names the release it describes. When a release changes
+what is shipped or planned, update the lists in `index.html` and `PROMPT.md`
+together and move the version line, so the page never describes an older
+release as current.
+
 ## Regenerating
 
 Claude Design exports a `.dc.html` file that depends on a React runtime
