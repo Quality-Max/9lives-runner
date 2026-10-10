@@ -168,6 +168,10 @@ func (Adapter) SelectLine(job runner.Job, line int) (runner.Job, error) {
 	return playwright.SelectLine(job, line)
 }
 
+func (Adapter) Annotations(report []byte) []runner.TestAnnotation {
+	return playwright.New().Annotations(report)
+}
+
 func (Adapter) Failures(report []byte, workDir string) []runner.TestFailure {
 	return playwright.New().Failures(report, workDir)
 }

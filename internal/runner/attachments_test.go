@@ -99,3 +99,18 @@ func TestRunnerErrorLineNamesWhyNoReportWasWritten(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// annotatingAdapter reports one annotation from any report it is given.
+type annotatingAdapter struct{ fakeAdapter }
+
+func (annotatingAdapter) Annotations([]byte) []TestAnnotation {
+	return []TestAnnotation{{Test: "t", Type: "icon-font", Description: "0 visible icon(s)"}}
+}
+
+func TestPassedAttemptCarriesTestAnnotations(t *testing.T) {
+	plan := Plan{Version: 1, RunID: "run-annotations", Jobs: []Job{fakeJob("job-001", "success", 0)}}
+	summary, err := Execute(context.Background(), plan, ExecuteOptions{ReceiptDir: t.TempDir(), Adapters: []Adapter{annotatingAdapter{}}})
+	if err != nil || len(summary.Receipts) != 1 || summary.Receipts[0].Status != StatusPassed || len(summary.Receipts[0].Annotations) != 1 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+}

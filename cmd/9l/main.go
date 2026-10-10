@@ -915,6 +915,7 @@ func printResult(w io.Writer, result runner.RunSummary) {
 				clearable = clearable || !attachment.Retained
 			}
 		}
+		printAnnotations(w, receipt.Annotations)
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}
@@ -932,6 +933,34 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		fmt.Fprintf(w, "  INCOMPLETE: %d input(s) were skipped and not run; a skipped input is never a pass\n", result.SkippedInputs)
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
+	}
+}
+
+// builtinAnnotations are Playwright's own modifiers; a suite can hold many
+// test.fail() pins, so they stay in the receipt but not in the text summary.
+var builtinAnnotations = map[string]bool{"skip": true, "fixme": true, "fail": true, "slow": true}
+
+// printAnnotations shows the tests' own annotations, such as a test noting
+// that it returned early, so a green job does not hide what it skipped.
+func printAnnotations(w io.Writer, annotations []runner.TestAnnotation) {
+	shown, hidden := 0, 0
+	for _, annotation := range annotations {
+		if builtinAnnotations[annotation.Type] {
+			continue
+		}
+		if shown == 20 {
+			hidden++
+			continue
+		}
+		line := receiptReason(annotation.Test) + " — " + receiptReason(annotation.Type)
+		if annotation.Description != "" {
+			line += ": " + receiptReason(annotation.Description)
+		}
+		fmt.Fprintf(w, "           note  %s\n", line)
+		shown++
+	}
+	if hidden > 0 {
+		fmt.Fprintf(w, "           … %d more annotation(s) in the receipt\n", hidden)
 	}
 }
 

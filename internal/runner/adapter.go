@@ -55,6 +55,12 @@ type FailureReporter interface {
 	Failures(report []byte, workDir string) []TestFailure
 }
 
+// AnnotationReporter adapters list each test's annotations from a report
+// that already validated.
+type AnnotationReporter interface {
+	Annotations(report []byte) []TestAnnotation
+}
+
 // DiagnosticsChannel adapters write a separate per-attempt report for
 // FailureReporter beside the evidence stream, named by the returned
 // environment variable; an empty name disables it. The file never validates

@@ -296,3 +296,14 @@ func TestProjectNamesAreBounded(t *testing.T) {
 		t.Fatalf("missing config: %d %q", code, stderr.String())
 	}
 }
+
+func TestPrintResultShowsTestAnnotationsButNotBuiltinPins(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomePassed, Complete: true, Passed: 1, Receipts: []runner.Receipt{{
+		Status: runner.StatusPassed, Spec: "tests/icons.spec.ts",
+		Annotations: []runner.TestAnnotation{{Test: "known bug", Type: "fail"}, {Test: "returns early", Type: "icon-font", Description: "0 visible icon(s)"}},
+	}}})
+	if !strings.Contains(out.String(), "  PASSED   tests/icons.spec.ts\n           note  returns early — icon-font: 0 visible icon(s)\n") || strings.Contains(out.String(), "known bug") {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -133,5 +134,30 @@ func TestReadAttachmentRefusesNonRegularAndOversizedFiles(t *testing.T) {
 	}
 	if raw, err := ReadAttachment(big, 4096); err != nil || len(raw) != 2048 {
 		t.Fatalf("regular file: %d %v", len(raw), err)
+	}
+}
+
+func TestAnnotationsComeFromTheLastAttemptBoundedAndRedacted(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"title": "f.spec.ts", "suites": []any{map[string]any{"title": "icons", "specs": []any{
+		map[string]any{"title": "returns early", "tests": []any{map[string]any{"status": "expected", "projectName": "chromium",
+			"annotations": []any{map[string]any{"type": "static", "description": "only static"}},
+			"results": []any{
+				map[string]any{"status": "failed", "annotations": []any{map[string]any{"type": "icon-font", "description": "first attempt"}}},
+				map[string]any{"status": "passed", "annotations": []any{
+					map[string]any{"type": "icon-font", "description": "0 visible icon(s)\n\x1b[31mtoken=abc123\x1b[0m"},
+					map[string]any{"type": "note", "description": strings.Repeat("é", 400)},
+					map[string]any{"type": "", "description": "untyped"},
+				}},
+			}}}},
+	}}}}}})
+	got := New().Annotations(raw)
+	if len(got) != 2 || got[0].Test != "[chromium] icons › returns early" || got[0].Type != "icon-font" || got[0].Description != "0 visible icon(s) token=[REDACTED]" {
+		t.Fatalf("annotations=%+v", got)
+	}
+	if len(got[1].Description) > runner.MaxAnnotationDescriptionBytes+len("…") || !utf8.ValidString(got[1].Description) {
+		t.Fatalf("description not bounded: %d bytes", len(got[1].Description))
+	}
+	if New().Annotations([]byte("not json")) != nil {
+		t.Fatal("invalid report produced annotations")
 	}
 }

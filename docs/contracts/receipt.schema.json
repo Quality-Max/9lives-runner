@@ -262,6 +262,24 @@
       ],
       "type": "object"
     },
+    "TestAnnotation": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "test": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "test",
+        "type"
+      ],
+      "type": "object"
+    },
     "TestAttachment": {
       "properties": {
         "bytes": {
@@ -323,6 +341,12 @@
     },
     "agentProvenance": {
       "$ref": "#/$defs/ProvenanceAssessment"
+    },
+    "annotations": {
+      "items": {
+        "$ref": "#/$defs/TestAnnotation"
+      },
+      "type": "array"
     },
     "assertionCoverage": {
       "type": "string"

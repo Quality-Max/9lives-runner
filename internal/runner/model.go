@@ -80,10 +80,14 @@ type Receipt struct {
 	// Failures describes each failed test, from the validated structured
 	// report, when the adapter can attribute them. Messages are bounded and
 	// redacted; attachments are referenced and copied only on request.
-	Failures    []TestFailure `json:"failures,omitempty"`
-	Termination *Termination  `json:"termination,omitempty"`
-	Evidence    Evidence      `json:"evidence"`
-	ReceiptPath string        `json:"receiptPath,omitempty"`
+	Failures []TestFailure `json:"failures,omitempty"`
+	// Annotations are the tests' own annotations from the validated report,
+	// such as a test recording why it returned early. A passed receipt with
+	// annotations may not have exercised everything its tests can check.
+	Annotations []TestAnnotation `json:"annotations,omitempty"`
+	Termination *Termination     `json:"termination,omitempty"`
+	Evidence    Evidence         `json:"evidence"`
+	ReceiptPath string           `json:"receiptPath,omitempty"`
 }
 
 // TestFailure is one failed test in a validated report. At most
@@ -100,6 +104,21 @@ type TestFailure struct {
 	Message     string           `json:"message,omitempty"`
 	Attachments []TestAttachment `json:"attachments,omitempty"`
 }
+
+// TestAnnotation is one annotation of one test, as the test framework
+// reported it for the test's last attempt. Type and description are bounded,
+// redacted and free of terminal escapes.
+type TestAnnotation struct {
+	Test        string `json:"test"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+}
+
+const (
+	MaxReportedAnnotations        = 100
+	MaxAnnotationTypeBytes        = 64
+	MaxAnnotationDescriptionBytes = 256
+)
 
 // TestAttachment is a file the test framework attached to a failed test,
 // such as Playwright's error-context.md, a screenshot or a trace.
