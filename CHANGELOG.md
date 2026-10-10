@@ -88,6 +88,14 @@ SDK versions.
   A run that is incomplete only because inputs were skipped now says so
   instead of blaming planned jobs.
 
+### Assess
+
+- A file that imports `test` only from a module assess does not recognise
+  (a fixture file or another test runner) now names it: the report carries
+  `unrecognizedTestImports` and an `unrecognized-test-import` limit, and
+  suite summaries count it as `unrecognized` and "not assessed" instead of
+  assessed with 0 tests. Exit codes are unchanged.
+
 ## 0.2.0 — 2026-10-10
 
 ### Release process

@@ -246,6 +246,12 @@
         }
       ]
     },
+    "unrecognizedTestImports": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "version": {
       "const": 3,
       "type": "integer"

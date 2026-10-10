@@ -181,12 +181,15 @@ type SuiteFile struct {
 }
 
 type SuiteSummary struct {
-	Files    int            `json:"files"`
-	Assessed int            `json:"assessed"`
-	Failed   int            `json:"failed"`
-	Tests    int            `json:"tests"`
-	Findings int            `json:"findings"`
-	Rules    map[string]int `json:"rules"`
+	Files    int `json:"files"`
+	Assessed int `json:"assessed"`
+	Failed   int `json:"failed"`
+	// Unrecognized counts files whose `test` import assess does not
+	// recognise; they have a report but none of their tests were assessed.
+	Unrecognized int            `json:"unrecognized"`
+	Tests        int            `json:"tests"`
+	Findings     int            `json:"findings"`
+	Rules        map[string]int `json:"rules"`
 }
 
 // SuiteReport combines per-file reports. Completeness is partial whenever any
@@ -299,7 +302,11 @@ func buildSuite(files []SuiteFile, contract []byte) SuiteReport {
 			suite.Summary.Failed++
 			continue
 		}
-		suite.Summary.Assessed++
+		if len(file.Report.UnrecognizedTestImports) > 0 {
+			suite.Summary.Unrecognized++
+		} else {
+			suite.Summary.Assessed++
+		}
 		suite.Summary.Tests += len(file.Report.Tests)
 		counts, total := CountFindings(*file.Report)
 		suite.Summary.Findings += total

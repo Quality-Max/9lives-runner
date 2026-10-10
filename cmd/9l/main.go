@@ -252,7 +252,11 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 		for _, limit := range suite.Limits {
 			fmt.Fprintln(out, "Limit:", limit)
 		}
-		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed), %d tests, %d findings\n", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed, suite.Summary.Tests, suite.Summary.Findings)
+		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed+suite.Summary.Unrecognized)
+		if suite.Summary.Unrecognized > 0 {
+			fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
+		}
+		fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
 		writeRuleCounts(out, suite.Summary.Rules)
 	}
 	if suite.Summary.Failed > 0 {
