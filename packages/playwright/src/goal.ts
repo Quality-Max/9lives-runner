@@ -60,14 +60,22 @@ async function metadata(handle: Target['handle']) {
       try { const url = new URL(href, document.baseURI); if (!['http:', 'https:'].includes(url.protocol) || url.origin !== location.origin) return null; } catch { return null; }
     }
     const policyText = [element.getAttribute('aria-label'), labelled, Array.from(input.labels || []).map(label => label.textContent || '').join(' '), element.textContent, ['submit', 'button', 'reset'].includes(type) ? input.value : ''].filter(Boolean).join(' ');
-    // The accessible name of the nearest form, fieldset, dialog or landmark,
-    // which tells apart two controls with the same role and label.
-    const scope = element.parentElement?.closest('form,fieldset,dialog,[role="dialog"],[role="alertdialog"],[role="form"],[role="region"],[role="navigation"],[role="search"],nav,main,aside,header,footer,section');
     let context = '';
-    if (scope) {
+    for (let scope = element.parentElement; scope; scope = scope.parentElement) {
+      const scopeTag = scope.tagName.toLowerCase();
+      const scopeRole = (scope.getAttribute('role') || '').trim().toLowerCase().split(/\s+/)[0];
       const named = (scope.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
-      const legend = scope.tagName.toLowerCase() === 'fieldset' ? scope.querySelector(':scope > legend')?.textContent || '' : '';
-      context = scope.getAttribute('aria-label') || named || legend || scope.querySelector('h1,h2,h3,h4,h5,h6')?.textContent || scope.getAttribute('name') || '';
+      const ariaName = (scope.getAttribute('aria-label') || named).trim();
+      const landmarkRoles = ['banner', 'complementary', 'contentinfo', 'form', 'main', 'navigation', 'region', 'search'];
+      const implicitLandmark = !scopeRole && (scopeTag === 'main' || scopeTag === 'nav' || scopeTag === 'aside'
+        || scopeTag === 'section' && !!ariaName
+        || ['header', 'footer'].includes(scopeTag) && !scope.parentElement?.closest('article,aside,main,nav,section'));
+      const scopeLandmark = landmarkRoles.includes(scopeRole) && (!['form', 'region'].includes(scopeRole) || !!ariaName);
+      if (['form', 'fieldset', 'dialog'].includes(scopeTag) || ['dialog', 'alertdialog', 'form'].includes(scopeRole) || scopeLandmark || implicitLandmark) {
+        const legend = scopeTag === 'fieldset' ? scope.querySelector(':scope > legend')?.textContent || '' : '';
+        context = ariaName || legend || scope.querySelector('h1,h2,h3,h4,h5,h6')?.textContent || scope.getAttribute('name') || '';
+        if (context) break;
+      }
     }
     return {role, label, policyText, actions, context, fingerprint: JSON.stringify([tag, type, role, label, href, policyText, context])};
   });
@@ -103,7 +111,7 @@ async function observe(page: Page, redact: (text: string) => string) {
       const data = await metadata(handle);
       if (!data) continue;
       const id = `target-${targets.size + 1}`;
-      targets.set(id, {handle, fingerprint: data.fingerprint, control: {id, role: data.role, label: redact(data.label), actions: data.actions, blocked: risky.test(data.policyText)}});
+      targets.set(id, {handle, fingerprint: data.fingerprint, control: {id, role: data.role, label: redact(data.label), actions: data.actions, blocked: risky.test(`${data.policyText} ${data.context}`)}});
       contexts.set(id, data.context);
     }
     // Controls that share role and label get their context and a 1-based

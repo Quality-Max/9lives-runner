@@ -454,7 +454,7 @@ func (s *service) finish(ctx context.Context, call *providerCall, completion tie
 				target = &call.candidates[i]
 			}
 		}
-		if target == nil || target.Blocked || !slices.Contains(target.Actions, d.Action) || risky.MatchString(target.Label) {
+		if target == nil || target.Blocked || !slices.Contains(target.Actions, d.Action) || risky.MatchString(target.Label+" "+target.Context) {
 			entry.Outcome = "policy_blocked"
 			return g.stop("policy_blocked")
 		}

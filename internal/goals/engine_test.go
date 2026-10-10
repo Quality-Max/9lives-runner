@@ -103,6 +103,17 @@ func TestDecisionBoundaryFailsClosed(t *testing.T) {
 		})
 	}
 }
+func TestDecisionBoundaryChecksContextPolicy(t *testing.T) {
+	s := setup(t, decision(`{"action":"click","targetId":"target-1"}`), Defaults())
+	g := start(s)
+	candidates := []Candidate{{ID: "target-1", Role: "button", Label: "Submit", Actions: []string{"click"}, Context: "Delete account"}}
+	if r := s.handle(context.Background(), request{Op: "decide", GoalID: g, Candidates: candidates}); r.Status != "policy_blocked" || r.Decision != nil {
+		t.Fatalf("%+v", r)
+	}
+	if got := s.Close()[0].Decisions[0].Outcome; got != "policy_blocked" {
+		t.Fatalf("receipt outcome %s", got)
+	}
+}
 func TestPendingAndUnknownActionsCannotBeRepeated(t *testing.T) {
 	for _, outcome := range []string{"unknown", "missing_ack"} {
 		t.Run(outcome, func(t *testing.T) {
