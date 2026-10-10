@@ -1,7 +1,7 @@
 # Confirm: does the reproduction fail before the fix?
 
 Status: experimental. `9l confirm` needs `@9l/playwright` 0.1.1 or newer and
-a CLI built from `main` until the next CLI release. Qualified with real
+CLI 0.2.0 or newer. Qualified with real
 Chromium on one synthetic repository, see [Qualification](#qualification). No
 accuracy, latency or cost claim is made for other applications.
 

@@ -17,11 +17,11 @@ CLI releases use stable `v<major.minor.patch>` tags. Set `var version` in
 
 ```sh
 git fetch origin
-git tag v0.1.5 origin/main
-git push origin v0.1.5
+git tag v0.2.0 origin/main
+git push origin v0.2.0
 ```
 
-The commands above publish CLI 0.1.5; choose the matching version for a later
+The commands above publish CLI 0.2.0; choose the matching version for a later
 release. Never move a published tag to different source.
 The workflow rejects a private repository, a mismatched source version,
 noncanonical repository or a tag outside main's history. It runs the entire
@@ -39,8 +39,8 @@ and executable permissions, and byte-identical legal files. It writes
 and Linux use tarballs with executable permissions. Native Windows CI must
 pass checkout assertions, business failure, owned timeout/cancel and clean
 consumer checks before release packaging. Windows arm64 has no Go race
-detector; its Go tests run without `-race`. Windows ZIPs start with the next
-CLI release after v0.1.5. Only the final publishing job has repository
+detector; its Go tests run without `-race`. Windows ZIPs start with
+CLI v0.2.0. Only the final publishing job has repository
 write permission; its actions are pinned to commit SHAs. The release workflow
 publishes GitHub assets, not the npm SDK. Archives are not Apple notarized.
 Published assets are not overwritten by a workflow rerun.

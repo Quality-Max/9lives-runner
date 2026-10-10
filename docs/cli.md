@@ -69,7 +69,7 @@ Playwright execution supports existing projects with a local
 run.
 
 Release packaging targets macOS, Linux and Windows on amd64 and arm64.
-Windows ZIPs start with the next CLI release after v0.1.5. Owned process-tree
+Windows ZIPs start with CLI v0.2.0. Owned process-tree
 cancellation uses Unix process groups or Windows kill-on-close Job Objects;
 native CI exercises real Chromium timeout and cancellation cleanup.
 

@@ -1,17 +1,9 @@
 # Changelog
 
-## SDK 0.1.2 — 2026-10-10
-
-- Refresh the npm package and installation examples from current main. SDK
-  runtime behavior and protocol are unchanged from 0.1.1.
-- Release qualification now covers native Windows amd64 and arm64, including
-  real Chromium assertions, timeout/cancel cleanup and isolated consumers;
-  Windows relies on inherited directory ACLs rather than POSIX mode bits.
-
-## CLI unreleased
+## CLI 0.2.0 — 2026-10-10
 
 - Add Windows amd64 and arm64 ZIP packaging, with `9l.exe`, legal files and
-  SHA-256 checksums, for the next CLI release after v0.1.5.
+  SHA-256 checksums. v0.2.0 is the first release with Windows assets.
 - Own Windows launcher and descendant processes through kill-on-close Job
   Objects; launch the installed Playwright JavaScript CLI with Node directly.
   Goals use an owner-restricted Windows named pipe with the existing SDK protocol.
@@ -71,12 +63,20 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   verifies a candidate but cannot save or apply it, or whose provider fails,
   is an error result that keeps its evidence. See [MCP server](docs/mcp.md).
 
-## SDK unreleased
+## SDK 0.1.3 — 2026-10-10
 
 - The prove channel applies `http-401`, `http-403`, `http-429` and
   `malformed-json` faults. When the engine sets
   `NINELIVES_PROVE_CAPABILITIES=1`, a baseline reports the kinds this build
   applies; older engines never ask and never receive the record.
+
+## SDK 0.1.2 — 2026-10-10
+
+- Refresh the npm package and installation examples from current main. SDK
+  runtime behavior and protocol are unchanged from 0.1.1.
+- Release qualification now covers native Windows amd64 and arm64, including
+  real Chromium assertions, timeout/cancel cleanup and isolated consumers;
+  Windows relies on inherited directory ACLs rather than POSIX mode bits.
 
 ## CLI 0.1.5 — 2026-10-09
 
