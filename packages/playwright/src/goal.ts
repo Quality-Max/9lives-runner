@@ -15,7 +15,9 @@ export type GoalResult = {goalId: string; status: 'completed'; verified: false};
 type Action = 'click' | 'fill' | 'select' | 'check' | 'wait' | 'complete' | 'unresolved';
 type Decision = {action: Action; targetId?: string; parameter?: string};
 type Reply = {status: string; goalId?: string; decisionId?: string; decision?: Decision; timeoutMs?: number};
-type Control = {id: string; role: string; label: string; actions: Action[]; blocked: boolean};
+// context and ordinal are sent only for controls that share role and label
+// with another offered control, so the model can tell them apart.
+type Control = {id: string; role: string; label: string; actions: Action[]; blocked: boolean; context?: string; ordinal?: number};
 type Target = {handle: ElementHandle<HTMLElement | SVGElement>; fingerprint: string; control: Control};
 const version = '9l.goal/1';
 const risky = /\b(send|resend|invite|publish|broadcast|notify|share|post|reply|comment|buy|purchase|pay|payment|checkout|check out|place (your |my )?order|submit order|order now|complete (order|purchase|checkout|booking|payment)|confirm (order|purchase|payment|booking)|book now|reserve|donate|subscribe|upgrade|start (subscription|trial)|delete|remove|destroy|erase|discard|trash|deactivate|revoke|close account|cancel (account|subscription))\b/i;
@@ -58,7 +60,16 @@ async function metadata(handle: Target['handle']) {
       try { const url = new URL(href, document.baseURI); if (!['http:', 'https:'].includes(url.protocol) || url.origin !== location.origin) return null; } catch { return null; }
     }
     const policyText = [element.getAttribute('aria-label'), labelled, Array.from(input.labels || []).map(label => label.textContent || '').join(' '), element.textContent, ['submit', 'button', 'reset'].includes(type) ? input.value : ''].filter(Boolean).join(' ');
-    return {role, label, policyText, actions, fingerprint: JSON.stringify([tag, type, role, label, href, policyText])};
+    // The accessible name of the nearest form, fieldset, dialog or landmark,
+    // which tells apart two controls with the same role and label.
+    const scope = element.parentElement?.closest('form,fieldset,dialog,[role="dialog"],[role="alertdialog"],[role="form"],[role="region"],[role="navigation"],[role="search"],nav,main,aside,header,footer,section');
+    let context = '';
+    if (scope) {
+      const named = (scope.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
+      const legend = scope.tagName.toLowerCase() === 'fieldset' ? scope.querySelector(':scope > legend')?.textContent || '' : '';
+      context = scope.getAttribute('aria-label') || named || legend || scope.querySelector('h1,h2,h3,h4,h5,h6')?.textContent || scope.getAttribute('name') || '';
+    }
+    return {role, label, policyText, actions, context, fingerprint: JSON.stringify([tag, type, role, label, href, policyText, context])};
   });
 }
 /** Redacts the test's parameter values, including whitespace-collapsed forms, then bounds the label. */
@@ -85,6 +96,7 @@ async function observe(page: Page, redact: (text: string) => string) {
       if (handle) handles.push(handle as Target['handle']);
     }
     const targets = new Map<string, Target>();
+    const contexts = new Map<string, string>();
     // Bound traversal as well as the transmitted set.
     for (const handle of handles.slice(0, 100)) {
       if (targets.size >= 25 || !await handle.isVisible() || !await handle.isEnabled()) continue;
@@ -92,6 +104,18 @@ async function observe(page: Page, redact: (text: string) => string) {
       if (!data) continue;
       const id = `target-${targets.size + 1}`;
       targets.set(id, {handle, fingerprint: data.fingerprint, control: {id, role: data.role, label: redact(data.label), actions: data.actions, blocked: risky.test(data.policyText)}});
+      contexts.set(id, data.context);
+    }
+    // Controls that share role and label get their context and a 1-based
+    // ordinal among those duplicates; unique controls stay unchanged.
+    const groups = new Map<string, Target[]>();
+    for (const target of targets.values()) {
+      const key = JSON.stringify([target.control.role, target.control.label]);
+      groups.set(key, [...(groups.get(key) || []), target]);
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      group.forEach((target, index) => { target.control.context = redact(contexts.get(target.control.id) || ''); target.control.ordinal = index + 1; });
     }
     const state = await observeState(page, redact);
     return {targets, state, dispose: async () => { await Promise.allSettled(handles.map(handle => handle.dispose())); }};

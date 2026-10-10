@@ -11,6 +11,17 @@ input value or extra field can execute. Candidate IDs are scoped to the decision
 Unsupported controls and cross-origin links are omitted. Password/file inputs,
 iframes, custom contenteditable controls and native/mobile work are unsupported.
 
+Controls that share role and label, such as a "Submit" button in two forms,
+also carry `context`, the accessible name of their nearest form, fieldset,
+dialog or landmark (from `aria-label`, `aria-labelledby`, a fieldset legend, a
+heading or the form name; redacted and capped at 160 bytes), and a 1-based
+`ordinal` among those duplicates. The context is part of the fingerprint
+rechecked before acting. If the chosen control still matches another on role,
+label and context, the engine stops the goal as `ambiguous_target` instead of
+acting, because any choice between them would be a guess. Scripted goal steps
+can name `context` or `ordinal` to pick one of several controls that share a
+label.
+
 Actions are `click`, `fill`, `select`, `check`, `wait`, `complete`, `unresolved`.
 `check` sets a checkbox true; `select` uses a named local option value. Ordinary
 Playwright navigation, authentication setup and assertions surround the goal.

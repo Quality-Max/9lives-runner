@@ -420,3 +420,35 @@ func TestPromptCarriesPriorActionsWithoutValues(t *testing.T) {
 		t.Fatalf("first prompt %s", prompts[0])
 	}
 }
+
+func TestIndistinguishableTargetStopsAsAmbiguous(t *testing.T) {
+	submit := func(context string, ordinal int, id string) Candidate {
+		return Candidate{ID: id, Role: "button", Label: "Submit", Actions: []string{"click"}, Context: context, Ordinal: ordinal}
+	}
+	for name, tc := range map[string]struct {
+		candidates []Candidate
+		status     string
+	}{
+		"same context":      {[]Candidate{submit("", 1, "target-1"), submit("", 2, "target-2")}, "ambiguous_target"},
+		"different context": {[]Candidate{submit("Shipping address", 1, "target-1"), submit("Billing address", 2, "target-2")}, "active"},
+		"unique label":      {control("Submit"), "active"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := decision(`{"action":"click","targetId":"target-1"}`)
+			s := setup(t, p, Defaults())
+			r := s.handle(context.Background(), request{Op: "decide", GoalID: start(s), Candidates: tc.candidates})
+			if r.Status != tc.status || (tc.status == "ambiguous_target") != (r.Decision == nil) {
+				t.Fatalf("status %s decision %v", r.Status, r.Decision)
+			}
+			if tc.status == "ambiguous_target" && s.goals[0].receipt.Decisions[0].Outcome != "ambiguous_target" {
+				t.Fatalf("receipt %+v", s.goals[0].receipt)
+			}
+		})
+	}
+	// Oversized context or ordinal is an invalid request.
+	s := setup(t, decision(`{"action":"unresolved"}`), Defaults())
+	bad := []Candidate{{ID: "target-1", Role: "button", Label: "Submit", Actions: []string{"click"}, Context: strings.Repeat("x", 161)}}
+	if r := s.handle(context.Background(), request{Op: "decide", GoalID: start(s), Candidates: bad}); r.Status != "invalid_request" {
+		t.Fatalf("oversized context: %s", r.Status)
+	}
+}
