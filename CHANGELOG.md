@@ -4,7 +4,7 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## 0.2.5 — 2026-10-10
+## 0.3.0 — 2026-10-11
 
 ### SDK
 
@@ -12,35 +12,40 @@ SDK versions.
   role and label (#46). An older CLI rejects those fields, so with it a goal
   on a page with such duplicates stops as an invalid request instead of
   acting; pages without duplicates are unaffected. Use the matching CLI.
+- The goal stop policy also checks the raw name of a control's form,
+  fieldset, dialog or landmark, so a generic "Continue" inside a form named
+  "Delete account" is blocked.
 
 ### CLI
 
-- Goals tell apart controls that share role and label: such controls carry
-  the name of their form, fieldset, dialog or landmark (`context`) and an
-  `ordinal`, and a choice the engine still cannot distinguish stops the
-  goal as `ambiguous_target` instead of guessing (#46). Scripted goal steps
-  accept `context` and `ordinal`.
-- Receipts carry each test's annotations (`annotations`, additive), and
-  `9l run`/`9l result` print the non-built-in ones under the job, so a test
-  that recorded why it returned early is no longer an unexplained green
-  (#39, part 1).
 - SDK goals run on a subscription: `--goal-provider claude`, `codex` or
   `opencode` uses that CLI's own login, with no API key and no fallback.
   Each decision runs the CLI in a decision-only mode (Claude Code with no
   tools, MCP servers, user settings or saved session; Codex read-only with
   the decision schema; OpenCode's read-only plan agent), and its reported
   usage is checked against a reservation that includes the CLI's fixed
-  input overhead.
+  input overhead. A CLI answer without reported usage is refused, and an
+  OpenCode error event keeps its message, redacted.
+- Goal prompts list the goal's earlier actions (typed action, target role
+  and label, parameter name, outcome; never values) and say when to `wait`
+  for a control that has not appeared. Before, a model could not see that a
+  fill had happened and repeated it until the budget ran out.
 - `9l run --config <file>` and `--project <name>` (repeatable) choose the
   Playwright config and projects, recorded in each job's `selection` and
   the receipt's evidence command (#38). A spec the config finds no tests in
   now names the config file and its `testDir`, and a run whose test runner
   exits before writing a report, such as for an unknown project, carries
   the runner's own `Error:` line.
-- Goal prompts list the goal's earlier actions (typed action, target role
-  and label, parameter name, outcome; never values) and say when to `wait`
-  for a control that has not appeared. Before, a model could not see that a
-  fill had happened and repeated it until the budget ran out.
+- Goals tell apart controls that share role and label: such controls carry
+  the name of their form, fieldset, dialog or landmark (`context`) and an
+  `ordinal`, and a choice the engine still cannot distinguish stops the
+  goal as `ambiguous_target` instead of guessing (#46). The engine also
+  applies the stop policy to that context. Scripted goal steps accept
+  `context` and `ordinal`.
+- Receipts carry each test's annotations (`annotations`, additive), and
+  `9l run`/`9l result` print the non-built-in ones under the job, so a test
+  that recorded why it returned early is no longer an unexplained green
+  (#39, part 1).
 - Evidence and diagnostics are cleaner and safer: redaction now covers
   `Authorization: Bearer|Basic|Token …` and bare `Bearer <token>` values;
   terminal escapes are stripped including OSC sequences such as hyperlinks;
@@ -48,6 +53,36 @@ SDK versions.
   `failureContext` drops values typed into fields like the provider prompt
   does; failed-test titles are capped at 512 bytes; and heal refuses a
   whitespace-only `getBy` name, which would match nearly every control.
+
+### Assess
+
+Policy `assessment-source-v10` covers all of the changes below; report version
+3 is unchanged.
+
+- Conditional pre-execution skips no longer lend outcome coverage to sibling
+  tests; modifiers in after hooks still do because the test body ran, and
+  they are reported as such.
+- Outcome mapping no longer credits disabled or unrelated tests: only an
+  enabled test that references the same requirement covers a sibling test's
+  outcome (#31). `unmapped-outcome` findings carry the code
+  `maps-no-outcome` (counted per test) or `unmapped-in-file` (counted once
+  per requirement and outcome), so summaries count
+  `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
+- `await Promise.all([expect(a)…, expect(b)…])` and the other Promise
+  combinators no longer report their matchers as `unawaited-assertion` or
+  count as unresolved helpers, and a matcher whose promise is dropped by
+  `[…].map(l => expect(l)…);` or a parenthesized `forEach` callback is now
+  reported (#30).
+
+## 0.2.5 — 2026-10-10
+
+### SDK
+
+- Release alongside CLI 0.2.5. SDK runtime behavior and protocols are
+  unchanged from 0.2.0.
+
+### CLI
+
 - `9l heal --provider claude` works on a Claude subscription. Provider CLIs
   now receive the user name (`USER`, `LOGNAME`, `USERNAME`), temp, locale,
   Windows profile, proxy and CA-certificate variables. Without `USER`,
@@ -146,21 +181,6 @@ SDK versions.
 
 ### Assess
 
-- Conditional pre-execution skips no longer lend outcome coverage to sibling
-  tests; modifiers in after hooks still do because the test body ran. Policy
-  `assessment-source-v10`.
-- Outcome mapping no longer credits disabled or unrelated tests: only an
-  enabled test that references the same requirement covers a sibling test's
-  outcome (#31). `unmapped-outcome` findings carry the code
-  `maps-no-outcome` (counted per test) or `unmapped-in-file` (counted once
-  per requirement and outcome), so summaries count
-  `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
-  Policy `assessment-source-v9`.
-- `await Promise.all([expect(a)…, expect(b)…])` and the other Promise
-  combinators no longer report their matchers as `unawaited-assertion` or
-  count as unresolved helpers, and a matcher whose promise is dropped by
-  `[…].map(l => expect(l)…);` or a parenthesized `forEach` callback is now
-  reported (#30).
 - A file that imports `test` only from a module assess does not recognise
   (a fixture file or another test runner) now names it: the report carries
   `unrecognizedTestImports` and an `unrecognized-test-import` limit, and
