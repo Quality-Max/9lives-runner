@@ -699,3 +699,24 @@ func TestHealRepairsPageActionShorthand(t *testing.T) {
 		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
 	}
 }
+
+func TestHealExplainsWhyAProviderCandidateWasRefused(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "login.spec.ts")
+	original := "test('x', async ({ page }) => {\n  await page.locator('#old').click();\n  await expect(page.locator('#done')).toBeVisible();\n});\n"
+	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(context.Context, string, string) RunResult {
+		return RunResult{ExecutedTests: 1, Failure: "TimeoutError: waiting for locator('#old')"}
+	}
+	for name, tc := range map[string]struct{ response, reason, diagnostic string }{
+		"prose":          {"I cannot see the page, so I can't fix this.", "provider candidate refused: provider must return exactly one fenced complete file", "response began: I cannot see the page"},
+		"assertion edit": {"```ts\n" + strings.Replace(strings.Replace(original, "#old", "#new", 1), "#done", "#ok", 1) + "```", "(changed lines 2, 3)", ""},
+	} {
+		provider := &fakeProvider{responses: []string{tc.response}}
+		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: run}, func(string, string, string) (string, bool) { return "", false })
+		if err != nil || result.State != "unverified" || !strings.Contains(result.Reason, tc.reason) || !strings.HasPrefix(result.ProviderDiagnostic, tc.diagnostic) {
+			t.Fatalf("%s: result=%+v err=%v", name, result, err)
+		}
+	}
+}

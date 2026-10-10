@@ -77,6 +77,9 @@ printed or stored in receipts. When a call fails, the session's
 it printed, redacted and capped at 512 bytes, so a cause such as
 `claude provider failed (exit 1): Not logged in · Please run /login` is
 visible.
+A refused answer is explained too: the `reason` names the parse error, with
+the response's first 160 characters in `providerDiagnostic`, or the lines the
+candidate changed beyond the failed locator's literal.
 
 Prompt contracts label Playwright and Cypress files as JavaScript and Selenium
 files as Python + pytest. The current native execution kernel only executes

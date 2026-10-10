@@ -27,6 +27,10 @@ SDK versions.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".
+- A refused provider answer says why: the parse error (for example "must
+  return exactly one fenced complete file", with the response's first 160
+  characters as `providerDiagnostic`), or the lines it changed beyond the
+  failed locator's literal.
 - Healing edits `getByRole` and other `getBy*` locators. A renamed button,
   `page.getByRole('button', { name: 'Anmelden' })` failing in the call log,
   can be repaired by changing only the name literal; the role, `exact`

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/healing"
 )
@@ -201,12 +202,14 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 		}
 		candidate, parseErr := ParseCandidate(response, latestSource)
 		if parseErr != nil {
-			result.Reason = "provider candidate refused"
+			result.Reason = "provider candidate refused: " + parseErr.Error()
+			result.ProviderDiagnostic = "response began: " + responseStart(response)
 			continue
 		}
 		candidate = preserveNewlines(string(original), candidate)
 		if SafeCandidate(latestSource, candidate, failedSelector, opts.Framework) != nil {
-			result.Reason = "provider candidate is not an exact failed-locator selector replacement"
+			result.Reason = "provider candidate changed more than the failed locator's literal (changed " + changedLines(latestSource, candidate) + ")"
+			result.ProviderDiagnostic = ""
 			continue
 		}
 		verified := verify(ctx, opts, original, candidate, fmt.Sprintf("tier2-%d", attempt+1))
@@ -225,6 +228,43 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 	}
 	result.State = "unverified"
 	return result, nil
+}
+
+// responseStart is the first 160 bytes of a provider response on one line,
+// so a refusal or prose answer is recognisable without storing the response.
+func responseStart(response string) string {
+	text := strings.Join(strings.Fields(response), " ")
+	if len(text) <= 160 {
+		return text
+	}
+	cut := 160
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "…"
+}
+
+// changedLines names the first lines where candidate differs from source,
+// such as "lines 2, 3", or "the line count" when lines were added or removed.
+func changedLines(source, candidate string) string {
+	a, b := strings.Split(source, "\n"), strings.Split(candidate, "\n")
+	if len(a) != len(b) {
+		return fmt.Sprintf("the line count from %d to %d", len(a), len(b))
+	}
+	var lines []string
+	for i := range a {
+		if a[i] != b[i] {
+			if len(lines) == 5 {
+				lines = append(lines, "…")
+				break
+			}
+			lines = append(lines, fmt.Sprint(i+1))
+		}
+	}
+	if len(lines) == 1 {
+		return "line " + lines[0]
+	}
+	return "lines " + strings.Join(lines, ", ")
 }
 
 // providerDiagnostic describes a failed call without the prompt or local
