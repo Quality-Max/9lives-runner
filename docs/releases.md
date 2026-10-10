@@ -104,11 +104,14 @@ changelog in a reviewed change and merge it to `main`. The publish workflow
 runs on every push to `main` that touches `packages/playwright/package.json`:
 it reads the version, skips when the registry already has it, otherwise runs
 the complete CI workflow, publishes the exact qualified tarball using
-short-lived OIDC authentication on a GitHub-hosted runner, and then pushes
-the `sdk-v<version>` tag on the published commit. Pushing a matching
+short-lived OIDC authentication on a GitHub-hosted runner, waits until the
+registry serves the new version (up to ten minutes; npm takes a minute or
+more), and then pushes the `sdk-v<version>` tag on the published commit. The
+run that tag starts sees the version and skips. Pushing a matching
 `sdk-v<version>` tag by hand still works, for example to retry after a
 registry outage; a tag for a version the registry already has is verified and
-skipped. The workflow rejects private repositories, mismatched tags and
+skipped. A tag run looks for the version for up to five minutes before it
+concludes the version is unpublished. The workflow rejects private repositories, mismatched tags and
 commits outside main's history. Public trusted publication automatically
 receives npm provenance. SDK 0.1.1 was the first automatic publication.
 
