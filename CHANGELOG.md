@@ -1,5 +1,13 @@
 # Changelog
 
+## SDK 0.1.2 — 2026-10-10
+
+- Refresh the npm package and installation examples from current main. SDK
+  runtime behavior and protocol are unchanged from 0.1.1.
+- Release qualification now covers native Windows amd64 and arm64, including
+  real Chromium assertions, timeout/cancel cleanup and isolated consumers;
+  Windows relies on inherited directory ACLs rather than POSIX mode bits.
+
 ## CLI unreleased
 
 - Add Windows amd64 and arm64 ZIP packaging, with `9l.exe`, legal files and
