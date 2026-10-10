@@ -12,6 +12,9 @@ SDK versions.
   role and label (#46). An older CLI rejects those fields, so with it a goal
   on a page with such duplicates stops as an invalid request instead of
   acting; pages without duplicates are unaffected. Use the matching CLI.
+- The goal stop policy also checks the raw name of a control's form,
+  fieldset, dialog or landmark, so a generic "Continue" inside a form named
+  "Delete account" is blocked.
 
 ### CLI
 
@@ -21,7 +24,8 @@ SDK versions.
   tools, MCP servers, user settings or saved session; Codex read-only with
   the decision schema; OpenCode's read-only plan agent), and its reported
   usage is checked against a reservation that includes the CLI's fixed
-  input overhead.
+  input overhead. A CLI answer without reported usage is refused, and an
+  OpenCode error event keeps its message, redacted.
 - Goal prompts list the goal's earlier actions (typed action, target role
   and label, parameter name, outcome; never values) and say when to `wait`
   for a control that has not appeared. Before, a model could not see that a
@@ -35,8 +39,9 @@ SDK versions.
 - Goals tell apart controls that share role and label: such controls carry
   the name of their form, fieldset, dialog or landmark (`context`) and an
   `ordinal`, and a choice the engine still cannot distinguish stops the
-  goal as `ambiguous_target` instead of guessing (#46). Scripted goal steps
-  accept `context` and `ordinal`.
+  goal as `ambiguous_target` instead of guessing (#46). The engine also
+  applies the stop policy to that context. Scripted goal steps accept
+  `context` and `ordinal`.
 - Receipts carry each test's annotations (`annotations`, additive), and
   `9l run`/`9l result` print the non-built-in ones under the job, so a test
   that recorded why it returned early is no longer an unexplained green
@@ -51,16 +56,18 @@ SDK versions.
 
 ### Assess
 
+Policy `assessment-source-v10` covers all of the changes below; report version
+3 is unchanged.
+
 - Conditional pre-execution skips no longer lend outcome coverage to sibling
-  tests; modifiers in after hooks still do because the test body ran. Policy
-  `assessment-source-v10`.
+  tests; modifiers in after hooks still do because the test body ran, and
+  they are reported as such.
 - Outcome mapping no longer credits disabled or unrelated tests: only an
   enabled test that references the same requirement covers a sibling test's
   outcome (#31). `unmapped-outcome` findings carry the code
   `maps-no-outcome` (counted per test) or `unmapped-in-file` (counted once
   per requirement and outcome), so summaries count
   `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
-  Policy `assessment-source-v9`.
 - `await Promise.all([expect(a)…, expect(b)…])` and the other Promise
   combinators no longer report their matchers as `unawaited-assertion` or
   count as unresolved helpers, and a matcher whose promise is dropped by
