@@ -514,11 +514,15 @@ func boundedText(text string, limit int) string {
 	if len(text) <= limit {
 		return text
 	}
-	cut := limit
+	const ellipsis = "…"
+	if limit < len(ellipsis) {
+		return ""
+	}
+	cut := limit - len(ellipsis)
 	for cut > 0 && !utf8.RuneStart(text[cut]) {
 		cut--
 	}
-	return text[:cut] + "…"
+	return text[:cut] + ellipsis
 }
 
 // Failures lists each unexpected test of a validated report with its failing
