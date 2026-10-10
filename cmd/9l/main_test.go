@@ -156,13 +156,14 @@ func TestPrintResultShowsWhyAJobDidNotPass(t *testing.T) {
 }
 
 func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
+	errorContext := filepath.Join(t.TempDir(), "test-results", "login", "error-context.md")
 	var out bytes.Buffer
 	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
 		Status: runner.StatusFailed, Spec: "tests/login.spec.ts", FailureCount: 1,
 		Failures: []runner.TestFailure{{
 			Title: "login › renamed button", Location: "tests/login.spec.ts:9",
 			Message:     "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Login' })\n  - second\n  - third",
-			Attachments: []runner.TestAttachment{{Name: "error-context", Path: "/project/test-results/login/error-context.md"}},
+			Attachments: []runner.TestAttachment{{Name: "error-context", Path: errorContext}},
 		}},
 	}}})
 	want := "  FAILED   tests/login.spec.ts\n" +
@@ -170,7 +171,7 @@ func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 		"             TimeoutError: locator.click: Timeout 1500ms exceeded.\n" +
 		"             - waiting for getByRole('button', { name: 'Login' })\n" +
 		"             - second\n" +
-		"             context: /project/test-results/login/error-context.md\n" +
+		"             context: " + displayPath(errorContext) + "\n" +
 		"  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.\n"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("text summary:\n%s", out.String())
