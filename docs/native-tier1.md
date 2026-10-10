@@ -27,7 +27,8 @@ test contains a separate, untouched assertion.
 ## Supported source and snapshot subset
 
 Selector replacement identifies exactly one executable static locator argument:
-Playwright `page.locator`/`locator`, Cypress `cy.get`/`cy.find`, or Selenium
+Playwright `page.locator`/`locator` or the first argument of a
+`page.<action>('<selector>', ...)` shorthand action, Cypress `cy.get`/`cy.find`, or Selenium
 `driver.find_element(By.CSS_SELECTOR, ...)`. Single/double quoted literals and
 static JavaScript backticks are supported. Common escaped runtime characters
 are decoded before matching, and replacements are escaped for the original

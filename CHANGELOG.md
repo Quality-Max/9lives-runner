@@ -33,6 +33,9 @@ SDK versions.
   A renamed button now heals with no provider at all. The `9l tier1` request
   gains an optional `ariaSnapshot` field. The same snapshot, bounded to
   3,000 bytes, is the page state in the Tier 2 prompt.
+- Healing accepts the `page.fill('#id', …)` / `page.click('#id')` shorthand
+  for the repairable actions. A correct provider answer for that shape used
+  to be paid for and then discarded.
 - Tier 2 no longer asks a provider when the spec has no source shape a
   proposal could be admitted for, such as `page.fill('#id', …)` shorthand,
   a locator used twice or an action sharing its line. Those sessions end

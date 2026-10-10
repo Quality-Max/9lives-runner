@@ -181,8 +181,27 @@ type literalMatch struct {
 	callEnd int
 	// css is false for a getBy* locator, whose editable literal is a name or
 	// text rather than a selector.
-	css    bool
-	tokens []sourceToken
+	css bool
+	// shorthand marks page.<action>('<selector>', ...), where the locator call
+	// is the action itself.
+	shorthand bool
+	tokens    []sourceToken
+}
+
+// directActions are the Playwright actions a native heal may repair.
+var directActions = map[string]bool{"click": true, "fill": true, "check": true, "uncheck": true, "hover": true, "press": true, "focus": true, "dblclick": true, "selectOption": true}
+
+// actionCall returns the action's name and the index of its opening
+// parenthesis: `.action(` after the locator call, or the page shorthand.
+func actionCall(t []sourceToken, m literalMatch) (string, int, bool) {
+	if m.shorthand {
+		return t[m.call+2].text, m.call + 3, true
+	}
+	a := m.callEnd + 1
+	if a+2 >= len(t) || t[a].text != "." || t[a+2].text != "(" || t[a+2].pair < 0 {
+		return "", 0, false
+	}
+	return t[a+1].text, a + 2, true
 }
 
 func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
@@ -238,6 +257,15 @@ func sourceLocators(code, old, framework string) ([]literalMatch, bool) {
 		default:
 			if tokens[i].text == "locator" {
 				pattern = []string{"locator", "("}
+			} else if tokens[i].text == "page" && i+4 < len(tokens) && tokens[i+1].text == "." && directActions[tokens[i+2].text] && tokens[i+3].text == "(" && tokens[i+3].pair > i+4 {
+				// page.fill('<selector>', value): the selector is the first argument.
+				arg := tokens[i+4]
+				if arg.quote == 0 || arg.value != old || (tokens[i+5].text != "," && tokens[i+5].text != ")") {
+					continue
+				}
+				lineStart := strings.LastIndex(code[:tokens[i].start], "\n") + 1
+				found = append(found, literalMatch{start: arg.start + 1, end: arg.end - 1, quote: arg.quote, lineStart: lineStart, awaitPrefix: i > 0 && tokens[i-1].text == "await", call: i, literal: i + 4, callEnd: tokens[i+3].pair, css: true, shorthand: true, tokens: tokens})
+				continue
 			} else {
 				pattern = []string{"page", ".", "locator", "("}
 			}
@@ -424,6 +452,9 @@ func EditableLocatorAction(source, selector, framework string) (bool, string) {
 	case !ok:
 		return false, "the spec uses syntax outside the editable source subset (escaped identifiers, template interpolation, JSX or unbalanced brackets)"
 	case len(matches) == 0:
+		if locator.method == "locator" {
+			form = "page.locator(" + quoteSelector(locator.value) + ") or page.<action>(" + quoteSelector(locator.value) + ", ...)"
+		}
 		return false, "no " + form + " call in the spec matches the failed locator"
 	case len(matches) > 1:
 		return false, "the failed locator appears more than once as " + form
@@ -460,16 +491,11 @@ func directActionMatch(code string, m literalMatch) bool {
 			return false
 		}
 	}
-	action := m.callEnd + 1
-	if action+2 >= len(tokens) || tokens[action].text != "." || tokens[action+2].text != "(" || tokens[action+2].pair < 0 {
+	name, open, ok := actionCall(tokens, m)
+	if !ok || !directActions[name] {
 		return false
 	}
-	switch tokens[action+1].text {
-	case "click", "fill", "check", "uncheck", "hover", "press", "focus", "dblclick", "selectOption":
-	default:
-		return false
-	}
-	end := tokens[action+2].pair + 1
+	end := tokens[open].pair + 1
 	if end < len(tokens) && tokens[end].text == ";" {
 		end++
 	}
@@ -610,16 +636,11 @@ func addWait(code, selector string) (string, bool) {
 	}
 	// Complete chain action with zero/opaque arguments, terminating at the end
 	// of this physical line. Never split a multiline expression or ASI hazard.
-	end := m.literal + 2
-	if end+3 >= len(t) || t[end].text != "." || t[end+2].text != "(" || t[end+2].pair < 0 {
+	name, open, ok := actionCall(t, m)
+	if !ok || !directActions[name] || open+1 >= len(t) {
 		return "", false
 	}
-	switch t[end+1].text {
-	case "click", "fill", "check", "uncheck", "hover", "press", "focus", "dblclick", "selectOption":
-	default:
-		return "", false
-	}
-	end = t[end+2].pair + 1
+	end := t[open].pair + 1
 	if end < len(t) && t[end].text == ";" {
 		end++
 	}

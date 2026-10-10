@@ -637,7 +637,7 @@ func TestHealRecordsWhyTheProviderCallFailed(t *testing.T) {
 
 func TestHealDoesNotAskProviderForAnUneditableSourceShape(t *testing.T) {
 	for name, tc := range map[string]struct{ source, reason string }{
-		"page action shorthand": {"test('x', async ({ page }) => {\n  await page.fill('#old', 'a');\n});\n", "no page.locator('#old') call"},
+		"locator in a variable": {"test('x', async ({ page }) => {\n  const field = page.locator('#old');\n  await field.fill('a');\n});\n", "not a direct `await page.locator('#old')"},
 		"same line as closing":  {"test('x', async ({ page }) => { await page.locator('#old').click(); });\n", "not a direct `await page.locator('#old')"},
 		"two locator calls":     {"test('x', async ({ page }) => {\n  await page.locator('#old').click();\n  await page.locator('#old').fill('a');\n});\n", "more than once"},
 	} {
@@ -675,6 +675,27 @@ func TestHealRepairsARenamedGetByRoleName(t *testing.T) {
 	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: run}, func(string, string, string) (string, bool) { return "", false })
 	saved, _ := os.ReadFile(spec + ".healed")
 	if err != nil || result.State != "verified" || provider.calls != 1 || string(saved) != candidate {
+		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
+	}
+}
+
+func TestHealRepairsPageActionShorthand(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "login.spec.ts")
+	original := "test('login', async ({ page }) => {\n  await page.fill('#emailAddress', 'qa@example.test');\n  await expect(page.locator('output')).toHaveText('ok');\n});\n"
+	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := strings.Replace(original, "'#emailAddress'", "'#email'", 1)
+	provider := &fakeProvider{responses: []string{"```typescript\n" + candidate + "```"}}
+	run := func(_ context.Context, path, _ string) RunResult {
+		data, _ := os.ReadFile(path)
+		if string(data) == candidate {
+			return RunResult{Passed: true, ExecutedTests: 1}
+		}
+		return RunResult{ExecutedTests: 1, Failure: "TimeoutError: page.fill: Timeout 1500ms exceeded.\nCall log:\n  - waiting for locator('#emailAddress')"}
+	}
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: run}, func(string, string, string) (string, bool) { return "", false })
+	if err != nil || result.State != "verified" || provider.calls != 1 {
 		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
 	}
 }

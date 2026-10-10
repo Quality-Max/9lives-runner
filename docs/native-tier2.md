@@ -16,7 +16,9 @@ the earlier native order, and the existing one-fence CLI response). Native
 CHANGES entries are deliberately bounded to one through five nonblank lines.
 A literal `CODE:` inside a bare fenced source file remains source text. The candidate
 may change only one literal of the failed direct Playwright action: the CSS
-selector of `page.locator('…')`, or the accessible name or text of a single
+selector of `page.locator('…')` or of the shorthand `page.fill('…', …)`,
+`page.click('…')` and the other repairable actions (`click`, `fill`, `check`,
+`uncheck`, `hover`, `press`, `focus`, `dblclick`, `selectOption`), or the accessible name or text of a single
 `page.getByRole('<role>', { name: '…' })`, `getByText`, `getByLabel`,
 `getByPlaceholder`, `getByAltText`, `getByTitle` or `getByTestId` call. The
 role and any `exact` option must stay the same, and chained (`getByRole('form').getByRole(…)`)

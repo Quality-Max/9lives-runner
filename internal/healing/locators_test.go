@@ -106,3 +106,25 @@ func TestTier1RepairsRenamedButtonFromAriaSnapshot(t *testing.T) {
 		t.Fatalf("with snapshot: %+v", response)
 	}
 }
+
+func TestPageActionShorthandSelectorIsEditable(t *testing.T) {
+	source := "test('x', async ({ page }) => {\n  await page.fill('#emailAddress', 'qa@example.test');\n  await page.click(\"#submit\");\n});\n"
+	for _, selector := range []string{"#emailAddress", "#submit"} {
+		if ok, why := EditableLocatorAction(source, selector, "playwright"); !ok {
+			t.Fatalf("%s not editable: %s", selector, why)
+		}
+	}
+	renamed := strings.Replace(source, "'#emailAddress'", "'#email'", 1)
+	if !ExactLocatorSelectorReplacement(source, renamed, "#emailAddress", "playwright") {
+		t.Fatal("selector change refused")
+	}
+	if ExactLocatorSelectorReplacement(source, strings.Replace(renamed, "qa@example.test", "x", 1), "#emailAddress", "playwright") {
+		t.Fatal("value change admitted")
+	}
+	if code, ok := addWait(source, "#submit"); !ok || !strings.Contains(code, "  await page.locator(\"#submit\").waitFor({ state: 'visible', timeout: 10000 });\n  await page.click(\"#submit\");") {
+		t.Fatalf("wait not added before shorthand: %v\n%s", ok, code)
+	}
+	if ok, _ := EditableLocatorAction("test('x', async ({ page }) => {\n  await page.waitForSelector('#x');\n});\n", "#x", "playwright"); ok {
+		t.Fatal("non-action page method treated as editable")
+	}
+}
