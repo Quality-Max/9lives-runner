@@ -72,7 +72,7 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath}
 	}
 	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure string) (string, bool) {
-		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.ExtractSelector(failure, ""), TestCode: source})
+		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source})
 		return proposal.ProposedCode, proposal.Decision == "propose"
 	})
 }

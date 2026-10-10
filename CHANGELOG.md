@@ -21,6 +21,12 @@ SDK versions.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".
+- Healing edits `getByRole` and other `getBy*` locators. A renamed button,
+  `page.getByRole('button', { name: 'Anmelden' })` failing in the call log,
+  can be repaired by changing only the name literal; the role, `exact`
+  option and everything else must stay the same. Before, such failures were
+  refused as "not an editable locator action" before any provider call.
+  Chained and regular-expression locators are still not edited.
 - Tier 2 no longer asks a provider when the spec has no source shape a
   proposal could be admitted for, such as `page.fill('#id', …)` shorthand,
   a locator used twice or an action sharing its line. Those sessions end

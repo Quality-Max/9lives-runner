@@ -457,7 +457,7 @@ func editableFailure(failure string) (string, bool) {
 			return "", false
 		}
 	}
-	selector := healing.ExtractSelector(failure, "")
+	selector := healing.FailedLocator(failure)
 	if selector == "" {
 		return "", false
 	}

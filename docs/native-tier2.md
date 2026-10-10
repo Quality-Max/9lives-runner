@@ -15,14 +15,19 @@ envelope (the parser also accepts case-insensitive `js`/`ts`/`py` fence aliases,
 the earlier native order, and the existing one-fence CLI response). Native
 CHANGES entries are deliberately bounded to one through five nonblank lines.
 A literal `CODE:` inside a bare fenced source file remains source text. The candidate
-may change only the literal selector of the failed direct Playwright action;
+may change only one literal of the failed direct Playwright action: the CSS
+selector of `page.locator('…')`, or the accessible name or text of a single
+`page.getByRole('<role>', { name: '…' })`, `getByText`, `getByLabel`,
+`getByPlaceholder`, `getByAltText`, `getByTitle` or `getByTestId` call. The
+role and any `exact` option must stay the same, and chained (`getByRole('form').getByRole(…)`)
+or regular-expression locators are not edited. The failed locator is read from
+Playwright's call log (`waiting for getByRole('button', { name: 'Anmelden' })`);
 imports, assertions, comments, tests, control flow, and unrelated actions are
 byte-for-byte preserved. Every proposal, including the last allowed one, runs
 in a fresh copy and receipt directory. A failed, malformed, timed-out, or
 zero-test candidate is never saved or applied. Before each Tier 2 call the
 session checks that the spec holds exactly one direct
-`await page.locator('<failed selector>').<action>(...)` statement outside an
-assertion; otherwise no proposal could be admitted, so it ends `unverified`
+`await page.<failed locator>.<action>(...)` statement outside an assertion; otherwise no proposal could be admitted, so it ends `unverified`
 with a `Tier 2 was not asked: …` reason and makes no provider call.
 
 The command prints only a JSON session result on stdout; the terminal diff and prompt use stderr. With `--yes`, it applies only after
