@@ -136,6 +136,11 @@ SDK versions.
   per requirement and outcome), so summaries count
   `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
   Policy `assessment-source-v9`.
+- `await Promise.all([expect(a)…, expect(b)…])` and the other Promise
+  combinators no longer report their matchers as `unawaited-assertion` or
+  count as unresolved helpers, and a matcher whose promise is dropped by
+  `[…].map(l => expect(l)…);` or a parenthesized `forEach` callback is now
+  reported (#30).
 - A file that imports `test` only from a module assess does not recognise
   (a fixture file or another test runner) now names it: the report carries
   `unrecognizedTestImports` and an `unrecognized-test-import` limit, and

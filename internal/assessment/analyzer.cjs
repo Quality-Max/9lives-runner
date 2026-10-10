@@ -324,9 +324,18 @@ function createAnalyzer(ts) {
               // carries the test's call site, so it is reported once per
               // location however many tests call the helper.
               const at = child => ctx.site ? { ...location(child), site: ctx.site } : location(child);
-              // A callback passed to forEach has its return value discarded.
-              const discards = callback => ts.isCallExpression(callback.parent) && callback.parent.arguments.includes(callback)
-                && ts.isPropertyAccessExpression(callback.parent.expression) && callback.parent.expression.name.text === 'forEach';
+              // The outermost node of a parenthesized expression.
+              const unparen = node => { while (ts.isParenthesizedExpression(node.parent)) node = node.parent; return node; };
+              // A callback's promises are discarded by forEach, and by map or
+              // flatMap when the array of promises they return is itself dropped
+              // as an expression statement. Parentheses do not change that.
+              const discards = callback => {
+                const argument = unparen(callback);
+                const call = argument.parent;
+                if (!ts.isCallExpression(call) || !call.arguments.includes(argument) || !ts.isPropertyAccessExpression(call.expression)) return false;
+                const method = call.expression.name.text;
+                return method === 'forEach' || (['map', 'flatMap'].includes(method) && ts.isExpressionStatement(unparen(chained(call)).parent));
+              };
               // This function's own concise body or return statement passes its
               // promise to the caller, which consumes it only when `returned`.
               // A nested function returns its promise to an unknown caller: not
@@ -354,9 +363,21 @@ function createAnalyzer(ts) {
                   } else return child;
                 }
               };
+              // A promise placed in an array literal passed to Promise.all,
+              // allSettled, race or any is carried by that call.
+              const carrier = child => {
+                const outer = unparen(chained(child));
+                if (!ts.isArrayLiteralExpression(outer.parent)) return chained(child);
+                const array = unparen(outer.parent);
+                const call = array.parent;
+                if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
+                  && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
+                  && ['all', 'allSettled', 'race', 'any'].includes(call.expression.name.text)) return chained(call);
+                return chained(child);
+              };
               const consumed = child => {
-                const outer = chained(child);
-                return !ctx.floating && (ts.isAwaitExpression(outer.parent) || returnedHere(outer));
+                const outer = carrier(child);
+                return !ctx.floating && (ts.isAwaitExpression(unparen(outer).parent) || returnedHere(outer));
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
               // The outermost nested function being scanned, if any.
@@ -399,7 +420,13 @@ function createAnalyzer(ts) {
                     fact.sleeps.push(at(child));
                     order.waited = true;
                   }
-                  if (!expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
+                  // Promise.all/allSettled/race/any only combine the promises they
+                  // are given; their elements are followed by carrier().
+                  let callee = child.expression;
+                  while (ts.isPropertyAccessExpression(callee) && ['then', 'catch', 'finally'].includes(callee.name.text) && ts.isCallExpression(callee.expression)) callee = callee.expression.expression;
+                  const combinator = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
+                    && callee.expression.text === 'Promise' && ['all', 'allSettled', 'race', 'any'].includes(callee.name.text);
+                  if (!combinator && !expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
                     const helper = ts.isIdentifier(child.expression) ? resolveHelper(child.expression.text, child, fn) : null;
                     if (!helper || (!helper.marked && (ctx.depth >= 4 || ctx.stack.has(helper.fn) || order.expansions >= 64))) {
                       limited('unresolved-helper', child);

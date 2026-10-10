@@ -253,10 +253,17 @@ including locator, page, API-response and function assertions, and any
 matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
 are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
 chain on it, is awaited or returned by the function being scanned; the chained
-promise methods are not themselves matchers. A nested function's concise body
-or `return` passes the promise to a caller the analysis cannot see, so it is
-not reported as unawaited and the `nested-function` limit stands, except for a
-callback passed directly to `forEach`, which discards it. Any other matcher, such as a custom `expect.extend` matcher or
+promise methods are not themselves matchers. A matcher that is an element of
+an array literal passed to `Promise.all`, `allSettled`, `race` or `any` is
+consumed when that call (or a chain on it) is awaited or returned, so
+`await Promise.all([expect(a).toBeVisible(), expect(b).toBeVisible()])` is not
+reported, and these combinators are not unresolved helpers. A nested
+function's concise body or `return` passes the promise to a caller the
+analysis cannot see, so it is not reported as unawaited and the
+`nested-function` limit stands, except when the caller discards it: a callback
+passed to `forEach`, or to `map`/`flatMap` whose resulting array of promises
+is dropped as an expression statement, looking through parentheses in both
+cases. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
@@ -267,6 +274,8 @@ outcome mapping only from enabled tests that reference the requirement and
 gives `unmapped-outcome` findings the codes `maps-no-outcome` and
 `unmapped-in-file`, so summaries count them as
 `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
+It also follows a matcher's promise into `Promise.all`-style combinators and
+through `forEach`/`map` callbacks, as described above.
 Policy `assessment-source-v8` narrowed the `nested-function` limit as described
 above; report version 3 and helper version 6 are unchanged. Report version 3, helper version 6 and policy
 `assessment-source-v7` replaced version 2/source-v3. Every finding now carries
