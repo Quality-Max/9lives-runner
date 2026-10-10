@@ -687,7 +687,7 @@ func firstFailureContext(failures []runner.TestFailure) string {
 			if attachment.Name != "error-context" || attachment.Bytes > 1<<20 {
 				continue
 			}
-			raw, err := os.ReadFile(attachment.Path)
+			raw, err := playwright.ReadAttachment(attachment.Path, 1<<20)
 			if err != nil {
 				return ""
 			}

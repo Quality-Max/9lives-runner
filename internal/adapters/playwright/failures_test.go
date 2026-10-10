@@ -110,3 +110,28 @@ func TestFailureContextKeepsOneCleanCopyOfEachError(t *testing.T) {
 		}
 	}
 }
+
+func TestPageSnapshotDropsTypedValuesAndRedacts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "error-context.md")
+	write(t, path, "# Page snapshot\n\n```yaml\n- textbox \"API token\" [ref=e2]: sk-live-123\n- textbox [ref=e3]: typed\n- combobox \"Land\": Deutschland\n- combobox \"Country\" [ref=e5]:\n  - option \"DE\" [selected]\n- textbox \"Notes\" [active] [ref=e6]: \"private note: x\"\n- text: password=hunter2\n- button \"Save\" [ref=e4]\n```\n", 0o600)
+	got := PageSnapshot([]runner.TestFailure{{Attachments: []runner.TestAttachment{{Name: "error-context", Path: path, Bytes: 10}}}})
+	want := "- textbox \"API token\" [ref=e2]\n- textbox [ref=e3]\n- combobox \"Land\"\n- combobox \"Country\" [ref=e5]:\n  - option \"DE\" [selected]\n- textbox \"Notes\" [active] [ref=e6]\n- text: password=[REDACTED]\n- button \"Save\" [ref=e4]"
+	if got != want {
+		t.Fatalf("snapshot=%q", got)
+	}
+}
+
+func TestReadAttachmentRefusesNonRegularAndOversizedFiles(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big.md")
+	write(t, big, strings.Repeat("x", 2048), 0o600)
+	if _, err := ReadAttachment(big, 1024); err == nil {
+		t.Fatal("oversized attachment read")
+	}
+	if _, err := ReadAttachment(dir, 1024); err == nil {
+		t.Fatal("directory read")
+	}
+	if raw, err := ReadAttachment(big, 4096); err != nil || len(raw) != 2048 {
+		t.Fatalf("regular file: %d %v", len(raw), err)
+	}
+}

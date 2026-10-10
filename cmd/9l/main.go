@@ -684,10 +684,11 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	}
 	var extraArgs, selection []string
 	if *grep != "" {
-		extraArgs, selection = append(extraArgs, "--grep", *grep), append(selection, "--grep "+strconv.Quote(*grep))
+		// One argument each, so a pattern starting with "-" is never an option.
+		extraArgs, selection = append(extraArgs, "--grep="+*grep), append(selection, "--grep "+strconv.Quote(*grep))
 	}
 	if *grepInvert != "" {
-		extraArgs, selection = append(extraArgs, "--grep-invert", *grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
+		extraArgs, selection = append(extraArgs, "--grep-invert="+*grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
 	}
 	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters})
 	if err != nil {

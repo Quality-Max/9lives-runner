@@ -182,7 +182,7 @@ func ariaAlternative(call editableLocator, snapshot string) string {
 	}
 	var names []string
 	for _, line := range strings.Split(snapshot, "\n") {
-		m := ariaLine.FindStringSubmatch(line)
+		m := ariaLine.FindStringSubmatch(unquoteAriaLine(line))
 		if len(m) != 3 || m[2] == "" {
 			continue
 		}
@@ -210,6 +210,30 @@ func ariaAlternative(call editableLocator, snapshot string) string {
 		return sharing[0]
 	}
 	return ""
+}
+
+// unquoteAriaLine undoes Playwright's YAML quoting of an entry whose text
+// contains `: `, ` #` and similar: `- 'button "Sign in: now"'` reads as
+// `- button "Sign in: now"`.
+func unquoteAriaLine(line string) string {
+	trimmed := strings.TrimLeft(line, " ")
+	if !strings.HasPrefix(trimmed, "- '") {
+		return line
+	}
+	body := trimmed[3:]
+	var value strings.Builder
+	for i := 0; i < len(body); i++ {
+		if body[i] == '\'' {
+			if i+1 < len(body) && body[i+1] == '\'' {
+				value.WriteByte('\'')
+				i++
+				continue
+			}
+			return "- " + value.String()
+		}
+		value.WriteByte(body[i])
+	}
+	return line // unterminated: leave it unparsed
 }
 
 func sharesWord(a, b string) bool {

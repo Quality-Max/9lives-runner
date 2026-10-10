@@ -4,6 +4,7 @@ package playwright
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -522,6 +523,30 @@ func withinDirectory(directory, path string) (string, bool) {
 // maxPageSnapshotBytes bounds the ARIA snapshot read for healing.
 const maxPageSnapshotBytes = 64 << 10
 
+// typedValue matches the value Playwright prints after an input's name, as
+// in `- textbox "Token": s3cr3t`.
+var typedValue = regexp.MustCompile(`(?m)^(\s*- (?:textbox|searchbox|combobox|spinbutton|slider)\b[^:"\n]*(?:"(?:\\.|[^"\\])*")?(?: \[[^\]\n]*\])*):[ \t].*$`)
+
+// ReadAttachment reads at most limit bytes of a regular attachment file.
+// FIFOs, devices and directories are refused, so a report cannot block or
+// flood the reader.
+func ReadAttachment(path string, limit int64) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("attachment is not a regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil || int64(len(raw)) > limit {
+		return nil, fmt.Errorf("attachment unreadable or too large")
+	}
+	return raw, nil
+}
+
 var pageSnapshotBlock = regexp.MustCompile("(?s)(?:^|\n)# Page snapshot\\s*\n```yaml\n(.*?)\n```")
 
 // PageSnapshot returns the ARIA snapshot of the page from a failed test's
@@ -532,7 +557,7 @@ func PageSnapshot(failures []runner.TestFailure) string {
 			if attachment.Name != "error-context" || attachment.Bytes > 1<<20 {
 				continue
 			}
-			raw, err := os.ReadFile(attachment.Path)
+			raw, err := ReadAttachment(attachment.Path, 1<<20)
 			if err != nil {
 				return ""
 			}
@@ -540,7 +565,9 @@ func PageSnapshot(failures []runner.TestFailure) string {
 			if m == nil || len(m[1]) > maxPageSnapshotBytes {
 				return ""
 			}
-			return string(m[1])
+			// The snapshot leaves the machine in a provider prompt: drop values
+			// typed into fields and redact what looks like a secret.
+			return runner.RedactText(typedValue.ReplaceAllString(string(m[1]), "$1"))
 		}
 	}
 	return ""

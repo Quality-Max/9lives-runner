@@ -55,7 +55,7 @@ then configured-key order. `--provider none` (or `NINELIVES_PROVIDER=none`)
 heals with offline Tier 1 only even when an agent CLI or API key is present.
 Before healing starts, the command prints the resolved provider and how it is
 reached to stderr, for example
-`9l: healing provider: claude (CLI, its own login); --provider none heals offline`.
+`9l: healing provider: claude (CLI, its own login); a proposal sends the spec, the failure and a redacted page snapshot; --provider none heals offline`.
 The session JSON records `provider` and `providerCalls`, the number of
 proposals requested; the MCP `heal_test` result carries the same fields, and
 the MCP server names its provider in its `initialize` instructions. `--pass-env` forwards explicitly named values only to test processes, never to a provider. `claude-code` remains an alias for `claude`.
@@ -87,9 +87,11 @@ installed Playwright projects; Cypress and Selenium execution adapters remain
 explicitly deferred to QUA-2153/QUA-2155. `NINELIVES_RUN_TIMEOUT` supplies the
 per-run default when `--run-timeout` is absent (positive whole seconds;
 otherwise five minutes). The page state in the prompt is the failed run's ARIA
-snapshot from Playwright's `error-context.md` (roles and accessible names, no
-HTML), bounded to 3,000 bytes; it goes to the provider with the source and is
-never stored in the session. Error diagnostics are bounded to 4 KiB, and
+snapshot from Playwright's `error-context.md`: roles, accessible names and the
+page's visible text, no HTML. Values typed into text fields, comboboxes,
+spin buttons and sliders are dropped, the rest is redacted like evidence and
+bounded to 3,000 bytes; it goes to the provider with the source and is never
+stored in the session. Error diagnostics are bounded to 4 KiB, and
 console diagnostics to ten 1 KiB entries with a 4 KiB aggregate when a future
 adapter provides them. The complete source remains intact within the one
 MiB native input limit for original execution and Tier 1. Before Tier 2 calls a
@@ -117,7 +119,8 @@ no API key is needed:
 so a relocated login is found. API keys in the environment are not passed: an
 OpenCode setup that relies on `OPENAI_API_KEY` or similar needs
 `opencode auth login` instead. The spec source and the bounded failure text
-go to the CLI's service under that account. Codex runs in its read-only
+go to the CLI's service under that account, with the redacted ARIA snapshot
+of the failed page. Codex runs in its read-only
 sandbox and OpenCode with its read-only `plan` agent, both in an empty
 temporary directory. SDK goals (`9l run --sdk`) are different: they accept
 only an Anthropic or OpenAI API key, because goal decisions need the bounded

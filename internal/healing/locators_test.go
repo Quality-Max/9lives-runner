@@ -128,3 +128,32 @@ func TestPageActionShorthandSelectorIsEditable(t *testing.T) {
 		t.Fatal("non-action page method treated as editable")
 	}
 }
+
+func TestEmptyOrUnchangedLocatorLiteralIsRefused(t *testing.T) {
+	source := "test('x', async ({ page }) => {\n  await page.getByRole('button', { name: 'Sign in' }).click();\n  await page.getByText('Welcome').click();\n  await page.fill('#email', 'a');\n});\n"
+	for failed, candidate := range map[string]string{
+		"getByRole('button', { name: 'Sign in' })": strings.Replace(source, "'Sign in'", "''", 1),
+		"getByText('Welcome')":                     strings.Replace(source, "'Welcome'", "''", 1),
+		"#email":                                   strings.Replace(source, "'#email'", "''", 1),
+	} {
+		if ExactLocatorSelectorReplacement(source, candidate, failed, "playwright") {
+			t.Errorf("%s: empty literal admitted", failed)
+		}
+		if ExactLocatorSelectorReplacement(source, source, failed, "playwright") {
+			t.Errorf("%s: unchanged source admitted", failed)
+		}
+	}
+}
+
+func TestAriaAlternativeReadsYAMLQuotedEntries(t *testing.T) {
+	snapshot := "- 'button \"Sign in: now\"'\n- button \"Cancel\"\n"
+	if got := ariaAlternative(editableLocator{method: "getByRole", role: "button", value: "Sign in"}, snapshot); got != "" {
+		t.Fatalf("a quoted entry that still matches must stop the re-find, got %q", got)
+	}
+	if got := ariaAlternative(editableLocator{method: "getByRole", role: "button", value: "Log in"}, "- 'button \"Log in: it''s quick\"'\n"); got != "" {
+		t.Fatalf("still matching: %q", got)
+	}
+	if got := ariaAlternative(editableLocator{method: "getByRole", role: "button", value: "Anmelden"}, "- 'button \"Einloggen: jetzt\"'\n"); got != "Einloggen: jetzt" {
+		t.Fatalf("quoted rename: %q", got)
+	}
+}

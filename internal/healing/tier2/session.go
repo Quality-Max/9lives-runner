@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 // RunFunc executes exactly the supplied physical spec and returns a verified
@@ -234,7 +235,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 // responseStart is the first 160 bytes of a provider response on one line,
 // so a refusal or prose answer is recognisable without storing the response.
 func responseStart(response string) string {
-	text := strings.Join(strings.Fields(response), " ")
+	text := runner.RedactText(strings.Join(strings.Fields(response), " "))
 	if len(text) <= 160 {
 		return text
 	}

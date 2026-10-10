@@ -162,7 +162,7 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	case provider != nil:
 		// A provider call sends the spec source and failure text off the
 		// machine and may bill the account; say which before any call.
-		fmt.Fprintf(errOut, "9l: healing provider: %s; --provider none heals offline\n", tier2.Describe(provider))
+		fmt.Fprintf(errOut, "9l: healing provider: %s; a proposal sends the spec, the failure and a redacted page snapshot; --provider none heals offline\n", tier2.Describe(provider))
 	case strings.EqualFold(strings.TrimSpace(*providerName), "none") || *providerName == "" && tier2.EnvironmentProvider() == "none":
 		fmt.Fprintln(errOut, "9l: provider none: healing with offline Tier 1 only")
 	default:

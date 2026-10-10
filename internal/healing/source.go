@@ -422,11 +422,13 @@ func ExactLocatorSelectorReplacement(source, candidate, old, framework string) b
 		return false
 	}
 	m := matches[0]
-	if !strings.HasPrefix(candidate, source[:m.start]) || !strings.HasSuffix(candidate, source[m.end:]) || len(candidate) <= len(source)-len(old) {
+	if !strings.HasPrefix(candidate, source[:m.start]) || !strings.HasSuffix(candidate, source[m.end:]) || len(candidate) <= m.start+len(source)-m.end {
 		return false
 	}
 	replacement := candidate[m.start : len(candidate)-len(source[m.end:])]
-	if strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
+	// A different, non-empty value only: an empty getBy name or text would
+	// match every element instead of re-finding one.
+	if replacement == source[m.start:m.end] || strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
 		return false
 	}
 	expected, ok := replaceSelector(source, old, replacement, framework)
