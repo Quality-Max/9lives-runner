@@ -29,7 +29,12 @@ SDK versions.
   used.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
-  at 512 bytes, instead of "provider did not return a usable candidate".
+  at 512 bytes, instead of "provider did not return a usable candidate". A
+  named CLI that is not installed is named ("claude CLI was not found on
+  PATH") instead of failing without a reason. The OpenCode prompt is a
+  command-line argument and therefore visible in the local process list to
+  other users of the machine; the docs now say so (Claude and Codex read the
+  prompt on stdin).
 - Refusals name the boundary: "not an editable locator action" now says
   what the call log waited for (or how the failure was classified) and which
   call shapes healing repairs. `9l heal` prints the reason of an
