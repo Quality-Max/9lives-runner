@@ -10,6 +10,18 @@
   Native CI covers real Chromium execution, timeout/cancel cleanup and isolated
   consumers on both Windows architectures. Windows arm64 tests omit `-race`.
 - Clarify the README comparison with qmax-code's broader terminal agent.
+- Experimental `9l confirm <spec> --unfixed REV [--fixed REV]` runs a
+  reproduction spec on the revision a finding was reported against and on
+  the fixing revision (default: the working tree), each as an ordinary SDK
+  run in its own detached Git worktree with hooks disabled, and classifies
+  each test and the pair as `confirmed`, `not-reproduced`, `fix-ineffective`,
+  `regressed` or `inconclusive` (policy `confirm-v1`). The spec comes from
+  the working tree, so both sides run identical bytes; `node_modules` is
+  linked from the working tree, and a revision whose manifest or lockfile
+  differs is flagged. Exit 0 only for confirmed, 1 for another conclusive
+  verdict, 2 for usage or setup errors and 3 when inconclusive. Finding text
+  is stored only as its SHA-256. `9l mcp` serves it as `confirm_finding`.
+  `npm run smoke:confirm` qualifies it with real Chromium (#42).
 
 Fixes from a CLI 0.1.5 trial on an 87-file suite:
 

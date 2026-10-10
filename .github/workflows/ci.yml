@@ -111,6 +111,8 @@ jobs:
       - run: npm run smoke:assessment
       - name: Qualify 9l prove fault injection in real Chromium
         run: npm run smoke:prove
+      - name: Qualify 9l confirm across Git revisions in real Chromium
+        run: npm run smoke:confirm
       - name: Qualify headed visual mode in real Chromium (virtual display)
         run: |
           npm ci --prefix testdata/playwright
@@ -173,6 +175,7 @@ jobs:
       - run: npm run smoke:assessment-portability
       - run: npm run smoke:assessment
       - run: npm run smoke:prove
+      - run: npm run smoke:confirm
       - run: npm run smoke:package
       - name: Exercise native release packaging
         env:
@@ -221,6 +224,8 @@ jobs:
       - run: npm run smoke:assessment
       - name: Qualify 9l prove fault injection in real Chromium
         run: npm run smoke:prove
+      - name: Qualify 9l confirm across Git revisions in real Chromium
+        run: npm run smoke:confirm
       - name: Qualify packed SDK in an isolated consumer
         run: npm run smoke:package
       - name: Exercise Playwright fixture

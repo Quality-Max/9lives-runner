@@ -62,6 +62,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return provenanceCommand(args[1:], out, errOut)
 	case "prove":
 		return proveCommand(args[1:], out, errOut)
+	case "confirm":
+		return confirmCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -87,6 +89,8 @@ Usage:
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
+  9l confirm <spec> --unfixed REV [--fixed REV] [--finding-id ID] [--format text|json]
+          # experimental: does a reproduction spec fail before a fix and pass after it?
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks

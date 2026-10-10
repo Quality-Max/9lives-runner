@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
+	"github.com/Quality-Max/9lives-runner/internal/confirm"
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -43,7 +44,9 @@ const mcpInstructions = "9lives Go runner. run_test executes one Playwright spec
 	"selector (offline Tier 1, then the configured agent CLI or API), verifying the candidate in an isolated copy before " +
 	"saving it as <spec>.healed or, with apply=true, writing it in place. needs_human means an assertion failed: a possible " +
 	"real bug that healing will not mask. assess_test statically reviews a spec or directory for weak or missing assertions " +
-	"and analysis limits without running it. Paths must be inside the server's working directory."
+	"and analysis limits without running it. confirm_finding runs a reproduction spec on the revision a finding was reported " +
+	"against and on the fixing revision (default: the working tree); only verdict confirmed means its assertions failed before " +
+	"and passed after, and even that does not show the spec tests the finding. Paths must be inside the server's working directory."
 
 // mcpTools are advertised by tools/list.
 var mcpTools = []map[string]any{
@@ -88,6 +91,24 @@ var mcpTools = []map[string]any{
 				"requirements": map[string]any{"type": "string", "description": "Optional reviewed requirement contract JSON"},
 			},
 			"required":             []string{"path"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		"name":        "confirm_finding",
+		"title":       "Confirm a reported finding",
+		"description": "Run a reproduction spec, which must import test from @9l/playwright, once on the unfixed revision and once on the fixed revision (default: the working tree), each in its own checkout. verdict is confirmed (assertion failed before, passed after), not-reproduced, fix-ineffective, regressed or inconclusive. Write the reproduction before fixing a finding; do not call a finding confirmed without this verdict.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"spec":        map[string]any{"type": "string", "description": "Path to the reproduction spec in the working tree"},
+				"unfixed":     map[string]any{"type": "string", "description": "Git revision the finding was reported against, such as HEAD or main"},
+				"fixed":       map[string]any{"type": "string", "description": "Git revision with the fix (default: the working tree)"},
+				"finding_id":  map[string]any{"type": "string", "description": "Short label recorded as given, such as an issue key"},
+				"finding":     map[string]any{"type": "string", "description": "Finding text; only its SHA-256 is recorded"},
+				"run_timeout": map[string]any{"type": "integer", "minimum": 1, "description": "Max seconds for each of the two runs (default 300, or NINELIVES_RUN_TIMEOUT)"},
+			},
+			"required":             []string{"spec", "unfixed"},
 			"additionalProperties": false,
 		},
 	},
@@ -312,7 +333,7 @@ func (s *mcpServer) call(ctx context.Context, message mcpMessage) {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	if json.Unmarshal(message.Params, &params) != nil || (params.Name != "run_test" && params.Name != "heal_test" && params.Name != "assess_test") {
+	if json.Unmarshal(message.Params, &params) != nil || (params.Name != "run_test" && params.Name != "heal_test" && params.Name != "assess_test" && params.Name != "confirm_finding") {
 		s.send(map[string]any{"jsonrpc": "2.0", "id": message.ID, "error": map[string]any{"code": -32602, "message": "Unknown tool"}})
 		return
 	}
@@ -428,6 +449,33 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 			proposals = *args.MaxProposals
 		}
 		return s.healTest(ctx, spec, args.Apply, proposals, timeout)
+	case "confirm_finding":
+		var args struct {
+			Spec       string `json:"spec"`
+			Unfixed    string `json:"unfixed"`
+			Fixed      string `json:"fixed"`
+			FindingID  string `json:"finding_id"`
+			Finding    string `json:"finding"`
+			RunTimeout *int   `json:"run_timeout"`
+		}
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
+		}
+		timeout, err := s.timeoutArgument(args.RunTimeout)
+		if err != nil {
+			return nil, err
+		}
+		spec, err := s.contained(args.Spec, false)
+		if err != nil {
+			return nil, err
+		}
+		if args.Unfixed == "" {
+			return nil, toolError{"unfixed is required"}
+		}
+		return s.confirmFinding(ctx, confirmOptions{
+			spec: spec, unfixed: args.Unfixed, fixed: args.Fixed, finding: args.Finding, findingID: args.FindingID,
+			workers: 1, timeout: timeout, maxOutputBytes: 4 << 20, passEnv: s.passEnv, receiptDir: s.receiptDir,
+		})
 	default:
 		var args struct {
 			Path         string `json:"path"`
@@ -600,6 +648,21 @@ func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (
 		return map[string]any{"version": MCPToolResultVersion, "report": report, "error": bounded(strings.TrimSpace(errOut.String()))}, nil
 	}
 	return map[string]any{"version": MCPToolResultVersion, "report": report}, nil
+}
+
+func (s *mcpServer) confirmFinding(ctx context.Context, options confirmOptions) (any, error) {
+	report, saved, err := confirmFinding(ctx, options, io.Discard)
+	var setup confirm.SetupError
+	if errors.As(err, &setup) {
+		return nil, toolError{bounded(setup.Message)}
+	}
+	if err != nil {
+		return nil, toolError{"confirmation failed: " + bounded(err.Error())}
+	}
+	if saved == "" {
+		return nil, failedResult{map[string]any{"version": MCPToolResultVersion, "report": report, "error": "the confirmation report could not be saved"}}
+	}
+	return map[string]any{"version": MCPToolResultVersion, "report": report, "reportPath": saved}, nil
 }
 
 // terminalEscape matches the ANSI color and style sequences Playwright

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -133,7 +134,7 @@ func TestMCPProtocolFraming(t *testing.T) {
 	for _, tool := range h.next(t)["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "run_test,heal_test,assess_test" {
+	if strings.Join(names, ",") != "run_test,heal_test,assess_test,confirm_finding" {
 		t.Fatalf("tools %v", names)
 	}
 	for line, code := range map[string]float64{
@@ -157,6 +158,7 @@ func TestMCPProtocolFraming(t *testing.T) {
 		{"run_test", map[string]any{"spec": "a.spec.ts", "apply": true}},
 		{"assess_test", map[string]any{"spec": "a.spec.ts"}},
 		{"heal_test", map[string]any{"spec": "a.spec.ts", "path": "a.spec.ts"}},
+		{"confirm_finding", map[string]any{"spec": "a.spec.ts", "unfixed": "HEAD", "apply": true}},
 	} {
 		if payload, isError := h.toolCall(t, 8+i, call.name, call.arguments); !isError || !strings.Contains(payload["error"].(string), "invalid arguments") {
 			t.Fatalf("%s accepted %v: %v", call.name, call.arguments, payload)
@@ -435,5 +437,42 @@ func TestReceiptLabelsCannotLeaveTheReceiptDirectory(t *testing.T) {
 		if receiptLabel.MatchString(label) != ok {
 			t.Errorf("%q accepted=%v", label, !ok)
 		}
+	}
+}
+
+func TestMCPConfirmFindingReturnsTheVerdict(t *testing.T) {
+	root, _, _ := confirmRepository(t)
+	worker := &fakeConfirmWorker{outcome: shopOutcome}
+	confirmExecutor = worker
+	t.Cleanup(func() { confirmExecutor = nil })
+	h := startMCP(t, root)
+	payload, isError := h.toolCall(t, 1, "confirm_finding", map[string]any{"spec": "tests/repro.spec.ts", "unfixed": "HEAD~1", "finding_id": "QUA-14", "finding": "count drops the last item"})
+	if isError && strings.Contains(fmt.Sprint(payload["error"]), "could not be linked") && runtime.GOOS == "windows" {
+		t.Skip("this Windows account cannot create symbolic links")
+	}
+	report, _ := payload["report"].(map[string]any)
+	path, _ := payload["reportPath"].(string)
+	if isError || report == nil || report["verdict"] != "confirmed" || report["findingId"] != "QUA-14" || len(worker.workDirs) != 2 {
+		t.Fatalf("confirm_finding %v", payload)
+	}
+	if _, err := os.Stat(path); err != nil || strings.Contains(mustJSON(t, payload), "drops the last item") {
+		t.Fatalf("report path %q: %v", path, err)
+	}
+	for i, call := range []struct {
+		arguments map[string]any
+		want      string
+	}{
+		{map[string]any{"spec": "tests/repro.spec.ts"}, "unfixed is required"},
+		{map[string]any{"spec": "tests/repro.spec.ts", "unfixed": "no-such-branch"}, "does not name a commit"},
+		{map[string]any{"spec": "tests/repro.spec.ts", "unfixed": "--output=x"}, "invalid revision"},
+		{map[string]any{"spec": "../outside.spec.ts", "unfixed": "HEAD~1"}, "path not found"},
+	} {
+		payload, isError := h.toolCall(t, 2+i, "confirm_finding", call.arguments)
+		if !isError || !strings.Contains(fmt.Sprint(payload["error"]), call.want) {
+			t.Fatalf("%v: %v", call.arguments, payload)
+		}
+	}
+	if len(worker.workDirs) != 2 {
+		t.Fatalf("a refused call ran the spec: %d runs", len(worker.workDirs))
 	}
 }

@@ -286,7 +286,12 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 
 // saveProof persists the report without request URLs beside the run receipts.
 func saveProof(receiptDir string, report prove.Report) (string, error) {
-	dir := filepath.Join(receiptDir, "proofs")
+	return saveReport(filepath.Join(receiptDir, "proofs"), report.Baseline.RunID, report)
+}
+
+// saveReport atomically writes a report as <dir>/<name>.json in a private
+// directory.
+func saveReport(dir, name string, report any) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -294,7 +299,7 @@ func saveProof(receiptDir string, report prove.Report) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, report.Baseline.RunID+".json")
+	path := filepath.Join(dir, name+".json")
 	temporary, err := os.CreateTemp(dir, ".proof-*")
 	if err != nil {
 		return "", err
