@@ -79,6 +79,7 @@ Usage:
   9l plan <spec-or-glob>... [--format text|json] [--max-jobs N]
   9l run  <spec-or-glob|spec:LINE>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
           [--grep RE] [--grep-invert RE]  # Playwright title filters
+          [--config FILE] [--project NAME]...  # Playwright config and projects to run with
           [--reporter html,...]  # also run project reporters beside the evidence reporter
           [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
           [--sdk]  # opt-in @9l/playwright engine protocol
@@ -543,13 +544,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
 	grepInvert := fs.String("grep-invert", "", "skip tests whose title matches this regular expression (Playwright --grep-invert)")
+	configFile := fs.String("config", "", "Playwright config file to run the specs with, instead of the one Playwright finds")
+	var projects projectNames
+	fs.Var(&projects, "project", "run only this Playwright project (repeatable)")
 	reporters := fs.String("reporter", "", "also run these Playwright reporters beside 9l's own, comma-separated (for example html); json is reserved for evidence")
 	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
-	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
+	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic (API key), or claude, codex or opencode (the CLI's own login)")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
 	goalScript := fs.String("goal-script", "", "offline scripted goal decisions JSON (qualification only)")
 	goalLimits := goals.Defaults()
@@ -570,6 +574,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-agent-provenance": true, "--agent-provenance": true,
 		"-pin-skip": true, "--pin-skip": true,
 		"-reporter": true, "--reporter": true,
+		"-config": true, "--config": true, "-project": true, "--project": true,
 		"-grep": true, "--grep": true, "-grep-invert": true, "--grep-invert": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
@@ -640,19 +645,30 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			}
 			provider = script
 		} else {
-			if *goalProvider != "openai" && *goalProvider != "anthropic" {
-				fmt.Fprintln(errOut, "9l: goal provider must be openai or anthropic")
-				return 2
-			}
-			resolved, err := tier2.Resolve(tier2.Options{Name: *goalProvider, Timeout: time.Duration(goalLimits.TimeoutMS) * time.Millisecond})
-			if err != nil {
-				fmt.Fprintln(errOut, "9l: goal provider unavailable")
-				return 2
-			}
-			var ok bool
-			provider, ok = resolved.(goals.Provider)
-			if !ok {
-				fmt.Fprintln(errOut, "9l: goal provider lacks bounded decision transport")
+			timeout := time.Duration(goalLimits.TimeoutMS) * time.Millisecond
+			switch strings.ToLower(*goalProvider) {
+			case "openai", "anthropic":
+				resolved, err := tier2.Resolve(tier2.Options{Name: *goalProvider, Timeout: timeout})
+				if err != nil {
+					fmt.Fprintln(errOut, "9l: goal provider unavailable")
+					return 2
+				}
+				var ok bool
+				provider, ok = resolved.(goals.Provider)
+				if !ok {
+					fmt.Fprintln(errOut, "9l: goal provider lacks bounded decision transport")
+					return 2
+				}
+			case "claude", "claude-code", "codex", "opencode":
+				// The CLI's own login pays for decisions; no API fallback.
+				cli, err := tier2.DecisionCLI(*goalProvider, timeout)
+				if err != nil {
+					fmt.Fprintln(errOut, "9l: goal provider unavailable:", err)
+					return 2
+				}
+				provider = cli
+			default:
+				fmt.Fprintln(errOut, "9l: goal provider must be openai, anthropic, claude, codex or opencode")
 				return 2
 			}
 		}
@@ -677,6 +693,15 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		}
 		availableAdapters = []runner.Adapter{adapter.WithFailureDetails(*failureDetails)}
 	}
+	config := ""
+	if *configFile != "" {
+		absolute, err := filepath.Abs(*configFile)
+		if info, statErr := os.Stat(absolute); err != nil || statErr != nil || !info.Mode().IsRegular() {
+			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
+			return 2
+		}
+		config = absolute
+	}
 	extraReporters, err := reporterList(*reporters)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l: --reporter:", err)
@@ -690,7 +715,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if *grepInvert != "" {
 		extraArgs, selection = append(extraArgs, "--grep-invert="+*grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
 	}
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters})
+	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
@@ -730,6 +755,22 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		printResult(out, result)
 	}
 	return runExitCode(result, executionFailed)
+}
+
+// projectNames collects repeatable --project values: one Playwright project
+// name each, on one line.
+type projectNames []string
+
+func (p *projectNames) String() string { return strings.Join(*p, ",") }
+func (p *projectNames) Set(name string) error {
+	if strings.TrimSpace(name) == "" || len(name) > 128 || strings.ContainsAny(name, "\r\n\x00") {
+		return errors.New("a project name is one non-empty line of at most 128 bytes")
+	}
+	if len(*p) == 16 {
+		return errors.New("at most 16 projects")
+	}
+	*p = append(*p, name)
+	return nil
 }
 
 var reporterName = regexp.MustCompile(`^[A-Za-z0-9@./][A-Za-z0-9@/._-]{0,127}$`)

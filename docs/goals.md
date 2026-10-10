@@ -28,6 +28,7 @@ engine user. Windows pipes reject remote clients. Each bounded, strict JSON
 request must carry the owning run/job/attempt
 identity. Only the socket path and identity reach the worker. API credentials
 remain with the existing Go HTTP transport; provider redirects are rejected.
+Agent CLI providers run in Go too and receive no API keys.
 The runner withholds the provider's credential variables from workers even
 when they are named with `--pass-env` (compared case-insensitively).
 A decision wrapped in a single Markdown code fence is unwrapped; its JSON is
@@ -35,9 +36,39 @@ still decoded strictly, and any other surrounding text is an invalid decision.
 Provider round trips run outside the engine lock, so goals in parallel workers
 do not wait on each other's calls; budgets are reserved before each call.
 The transport is a local same-user boundary, not a sandbox for hostile test code.
-`--goal-provider anthropic|openai` is explicit; no CLI/tool fallback can bypass
-bounded output. `--goal-script file.json` is an offline qualification provider,
-not a language model or verified replay cache. Providers/scripts are exclusive.
+`--goal-provider` is explicit: `anthropic` or `openai` use the Go HTTP
+transport with an API key, and `claude`, `codex` or `opencode` use that
+agent CLI's own login, so a Claude, ChatGPT or OpenCode subscription can drive
+goals without an API key. A named provider never falls back to another.
+`--goal-script file.json` is an offline qualification provider, not a language
+model or verified replay cache. Providers/scripts are exclusive.
+
+### Agent CLI providers
+
+Each decision runs the CLI once, in an empty temporary directory, with the
+heal provider environment (its login locations and the user name, no API
+keys) and in a decision-only mode:
+
+| Provider | Runs as |
+| --- | --- |
+| `claude` | `claude -p --output-format json` with no tools (`--tools ""`), no MCP servers, no user settings, no saved session and a replaced system prompt |
+| `codex` | `codex exec --json --sandbox read-only --ephemeral --output-schema <decision schema>` |
+| `opencode` | `opencode run --agent plan --format json` (read-only agent) |
+
+The answer is decoded and checked exactly like an API answer. A CLI cannot cap
+generation the way an API's `max_tokens` does; each call reports its usage
+instead (input including cache, output plus reasoning), and a decision whose
+reported usage exceeds its reservation stops the goal as `budget_exhausted`.
+A CLI answer without reported usage is a provider error, never an unmetered
+decision.
+The reservation adds each CLI's fixed input overhead, its own system prompt
+and tools: 8,192 tokens for Claude Code and 32,768 for Codex and OpenCode
+(measured at about 0.8k, 18–19k and 17k). With Codex or OpenCode the default
+200,000-token attempt cap therefore allows about five decisions; raise
+`--goal-max-tokens` for longer goals. A CLI decision takes about 3–7 seconds,
+so give goal tests a Playwright timeout above 30 seconds (`test.setTimeout`)
+and a `--goal-timeout-ms` that covers every decision. Token prices for the
+cost cap are API-equivalent estimates; a subscription bills its own way.
 
 ## Limits and interruption
 
@@ -46,8 +77,12 @@ and 60 seconds (including worker startup); the `--goal-*` flags set them.
 Goal options can lower these caps; an option the test omits keeps the CLI cap.
 Repeated goals share attempt caps; they cannot reset action/token/cost/time
 allowances. The surrounding runner still owns job/run budgets and deadlines.
-Each call reserves UTF-8 prompt bytes plus 1,024 envelope/system tokens and at
-most 512 output tokens, with no refund after errors or absent usage. This is a
+Each call reserves UTF-8 prompt bytes plus 1,024 envelope/system tokens, an
+agent CLI's fixed input overhead, and at most 512 output tokens, with no refund
+after errors or absent usage. Each prompt lists the goal's earlier actions
+(typed action, target role and label, parameter name and outcome; never
+values), so a model does not repeat a fill it cannot see; this history stays
+in memory and is not written to receipts. This is a
 conservative reservation, not a tokenizer measurement. Explicit conservative
 input/output prices allow a micro-USD reservation cap. Reported usage remains
 separate, with availability explicit. Actual billing/cost is not certified.

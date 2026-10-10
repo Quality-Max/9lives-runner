@@ -27,6 +27,10 @@ type PlanOptions struct {
 	// Reporters are added after the adapter's own reporter in its
 	// --reporter= argument, such as Playwright's html reporter.
 	Reporters []string
+	// Config replaces the configuration file the adapter found, as an
+	// absolute path; Projects narrows the run to these configured projects.
+	Config   string
+	Projects []string
 }
 
 // lineInput matches `<spec>:<line>`.
@@ -111,6 +115,25 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot add reporters"})
 					continue
 				}
+			}
+			if opts.Config != "" || len(opts.Projects) > 0 {
+				var command []string
+				for _, argument := range job.Command {
+					if opts.Config == "" || !strings.HasPrefix(argument, "--config=") {
+						command = append(command, argument)
+					}
+				}
+				if opts.Config != "" {
+					command = append(command, "--config="+opts.Config)
+					selections = append(selections, "config "+filepath.Base(opts.Config))
+				}
+				for _, project := range opts.Projects {
+					command = append(command, "--project="+project)
+				}
+				if len(opts.Projects) > 0 {
+					selections = append(selections, "project "+strings.Join(opts.Projects, ", "))
+				}
+				job.Command = command
 			}
 			if len(opts.ExtraArgs) > 0 {
 				job.Command = append(job.Command, opts.ExtraArgs...)

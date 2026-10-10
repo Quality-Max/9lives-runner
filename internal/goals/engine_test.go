@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -366,5 +367,56 @@ func TestCloseDuringProviderCallSettlesTheReceipt(t *testing.T) {
 	}
 	if receipts[0].Decisions[0].Outcome != "canceled" {
 		t.Fatal("returned receipt was mutated after Close")
+	}
+}
+
+// overheadProvider declares a fixed per-call input overhead, as agent CLIs do.
+type overheadProvider struct{ fakeProvider }
+
+func (overheadProvider) DecisionInputOverhead() int { return 20000 }
+
+func TestCLIInputOverheadIsReserved(t *testing.T) {
+	plain := setup(t, decision(`{"action":"unresolved"}`), Defaults())
+	plain.handle(context.Background(), request{Op: "decide", GoalID: start(plain), Candidates: control("Continue")})
+	cli := setup(t, &overheadProvider{fakeProvider{run: func(context.Context, string) (tier2.Completion, error) {
+		return tier2.Completion{Text: `{"action":"unresolved"}`, InputTokens: 19000, OutputTokens: 30, UsageAvailable: true}, nil
+	}}}, Defaults())
+	r := cli.handle(context.Background(), request{Op: "decide", GoalID: start(cli), Candidates: control("Continue")})
+	if r.Status != "unresolved" || cli.goals[0].receipt.ReservedTokens != plain.goals[0].receipt.ReservedTokens+20000 {
+		t.Fatalf("status %s, reserved %d vs %d", r.Status, cli.goals[0].receipt.ReservedTokens, plain.goals[0].receipt.ReservedTokens)
+	}
+}
+
+func TestPromptCarriesPriorActionsWithoutValues(t *testing.T) {
+	var prompts []string
+	p := &fakeProvider{run: func(_ context.Context, prompt string) (tier2.Completion, error) {
+		prompts = append(prompts, prompt)
+		if len(prompts) == 1 {
+			return tier2.Completion{Text: `{"action":"fill","targetId":"target-1","parameter":"name"}`}, nil
+		}
+		return tier2.Completion{Text: `{"action":"complete"}`}, nil
+	}}
+	s := setup(t, p, Defaults())
+	g := start(s)
+	field := []Candidate{{ID: "target-1", Role: "textbox", Label: "Name", Actions: []string{"fill"}}}
+	first := s.handle(context.Background(), request{Op: "decide", GoalID: g, Candidates: field})
+	if first.Decision == nil {
+		t.Fatal(first)
+	}
+	if r := s.handle(context.Background(), request{Op: "ack", GoalID: g, DecisionID: first.DecisionID, Outcome: "done"}); r.Status != "active" {
+		t.Fatal(r)
+	}
+	s.handle(context.Background(), request{Op: "decide", GoalID: g, Candidates: field})
+	var second struct {
+		Previous []priorAction `json:"previousActions"`
+	}
+	if len(prompts) != 2 || json.Unmarshal([]byte(prompts[1]), &second) != nil {
+		t.Fatalf("prompts %q", prompts)
+	}
+	if want := []priorAction{{Action: "fill", Role: "textbox", Label: "Name", Parameter: "name", Outcome: "done"}}; !reflect.DeepEqual(second.Previous, want) {
+		t.Fatalf("previousActions %+v", second.Previous)
+	}
+	if !strings.Contains(prompts[0], `"previousActions":[]`) && !strings.Contains(prompts[0], `"previousActions":null`) {
+		t.Fatalf("first prompt %s", prompts[0])
 	}
 }

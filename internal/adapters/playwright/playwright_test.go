@@ -257,3 +257,33 @@ func TestPlanFindsWorkspaceHoistedPlaywright(t *testing.T) {
 		t.Fatalf("job=%+v", job)
 	}
 }
+
+func TestPlanUsesTheChosenConfigAndProjects(t *testing.T) {
+	project := t.TempDir()
+	write(t, filepath.Join(project, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
+	binary := filepath.Join(project, "node_modules", ".bin", "playwright")
+	if runtime.GOOS == "windows" {
+		binary += ".cmd"
+		write(t, filepath.Join(project, "node_modules", "@playwright", "test", "cli.js"), "placeholder", 0o600)
+	}
+	write(t, binary, "#!/bin/sh\n", 0o700)
+	spec := filepath.Join(project, "tests", "a.spec.ts")
+	write(t, spec, "", 0o600)
+	config := filepath.Join(project, "pr.config.ts")
+	plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}, Config: config, Projects: []string{"staging", "mobile"}})
+	if err != nil || len(plan.Jobs) != 1 {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	command := plan.Jobs[0].Command
+	if !slices.Equal(command[len(command)-3:], []string{"--config=" + config, "--project=staging", "--project=mobile"}) || plan.Jobs[0].Selection != "config pr.config.ts, project staging, mobile" {
+		t.Fatalf("job=%+v", plan.Jobs[0])
+	}
+}
+
+func TestNoTestsReasonNamesTheConfigAndTestDir(t *testing.T) {
+	raw := []byte(`{"stats":{"duration":1},"suites":[],"errors":[{"message":"Error: No tests found."}],"config":{"configFile":"/p/alt.config.ts","projects":[{"name":"chromium","testDir":"/p/e2e"},{"name":"staging","testDir":"/p/e2e"}]}}`)
+	_, err := New().Validate(raw)
+	if err == nil || !strings.Contains(err.Error(), "found no tests in this spec under alt.config.ts (testDir e2e)") || !strings.Contains(err.Error(), "--config or --project") {
+		t.Fatalf("err=%v", err)
+	}
+}

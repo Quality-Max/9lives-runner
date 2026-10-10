@@ -35,6 +35,15 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Config and projects: `--config <file>` runs the specs with that Playwright
+  config instead of the one Playwright finds (with `--sdk` it replaces the
+  detected config), and `--project <name>` (repeatable, up to 16) runs only
+  those configured projects, for example a second instance of the app on
+  another `baseURL`. Both are recorded in each job's `selection` and the
+  receipt's evidence command. A spec the config finds no tests in is
+  incomplete with a reason naming the config file and its `testDir`; an
+  unknown project is incomplete with Playwright's own "Available projects"
+  line.
 - Project reporters: `9l run` reads Playwright's JSON reporter as evidence,
   which replaces the reporters in the project's config. `--reporter html`
   (comma-separated names or module paths, up to 8) adds them back beside the

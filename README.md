@@ -123,7 +123,8 @@ await expect(page.getByRole('heading', {name: 'Review'})).toBeVisible();
 ```
 
 Choose `--goal-provider anthropic` or `openai` and configure its credential
-securely in Go's calling environment. Offline `--goal-script` fixtures exercise
+securely in Go's calling environment, or `claude`, `codex` or `opencode` to
+use that CLI's own subscription login without an API key. Offline `--goal-script` fixtures exercise
 the browser/engine contract without paid API calls. Purchase, deletion and
 outreach controls stop by default. See [goal contracts](docs/goals.md).
 

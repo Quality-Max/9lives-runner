@@ -13,6 +13,24 @@ SDK versions.
 
 ### CLI
 
+- SDK goals run on a subscription: `--goal-provider claude`, `codex` or
+  `opencode` uses that CLI's own login, with no API key and no fallback.
+  Each decision runs the CLI in a decision-only mode (Claude Code with no
+  tools, MCP servers, user settings or saved session; Codex read-only with
+  the decision schema; OpenCode's read-only plan agent), and its reported
+  usage is checked against a reservation that includes the CLI's fixed
+  input overhead.
+- `9l run --config <file>` and `--project <name>` (repeatable) choose the
+  Playwright config and projects, recorded in each job's `selection` and
+  the receipt's evidence command (#38). A spec the config finds no tests in
+  now names the config file and its `testDir`, and a run whose test runner
+  exits before writing a report, such as for an unknown project, carries
+  the runner's own `Error:` line.
+- Goal prompts list the goal's earlier actions (typed action, target role
+  and label, parameter name, outcome; never values) and say when to `wait`
+  for a control that has not appeared. Before, a model could not see that a
+  fill had happened and repeated it until the budget ran out.
+
 - `9l heal --provider claude` works on a Claude subscription. Provider CLIs
   now receive the user name (`USER`, `LOGNAME`, `USERNAME`), temp, locale,
   Windows profile, proxy and CA-certificate variables. Without `USER`,
