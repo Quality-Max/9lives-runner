@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.2.5`, the same version as the CLI; releases use npm trusted publishing. The
+npm workspace at version `0.3.0`, the same version as the CLI; releases use npm trusted publishing. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.0. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.

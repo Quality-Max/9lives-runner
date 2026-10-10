@@ -18,7 +18,7 @@ runner and its contract versions before decoding anything else:
   "version": 1,
   "name": "9l",
   "implementation": "go-runner",
-  "cliVersion": "0.2.5",
+  "cliVersion": "0.3.0",
   "contracts": {
     "plan": 1, "runResult": 1, "runStatus": 1, "receipt": 1,
     "progressEvent": 1, "assess": 3, "assessSuite": 1,
