@@ -268,6 +268,12 @@ func (p CLIProvider) Complete(ctx context.Context, prompt, model string) (string
 		if diagnostic == "" {
 			diagnostic = cliDiagnostic(output.String())
 		}
+		var execErr *exec.Error
+		if errors.As(err, &execErr) {
+			// A named provider whose CLI is not installed prints no output at
+			// all; name the missing binary instead of an empty reason.
+			diagnostic = p.name + " CLI was not found on PATH"
+		}
 		return "", &CallError{Provider: p.name, ExitCode: exitCode, Diagnostic: diagnostic}
 	}
 	if output.overflow {

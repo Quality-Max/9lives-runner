@@ -68,7 +68,9 @@ The session JSON records `provider` and `providerCalls`, the number of
 proposals requested; the MCP `heal_test` result carries the same fields, and
 the MCP server names its provider in its `initialize` instructions. `--pass-env` forwards explicitly named values only to test processes, never to a provider. `claude-code` remains an alias for `claude`.
 CLI prompts use stdin for Claude/Codex and OpenCode receives its documented
-argument with closed stdin. A CLI runs in an empty temporary directory with
+argument with closed stdin. That argument is the whole prompt, so on a shared
+machine other local users can see it in the process list while the CLI runs;
+Claude and Codex read stdin and expose nothing that way. A CLI runs in an empty temporary directory with
 only what it needs to find its own login and reach its service: `PATH`,
 `HOME`, the XDG directories, the user name (`USER`, `LOGNAME`, `USERNAME`),
 temp and locale variables, the Windows profile and system variables, and the

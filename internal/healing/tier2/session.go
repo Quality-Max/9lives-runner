@@ -614,9 +614,15 @@ func fenceDelimiter(value string) string {
 	return strings.Repeat("`", longest+1)
 }
 
+// truncate cuts value at a rune boundary so prompts and reasons stay valid
+// UTF-8.
 func truncate(value string, limit int) string {
-	if len(value) > limit {
-		return value[:limit]
+	if len(value) <= limit {
+		return value
 	}
-	return value
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut]
 }

@@ -329,6 +329,33 @@ func TestCLIProviderReportsWhyTheCallFailed(t *testing.T) {
 	}
 }
 
+func TestCLIProviderNamesAMissingBinary(t *testing.T) {
+	// A named provider whose CLI is not installed prints nothing at all; the
+	// failure must still say why instead of an empty diagnostic.
+	t.Setenv("PATH", t.TempDir())
+	_, err := (CLIProvider{name: "claude", timeout: cliTestTimeout}).Complete(context.Background(), "prompt", "")
+	var callErr *CallError
+	if !errors.As(err, &callErr) || callErr.Diagnostic != "claude CLI was not found on PATH" {
+		t.Fatalf("err=%#v", err)
+	}
+	if want := "claude provider failed: claude CLI was not found on PATH"; err.Error() != want {
+		t.Fatalf("message=%q", err.Error())
+	}
+}
+
+func TestTruncateCutsOnRuneBoundaries(t *testing.T) {
+	// 3-byte runes: a byte cut at the limit would split one; the cut must
+	// back up so prompts and reasons stay valid UTF-8.
+	text := strings.Repeat("€", 100)
+	got := truncate(text, 130)
+	if len(got) != 129 || !utf8.ValidString(got) {
+		t.Fatalf("truncate produced %d bytes, valid=%v", len(got), utf8.ValidString(got))
+	}
+	if got := truncate("short", 130); got != "short" {
+		t.Fatalf("short text changed: %q", got)
+	}
+}
+
 func TestCLIDiagnosticIsBoundedRedactedAndPlain(t *testing.T) {
 	raw := "\x1b[31mstarting\x1b[0m\n\nfailed: token=abc123 at https://u:pw@proxy.example\n" + strings.Repeat("é", 400)
 	got := cliDiagnostic(raw)
