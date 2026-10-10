@@ -58,8 +58,8 @@ mkdir -p /tmp/9l-download
 cd /tmp/9l-download
 BUNDLE=9l-darwin-arm64
 gh release download v0.2.0 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
-awk -v archive="$BUNDLE.tar.gz" '$2 == archive' SHA256SUMS > selected.sha256
-test -s selected.sha256
+grep -Ex "[0-9a-f]{64}  $BUNDLE\.tar\.gz" SHA256SUMS > selected.sha256
+test "$(grep -c '' selected.sha256)" = 1
 shasum -a 256 -c selected.sha256
 tar -xzf "$BUNDLE.tar.gz"
 mkdir -p "$HOME/.local/bin"
@@ -68,7 +68,10 @@ export PATH="$HOME/.local/bin:$PATH"
 9l --version
 ```
 
-On Linux use `sha256sum -c selected.sha256` for checksum verification. Keep the
+On Linux use `sha256sum -c selected.sha256` for checksum verification. The
+selection accepts exactly one line that is a lowercase SHA-256, two spaces and
+the archive name, so a line with trailing content, a duplicate entry or a CRLF
+line ending stops the install instead of being trimmed. Keep the
 included `LICENSE` and `NOTICE`. macOS archives are not Apple notarized; the
 checksums verify downloaded bytes against the release's checksum file.
 
@@ -84,7 +87,7 @@ $Bundle = '9l-windows-amd64' # use arm64 for Windows on ARM
 New-Item -ItemType Directory -Force 9l-download | Out-Null
 Set-Location 9l-download
 gh release download $Version --repo Quality-Max/9lives-runner --pattern "$Bundle.zip" --pattern SHA256SUMS
-$Lines = @(Get-Content SHA256SUMS | Where-Object { $_ -match "  $([regex]::Escape($Bundle)).zip$" })
+$Lines = @((Get-Content -Raw SHA256SUMS) -split "`n" | Where-Object { $_ -cmatch "^[0-9a-f]{64}  $([regex]::Escape("$Bundle.zip"))$" })
 if ($Lines.Count -ne 1) { throw 'Missing or duplicate archive checksum' }
 $Expected = ($Lines[0] -split '  ')[0]
 if ((Get-FileHash "$Bundle.zip" -Algorithm SHA256).Hash -ne $Expected) { throw 'Archive checksum mismatch' }

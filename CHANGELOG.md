@@ -1,5 +1,26 @@
 # Changelog
 
+## CLI unreleased
+
+Validator audit (#50): inputs that were accepted too generously now fail.
+
+- SDK evidence frames and prove records must be exactly one JSON object per
+  LF-terminated line. A CRLF stream, or whitespace before or after a valid
+  object, is malformed instead of being trimmed.
+- Playwright JSON reports without a per-test `status` take Playwright's own
+  outcome precedence over every attempt instead of the last one. A failed
+  attempt followed by a skipped or interrupted retry is a failure, not a
+  skip, and a failure followed by a pass is flaky.
+- A structured report cut at the capture limit is invalid for every adapter
+  ("structured report exceeded capture limit"), even if the prefix parses.
+- The persisted output's recorded size describes the redacted file that its
+  SHA-256 covers. The largest SDK stream the validator accepts is tested to
+  persist unchanged, so `prove` and `confirm` read back what was validated.
+- The install guide's checksum selection accepts exactly one line made of a
+  lowercase SHA-256, two spaces and the archive name. The shell and PowerShell
+  commands are tested as documented against trailing content, duplicates,
+  CRLF and wrong digests.
+
 ## CLI 0.2.0 — 2026-10-10
 
 - Add Windows amd64 and arm64 ZIP packaging, with `9l.exe`, legal files and

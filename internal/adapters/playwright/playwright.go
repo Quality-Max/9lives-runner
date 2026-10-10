@@ -182,7 +182,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 				// and then passed on retry is flaky, not failed.
 				outcome := test.Status
 				if outcome == "" && len(test.Results) > 0 {
-					outcome = legacyOutcome(test.Results[len(test.Results)-1].Status)
+					outcome = legacyOutcome(test.Results)
 				}
 				switch outcome {
 				case "expected":
@@ -258,18 +258,37 @@ func hasCompletedAttempt(results []struct {
 	return false
 }
 
-// legacyOutcome maps a final attempt status for reports without a per-test
-// status field. It cannot see test.fail() expectations, so it is conservative.
-func legacyOutcome(status string) string {
-	switch status {
-	case "passed":
-		return "expected"
-	case "failed", "timedOut":
-		return "unexpected"
-	case "skipped":
-		return "skipped"
+// legacyOutcome derives a per-test outcome from every attempt for reports
+// without a per-test status field, with Playwright's own precedence
+// (computeTestCaseOutcome): interrupted and skipped attempts do not count,
+// any failure without a pass is unexpected and a failure with a pass is
+// flaky. The final attempt alone would let a skipped or interrupted retry
+// hide an earlier failure. It cannot see test.fail() expectations, so passed
+// is taken as the expected status.
+func legacyOutcome(results []struct {
+	Status string `json:"status"`
+}) string {
+	passed, failed := 0, 0
+	for _, result := range results {
+		switch result.Status {
+		case "passed":
+			passed++
+		case "failed", "timedOut":
+			failed++
+		case "skipped", "interrupted":
+		default:
+			return result.Status
+		}
 	}
-	return status
+	switch {
+	case passed == 0 && failed == 0:
+		return "skipped"
+	case failed == 0:
+		return "expected"
+	case passed == 0:
+		return "unexpected"
+	}
+	return "flaky"
 }
 
 // InstalledCommand executes the installed JavaScript CLI directly on Windows.
