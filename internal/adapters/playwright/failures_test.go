@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -133,5 +134,55 @@ func TestReadAttachmentRefusesNonRegularAndOversizedFiles(t *testing.T) {
 	}
 	if raw, err := ReadAttachment(big, 4096); err != nil || len(raw) != 2048 {
 		t.Fatalf("regular file: %d %v", len(raw), err)
+	}
+}
+
+func TestFailureContextIsRedactedBeforeClipping(t *testing.T) {
+	// The context leaves the machine in provider prompts, MCP results and
+	// session JSON: secrets in error text must be redacted, and the 3,000-byte
+	// clip must not cut a pair in half and dodge the patterns.
+	message := "Error: request failed\nAuthorization: Bearer sk-live-abcdef123456\napi_key=AKIA1234ABCD in body\n" + strings.Repeat("é", 3000)
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"specs": []any{map[string]any{"tests": []any{map[string]any{"results": []any{
+		map[string]any{"status": "failed", "error": map[string]any{"message": message}},
+	}}}}}}}})
+	got := FailureContext(raw)
+	if strings.Contains(got, "sk-live-abcdef123456") || strings.Contains(got, "AKIA1234ABCD") {
+		t.Fatalf("context leaked a secret: %q", got[:min(200, len(got))])
+	}
+	if !strings.Contains(got, "Bearer [REDACTED]") || !strings.Contains(got, "api_key=[REDACTED]") {
+		t.Fatalf("context lost the redaction markers: %q", got[:min(200, len(got))])
+	}
+	if !utf8.ValidString(got) {
+		t.Fatal("context is not valid UTF-8 after the clip")
+	}
+}
+
+func TestFailuresBoundTheSpecControlledTitle(t *testing.T) {
+	title := strings.Repeat("ü", 1<<10) + strings.Repeat("t", 1<<20)
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"title": "f.spec.ts", "specs": []any{map[string]any{
+		"title": title, "tests": []any{map[string]any{"status": "unexpected", "results": []any{
+			map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "boom"}}},
+		}}},
+	}}}}})
+	failures := New().Failures(raw, t.TempDir())
+	if len(failures) != 1 {
+		t.Fatalf("len=%d", len(failures))
+	}
+	if len(failures[0].Title) > 512 || !utf8.ValidString(failures[0].Title) {
+		t.Fatalf("title not bounded on a rune boundary: %d bytes", len(failures[0].Title))
+	}
+}
+
+func TestSanitizeAttachmentTextDropsTypedValuesInWholeFiles(t *testing.T) {
+	// firstFailureContext sanitizes the whole error-context.md, not only a
+	// extracted snapshot block: snapshot-shaped lines anywhere in the file
+	// must lose their typed values.
+	file := "# Error details\n\n# Page snapshot\n\n```yaml\n- spinbutton \"Kartennummer\" [ref=e3]: 4111111111111111\n- textbox \"PIN\" [ref=e4]: 9876\n```\n"
+	got := SanitizeAttachmentText(file)
+	if strings.Contains(got, "4111111111111111") || strings.Contains(got, "9876") {
+		t.Fatalf("typed values survived: %q", got)
+	}
+	if !strings.Contains(got, `- spinbutton "Kartennummer" [ref=e3]`) || !strings.Contains(got, `- textbox "PIN" [ref=e4]`) {
+		t.Fatalf("labels lost: %q", got)
 	}
 }

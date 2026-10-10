@@ -15,14 +15,32 @@ import (
 var commonSecret = regexp.MustCompile(`(?i)(["']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)["']?\s*[:=]\s*["']?)([^\s"',}]+)`)
 var URLCredentials = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^\s/@:]+:)([^\s@/]+)(@)`)
 
+// authorizationCredential matches an HTTP authorization value, such as
+// `Authorization: Bearer <token>` or a bare `Bearer <token>` in an error
+// message. Short words ("bearer token expired") are left alone.
+var authorizationCredential = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*["']?(?:bearer|basic|token)\s+|\bbearer\s+)([A-Za-z0-9._~+/=-]{8,})`)
+
 func redact(raw []byte) []byte {
-	redacted := commonSecret.ReplaceAll(raw, []byte("${1}[REDACTED]"))
+	redacted := authorizationCredential.ReplaceAll(raw, []byte("${1}[REDACTED]"))
+	redacted = commonSecret.ReplaceAll(redacted, []byte("${1}[REDACTED]"))
 	return URLCredentials.ReplaceAll(redacted, []byte("${1}[REDACTED]${3}"))
 }
 
 // RedactText applies evidence redaction to a diagnostic string that leaves the
 // runner, such as a provider CLI's failure output.
 func RedactText(text string) string { return string(redact([]byte(text))) }
+
+// terminalEscapePattern matches ANSI escape sequences: CSI sequences such as
+// colors and cursor movement, and OSC sequences such as window titles and
+// hyperlinks, which a CSI-only pattern leaves behind. An unterminated OSC
+// runs to the end of the text.
+var terminalEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|\z)`)
+
+// StripTerminalEscapes removes ANSI terminal escape sequences from text that
+// will be persisted as evidence or returned to a caller.
+func StripTerminalEscapes(text string) string {
+	return terminalEscapePattern.ReplaceAllString(text, "")
+}
 
 func redactArguments(arguments []string) []string {
 	redacted := make([]string, len(arguments))

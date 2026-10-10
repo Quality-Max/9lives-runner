@@ -1,6 +1,9 @@
 package healing
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // The source reader is deliberately a conservative lexical subset, not a JS or
 // Python compiler. It reads the WHOLE source before returning any editable span.
@@ -426,9 +429,11 @@ func ExactLocatorSelectorReplacement(source, candidate, old, framework string) b
 		return false
 	}
 	replacement := candidate[m.start : len(candidate)-len(source[m.end:])]
-	// A different, non-empty value only: an empty getBy name or text would
-	// match every element instead of re-finding one.
-	if replacement == source[m.start:m.end] || strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
+	// A different, non-empty value only: an empty or whitespace-only getBy
+	// name or text would match every element instead of re-finding one —
+	// Playwright matches names as substrings, so a bare space hits nearly
+	// every named control.
+	if replacement == source[m.start:m.end] || strings.TrimSpace(replacement) == "" || strings.ContainsAny(replacement, "\\\\\r\n") || strings.ContainsRune(replacement, rune(m.quote)) {
 		return false
 	}
 	expected, ok := replaceSelector(source, old, replacement, framework)
@@ -470,7 +475,11 @@ func EditableLocatorAction(source, selector, framework string) (bool, string) {
 
 func quoteSelector(selector string) string {
 	if len(selector) > 120 {
-		selector = selector[:120] + "…"
+		cut := 120
+		for cut > 0 && !utf8.RuneStart(selector[cut]) {
+			cut--
+		}
+		selector = selector[:cut] + "…"
 	}
 	return "'" + selector + "'"
 }

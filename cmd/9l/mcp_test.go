@@ -479,7 +479,7 @@ func TestMCPConfirmFindingReturnsTheVerdict(t *testing.T) {
 
 func TestMCPRunTestReturnsEachFailureAndItsErrorContext(t *testing.T) {
 	report := `{"stats":{"duration":1},"suites":[{"title":"login.spec.ts","specs":[{"title":"signs in","file":"login.spec.ts","line":2,"tests":[{"status":"unexpected","results":[{"status":"failed","errors":[{"message":"TimeoutError: locator.fill: Timeout\nCall log:\n  - waiting for locator('#emailAddress')"}],"attachments":[{"name":"error-context","contentType":"text/markdown","path":"PROJECT/test-results/login/error-context.md"}]}]}]}]}]}`
-	script := "mkdir -p test-results/login\nprintf '%s\\n' '- textbox \"E-mail\" [ref=e2]' 'api_key=sk-test' > test-results/login/error-context.md\n" +
+	script := "mkdir -p test-results/login\nprintf '%s\\n' '- textbox \"E-mail\" [ref=e2]: me@example.com' '- textbox \"API token\" [ref=e3]: sk-test' 'api_key=sk-test' > test-results/login/error-context.md\n" +
 		"sed \"s#PROJECT#$PWD#\" report.json > \"$PLAYWRIGHT_JSON_OUTPUT_FILE\"\nexit 1\n"
 	root := writeProject(t, script, map[string]string{"login.spec.ts": "test('signs in', async () => {});\n", "report.json": report})
 	h := startMCP(t, root)
@@ -493,5 +493,10 @@ func TestMCPRunTestReturnsEachFailureAndItsErrorContext(t *testing.T) {
 	if failure["title"] != "signs in" || !strings.Contains(failure["message"].(string), "waiting for locator('#emailAddress')") ||
 		!strings.Contains(context, `textbox "E-mail"`) || strings.Contains(context, "sk-test") {
 		t.Fatalf("failure=%v context=%q", failure, context)
+	}
+	// Typed input values must not reach the MCP client even when the field
+	// label does not look like a secret name.
+	if strings.Contains(context, "me@example.com") || !strings.Contains(context, `- textbox "E-mail" [ref=e2]`) {
+		t.Fatalf("typed value survived in failureContext: %q", context)
 	}
 }

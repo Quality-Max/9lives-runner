@@ -30,7 +30,13 @@ SDK versions.
   and label, parameter name, outcome; never values) and say when to `wait`
   for a control that has not appeared. Before, a model could not see that a
   fill had happened and repeated it until the budget ran out.
-
+- Evidence and diagnostics are cleaner and safer: redaction now covers
+  `Authorization: Bearer|Basic|Token …` and bare `Bearer <token>` values;
+  terminal escapes are stripped including OSC sequences such as hyperlinks;
+  heal failure text is redacted before it is clipped to 3,000 bytes; MCP
+  `failureContext` drops values typed into fields like the provider prompt
+  does; failed-test titles are capped at 512 bytes; and heal refuses a
+  whitespace-only `getBy` name, which would match nearly every control.
 - `9l heal --provider claude` works on a Claude subscription. Provider CLIs
   now receive the user name (`USER`, `LOGNAME`, `USERNAME`), temp, locale,
   Windows profile, proxy and CA-certificate variables. Without `USER`,
