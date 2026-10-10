@@ -436,6 +436,16 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 	if test.Dimensions["engineeringQuality"] != "unknown" {
 		t.Fatal("informational finding raised a concern")
 	}
+	fact.ConditionalSkips[0].AfterExecution = true
+	test = Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || !strings.Contains(test.Findings[0].Message, "after the test body") || strings.Contains(test.Findings[0].Suggestion, "does not protect") {
+		t.Fatalf("after-hook skip misrepresented body execution: %+v", test.Findings)
+	}
+	fact.ConditionalSkips[0].Environment = true
+	test = Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "environment-skip" || !strings.Contains(test.Findings[0].Message, "after the test body") {
+		t.Fatalf("environment-dependent after-hook skip misrepresented body execution: %+v", test.Findings)
+	}
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {

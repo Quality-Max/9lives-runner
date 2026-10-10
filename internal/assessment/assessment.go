@@ -500,6 +500,14 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			add("disabled-test", "demonstrated", "engineeringQuality", "", "", "A syntactic test.skip/test.fixme declaration, unconditional suite modifier or enclosing skipped/fixme suite is present.", "Review why the test is disabled before relying on it to protect the requirement.", fact.Location)
 		}
 		for _, p := range fact.ConditionalSkips {
+			if p.AfterExecution {
+				if p.Environment {
+					add("environment-skip", "suspected", "engineeringQuality", "", "", "An after-hook test.skip/test.fixme modifier depends on an environment variable; it runs after the test body, so a skipped status does not mean the body did not run.", "Confirm the hook's effect and assess coverage from the test body assertions.", p.Location)
+				} else {
+					add("conditional-skip", "informational", "engineeringQuality", "", "", "An after-hook test.skip/test.fixme modifier may conditionally mark the test skipped, but it runs after the test body.", "Confirm the hook's effect and assess coverage from the test body assertions.", p.Location)
+				}
+				continue
+			}
 			if p.Environment {
 				add("environment-skip", "suspected", "engineeringQuality", "", "", "A test.skip/test.fixme modifier applying to this test's suite depends on an environment variable; the test may not run in some environments, such as CI.", "Confirm which environments skip it and that at least one required run still executes this test.", p.Location)
 				continue
