@@ -2,15 +2,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const {semver, awaitVersion} = require('./sdk-registry.cjs');
 
 // Verify an SDK release on either trigger: a pushed sdk-v<version> tag, or a
 // push to main whose manifest version is not on the registry yet. Both must
 // be on public main history. Outputs `version` and `publish` for the workflow.
-try {
+async function main() {
   const root = path.resolve(__dirname, '..');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'packages/playwright/package.json')));
   const version = manifest.version;
-  assert.match(version, /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/);
+  assert.match(version, semver);
   assert.equal(process.env.REPOSITORY_PRIVATE, 'false');
   assert.equal(manifest.name, '@9l/playwright');
   assert.equal(manifest.license, 'Apache-2.0');
@@ -24,14 +25,18 @@ try {
   }
   // A version already on the registry is not published again, whether the
   // trigger is a push to main or a tag pushed by hand after an automatic
-  // publication whose tag step could not create the tag.
-  const view = spawnSync('npm', ['view', `${manifest.name}@${version}`, 'version'], {cwd: root, encoding: 'utf8', timeout: 60000});
-  const publish = !(view.status === 0 && view.stdout.trim() === version);
+  // publication whose tag step could not create the tag. The automatic tag
+  // follows publication closely, so a tag run looks for up to five minutes
+  // before concluding the version is unpublished.
+  const tagged = process.env.GITHUB_REF_TYPE === 'tag';
+  const publish = !(await awaitVersion(version, tagged ? {attempts: 20, intervalMs: 15000} : {attempts: 1, intervalMs: 0}));
   const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], {cwd: root, stdio: 'ignore'});
   assert.equal(ancestor.status, 0);
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\npublish=${publish}\n`);
   console.log(publish ? `SDK release ${version}, public repository and main ancestry verified` : `SDK ${version} is already published; nothing to do`);
-} catch {
+}
+
+main().catch(() => {
   console.error('SDK release rejected: require an unpublished version on public main, or a matching sdk-v<version> tag on main history');
   process.exitCode = 1;
-}
+});

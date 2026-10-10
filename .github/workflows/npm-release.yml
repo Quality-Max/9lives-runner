@@ -63,6 +63,9 @@ jobs:
   # repository's write deploy key, which the ruleset lets bypass; secrets are
   # not available to workflows from forks. A deploy-key push triggers this
   # workflow again on the tag, which check-tag then skips as already published.
+  # npm serves a new version a minute or more after publication, so the tag is
+  # pushed only once the registry shows it; otherwise the tag run re-qualifies
+  # the release and fails publishing it twice, as 0.1.2 and 0.1.3 did.
   tag:
     needs: [check-tag, publish]
     if: github.ref_type == 'branch'
@@ -75,6 +78,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Wait until the registry serves the published version
+        run: node scripts/sdk-registry.cjs await "$VERSION"
       - name: Push the sdk-v tag on the published commit with the release deploy key
         env:
           SDK_RELEASE_TAG_KEY: ${{ secrets.SDK_RELEASE_TAG_KEY }}
