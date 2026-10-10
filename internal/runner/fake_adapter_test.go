@@ -263,6 +263,46 @@ func TestAttemptAndOutputBudgetsAreEnforced(t *testing.T) {
 	}
 }
 
+// prefixAdapter accepts any output that starts like a passing fake report, so
+// a truncated report would validate if the runner relied on parsing alone.
+type prefixAdapter struct{ fakeAdapter }
+
+func (prefixAdapter) Validate(stdout []byte) (Validation, error) {
+	if !strings.HasPrefix(string(stdout), `{"outcome":"passed"`) {
+		return Validation{}, errors.New("not a passing report")
+	}
+	return Validation{ExecutedTests: 1, AssertionCoverage: "unknown", Description: "prefix"}, nil
+}
+
+func TestTruncatedReportIsInvalidEvenWhenItsPrefixValidates(t *testing.T) {
+	plan := Plan{Version: 1, RunID: "run-truncated-prefix", Jobs: []Job{fakeJob("job-001", "large", 0)}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, MaxAttempts: 1, MaxOutputBytes: 1024, ReceiptDir: t.TempDir(), Adapters: []Adapter{prefixAdapter{}}})
+	receipt := summary.Receipts[0]
+	if receipt.Validated || receipt.Status != StatusError || !receipt.Evidence.StdoutTruncated || receipt.Error != "structured report exceeded capture limit" {
+		t.Fatalf("a truncated report validated: %#v", receipt)
+	}
+	// The same report under the limit validates, so the limit alone refused it.
+	summary, _ = Execute(context.Background(), Plan{Version: 1, RunID: "run-untruncated-prefix", Jobs: []Job{fakeJob("job-001", "large", 0)}}, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, MaxAttempts: 1, MaxOutputBytes: 8192, ReceiptDir: t.TempDir(), Adapters: []Adapter{prefixAdapter{}}})
+	if receipt := summary.Receipts[0]; !receipt.Validated || receipt.Status != StatusPassed {
+		t.Fatalf("an untruncated report was refused: %#v", receipt)
+	}
+}
+
+func TestPersistedOutputSizeDescribesTheRedactedFile(t *testing.T) {
+	plan := Plan{Version: 1, RunID: "run-redacted-size", Jobs: []Job{fakeJob("job-001", "redactable", 0)}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, MaxAttempts: 1, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
+	receipt := summary.Receipts[0]
+	persisted, err := os.ReadFile(receipt.Evidence.StdoutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Redaction grows this output; the recorded size must match the bytes
+	// whose SHA-256 the receipt records, not the output before redaction.
+	if !strings.Contains(string(persisted), "[REDACTED]") || receipt.Evidence.Artifacts[0].Bytes != int64(len(persisted)) {
+		t.Fatalf("recorded %d bytes for a %d-byte file: %s", receipt.Evidence.Artifacts[0].Bytes, len(persisted), persisted)
+	}
+}
+
 func TestSharedRunDeadlineIsClassified(t *testing.T) {
 	plan := Plan{Version: 1, RunID: "run-deadline", Jobs: []Job{fakeJob("job-001", "sleep", 5000)}}
 	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 10 * time.Second, RunDeadline: 50 * time.Millisecond, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
@@ -372,6 +412,9 @@ func TestRunnerHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "large":
 		fmt.Print(`{"outcome":"passed","assertions":1,"artifact":true,"padding":"` + strings.Repeat("x", 4096) + `"}`)
+		os.Exit(0)
+	case "redactable":
+		fmt.Print(`{"outcome":"passed","assertions":1,"artifact":true,"note":"token=x"}`)
 		os.Exit(0)
 	}
 	os.Exit(3)

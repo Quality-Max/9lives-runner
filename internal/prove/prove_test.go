@@ -94,6 +94,10 @@ func TestReadChannelRejectsUntrustedRecords(t *testing.T) {
 		"record after overflow": valid + `{"type":"overflow"}` + "\n" + observed("GET", "/a", 200, true),
 		"unfinished line":       strings.TrimSuffix(valid, "\n"),
 		"trailing data":         valid + `{"type":"overflow"} {}` + "\n",
+		"CRLF lines":            strings.ReplaceAll(valid+observed("GET", "/a", 200, true), "\n", "\r\n"),
+		"trailing whitespace":   valid + `{"type":"overflow"} ` + "\n",
+		"leading whitespace":    " " + valid,
+		"trailing scalar":       valid + `{"type":"overflow"}1` + "\n",
 		"string status":         valid + `{"type":"response","method":"GET","origin":"` + origin + `","path":"/a","status":"200","json":true}` + "\n",
 	}
 	for name, content := range cases {

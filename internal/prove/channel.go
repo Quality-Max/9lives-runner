@@ -344,10 +344,11 @@ func validTarget(target Target) bool {
 		parsed.User == nil && parsed.Scheme+"://"+parsed.Host == target.Origin
 }
 
-// decodeRecord accepts exactly one closed-schema object per line.
+// decodeRecord accepts exactly one closed-schema object per line, with no
+// surrounding whitespace (a CRLF line or trailing padding is malformed).
 func decodeRecord(line []byte) (record, error) {
 	var entry record
-	if len(line) == 0 || strictjson.Value(json.NewDecoder(bytes.NewReader(line))) != nil {
+	if len(line) == 0 || line[0] != '{' || line[len(line)-1] != '}' || strictjson.Value(json.NewDecoder(bytes.NewReader(line))) != nil {
 		return entry, errors.New("malformed prove record")
 	}
 	var members map[string]json.RawMessage

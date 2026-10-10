@@ -50,9 +50,9 @@ func TestPlanRefusesToDownloadMissingPlaywright(t *testing.T) {
 func TestValidateReportAndSchema(t *testing.T) {
 	raw := []byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"results":[{"status":"passed"},{"status":"failed"}]}]}],"suites":[{"specs":[{"tests":[{"results":[{"status":"timedOut"}]}]}]}]}]}`)
 	validation, err := New().Validate(raw)
-	// Legacy reports without a per-test status are judged by each test's final
-	// attempt: two tests, both ending in failure.
-	if err != nil || validation.FailureCount != 2 || validation.ExecutedTests != 2 || validation.AssertionCoverage != "unknown" {
+	// Legacy reports without a per-test status take Playwright's precedence
+	// over every attempt: a pass with a failure is flaky, a lone timeout fails.
+	if err != nil || validation.FailureCount != 1 || validation.ExecutedTests != 2 || validation.AssertionCoverage != "unknown" {
 		t.Fatalf("validation=%#v err=%v", validation, err)
 	}
 	if _, err := New().Validate([]byte(`{}`)); err == nil {
@@ -116,6 +116,50 @@ func TestValidateCountsTestsNotRetryAttempts(t *testing.T) {
 	// expected are both green outcomes; the run exited 0.
 	if validation.ExecutedTests != 2 || validation.FailureCount != 0 || validation.SkippedTests != 1 || !strings.Contains(validation.Description, "1 flaky") {
 		t.Fatalf("retry attempts were counted as tests: %#v", validation)
+	}
+}
+
+// Mixed statuses across retries keep Playwright's outcome precedence, with or
+// without the per-test status field: a skipped or interrupted retry never
+// hides an earlier failure, and an unknown status is never guessed.
+func TestValidateMixedRetryStatusesKeepPlaywrightPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, results string
+		executed, failures    int
+		flaky, invalid        bool
+	}{
+		{name: "failed then passed", results: `"failed","passed"`, executed: 1, flaky: true},
+		{name: "failed then skipped", results: `"failed","skipped"`, executed: 1, failures: 1},
+		{name: "timed out then interrupted", results: `"timedOut","interrupted"`, executed: 1, failures: 1},
+		{name: "passed then interrupted", results: `"passed","interrupted"`, executed: 1},
+		{name: "interrupted only", results: `"interrupted"`, invalid: true},
+		{name: "unknown status", results: `"failed","mystery"`, invalid: true},
+		{name: "reported flaky", status: "flaky", results: `"failed","passed"`, executed: 1, flaky: true},
+		{name: "reported unexpected after interruption", status: "unexpected", results: `"timedOut","interrupted"`, executed: 1, failures: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := []string{}
+			for _, status := range strings.Split(tc.results, ",") {
+				results = append(results, `{"status":`+status+`}`)
+			}
+			test := `"results":[` + strings.Join(results, ",") + `]`
+			if tc.status != "" {
+				test = `"status":"` + tc.status + `",` + test
+			}
+			// A second, passing test keeps the report executable, so a
+			// misclassified test shows up in the counts rather than as an error.
+			raw := []byte(`{"stats":{"duration":1},"suites":[{"specs":[{"tests":[{` + test + `}]},{"tests":[{"status":"expected","results":[{"status":"passed"}]}]}]}]}`)
+			validation, err := New().Validate(raw)
+			if tc.invalid {
+				if err == nil && validation.SkippedTests == 0 {
+					t.Fatalf("accepted an unclassifiable test: %#v", validation)
+				}
+				return
+			}
+			if err != nil || validation.ExecutedTests != tc.executed+1 || validation.FailureCount != tc.failures || strings.Contains(validation.Description, "flaky") != tc.flaky {
+				t.Fatalf("validation=%#v err=%v", validation, err)
+			}
+		})
 	}
 }
 

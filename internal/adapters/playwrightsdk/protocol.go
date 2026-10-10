@@ -248,6 +248,11 @@ func decodeEvent(raw []byte) (event, error) {
 	if len(raw) == 0 || len(raw)+1 > maxFrameBytes {
 		return frame, fmt.Errorf("invalid frame size")
 	}
+	// A frame is exactly one object: no surrounding whitespace, so a CRLF
+	// stream or padding after a valid value is rejected rather than trimmed.
+	if raw[0] != '{' || raw[len(raw)-1] != '}' {
+		return frame, fmt.Errorf("unframed object")
+	}
 	if err := strictjson.Value(json.NewDecoder(bytes.NewReader(raw))); err != nil {
 		return frame, err
 	}

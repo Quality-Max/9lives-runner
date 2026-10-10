@@ -31,12 +31,14 @@ func redactArguments(arguments []string) []string {
 func writeEvidence(root string, receipt Receipt, stdout, stderr []byte) (Evidence, error) {
 	directory := filepath.Join(root, receipt.RunID, receipt.JobID, receipt.AttemptID)
 	evidence := receipt.Evidence
+	// Bytes, SHA256 and the file all describe the persisted, redacted output.
+	stdout, stderr = redact(stdout), redact(stderr)
 	evidence.Artifacts = []ArtifactReference{{Kind: "structured-output", Required: true, Present: len(stdout) > 0, Bytes: int64(len(stdout))}}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return evidence, err
 	}
 	if len(stdout) > 0 {
-		path, sum, err := writeAtomic(directory, "stdout.log", redact(stdout))
+		path, sum, err := writeAtomic(directory, "stdout.log", stdout)
 		if err != nil {
 			return evidence, err
 		}
@@ -44,7 +46,7 @@ func writeEvidence(root string, receipt Receipt, stdout, stderr []byte) (Evidenc
 		evidence.Artifacts[0].Path, evidence.Artifacts[0].SHA256 = path, sum
 	}
 	if len(stderr) > 0 {
-		path, sum, err := writeAtomic(directory, "stderr.log", redact(stderr))
+		path, sum, err := writeAtomic(directory, "stderr.log", stderr)
 		if err != nil {
 			return evidence, err
 		}

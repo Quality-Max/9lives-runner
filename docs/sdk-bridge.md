@@ -33,7 +33,8 @@ temporary directory for each attempt (mode 0700 on Unix; inherited directory ACL
 `NINELIVES_ENGINE_EVENTS`; the reporter creates it exclusively and writes nothing
 to stdout. Configuration, `globalSetup`, hooks and dependencies (dotenv logs its
 startup line, for example) can print to stdout freely without affecting the
-evidence, and stdout alone never validates. Every frame contains `version`,
+evidence, and stdout alone never validates. Each frame is exactly one JSON object
+per LF-terminated line, with no CR or other surrounding whitespace. Every frame contains `version`,
 `runId`, `jobId`, `attemptId`, a contiguous `seq` starting at 1 and `type`.
 
 | Frame | Evidence |

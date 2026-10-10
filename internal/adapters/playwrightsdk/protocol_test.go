@@ -106,6 +106,12 @@ func TestRejectUntrustedEvidence(t *testing.T) {
 		"truncated":            bytes.TrimSuffix(stream(passingFrames()), []byte("\n")),
 		"oversized":            bytes.Repeat([]byte("a"), maxProtocolBytes+1),
 		"duplicate object key": bytes.Replace(stream(passingFrames()), []byte(`"type":"hello"`), []byte(`"type":"hello","type":"hello"`), 1),
+		// A valid frame followed by anything on its line is not that frame.
+		"CRLF stream":         bytes.ReplaceAll(stream(passingFrames()), []byte("\n"), []byte("\r\n")),
+		"trailing whitespace": bytes.Replace(stream(passingFrames()), []byte("}\n"), []byte("} \n"), 1),
+		"leading whitespace":  append([]byte(" "), stream(passingFrames())...),
+		"trailing value":      bytes.Replace(stream(passingFrames()), []byte("}\n"), []byte("}{}\n"), 1),
+		"trailing scalar":     bytes.Replace(stream(passingFrames()), []byte("}\n"), []byte("} 1\n"), 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := New().ValidateAttempt(raw, owner); err == nil {

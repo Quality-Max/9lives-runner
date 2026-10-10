@@ -431,6 +431,11 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				}
 			} else {
 				validation, validationErr = adapter.Validate(output.Stdout)
+				// A truncated report never validates, even when the prefix
+				// happens to parse; name the limit rather than a parse error.
+				if output.StdoutTruncated {
+					validationErr = fmt.Errorf("structured report exceeded capture limit")
+				}
 			}
 			if validationErr != nil {
 				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), "missing or invalid structured report"
