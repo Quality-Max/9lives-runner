@@ -67,6 +67,9 @@ SDK versions.
   workspace-hoisted Playwright in an ancestor `node_modules/.bin`, as the
   SDK adapter already did. In an npm-workspace monorepo they used to skip
   every spec with "local binary is missing".
+- `9l --help` lists `confirm_finding` among the MCP tools, and the run and
+  heal options added in this release; a test keeps the MCP line in sync
+  with the advertised tools.
 - `9l run` selects tests: `spec.ts:LINE` inputs and `--grep` /
   `--grep-invert` pass Playwright's filters through, recorded in each job's
   `selection` (plan, additive) and the receipt's evidence command. A

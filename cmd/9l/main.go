@@ -77,16 +77,20 @@ func usage(w io.Writer) {
 
 Usage:
   9l plan <spec-or-glob>... [--format text|json] [--max-jobs N]
-  9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
+  9l run  <spec-or-glob|spec:LINE>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
+          [--grep RE] [--grep-invert RE]  # Playwright title filters
+          [--reporter html,...]  # also run project reporters beside the evidence reporter
+          [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
           [--sdk]  # opt-in @9l/playwright engine protocol
+          [--failure-details]  # with --sdk, record failed test titles and errors
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <spec> [--provider NAME] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
-          # verified selector healing: offline Tier 1, then an agent CLI or API (heal-native is an alias)
-  9l mcp [--pass-env NAME]... [--provider NAME]  # MCP server on stdio: run_test, heal_test, assess_test
+  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
+          # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
+  9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults

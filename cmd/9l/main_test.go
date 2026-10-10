@@ -237,3 +237,13 @@ func TestReporterListKeepsJSONForEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestUsageNamesEveryMCPTool(t *testing.T) {
+	var out bytes.Buffer
+	usage(&out)
+	for _, tool := range mcpTools {
+		if name := tool["name"].(string); !strings.Contains(out.String(), name) {
+			t.Errorf("usage omits MCP tool %s", name)
+		}
+	}
+}
