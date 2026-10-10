@@ -1,5 +1,13 @@
 # Changelog
 
+## SDK 0.1.2 — 2026-10-10
+
+- Refresh the npm package and installation examples from current main. SDK
+  runtime behavior and protocol are unchanged from 0.1.1.
+- Release qualification now covers native Windows amd64 and arm64, including
+  real Chromium assertions, timeout/cancel cleanup and isolated consumers;
+  Windows relies on inherited directory ACLs rather than POSIX mode bits.
+
 ## CLI unreleased
 
 - Add Windows amd64 and arm64 ZIP packaging, with `9l.exe`, legal files and
@@ -25,6 +33,13 @@
   parent directories is refused before anything is written, and a run whose
   goal failed counts as incomplete on either side.
   `npm run smoke:confirm` qualifies it with real Chromium (#42).
+- `9l prove --faults` selects fault kinds. New opt-in kinds: `http-401`,
+  `http-403`, `http-429` (with `Retry-After: 1`) and `malformed-json` (a
+  successful JSON body cut to its first half, so it no longer parses). The
+  default is still `abort,http-500,empty-json`. Selecting a kind the installed
+  SDK does not report exits 2 after the baseline, before any fault run.
+  Reports gain `faultKinds` and use policy `prove-network-v3`. The real
+  Chromium smoke qualifies the new kinds on the shop fixture (#43).
 
 Fixes from a CLI 0.1.5 trial on an 87-file suite:
 
@@ -55,6 +70,13 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   cancellable, and `heal_test` applies only with `apply: true`. A heal that
   verifies a candidate but cannot save or apply it, or whose provider fails,
   is an error result that keeps its evidence. See [MCP server](docs/mcp.md).
+
+## SDK unreleased
+
+- The prove channel applies `http-401`, `http-403`, `http-429` and
+  `malformed-json` faults. When the engine sets
+  `NINELIVES_PROVE_CAPABILITIES=1`, a baseline reports the kinds this build
+  applies; older engines never ask and never receive the record.
 
 ## CLI 0.1.5 — 2026-10-09
 

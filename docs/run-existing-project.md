@@ -7,7 +7,7 @@ It does not sign in or change application data. The harness lives outside the
 application repository and preserves its existing Playwright setup.
 
 Use Node 24 (Node 22 minimum), Playwright 1.61.1 through 1.64.0, and Chromium.
-The SDK is published as `@9l/playwright` 0.1.1.
+The SDK is published as `@9l/playwright` 0.1.2.
 
 ## 1. Install the CLI and get the example
 
@@ -44,7 +44,7 @@ mkdir -p "$HOME/9lives-login-smoke"
 cp -R "$RUNNER_ROOT/examples/playwright-login/." "$HOME/9lives-login-smoke/"
 cd "$HOME/9lives-login-smoke"
 npm init -y
-npm install --save-dev @playwright/test@1.64.0 @9l/playwright@0.1.1
+npm install --save-dev @playwright/test@1.64.0 @9l/playwright@0.1.2
 npm exec playwright install chromium
 export QA_BASE_URL=http://127.0.0.1:8000
 ```

@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.1.1`; no registry publication is performed. The
+npm workspace at version `0.1.2`; releases use npm trusted publishing. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.0. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.
@@ -107,8 +107,11 @@ and test attempt, whose handshake names the attempt by the engine's hashed
 test ID and retry index. A baseline records fetch/XHR method, origin and path
 (no query, headers or bodies) and response status and JSON media type; a fault
 run records only how often its one fault, from the closed
-`NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` fault was
-not applicable (`not-json` or `unreachable`). These records never enter `9l.engine/1`. Go validates
+`NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` or
+`malformed-json` fault was not applicable (`not-json` or `unreachable`). When
+the engine sets `NINELIVES_PROVE_CAPABILITIES=1`, a baseline file also lists
+the fault kinds this SDK can apply, right after the handshake; an engine that
+does not ask never receives the record. These records never enter `9l.engine/1`. Go validates
 them against a closed schema and size limits and removes the directory after
 each run. See [Prove](prove.md).
 
