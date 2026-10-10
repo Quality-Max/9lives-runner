@@ -1,5 +1,5 @@
 {
   "name": "9lives-sdk-fixture",
   "private": true,
-  "devDependencies": {"@9l/playwright": "0.1.3", "@playwright/test": "1.61.1"}
+  "devDependencies": {"@9l/playwright": "0.2.0", "@playwright/test": "1.61.1"}
 }
