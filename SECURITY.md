@@ -9,8 +9,9 @@ and a proposed fix when available. Use synthetic data and redact secret values.
 
 ## Supported versions
 
-This early project focuses fixes on current `main` and the latest published
-SDK, currently `@9l/playwright` 0.1.0. Older development snapshots have no
+This early project focuses fixes on current `main`, the latest published CLI
+release, currently v0.2.0, and the latest published SDK, currently
+`@9l/playwright` 0.1.3. Older releases and development snapshots have no
 separate security maintenance commitment.
 
 ## Local execution boundaries

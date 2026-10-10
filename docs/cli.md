@@ -46,7 +46,8 @@
   `http-403`, `http-429` and `malformed-json` with `--faults`) on each
   fetch/XHR request it made, and report which faults an assertion caught and
   which survived.
-  Requires `@9l/playwright` 0.1.1 or newer; see [Prove](prove.md).
+  Requires `@9l/playwright` 0.1.1 or newer, and 0.1.3 or newer for the
+  `--faults` opt-in kinds; see [Prove](prove.md).
 - Experimental `9l confirm`: run one reproduction spec on the revision a
   finding was reported against (`--unfixed`) and on the fixing revision
   (`--fixed`, default the working tree), each in its own Git worktree, and

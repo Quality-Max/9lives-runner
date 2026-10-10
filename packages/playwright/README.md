@@ -15,8 +15,8 @@ npm exec playwright install chromium
 ```
 
 Use Node 24 for the qualified runtime (Node 22 minimum), Playwright 1.61.1
-through 1.64.0, and Chromium. macOS and Linux on amd64/arm64 are the qualified
-runner targets. The peer range is `@playwright/test` `>=1.61.1 <2`; CI qualifies
+through 1.64.0, and Chromium. macOS, Linux and Windows on amd64/arm64 are the
+qualified runner targets (Windows from CLI 0.2.0). The peer range is `@playwright/test` `>=1.61.1 <2`; CI qualifies
 every published release from 1.61.1 through 1.64.0 (1.61.1, 1.62.0, 1.62.1,
 1.63.0 and 1.64.0). Later versions, and other browser engines, install but are
 unqualified.
