@@ -445,6 +445,12 @@
         "failureCount": {
           "type": "integer"
         },
+        "failures": {
+          "items": {
+            "$ref": "#/$defs/TestFailure"
+          },
+          "type": "array"
+        },
         "finishedAt": {
           "format": "date-time",
           "type": "string"
@@ -652,6 +658,57 @@
       },
       "required": [
         "kind"
+      ],
+      "type": "object"
+    },
+    "TestAttachment": {
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "retained": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "bytes",
+        "retained"
+      ],
+      "type": "object"
+    },
+    "TestFailure": {
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/TestAttachment"
+          },
+          "type": "array"
+        },
+        "location": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
       ],
       "type": "object"
     }

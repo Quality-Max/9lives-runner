@@ -74,10 +74,48 @@ type Receipt struct {
 	VerifiedAssertions  int                   `json:"verifiedAssertions"`
 	AssertionCoverage   string                `json:"assertionCoverage"`
 	Error               string                `json:"error,omitempty"`
-	Termination         *Termination          `json:"termination,omitempty"`
-	Evidence            Evidence              `json:"evidence"`
-	ReceiptPath         string                `json:"receiptPath,omitempty"`
+	// Failures describes each failed test, from the validated structured
+	// report, when the adapter can attribute them. Messages are bounded and
+	// redacted; attachments are referenced and copied only on request.
+	Failures    []TestFailure `json:"failures,omitempty"`
+	Termination *Termination  `json:"termination,omitempty"`
+	Evidence    Evidence      `json:"evidence"`
+	ReceiptPath string        `json:"receiptPath,omitempty"`
 }
+
+// TestFailure is one failed test in a validated report. At most
+// MaxReportedFailures are kept per attempt.
+type TestFailure struct {
+	// Title is the test's describe path and name, prefixed by its project in
+	// brackets when the report names one.
+	Title string `json:"title"`
+	// Location is the failing line, or the test's declaration, relative to the
+	// project directory, as file:line.
+	Location string `json:"location,omitempty"`
+	// Message is the start of the first error, without terminal escapes, at
+	// most MaxFailureMessageBytes and redacted.
+	Message     string           `json:"message,omitempty"`
+	Attachments []TestAttachment `json:"attachments,omitempty"`
+}
+
+// TestAttachment is a file the test framework attached to a failed test,
+// such as Playwright's error-context.md, a screenshot or a trace.
+type TestAttachment struct {
+	Name        string `json:"name"`
+	ContentType string `json:"contentType,omitempty"`
+	// Path is the retained copy when Retained, otherwise the framework's own
+	// file, which the project's next run may delete.
+	Path   string `json:"path,omitempty"`
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256,omitempty"`
+	// Retained means 9l copied the file into the attempt's receipt directory.
+	Retained bool `json:"retained"`
+}
+
+const (
+	MaxReportedFailures    = 20
+	MaxFailureMessageBytes = 1 << 10
+)
 
 type Termination struct {
 	Kind              string `json:"kind"`

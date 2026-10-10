@@ -29,6 +29,18 @@
   while watching, set `use: {launchOptions: {slowMo: 250}}` in the project's
   Playwright config: a config's `launchOptions` replaces any value a fixture
   library sets, so 9l does not offer a flag that could be silently ignored.
+- Failed tests: below each failed job, `9l run` and `9l result` name every
+  failed test (up to 20 per job) with its failing line, the first lines of its
+  error and the files Playwright attached to it, such as `error-context.md`
+  (the error, an ARIA snapshot of the page and the source with the failing
+  line marked), screenshots and traces. The receipt's `failures` field holds
+  the same, with the error capped at 1 KiB and redacted. By default the
+  attachments are only referenced: they are Playwright's own files, which the
+  project's next run may delete, and 9l does not retain page content unless
+  asked. `--keep-attachments` copies them into the attempt's receipt
+  directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
+  128 MiB per attempt; only regular files inside the project). The SDK
+  adapter (`--sdk`) does not report per-test failures yet.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.

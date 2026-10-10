@@ -532,6 +532,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
+	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
@@ -678,7 +679,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			}
 		},
 		AgentProvenance: agentProvenance,
-		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
+		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	// A setup error is found before any process starts: no run exists to
 	// report, cancel or retry, so it is a usage error without a result.
@@ -795,6 +796,7 @@ func printPlan(w io.Writer, plan runner.Plan, format string) int {
 }
 
 func printResult(w io.Writer, result runner.RunSummary) {
+	clearable := false
 	fmt.Fprintf(w, "run %s: %d passed, %d failed, %d canceled, %d timed out, %d errors (%s)\n", result.RunID, result.Passed, result.Failed, result.Canceled, result.TimedOut, result.Errors, time.Duration(result.DurationMS)*time.Millisecond)
 	for _, receipt := range result.Receipts {
 		fmt.Fprintf(w, "  %-8s %s", strings.ToUpper(string(receipt.Status)), receipt.Spec)
@@ -805,6 +807,18 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		if receipt.Error != "" {
 			fmt.Fprintf(w, "           %s\n", receiptReason(receipt.Error))
 		}
+		for _, failure := range receipt.Failures {
+			printFailure(w, failure)
+			for _, attachment := range failure.Attachments {
+				clearable = clearable || !attachment.Retained
+			}
+		}
+		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
+			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
+		}
+	}
+	if clearable {
+		fmt.Fprintln(w, "  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.")
 	}
 	switch {
 	case result.Outcome == runner.OutcomeFailed:
@@ -812,6 +826,44 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
+}
+
+// printFailure shows which test failed, where and why, and the files that
+// explain it, below its receipt line.
+func printFailure(w io.Writer, failure runner.TestFailure) {
+	fmt.Fprintf(w, "           ✗ %s", receiptReason(failure.Title))
+	if failure.Location != "" {
+		fmt.Fprintf(w, "  %s", receiptReason(failure.Location))
+	}
+	fmt.Fprintln(w)
+	shown := 0
+	for _, line := range strings.Split(failure.Message, "\n") {
+		if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "Call log:") {
+			continue
+		}
+		if shown == 3 {
+			break
+		}
+		fmt.Fprintf(w, "             %s\n", receiptReason(line))
+		shown++
+	}
+	for _, attachment := range failure.Attachments {
+		label := attachment.Name
+		if label == "error-context" {
+			label = "context"
+		}
+		fmt.Fprintf(w, "             %s: %s\n", receiptReason(label), receiptReason(displayPath(attachment.Path)))
+	}
+}
+
+// displayPath shortens a path below the working directory.
+func displayPath(path string) string {
+	if cwd, err := os.Getwd(); err == nil {
+		if relative, err := filepath.Rel(cwd, path); err == nil && !strings.HasPrefix(relative, "..") {
+			return relative
+		}
+	}
+	return filepath.Clean(path)
 }
 
 // receiptReason is the receipt's error on one line of at most 300 characters,

@@ -27,12 +27,16 @@ type ExecuteOptions struct {
 	MaxOutputBytes  int
 	// PassEnv names caller variables forwarded to test processes in addition
 	// to the inherited runtime environment.
-	PassEnv    []string
-	ReceiptDir string
-	Adapters   []Adapter
-	Store      Store
-	Executor   ProcessExecutor
-	Services   AttemptServiceFactory
+	PassEnv []string
+	// KeepAttachments copies each failed test's attachments into the attempt's
+	// receipt directory. Without it they are only referenced, because they
+	// can hold page content.
+	KeepAttachments bool
+	ReceiptDir      string
+	Adapters        []Adapter
+	Store           Store
+	Executor        ProcessExecutor
+	Services        AttemptServiceFactory
 }
 
 // SetupError is a plan or option problem found before any process starts.
@@ -495,6 +499,12 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.Status = StatusError
 			}
 			receipt.Error = "agent branch/source provenance changed or became unavailable during execution"
+		}
+	}
+	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(FailureReporter); ok && receipt.Validated && receipt.FailureCount > 0 {
+		receipt.Failures = reporter.Failures(output.Stdout, job.WorkDir)
+		if opts.KeepAttachments {
+			retainAttachments(filepath.Join(opts.ReceiptDir, runID, job.ID, receipt.AttemptID, "attachments"), receipt.Failures)
 		}
 	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {

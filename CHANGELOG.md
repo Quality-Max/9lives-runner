@@ -27,6 +27,15 @@ SDK versions.
   `unverified` with a reason naming the boundary and make no provider call;
   before, the call was made and its answer always discarded.
 
+- `9l run` and `9l result` name each failed test below its job: title,
+  failing line, the first lines of the error, and Playwright's
+  `error-context.md`, screenshot and trace paths. Receipts carry the same as
+  `failures` (additive; receipt version 1). MCP `run_test` returns
+  `failures` and the first failure's `error-context.md` as `failureContext`.
+- `9l run --keep-attachments` copies those attachments into the receipt
+  directory with SHA-256 digests, so the project's next run cannot delete
+  them. Without it they are only referenced.
+
 ## 0.2.0 — 2026-10-10
 
 ### Release process

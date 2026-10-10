@@ -476,3 +476,22 @@ func TestMCPConfirmFindingReturnsTheVerdict(t *testing.T) {
 		t.Fatalf("a refused call ran the spec: %d runs", len(worker.workDirs))
 	}
 }
+
+func TestMCPRunTestReturnsEachFailureAndItsErrorContext(t *testing.T) {
+	report := `{"stats":{"duration":1},"suites":[{"title":"login.spec.ts","specs":[{"title":"signs in","file":"login.spec.ts","line":2,"tests":[{"status":"unexpected","results":[{"status":"failed","errors":[{"message":"TimeoutError: locator.fill: Timeout\nCall log:\n  - waiting for locator('#emailAddress')"}],"attachments":[{"name":"error-context","contentType":"text/markdown","path":"PROJECT/test-results/login/error-context.md"}]}]}]}]}]}`
+	script := "mkdir -p test-results/login\nprintf '%s\\n' '- textbox \"E-mail\" [ref=e2]' 'api_key=sk-test' > test-results/login/error-context.md\n" +
+		"sed \"s#PROJECT#$PWD#\" report.json > \"$PLAYWRIGHT_JSON_OUTPUT_FILE\"\nexit 1\n"
+	root := writeProject(t, script, map[string]string{"login.spec.ts": "test('signs in', async () => {});\n", "report.json": report})
+	h := startMCP(t, root)
+	payload, isError := h.toolCall(t, 1, "run_test", map[string]any{"spec": "login.spec.ts"})
+	failures, _ := payload["failures"].([]any)
+	if isError || payload["status"] != "failed" || len(failures) != 1 {
+		t.Fatalf("run_test: %v (isError=%v)", payload, isError)
+	}
+	failure := failures[0].(map[string]any)
+	context, _ := payload["failureContext"].(string)
+	if failure["title"] != "signs in" || !strings.Contains(failure["message"].(string), "waiting for locator('#emailAddress')") ||
+		!strings.Contains(context, `textbox "E-mail"`) || strings.Contains(context, "sk-test") {
+		t.Fatalf("failure=%v context=%q", failure, context)
+	}
+}

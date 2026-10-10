@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/healing"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
@@ -316,4 +317,151 @@ func TestFileFilter(project, relative string) string {
 		return "^" + regexp.QuoteMeta(filepath.ToSlash(filepath.Join(project, relative))) + "$"
 	}
 	return relative
+}
+
+type failureReport struct {
+	Suites []failureSuite `json:"suites"`
+}
+
+type failureSuite struct {
+	Title  string         `json:"title"`
+	Suites []failureSuite `json:"suites"`
+	Specs  []struct {
+		Title string `json:"title"`
+		File  string `json:"file"`
+		Line  int    `json:"line"`
+		Tests []struct {
+			Status      string `json:"status"`
+			ProjectName string `json:"projectName"`
+			Results     []struct {
+				Status string `json:"status"`
+				Errors []struct {
+					Message  string `json:"message"`
+					Location *struct {
+						File string `json:"file"`
+						Line int    `json:"line"`
+					} `json:"location"`
+				} `json:"errors"`
+				Attachments []struct {
+					Name        string `json:"name"`
+					ContentType string `json:"contentType"`
+					Path        string `json:"path"`
+				} `json:"attachments"`
+			} `json:"results"`
+		} `json:"tests"`
+	} `json:"specs"`
+}
+
+var terminalEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// Failures lists each unexpected test of a validated report with its failing
+// line, the start of its error and the files Playwright attached, such as
+// error-context.md with the page's ARIA snapshot. It reads the last failed
+// attempt, so retries report the final failure.
+func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
+	var parsed failureReport
+	if json.Unmarshal(raw, &parsed) != nil {
+		return nil
+	}
+	failures := []runner.TestFailure{}
+	var walk func(failureSuite, []string)
+	walk = func(current failureSuite, titles []string) {
+		for _, spec := range current.Specs {
+			for _, test := range spec.Tests {
+				if test.Status != "unexpected" || len(failures) == runner.MaxReportedFailures {
+					continue
+				}
+				failure := runner.TestFailure{Title: strings.Join(append(append([]string{}, titles...), spec.Title), " › ")}
+				if test.ProjectName != "" {
+					failure.Title = "[" + test.ProjectName + "] " + failure.Title
+				}
+				if spec.File != "" && spec.Line > 0 {
+					failure.Location = fmt.Sprintf("%s:%d", filepath.ToSlash(spec.File), spec.Line)
+				}
+				for index := len(test.Results) - 1; index >= 0; index-- {
+					result := test.Results[index]
+					if result.Status != "failed" && result.Status != "timedOut" {
+						continue
+					}
+					if len(result.Errors) > 0 {
+						first := result.Errors[0]
+						failure.Message = failureMessage(first.Message)
+						if first.Location != nil && first.Location.Line > 0 {
+							if relative, ok := withinDirectory(workDir, first.Location.File); ok {
+								failure.Location = fmt.Sprintf("%s:%d", filepath.ToSlash(relative), first.Location.Line)
+							}
+						}
+					}
+					for _, attachment := range result.Attachments {
+						if attachment.Path == "" {
+							continue // inline bodies are not files
+						}
+						path := attachment.Path
+						if !filepath.IsAbs(path) {
+							path = filepath.Join(workDir, path)
+						}
+						if !attachmentInProject(workDir, path) {
+							continue
+						}
+						reference := runner.TestAttachment{Name: attachment.Name, ContentType: attachment.ContentType, Path: path}
+						if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+							reference.Bytes = info.Size()
+						}
+						failure.Attachments = append(failure.Attachments, reference)
+					}
+					break
+				}
+				failures = append(failures, failure)
+			}
+		}
+		for _, child := range current.Suites {
+			walk(child, append(append([]string{}, titles...), child.Title))
+		}
+	}
+	// The top-level suite is the file; its title repeats the location.
+	for _, file := range parsed.Suites {
+		walk(file, nil)
+	}
+	return failures
+}
+
+// failureMessage is the start of an error without terminal escapes or source
+// frames, redacted and cut on a rune boundary.
+func failureMessage(message string) string {
+	message = runner.RedactText(withoutSourceFrames(terminalEscape.ReplaceAllString(message, "")))
+	if len(message) <= runner.MaxFailureMessageBytes {
+		return message
+	}
+	cut := runner.MaxFailureMessageBytes
+	for cut > 0 && !utf8.RuneStart(message[cut]) {
+		cut--
+	}
+	return message[:cut] + "…"
+}
+
+// attachmentInProject keeps attachment references inside the project, also
+// through symlinked directories, so a report cannot point 9l at other files.
+func attachmentInProject(workDir, path string) bool {
+	if _, ok := withinDirectory(workDir, path); !ok {
+		return false
+	}
+	realDir, dirErr := filepath.EvalSymlinks(workDir)
+	realPath, pathErr := filepath.EvalSymlinks(path)
+	if dirErr != nil || pathErr != nil {
+		return pathErr != nil && os.IsNotExist(pathErr) // a missing file is only a reference
+	}
+	_, ok := withinDirectory(realDir, realPath)
+	return ok
+}
+
+// withinDirectory returns path relative to directory when it is inside it.
+func withinDirectory(directory, path string) (string, bool) {
+	if directory == "" || path == "" {
+		return "", false
+	}
+	relative, err := filepath.Rel(directory, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", false
+	}
+	return relative, true
 }

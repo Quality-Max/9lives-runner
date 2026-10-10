@@ -42,6 +42,13 @@ type Adapter interface {
 	Validate(stdout []byte) (Validation, error)
 }
 
+// FailureReporter adapters describe each failed test in a report that
+// already validated. workDir is the job's working directory; attachment
+// paths outside it are not reported.
+type FailureReporter interface {
+	Failures(report []byte, workDir string) []TestFailure
+}
+
 type Validation struct {
 	GoalFailed bool
 	// NonGoalFailureCount counts unexpected test failures in tests with no
