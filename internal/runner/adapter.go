@@ -49,6 +49,15 @@ type FailureReporter interface {
 	Failures(report []byte, workDir string) []TestFailure
 }
 
+// DiagnosticsChannel adapters write a separate per-attempt report for
+// FailureReporter beside the evidence stream, named by the returned
+// environment variable; an empty name disables it. The file never validates
+// or replaces evidence, is read only after the attempt validated, and is not
+// persisted.
+type DiagnosticsChannel interface {
+	DiagnosticsEnv() string
+}
+
 type Validation struct {
 	GoalFailed bool
 	// NonGoalFailureCount counts unexpected test failures in tests with no

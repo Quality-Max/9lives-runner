@@ -39,8 +39,11 @@
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
   directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
-  128 MiB per attempt; only regular files inside the project). The SDK
-  adapter (`--sdk`) does not report per-test failures yet.
+  128 MiB per attempt; only regular files inside the project). With `--sdk`
+  the engine protocol carries no titles or errors by design, so failures are
+  reported only with `--failure-details`: Playwright's JSON reporter then
+  writes a separate private report beside the evidence stream, which explains
+  failures and never validates the run.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.

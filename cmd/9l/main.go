@@ -534,6 +534,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
+	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
 	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
@@ -645,6 +646,10 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		services = factory
 	}
 
+	if *failureDetails && !*sdk {
+		fmt.Fprintln(errOut, "9l: --failure-details requires --sdk; plain runs always report failed tests")
+		return 2
+	}
 	if len(skipPins) > 0 && !*sdk {
 		fmt.Fprintln(errOut, "9l: --pin-skip requires --sdk")
 		return 2
@@ -656,7 +661,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			fmt.Fprintf(errOut, "9l: --pin-skip: %v\n", err)
 			return 2
 		}
-		availableAdapters = []runner.Adapter{adapter}
+		availableAdapters = []runner.Adapter{adapter.WithFailureDetails(*failureDetails)}
 	}
 	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters})
 	if err != nil {

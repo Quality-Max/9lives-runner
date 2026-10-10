@@ -363,6 +363,14 @@ func TestNestedPackageKeepsOwningConfigWithHoistedRuntime(t *testing.T) {
 	if job.WorkDir != root || (binary != "" && job.Command[0] != binary) || !slices.Contains(job.Command, expectedFilter) || !slices.Contains(job.Command, "--config="+config) || !slices.Contains(job.Command, "--reporter="+reporter) {
 		t.Fatalf("owning config/runtime lost: %+v", job)
 	}
+	if New().DiagnosticsEnv() != "" {
+		t.Fatal("failure details must be opt-in")
+	}
+	detailed := New().WithFailureDetails(true)
+	job, err = detailed.Plan(spec, spec, 1)
+	if err != nil || !slices.Contains(job.Command, "--reporter="+reporter+",json") || detailed.DiagnosticsEnv() != "PLAYWRIGHT_JSON_OUTPUT_FILE" {
+		t.Fatalf("failure details not planned: %+v %v", job, err)
+	}
 }
 
 func TestCaughtGoalFailurePreservesObservedTestCounts(t *testing.T) {

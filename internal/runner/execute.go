@@ -386,7 +386,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		job.Env = mergeMaps(job.Env, service.Environment())
 		withholdCredentials(job.Env, opts.Services.CredentialNames())
 	}
-	evidencePath := ""
+	evidencePath, diagnosticsPath := "", ""
 	if channel, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceChannel); ok {
 		directory, err := os.MkdirTemp("", "9lives-evidence-")
 		if err != nil {
@@ -398,6 +398,10 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		defer os.RemoveAll(directory)
 		evidencePath = filepath.Join(directory, "events.ndjson")
 		job.Env[channel.EvidenceEnv()] = evidencePath
+		if diagnostics, ok := channel.(DiagnosticsChannel); ok && diagnostics.DiagnosticsEnv() != "" {
+			diagnosticsPath = filepath.Join(directory, "diagnostics.json")
+			job.Env[diagnostics.DiagnosticsEnv()] = diagnosticsPath
+		}
 	}
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
 	if service != nil {
@@ -502,7 +506,11 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		}
 	}
 	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(FailureReporter); ok && receipt.Validated && receipt.FailureCount > 0 {
-		receipt.Failures = reporter.Failures(output.Stdout, job.WorkDir)
+		report := output.Stdout
+		if diagnosticsPath != "" {
+			report, _ = readEvidence(diagnosticsPath, opts.MaxOutputBytes)
+		}
+		receipt.Failures = reporter.Failures(report, job.WorkDir)
 		if opts.KeepAttachments {
 			retainAttachments(filepath.Join(opts.ReceiptDir, runID, job.ID, receipt.AttemptID, "attachments"), receipt.Failures)
 		}

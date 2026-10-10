@@ -32,6 +32,10 @@ SDK versions.
   `error-context.md`, screenshot and trace paths. Receipts carry the same as
   `failures` (additive; receipt version 1). MCP `run_test` returns
   `failures` and the first failure's `error-context.md` as `failureContext`.
+- `9l run --sdk --failure-details` reports the same per-test failures. The
+  engine protocol still carries no titles or errors; they come from
+  Playwright's JSON reporter, written to a separate private file beside the
+  evidence stream that never validates the attempt.
 - `9l run --keep-attachments` copies those attachments into the receipt
   directory with SHA-256 digests, so the project's next run cannot delete
   them. Without it they are only referenced.
