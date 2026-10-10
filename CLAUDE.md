@@ -14,7 +14,7 @@ attempt identity, budgets and process-tree cancellation stay in Go. Maintain
 strict versioned boundaries and preserve existing specs.
 
 The current SDK supports `n9l.step` and bounded `n9l.goal` with
-`9l run --sdk`, an explicit HTTP or offline scripted provider, and ordinary
+`9l run --sdk`, an explicit HTTP, agent CLI or offline scripted provider, and ordinary
 Playwright assertions. Named values stay in browser workers; credentials and
 attempt budgets stay in Go. Model completion never proves a test passed.
 Independent behavioral verification, verified replay, mobile execution and

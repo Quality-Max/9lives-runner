@@ -78,7 +78,11 @@ shell history. From the same harness directory:
 9l run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
 ```
 
-Alternatively use `--goal-provider openai` with `OPENAI_API_KEY` configured.
+Alternatively use `--goal-provider openai` with `OPENAI_API_KEY` configured,
+or run on a subscription with no API key: `--goal-provider claude`, `codex` or
+`opencode` uses that CLI's own login (check it with `claude auth status`,
+`codex login status` or `opencode auth list`). CLI decisions take a few seconds
+each; see [agent CLI providers](goals.md#agent-cli-providers) for their limits.
 Credentials remain in Go; never forward them with `--pass-env`. `--goal-model`
 overrides the transport's pinned default. This sends the goal and bounded,
 redacted control labels to the selected provider and can incur API charges.

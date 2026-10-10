@@ -132,6 +132,5 @@ OpenCode setup that relies on `OPENAI_API_KEY` or similar needs
 go to the CLI's service under that account, with the redacted ARIA snapshot
 of the failed page. Codex runs in its read-only
 sandbox and OpenCode with its read-only `plan` agent, both in an empty
-temporary directory. SDK goals (`9l run --sdk`) are different: they accept
-only an Anthropic or OpenAI API key, because goal decisions need the bounded
-output-token contract an agent CLI does not offer.
+temporary directory. SDK goals (`9l run --sdk --goal-provider claude|codex|opencode`) can use the
+same logins; see [agent CLI providers](goals.md#agent-cli-providers).

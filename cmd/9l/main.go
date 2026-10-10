@@ -549,7 +549,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
-	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
+	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic (API key), or claude, codex or opencode (the CLI's own login)")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
 	goalScript := fs.String("goal-script", "", "offline scripted goal decisions JSON (qualification only)")
 	goalLimits := goals.Defaults()
@@ -640,19 +640,30 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			}
 			provider = script
 		} else {
-			if *goalProvider != "openai" && *goalProvider != "anthropic" {
-				fmt.Fprintln(errOut, "9l: goal provider must be openai or anthropic")
-				return 2
-			}
-			resolved, err := tier2.Resolve(tier2.Options{Name: *goalProvider, Timeout: time.Duration(goalLimits.TimeoutMS) * time.Millisecond})
-			if err != nil {
-				fmt.Fprintln(errOut, "9l: goal provider unavailable")
-				return 2
-			}
-			var ok bool
-			provider, ok = resolved.(goals.Provider)
-			if !ok {
-				fmt.Fprintln(errOut, "9l: goal provider lacks bounded decision transport")
+			timeout := time.Duration(goalLimits.TimeoutMS) * time.Millisecond
+			switch strings.ToLower(*goalProvider) {
+			case "openai", "anthropic":
+				resolved, err := tier2.Resolve(tier2.Options{Name: *goalProvider, Timeout: timeout})
+				if err != nil {
+					fmt.Fprintln(errOut, "9l: goal provider unavailable")
+					return 2
+				}
+				var ok bool
+				provider, ok = resolved.(goals.Provider)
+				if !ok {
+					fmt.Fprintln(errOut, "9l: goal provider lacks bounded decision transport")
+					return 2
+				}
+			case "claude", "claude-code", "codex", "opencode":
+				// The CLI's own login pays for decisions; no API fallback.
+				cli, err := tier2.DecisionCLI(*goalProvider, timeout)
+				if err != nil {
+					fmt.Fprintln(errOut, "9l: goal provider unavailable:", err)
+					return 2
+				}
+				provider = cli
+			default:
+				fmt.Fprintln(errOut, "9l: goal provider must be openai, anthropic, claude, codex or opencode")
 				return 2
 			}
 		}
