@@ -193,7 +193,9 @@ func ariaAlternative(call editableLocator, snapshot string) string {
 		if strings.Contains(strings.ToLower(name), strings.ToLower(call.value)) {
 			return "" // the old name still matches; this is not a rename
 		}
-		if safeAttributeValue(name) && len(name) <= 200 && !strings.Contains(name, "\\") {
+		// A whitespace-only name would substring-match nearly every named
+		// control; it is not a rename candidate.
+		if strings.TrimSpace(name) != "" && safeAttributeValue(name) && len(name) <= 200 && !strings.Contains(name, "\\") {
 			names = append(names, name)
 		}
 	}

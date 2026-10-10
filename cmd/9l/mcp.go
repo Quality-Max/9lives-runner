@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -678,13 +677,10 @@ func (s *mcpServer) confirmFinding(ctx context.Context, options confirmOptions) 
 	return map[string]any{"version": MCPToolResultVersion, "report": report, "reportPath": saved}, nil
 }
 
-// terminalEscape matches the ANSI color and style sequences Playwright
-// writes into its error messages.
-var terminalEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
-
-// firstFailureContext reads the first error-context attachment, redacted
-// and bounded. The file holds page content, so it is returned to the caller
-// and never persisted by this path.
+// firstFailureContext reads the first error-context attachment, sanitized
+// and bounded. The file holds page content — including the ARIA snapshot
+// with values typed into fields, which are dropped like in a provider
+// prompt — so it is returned to the caller and never persisted by this path.
 func firstFailureContext(failures []runner.TestFailure) string {
 	for _, failure := range failures {
 		for _, attachment := range failure.Attachments {
@@ -695,7 +691,7 @@ func firstFailureContext(failures []runner.TestFailure) string {
 			if err != nil {
 				return ""
 			}
-			return boundedTo(runner.RedactText(string(raw)), mcpMaxFailureContext)
+			return boundedTo(playwright.SanitizeAttachmentText(string(raw)), mcpMaxFailureContext)
 		}
 	}
 	return ""
@@ -706,7 +702,7 @@ func firstFailureContext(failures []runner.TestFailure) string {
 func bounded(text string) string { return boundedTo(text, mcpMaxText) }
 
 func boundedTo(text string, limit int) string {
-	text = terminalEscape.ReplaceAllString(text, "")
+	text = runner.StripTerminalEscapes(text)
 	if len(text) <= limit {
 		return text
 	}
