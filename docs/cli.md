@@ -35,6 +35,12 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Project reporters: `9l run` reads Playwright's JSON reporter as evidence,
+  which replaces the reporters in the project's config. `--reporter html`
+  (comma-separated names or module paths, up to 8) adds them back beside the
+  evidence reporter, so the HTML report is still written; `json` is reserved.
+  Traces and screenshots do not need this: they follow the config's `use`
+  settings either way.
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`

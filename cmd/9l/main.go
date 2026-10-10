@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -534,6 +535,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
 	grepInvert := fs.String("grep-invert", "", "skip tests whose title matches this regular expression (Playwright --grep-invert)")
+	reporters := fs.String("reporter", "", "also run these Playwright reporters beside 9l's own, comma-separated (for example html); json is reserved for evidence")
 	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
@@ -559,6 +561,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-pass-env": true, "--pass-env": true,
 		"-agent-provenance": true, "--agent-provenance": true,
 		"-pin-skip": true, "--pin-skip": true,
+		"-reporter": true, "--reporter": true,
 		"-grep": true, "--grep": true, "-grep-invert": true, "--grep-invert": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
@@ -666,6 +669,11 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		}
 		availableAdapters = []runner.Adapter{adapter.WithFailureDetails(*failureDetails)}
 	}
+	extraReporters, err := reporterList(*reporters)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l: --reporter:", err)
+		return 2
+	}
 	var extraArgs, selection []string
 	if *grep != "" {
 		extraArgs, selection = append(extraArgs, "--grep", *grep), append(selection, "--grep "+strconv.Quote(*grep))
@@ -673,7 +681,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if *grepInvert != "" {
 		extraArgs, selection = append(extraArgs, "--grep-invert", *grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
 	}
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " ")})
+	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
@@ -713,6 +721,31 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		printResult(out, result)
 	}
 	return runExitCode(result, executionFailed)
+}
+
+var reporterName = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9@/._-]{0,127}$`)
+
+// reporterList validates --reporter: names or module paths, comma-separated.
+// json is the evidence channel and cannot be added twice.
+func reporterList(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var names []string
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		switch {
+		case name == "json":
+			return nil, errors.New("json is 9l's evidence reporter and is always on")
+		case !reporterName.MatchString(name) || strings.Contains(name, ".."):
+			return nil, fmt.Errorf("%q is not a reporter name or module path", name)
+		}
+		names = append(names, name)
+	}
+	if len(names) > 8 {
+		return nil, errors.New("at most 8 reporters")
+	}
+	return names, nil
 }
 
 // Exit codes of `9l run`, part of the host contract in docs/contracts.md.

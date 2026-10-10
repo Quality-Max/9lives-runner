@@ -219,3 +219,21 @@ func TestPrintPlanShowsTheTestSelection(t *testing.T) {
 		t.Fatalf("plan:\n%s", out.String())
 	}
 }
+
+func TestReporterListKeepsJSONForEvidence(t *testing.T) {
+	if got, err := reporterList("html, list"); err != nil || strings.Join(got, ",") != "html,list" {
+		t.Fatalf("got=%v err=%v", got, err)
+	}
+	for _, bad := range []string{"json", "html,json", "html --grep x", "../reporter.js", ""} {
+		got, err := reporterList(bad)
+		if bad == "" {
+			if err != nil || got != nil {
+				t.Fatalf("empty: %v %v", got, err)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("%q accepted as %v", bad, got)
+		}
+	}
+}

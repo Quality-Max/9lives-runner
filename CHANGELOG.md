@@ -67,6 +67,9 @@ SDK versions.
   `--grep-invert` pass Playwright's filters through, recorded in each job's
   `selection` (plan, additive) and the receipt's evidence command. A
   selection that matches nothing stays incomplete and says so.
+- `9l run --reporter html` (comma-separated) runs the project's reporters
+  beside 9l's evidence reporter, so the HTML report is still produced;
+  `json` is reserved for evidence.
 - `9l run` and `9l result` name each failed test below its job: title,
   failing line, the first lines of the error, and Playwright's
   `error-context.md`, screenshot and trace paths. Receipts carry the same as

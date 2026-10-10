@@ -24,6 +24,9 @@ type PlanOptions struct {
 	ExtraArgs []string
 	// Selection describes ExtraArgs for the plan and diagnostics.
 	Selection string
+	// Reporters are added after the adapter's own reporter in its
+	// --reporter= argument, such as Playwright's html reporter.
+	Reporters []string
 }
 
 // lineInput matches `<spec>:<line>`.
@@ -93,6 +96,21 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 					continue
 				}
 				selections = append(selections, fmt.Sprintf("line %d", line))
+			}
+			if len(opts.Reporters) > 0 {
+				added := false
+				for i, argument := range job.Command {
+					if strings.HasPrefix(argument, "--reporter=") {
+						job.Command = append([]string{}, job.Command...)
+						job.Command[i] = argument + "," + strings.Join(opts.Reporters, ",")
+						added = true
+						break
+					}
+				}
+				if !added {
+					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot add reporters"})
+					continue
+				}
 			}
 			if len(opts.ExtraArgs) > 0 {
 				job.Command = append(job.Command, opts.ExtraArgs...)

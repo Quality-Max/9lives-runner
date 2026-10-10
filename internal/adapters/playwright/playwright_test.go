@@ -230,4 +230,8 @@ func TestPlanSelectsALineAndPassesGrepThrough(t *testing.T) {
 	if !slices.Contains(plan.Jobs[1].Command, filter+":30") {
 		t.Fatalf("second line job=%+v", plan.Jobs[1])
 	}
+	plan, err = runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}, Reporters: []string{"html"}})
+	if err != nil || len(plan.Jobs) != 1 || !slices.Contains(plan.Jobs[0].Command, "--reporter=json,html") {
+		t.Fatalf("reporters not added: %+v %v", plan, err)
+	}
 }
