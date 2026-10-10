@@ -81,6 +81,29 @@ errors, retries and timeouts are inconclusive. This repository provides
 `npm run smoke:assessment` for the missing-order checkout experiment; its
 result qualifies that fixture and defect only. Never mutate production data.
 
+When a reviewer, bot or user reports findings, triage every one before fixing
+any. Give each exactly one disposition with its evidence: `confirmed` (a
+reproduction fails without the fix and passes with it), `refuted` (cited code
+or an executed control contradicts the claim), `not demonstrated` (plausible,
+but no failing input was supplied or found), `intentional contract` (the
+behavior is documented and the suggestion would weaken it) or `residual
+limitation` (real, bounded and documented rather than fixed). Do not call a
+finding confirmed from reading code alone. Before fixing it, write a focused
+reproduction spec and keep its failing `9l run` receipt; after the fix, keep
+the passing receipt from the same spec. A failure without a failed assertion
+or a retried attempt is inconclusive, as in a defect control. Never apply a
+suggested fix that removes a guard, weakens an assertion or widens a boundary
+without a reproduced failure. A repeated finding gets the disposition already
+recorded, unless the code it cites has changed.
+
+A green run does not show that a test can fail. After a fix or a new test
+passes, plant the defect in a local copy of the code under test and check that
+the test fails on its assertion, or run `9l prove` on the spec to check its
+network dependencies. Close every review with what was checked, what was not
+checked (for example real browsers, other engines, databases, deployment) and
+the scope of the verdict: a verdict on one batch of fixes is not approval of
+the whole change.
+
 Propose repairs from the reviewed requirement, run the candidate in isolation
 and preserve its assertions before applying it. Summarize execution outcomes,
 assessment findings, provenance and remaining unknowns separately. Keep

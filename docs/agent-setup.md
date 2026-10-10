@@ -17,6 +17,11 @@ run the exact selected spec. Report failures, skips and unverified behavior
 alongside the execution receipt. A green result does not establish complete
 requirement coverage.
 
+To review findings reported by a reviewer or bot, ask the agent to follow the
+skill's triage workflow: one disposition per finding, a failing and then
+passing receipt from a reproduction spec before a finding is called
+confirmed, and a closing note on what was and was not checked.
+
 The skill can use additional QA skills when installed; this repository does
 not install them automatically. Live goals require a separately configured
 provider. The local demo and ordinary assertion execution do not.
