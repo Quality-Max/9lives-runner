@@ -30,7 +30,7 @@ See [how it is recorded](demo/README.md#recording).
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.2 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.1.3 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -46,10 +46,10 @@ go install github.com/Quality-Max/9lives-runner/cmd/9l@latest
 ```
 
 Ensure Go's binary directory is on your `PATH`. Prebuilt CLI releases target
-macOS and Linux on amd64 and arm64, so their users do not need Go. See the
-[download and checksum instructions](docs/install.md) for availability and
-platform selection. Windows amd64 and arm64 ZIPs are added by this source
-revision for the next CLI release; published v0.1.5 has macOS/Linux assets only.
+macOS, Linux and Windows on amd64 and arm64, so their users do not need Go. See
+the [download and checksum instructions](docs/install.md) for availability and
+platform selection. Windows ZIPs start with v0.2.0; earlier releases have
+macOS/Linux assets only.
 The npm package supplies the fixtures; it does not install
 the CLI or browsers.
 
@@ -102,7 +102,7 @@ Independent behavioral verification remains planned.
 | Visual mode | `run --headed` shows the browser, one job at a time by default | Linux needs a display (`xvfb-run -a` on headless machines); slow motion comes from the project's `launchOptions` |
 | Bounded goals | `n9l.goal(...)` over finite observed controls | Completion is unverified; live model accuracy and cost are unqualified |
 | Test assessment | `assess` and source/branch provenance | Advisory static review; it does not establish executed assertion coverage |
-| Fault proof | Experimental `prove`: re-run a spec once per injected fetch/XHR fault and report which an assertion caught | Needs `@9l/playwright` 0.1.1; a caught fault shows an assertion failed, not that it checks the right thing |
+| Fault proof | Experimental `prove`: re-run a spec once per injected fetch/XHR fault and report which an assertion caught | Needs `@9l/playwright` 0.1.1 (0.1.3 for the `--faults` opt-in kinds); a caught fault shows an assertion failed, not that it checks the right thing |
 | Finding confirmation | Experimental `confirm`: run a reproduction spec on the unfixed and fixed Git revisions, each in its own checkout, and report confirmed, not-reproduced, fix-ineffective or regressed | Code under test must be started or imported from the checkout; confirmed shows the spec tells the revisions apart, not that it tests the finding |
 | Healing | Offline Tier 1 proposals and experimental native Tier 2 verification | Preserve assertions; verify candidates in isolation before application |
 
@@ -135,8 +135,8 @@ outreach controls stop by default. See [goal contracts](docs/goals.md).
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.1.5 on macOS and Linux, amd64 and arm64 | Windows is not declared |
-| SDK | `@9l/playwright` 0.1.2 | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.2.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.1.3 | Installing the SDK does not install the CLI or browsers |
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
@@ -209,7 +209,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.1.2](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.1.3](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions. SDK releases use `sdk-v<version>`;
 CLI releases use `v<version>`. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)

@@ -1,6 +1,6 @@
 # Install the CLI and Playwright SDK
 
-The published npm package is [@9l/playwright 0.1.2](https://www.npmjs.com/package/@9l/playwright).
+The published npm package is [@9l/playwright 0.1.3](https://www.npmjs.com/package/@9l/playwright).
 It supplies TypeScript fixtures and the reporter. Install the Go `9l` CLI
 separately; the SDK does not bundle the runner or a browser.
 
@@ -9,7 +9,7 @@ separately; the SDK does not bundle the runner or a browser.
 From your Playwright project, with Node 24 (Node 22 minimum):
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.2 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.1.3 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -36,9 +36,8 @@ published CLI version. The public Go install path has been exercised.
 ## Prebuilt CLI releases
 
 The [GitHub Releases page](https://github.com/Quality-Max/9lives-runner/releases)
-is the download location. CLI v0.1.5 is published for macOS and Linux.
-Windows ZIPs are added by this source revision for the next CLI release;
-v0.1.5 has no Windows assets. Download a
+is the download location. CLI v0.2.0 is published for macOS, Linux and
+Windows; releases before v0.2.0 have no Windows assets. Download a
 specific version and the matching `SHA256SUMS` file. Go is not needed to run
 these executables.
 
@@ -48,17 +47,17 @@ these executables.
 | macOS, Intel | `9l-darwin-amd64.tar.gz` |
 | Linux, x86-64 | `9l-linux-amd64.tar.gz` |
 | Linux, ARM64 | `9l-linux-arm64.tar.gz` |
-| Windows, x86-64 (next release) | `9l-windows-amd64.zip` |
-| Windows, ARM64 (next release) | `9l-windows-arm64.zip` |
+| Windows, x86-64 | `9l-windows-amd64.zip` |
+| Windows, ARM64 | `9l-windows-arm64.zip` |
 
-For the published `v0.1.5`, using GitHub CLI, this example installs on Apple
+For the published `v0.2.0`, using GitHub CLI, this example installs on Apple
 Silicon. Choose your archive from the table:
 
 ```sh
 mkdir -p /tmp/9l-download
 cd /tmp/9l-download
 BUNDLE=9l-darwin-arm64
-gh release download v0.1.5 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
+gh release download v0.2.0 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
 awk -v archive="$BUNDLE.tar.gz" '$2 == archive' SHA256SUMS > selected.sha256
 test -s selected.sha256
 shasum -a 256 -c selected.sha256
@@ -73,14 +72,14 @@ On Linux use `sha256sum -c selected.sha256` for checksum verification. Keep the
 included `LICENSE` and `NOTICE`. macOS archives are not Apple notarized; the
 checksums verify downloaded bytes against the release's checksum file.
 
-### Windows (next CLI release)
+### Windows
 
 Choose the Windows ZIP for your CPU, download it with that release's
-`SHA256SUMS`, then verify and extract it in PowerShell. Replace the version
-placeholder with a release that includes Windows assets:
+`SHA256SUMS`, then verify and extract it in PowerShell. Windows assets start
+with v0.2.0:
 
 ```powershell
-$Version = '<version-with-windows-assets>'
+$Version = 'v0.2.0'
 $Bundle = '9l-windows-amd64' # use arm64 for Windows on ARM
 New-Item -ItemType Directory -Force 9l-download | Out-Null
 Set-Location 9l-download

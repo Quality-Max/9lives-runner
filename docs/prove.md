@@ -1,9 +1,8 @@
 # Prove: can this test fail?
 
 Status: experimental. `9l prove` needs `@9l/playwright` 0.1.1 or newer, the
-first release with the prove channel, and a CLI built from `main` until the
-next CLI release. The opt-in kinds selected with `--faults` also need an SDK
-built from `main` until the next SDK release. Qualified with real Chromium
+first release with the prove channel, and CLI 0.1.5 or newer. The opt-in kinds
+selected with `--faults` need CLI 0.2.0 and `@9l/playwright` 0.1.3 or newer. Qualified with real Chromium
 on one synthetic fixture and one retry control, see
 [Qualification](#qualification). No accuracy, latency or cost claim is made
 for other applications.
