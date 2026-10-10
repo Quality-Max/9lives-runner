@@ -1,27 +1,27 @@
 # Changelog
 
-## CLI unreleased
+From 0.2.0 the CLI and `@9l/playwright` share one version and are released
+together by one `v<version>` tag. Earlier entries keep their separate CLI and
+SDK versions.
 
-Validator audit (#50): inputs that were accepted too generously now fail.
+## 0.2.0 — 2026-10-10
 
-- SDK evidence frames and prove records must be exactly one JSON object per
-  LF-terminated line. A CRLF stream, or whitespace before or after a valid
-  object, is malformed instead of being trimmed.
-- Playwright JSON reports without a per-test `status` take Playwright's own
-  outcome precedence over every attempt instead of the last one. A failed
-  attempt followed by a skipped or interrupted retry is a failure, not a
-  skip, and a failure followed by a pass is flaky.
-- A structured report cut at the capture limit is invalid for every adapter
-  ("structured report exceeded capture limit"), even if the prefix parses.
-- The persisted output's recorded size describes the redacted file that its
-  SHA-256 covers. The largest SDK stream the validator accepts is tested to
-  persist unchanged, so `prove` and `confirm` read back what was validated.
-- The install guide's checksum selection accepts exactly one line made of a
-  lowercase SHA-256, two spaces and the archive name. The shell and PowerShell
-  commands are tested as documented against trailing content, duplicates,
-  CRLF and wrong digests.
+### Release process
 
-## CLI 0.2.0 — 2026-10-10
+- One `v<version>` tag releases both distributions: `release.yml` publishes
+  the CLI archives and `npm-release.yml` publishes the SDK. The SDK is no
+  longer published on a push to `main`, and no `sdk-v` tags are created.
+- Both workflows refuse a tag unless the CLI source version, the SDK
+  manifest, the lockfile and the SDK test fixture all declare it, and
+  `npm test` fails as soon as those declarations drift apart.
+- A rerun of a release that already reached npm skips publication.
+
+### SDK
+
+- 0.2.0 has the same runtime, protocols and fault kinds as 0.1.3; only the
+  version changes, to match the CLI.
+
+### CLI
 
 - Add Windows amd64 and arm64 ZIP packaging, with `9l.exe`, legal files and
   SHA-256 checksums. v0.2.0 is the first release with Windows assets.
@@ -83,6 +83,25 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   cancellable, and `heal_test` applies only with `apply: true`. A heal that
   verifies a candidate but cannot save or apply it, or whose provider fails,
   is an error result that keeps its evidence. See [MCP server](docs/mcp.md).
+
+Validator audit (#50): inputs that were accepted too generously now fail.
+
+- SDK evidence frames and prove records must be exactly one JSON object per
+  LF-terminated line. A CRLF stream, or whitespace before or after a valid
+  object, is malformed instead of being trimmed.
+- Playwright JSON reports without a per-test `status` take Playwright's own
+  outcome precedence over every attempt instead of the last one. A failed
+  attempt followed by a skipped or interrupted retry is a failure, not a
+  skip, and a failure followed by a pass is flaky.
+- A structured report cut at the capture limit is invalid for every adapter
+  ("structured report exceeded capture limit"), even if the prefix parses.
+- The persisted output's recorded size describes the redacted file that its
+  SHA-256 covers. The largest SDK stream the validator accepts is tested to
+  persist unchanged, so `prove` and `confirm` read back what was validated.
+- The install guide's checksum selection accepts exactly one line made of a
+  lowercase SHA-256, two spaces and the archive name. The shell and PowerShell
+  commands are tested as documented against trailing content, duplicates,
+  CRLF and wrong digests.
 
 ## SDK 0.1.3 — 2026-10-10
 

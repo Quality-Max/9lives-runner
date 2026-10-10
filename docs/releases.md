@@ -1,7 +1,8 @@
 # Releasing 9lives
 
-The initial SDK version is **0.0.0**. The Go CLI and `@9l/playwright` are
-separate distributions; installing the SDK does not install the CLI.
+The Go CLI and `@9l/playwright` are separate distributions; installing the SDK
+does not install the CLI. From 0.2.0 they share one version and are released
+together by one `v<version>` tag.
 
 The SDK 0.0.0 publication is complete. Its exact CI-qualified tarball was
 published manually with npm two-factor authentication, and verified through
@@ -9,10 +10,13 @@ anonymous registry download and a clean Chromium consumer run. That bootstrap
 publication has no GitHub Actions provenance. Its source commit is
 `4cbe5fc7b6402e0b296c2903adb667e92286f62d`. Do not republish 0.0.0.
 
-## Release the Go CLI
+## Release the CLI and SDK
 
-CLI releases use stable `v<major.minor.patch>` tags. Set `var version` in
-`cmd/9l/main.go` to the intended version in a reviewed change. Merge it to
+Releases use stable `v<major.minor.patch>` tags. In one reviewed change, set
+the version in `cmd/9l/main.go` (`var version`), `packages/playwright/package.json`
+and the `@9l/playwright` dependency of `testdata/sdk/package.json`, regenerate
+`package-lock.json` with `npm install --package-lock-only`, and update the docs
+and changelog. `npm test` fails if those declarations differ. Merge it to
 `main` and ensure CI passes before tagging the reviewed main commit:
 
 ```sh
@@ -21,11 +25,15 @@ git tag v0.2.0 origin/main
 git push origin v0.2.0
 ```
 
-The commands above publish CLI 0.2.0; choose the matching version for a later
-release. Never move a published tag to different source.
-The workflow rejects a private repository, a mismatched source version,
-noncanonical repository or a tag outside main's history. It runs the entire
-reusable CI workflow before building release executables.
+The commands above release CLI and SDK 0.2.0; choose the matching version for
+a later release. Never move a published tag to different source. The tag
+starts two workflows: `release.yml` publishes the CLI archives (below) and
+`npm-release.yml` publishes the SDK (see
+[trusted publications](#subsequent-trusted-publications)). Each rejects a
+private repository, a tag whose version differs from any declared CLI or SDK
+version, a noncanonical repository or a tag outside main's history, and each
+runs the entire reusable CI workflow before it publishes. They fail
+independently: rerun the failed one.
 
 Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup
@@ -42,7 +50,8 @@ consumer checks before release packaging. Windows arm64 has no Go race
 detector; its Go tests run without `-race`. Windows ZIPs start with
 CLI v0.2.0. Only the final publishing job has repository
 write permission; its actions are pinned to commit SHAs. The release workflow
-publishes GitHub assets, not the npm SDK. Archives are not Apple notarized.
+publishes GitHub assets; the SDK is published by `npm-release.yml` from the
+same tag. Archives are not Apple notarized.
 Published assets are not overwritten by a workflow rerun.
 
 After publication, download the matching native archive and checksum file,
@@ -99,42 +108,26 @@ first (`npm trust list`, then `npm trust revoke --id=<id>`) and creating it
 again with `--allow-publish --allow-stage-publish`. After a configuration fix,
 rerun the failed publish job; the qualified tarball artifact is reused.
 
-For a future release, update the SDK version, lockfile, fixtures, docs and
-changelog in a reviewed change and merge it to `main`. The publish workflow
-runs on every push to `main` that touches `packages/playwright/package.json`:
-it reads the version, skips when the registry already has it, otherwise runs
-the complete CI workflow, publishes the exact qualified tarball using
-short-lived OIDC authentication on a GitHub-hosted runner, waits until the
-registry serves the new version (up to ten minutes; npm takes a minute or
-more), and then pushes the `sdk-v<version>` tag on the published commit. The
-run that tag starts sees the version and skips. Pushing a matching
-`sdk-v<version>` tag by hand still works, for example to retry after a
-registry outage; a tag for a version the registry already has is verified and
-skipped. A tag run looks for the version for up to five minutes before it
-concludes the version is unpublished. The workflow rejects private repositories, mismatched tags and
-commits outside main's history. Public trusted publication automatically
-receives npm provenance. SDK 0.1.1 was the first automatic publication.
+Publication runs from the `v<version>` tag that also releases the CLI; it no
+longer runs on a push to `main`, and no `sdk-v` tags are created. The workflow
+skips when the registry already has the version (so a rerun after a
+successful publication does nothing), otherwise runs the complete CI workflow
+and publishes the exact qualified tarball using short-lived OIDC
+authentication on a GitHub-hosted runner. Public trusted publication
+automatically receives npm provenance. SDK 0.1.0 through 0.1.3 were published
+from `sdk-v` tags or pushes to `main`; SDK 0.2.0 is the first published from a
+shared `v` tag.
 
-The tag is pushed with the repository deploy key `sdk-release-tag`, whose
-private half is the Actions secret `SDK_RELEASE_TAG_KEY`, because the
-"Protect release tags" ruleset refuses tag creation by the workflow token
-(`Resource not accessible by integration`) and GitHub does not accept the
-Actions app as a ruleset bypass actor. The ruleset lets deploy keys bypass it;
-the `main` ruleset has no bypass, so the key cannot push to `main`. Secrets are
-not exposed to workflows from forks. To rotate:
+The `sdk-release-tag` deploy key and its Actions secret `SDK_RELEASE_TAG_KEY`
+only pushed `sdk-v` tags and are no longer used. Remove them:
 
 ```sh
-ssh-keygen -t ed25519 -N '' -C '9lives-runner sdk-release-tag' -f sdk-release-tag
-gh repo deploy-key add sdk-release-tag.pub --allow-write --title sdk-release-tag
-gh secret set SDK_RELEASE_TAG_KEY < sdk-release-tag
-rm sdk-release-tag sdk-release-tag.pub
-gh repo deploy-key delete <old-key-id>
+gh repo deploy-key list
+gh repo deploy-key delete <sdk-release-tag-key-id>
+gh secret delete SDK_RELEASE_TAG_KEY
 ```
 
-Keep the key files out of the repository and shell history. If the tag job
-fails, push the tag by hand from the published commit:
-`git push origin <sha>:refs/tags/sdk-v<version>`.
-
-Do not push `sdk-v0.0.0`: npm will reject that
-duplicate version. Go binary releases use separate `v*` tags and include the
-root LICENSE and NOTICE in their archives.
+Never push a `v<version>` tag for a version npm already has under a different
+commit: npm rejects republishing a version, so the SDK side would skip while
+the CLI side released different source. Binary archives include the root
+LICENSE and NOTICE.

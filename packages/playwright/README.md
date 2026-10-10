@@ -10,7 +10,7 @@ completing does not verify that behavior.
 Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
-npm install --save-dev @9l/playwright@0.1.3 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.2.0 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
