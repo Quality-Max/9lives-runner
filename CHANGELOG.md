@@ -4,7 +4,12 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.2.5 — 2026-10-10
+
+### SDK
+
+- Release alongside CLI 0.2.5. SDK runtime behavior and protocols are
+  unchanged from 0.2.0.
 
 ### CLI
 
