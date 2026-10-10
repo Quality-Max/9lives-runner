@@ -165,14 +165,18 @@ func (p CLIProvider) Complete(ctx context.Context, prompt, model string) (string
 		}
 		command = exec.Command("claude", args...)
 	case "codex":
-		args := []string{"exec", "--skip-git-repo-check"}
+		// A read-only sandbox: the answer is text, and model-generated shell
+		// commands must not write anything.
+		args := []string{"exec", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"}
 		if model != "" {
 			args = append(args, "--model", model)
 		}
 		args = append(args, "-")
 		command = exec.Command("codex", args...)
 	case "opencode":
-		args := []string{"run"}
+		// The built-in plan agent cannot edit files and asks before running
+		// commands, which a non-interactive run declines.
+		args := []string{"run", "--agent", "plan"}
 		if model != "" {
 			args = append(args, "--model", model)
 		}
@@ -304,11 +308,13 @@ func validateProviderPrompt(prompt string) error {
 
 // providerEnvironmentKeys is what an agent CLI needs to find its own login
 // and reach its service. USER is how Claude Code finds a subscription login in
-// the macOS keychain; without it the CLI runs logged out. The proxy and CA
-// variables let it work behind a corporate proxy. API keys and other
-// credentials are deliberately not inherited.
+// the macOS keychain; without it the CLI runs logged out. Codex and OpenCode
+// keep their logins in files under HOME, CODEX_HOME or XDG_DATA_HOME. The
+// proxy and CA variables let a CLI work behind a corporate proxy. API keys and
+// other credentials are deliberately not inherited.
 var providerEnvironmentKeys = []string{
 	"PATH", "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+	"CLAUDE_CONFIG_DIR", "CODEX_HOME", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR",
 	"USER", "LOGNAME", "USERNAME", "TMPDIR", "TEMP", "TMP", "LANG",
 	"USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
 	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",

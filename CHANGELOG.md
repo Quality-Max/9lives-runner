@@ -13,6 +13,11 @@ SDK versions.
   Windows profile, proxy and CA-certificate variables. Without `USER`,
   Claude Code could not find a macOS keychain login and every call failed
   as logged out. API keys are still not inherited.
+- `--provider codex` and `--provider opencode` heal on a ChatGPT or OpenCode
+  subscription through the CLI's own login; `CODEX_HOME`,
+  `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR` now reach
+  the CLI. Codex runs with `--sandbox read-only --color never` and OpenCode
+  with its read-only `plan` agent.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".

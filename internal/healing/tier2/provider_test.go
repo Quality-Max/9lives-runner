@@ -118,7 +118,7 @@ func TestCLIProviderForwardsExplicitModel(t *testing.T) {
 	}
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "codex")
-	script := "#!/bin/sh\n[ \"$1\" = exec ] && [ \"$2\" = --skip-git-repo-check ] && [ \"$3\" = --model ] && [ \"$4\" = chosen ] && [ \"$5\" = - ] || exit 7\ncat\n"
+	script := "#!/bin/sh\n[ \"$*\" = \"exec --skip-git-repo-check --sandbox read-only --color never --model chosen -\" ] || exit 7\ncat\n"
 	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestProviderPromptBudgetUsesLocalHTTPAndCLI(t *testing.T) {
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "opencode")
 	record := filepath.Join(dir, "bytes")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s' \"$2\" | wc -c > '"+record+"'\nprintf ok\n"), 0700); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n[ \"$1 $2 $3\" = \"run --agent plan\" ] || exit 7\nprintf '%s' \"$4\" | wc -c > '"+record+"'\nprintf ok\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -340,5 +340,34 @@ func TestCLIDiagnosticIsBoundedRedactedAndPlain(t *testing.T) {
 	}
 	if short := cliDiagnostic("line one\n  line two  \n"); short != "line one | line two" {
 		t.Fatalf("short=%q", short)
+	}
+}
+
+func TestCodexAndOpenCodeFindFileLoginsWithoutCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
+	dir := t.TempDir()
+	// Each fake answers only when its login location reached it and no API key
+	// did, as a subscription login requires.
+	for name, location := range map[string]string{"codex": "CODEX_HOME", "opencode": "XDG_DATA_HOME"} {
+		script := "#!/bin/sh\n[ -n \"$" + location + "\" ] && [ -z \"$OPENAI_API_KEY\" ] || { echo 'ERROR: unexpected status 401 Unauthorized' >&2; exit 1; }\necho answered\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OPENAI_API_KEY", "must-not-reach-the-cli")
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex-home"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+	for _, name := range []string{"codex", "opencode"} {
+		if got, err := (CLIProvider{name: name, timeout: cliTestTimeout}).Complete(context.Background(), "prompt", ""); err != nil || got != "answered\n" {
+			t.Fatalf("%s got=%q err=%v", name, got, err)
+		}
+	}
+	t.Setenv("CODEX_HOME", "")
+	_, err := (CLIProvider{name: "codex", timeout: cliTestTimeout}).Complete(context.Background(), "prompt", "")
+	if err == nil || err.Error() != "codex provider failed (exit 1): ERROR: unexpected status 401 Unauthorized" {
+		t.Fatalf("logged-out codex err=%v", err)
 	}
 }

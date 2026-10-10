@@ -62,17 +62,6 @@ it printed, redacted and capped at 512 bytes, so a cause such as
 `claude provider failed (exit 1): Not logged in · Please run /login` is
 visible.
 
-### Healing on a Claude subscription
-
-`--provider claude` runs the installed Claude Code CLI with its own login, so
-a Claude Pro, Max or Team subscription pays for the call and no API key is
-needed. Check the login first with `claude auth status`; 9l passes `USER` so
-the CLI can find a keychain login on macOS. The spec source and the bounded
-failure text go to Anthropic under that account. SDK goals (`9l run --sdk`)
-are different: they accept only an Anthropic or OpenAI API key, because goal
-decisions need the bounded output-token contract an agent CLI does not offer.
-
-
 Prompt contracts label Playwright and Cypress files as JavaScript and Selenium
 files as Python + pytest. The current native execution kernel only executes
 installed Playwright projects; Cypress and Selenium execution adapters remain
@@ -89,3 +78,25 @@ this keeps OpenCode's documented argument transport below OS argv limits. HTTP
 requests use `max_tokens: 16384`, enough for the admitted complete-file
 response. Response fences are structural whole lines with matching delimiters;
 the prompt chooses an outer delimiter longer than any backtick run in source.
+
+## Healing on a Claude, ChatGPT or OpenCode subscription
+
+The agent CLIs use their own login, so a subscription pays for the call and
+no API key is needed:
+
+| Provider | Login | Check without a model call | Runs as |
+| --- | --- | --- | --- |
+| `--provider claude` | Claude Pro, Max or Team via `claude` login | `claude auth status` | `claude -p --output-format text` |
+| `--provider codex` | ChatGPT plan via `codex login` | `codex login status` | `codex exec --sandbox read-only` |
+| `--provider opencode` | whatever `opencode auth login` set up, such as GitHub Copilot or a ChatGPT plan; with none, OpenCode's free hosted model | `opencode auth list` | `opencode run --agent plan` |
+
+9l passes `USER`, so Claude Code can find a keychain login on macOS, and
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG` and the XDG directories,
+so a relocated login is found. API keys in the environment are not passed: an
+OpenCode setup that relies on `OPENAI_API_KEY` or similar needs
+`opencode auth login` instead. The spec source and the bounded failure text
+go to the CLI's service under that account. Codex runs in its read-only
+sandbox and OpenCode with its read-only `plan` agent, both in an empty
+temporary directory. SDK goals (`9l run --sdk`) are different: they accept
+only an Anthropic or OpenAI API key, because goal decisions need the bounded
+output-token contract an agent CLI does not offer.
