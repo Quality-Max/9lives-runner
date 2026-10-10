@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -26,15 +27,27 @@ func FailureContext(raw []byte) string {
 		return ""
 	}
 	var values []string
+	seen := map[string]bool{}
 	var visit func(any)
 	visit = func(value any) {
 		switch node := value.(type) {
 		case map[string]any:
 			if message, ok := node["message"].(string); ok && message != "" {
-				values = append(values, withoutSourceFrames(message))
+				// Playwright reports each error as result.error and in
+				// result.errors; keep one copy, without terminal escapes.
+				message = withoutSourceFrames(terminalEscape.ReplaceAllString(message, ""))
+				if !seen[message] {
+					seen[message] = true
+					values = append(values, message)
+				}
 			}
-			for _, child := range node {
-				visit(child)
+			keys := make([]string, 0, len(node))
+			for key := range node {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys) // a stable order keeps prompts and reasons reproducible
+			for _, key := range keys {
+				visit(node[key])
 			}
 		case []any:
 			for _, child := range node {

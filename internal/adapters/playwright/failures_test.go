@@ -97,3 +97,16 @@ func TestPageSnapshotReadsTheAriaBlockOfErrorContext(t *testing.T) {
 		t.Fatalf("no failures: %q", got)
 	}
 }
+
+func TestFailureContextKeepsOneCleanCopyOfEachError(t *testing.T) {
+	message := "TimeoutError: locator.fill: Timeout 1500ms exceeded.\nCall log:\n\x1b[2m  - waiting for locator('#emailAddress')\x1b[22m"
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"specs": []any{map[string]any{"tests": []any{map[string]any{"results": []any{
+		map[string]any{"status": "failed", "error": map[string]any{"message": message}, "errors": []any{map[string]any{"message": message}}},
+	}}}}}}}})
+	want := "TimeoutError: locator.fill: Timeout 1500ms exceeded.\nCall log:\n  - waiting for locator('#emailAddress')"
+	for i := 0; i < 5; i++ {
+		if got := FailureContext(raw); got != want {
+			t.Fatalf("context=%q", got)
+		}
+	}
+}

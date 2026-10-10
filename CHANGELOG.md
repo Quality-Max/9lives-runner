@@ -31,6 +31,10 @@ SDK versions.
   what the call log waited for (or how the failure was classified) and which
   call shapes healing repairs. `9l heal` prints the reason of an
   `unverified` or `needs_human` session on stderr.
+- Heal failure text (`original.failure` and the others in the session JSON,
+  and the Tier 2 prompt) keeps one copy of each Playwright error, without
+  terminal escapes and in a stable order. Before, each error appeared twice
+  with ANSI codes, using half of the 4 KiB failure budget.
 - A refused provider answer says why: the parse error (for example "must
   return exactly one fenced complete file", with the response's first 160
   characters as `providerDiagnostic`), or the lines it changed beyond the
