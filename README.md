@@ -30,7 +30,7 @@ See [how it is recorded](demo/README.md#recording).
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.2.0 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.2.5 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -135,8 +135,8 @@ outreach controls stop by default. See [goal contracts](docs/goals.md).
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.2.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.2.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.2.5 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.2.5, released with the CLI | Installing the SDK does not install the CLI or browsers |
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
@@ -209,7 +209,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.2.0](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.2.5](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions with one shared version: a single
 `v<version>` tag releases both. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)

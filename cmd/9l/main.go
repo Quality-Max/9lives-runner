@@ -31,7 +31,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.2.0"
+var version = "0.2.5"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
