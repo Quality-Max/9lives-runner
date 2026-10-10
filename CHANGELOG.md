@@ -4,6 +4,19 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### CLI
+
+- `9l heal --provider claude` works on a Claude subscription. Provider CLIs
+  now receive the user name (`USER`, `LOGNAME`, `USERNAME`), temp, locale,
+  Windows profile, proxy and CA-certificate variables. Without `USER`,
+  Claude Code could not find a macOS keychain login and every call failed
+  as logged out. API keys are still not inherited.
+- A failed provider call records why: the session's `providerDiagnostic` and
+  `reason` carry the exit code and the last output lines, redacted and capped
+  at 512 bytes, instead of "provider did not return a usable candidate".
+
 ## 0.2.0 — 2026-10-10
 
 ### Release process

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // CLI success tests verify transport behavior, not startup latency. Allow
@@ -286,5 +287,58 @@ func TestDecisionTransportCancellation(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("HTTP request not canceled")
+	}
+}
+
+// fakeLoginCLI behaves like `claude -p` resolving a subscription login: it
+// answers only when USER is present and otherwise reports the logged-out state
+// on stdout with exit 1, as Claude Code does.
+func fakeLoginCLI(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture; Windows process ownership is tested separately")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\n[ -n \"$USER\" ] || { echo 'Not logged in · Please run /login'; exit 1; }\necho \"key=${ANTHROPIC_API_KEY:-absent} user=$USER\"\ncat\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestCLIProviderFindsSubscriptionLoginWithoutCredentials(t *testing.T) {
+	fakeLoginCLI(t)
+	t.Setenv("USER", "tester")
+	t.Setenv("ANTHROPIC_API_KEY", "must-not-reach-the-cli")
+	got, err := (CLIProvider{name: "claude", timeout: cliTestTimeout}).Complete(context.Background(), "prompt", "")
+	if err != nil || got != "key=absent user=tester\nprompt" {
+		t.Fatalf("got=%q err=%v", got, err)
+	}
+}
+
+func TestCLIProviderReportsWhyTheCallFailed(t *testing.T) {
+	fakeLoginCLI(t)
+	t.Setenv("USER", "")
+	_, err := (CLIProvider{name: "claude", timeout: cliTestTimeout}).Complete(context.Background(), "secret prompt", "")
+	var callErr *CallError
+	if !errors.As(err, &callErr) || callErr.ExitCode != 1 || callErr.Diagnostic != "Not logged in · Please run /login" {
+		t.Fatalf("err=%#v", err)
+	}
+	if want := "claude provider failed (exit 1): Not logged in · Please run /login"; err.Error() != want || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("message=%q", err.Error())
+	}
+}
+
+func TestCLIDiagnosticIsBoundedRedactedAndPlain(t *testing.T) {
+	raw := "\x1b[31mstarting\x1b[0m\n\nfailed: token=abc123 at https://u:pw@proxy.example\n" + strings.Repeat("é", 400)
+	got := cliDiagnostic(raw)
+	if strings.Contains(got, "abc123") || strings.Contains(got, "pw@") || strings.Contains(got, "\x1b") || strings.Contains(got, "\n") {
+		t.Fatalf("diagnostic leaked or kept formatting: %q", got)
+	}
+	if len(got) > maxDiagnosticText+len("…") || !strings.HasPrefix(got, "…") || !utf8.ValidString(got) {
+		t.Fatalf("diagnostic not bounded on a rune boundary: %d bytes", len(got))
+	}
+	if short := cliDiagnostic("line one\n  line two  \n"); short != "line one | line two" {
+		t.Fatalf("short=%q", short)
 	}
 }

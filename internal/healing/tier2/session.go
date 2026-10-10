@@ -62,6 +62,9 @@ type Session struct {
 	Applied       bool      `json:"applied"`
 	SavedPath     string    `json:"savedPath,omitempty"`
 	Reason        string    `json:"reason,omitempty"`
+	// ProviderDiagnostic is a bounded, redacted account of a failed provider
+	// call, such as the CLI's exit code and its last output lines.
+	ProviderDiagnostic string `json:"providerDiagnostic,omitempty"`
 }
 
 // Heal runs original, then at most one caller-provided Tier 1 verification,
@@ -169,7 +172,11 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 				return result, callErr
 			}
 			result.State = "provider_error"
-			result.Reason = "provider did not return a usable candidate"
+			result.Reason = "provider call failed"
+			result.ProviderDiagnostic = providerDiagnostic(callErr)
+			if result.ProviderDiagnostic != "" {
+				result.Reason += ": " + result.ProviderDiagnostic
+			}
 			return result, callErr
 		}
 		candidate, parseErr := ParseCandidate(response, latestSource)
@@ -198,6 +205,13 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 	}
 	result.State = "unverified"
 	return result, nil
+}
+
+// providerDiagnostic describes a failed call without the prompt or local
+// paths: CallError text is bounded and redacted, and HTTP transport errors
+// are fixed strings such as "provider returned HTTP 401".
+func providerDiagnostic(err error) string {
+	return truncate(err.Error(), 1<<10)
 }
 
 // Every executed candidate must remain an editable locator failure before

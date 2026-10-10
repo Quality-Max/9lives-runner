@@ -619,3 +619,18 @@ func TestHealWithoutProviderIsOfflineTier1Only(t *testing.T) {
 		t.Fatal("source changed")
 	}
 }
+
+func TestHealRecordsWhyTheProviderCallFailed(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "login.spec.ts")
+	if err := os.WriteFile(spec, []byte("test('x', async ({ page }) => { await page.locator('#old').click(); });\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeProvider{err: &CallError{Provider: "claude", ExitCode: 1, Diagnostic: "Not logged in · Please run /login"}}
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult {
+		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
+	}}, func(string, string) (string, bool) { return "", false })
+	if err == nil || result.State != "provider_error" || result.ProviderDiagnostic != "claude provider failed (exit 1): Not logged in · Please run /login" || !strings.Contains(result.Reason, "Not logged in") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}

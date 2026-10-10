@@ -20,6 +20,10 @@ func redact(raw []byte) []byte {
 	return URLCredentials.ReplaceAll(redacted, []byte("${1}[REDACTED]${3}"))
 }
 
+// RedactText applies evidence redaction to a diagnostic string that leaves the
+// runner, such as a provider CLI's failure output.
+func RedactText(text string) string { return string(redact([]byte(text))) }
+
 func redactArguments(arguments []string) []string {
 	redacted := make([]string, len(arguments))
 	for index, argument := range arguments {

@@ -40,14 +40,33 @@ otherwise saves the verified candidate as `<spec>.healed` (see
 Providers resolve in explicit option, `NINELIVES_PROVIDER`, installed CLI,
 then configured-key order. `--pass-env` forwards explicitly named values only to test processes, never to a provider. `claude-code` remains an alias for `claude`.
 CLI prompts use stdin for Claude/Codex and OpenCode receives its documented
-argument with closed stdin. Provider processes use the runner's owned process
+argument with closed stdin. A CLI runs in an empty temporary directory with
+only what it needs to find its own login and reach its service: `PATH`,
+`HOME`, the XDG directories, the user name (`USER`, `LOGNAME`, `USERNAME`),
+temp and locale variables, the Windows profile and system variables, and the
+proxy and CA-certificate variables. API keys and other credentials are not
+inherited. Provider processes use the runner's owned process
 group so cancellation and a leader exit clean descendants. If a CLI fails
 without cancellation and a configured API transport is available, it falls
 back once. HTTP uses bounded requests/responses, no redirects, sanitized
 status errors, Anthropic text blocks or OpenAI chat content, and the pinned
 API defaults `claude-haiku-4-5-20251001` / `gpt-4o-mini` unless `--model` or
-`NINELIVES_MODEL` selects one. Provider responses, stderr, and credentials are
-never printed or stored in receipts.
+`NINELIVES_MODEL` selects one. Provider responses and credentials are never
+printed or stored in receipts. When a call fails, the session's
+`providerDiagnostic` and `reason` carry the CLI's exit code and the last lines
+it printed, redacted and capped at 512 bytes, so a cause such as
+`claude provider failed (exit 1): Not logged in · Please run /login` is
+visible.
+
+### Healing on a Claude subscription
+
+`--provider claude` runs the installed Claude Code CLI with its own login, so
+a Claude Pro, Max or Team subscription pays for the call and no API key is
+needed. Check the login first with `claude auth status`; 9l passes `USER` so
+the CLI can find a keychain login on macOS. The spec source and the bounded
+failure text go to Anthropic under that account. SDK goals (`9l run --sdk`)
+are different: they accept only an Anthropic or OpenAI API key, because goal
+decisions need the bounded output-token contract an agent CLI does not offer.
 
 
 Prompt contracts label Playwright and Cypress files as JavaScript and Selenium
