@@ -84,6 +84,7 @@ test('after-hook modifiers run after test bodies and do not disable the suite', 
     test.describe('all', () => { test.afterAll(async () => test.fixme()); test('a', async () => { expect(1).toBe(1); }); });`);
   assert(facts.tests.every(t => !t.disabled));
   assert.deepEqual(facts.tests.map(t => t.conditionalSkips.map(s => s.line)), [[2], [3]]);
+  assert(facts.tests.every(t => t.conditionalSkips.every(s => s.afterExecution)));
 });
 
 test('a shared suite modifier counts once toward the evidence limit', () => {
@@ -294,7 +295,7 @@ test('suite modifiers whose condition reads process.env are marked', () => {
     });`);
   const [test] = facts.tests;
   assert.equal(test.disabled, true);
-  assert.deepEqual(test.conditionalSkips.map(s => [s.line, s.environment]), [[2, true], [4, true], [5, false]]);
+  assert.deepEqual(test.conditionalSkips.map(s => [s.line, s.environment, s.afterExecution]), [[2, true, false], [4, true, false], [5, false, false]]);
 });
 
 test('absence assertions are marked, and negated absence matchers are presence checks', () => {
@@ -629,4 +630,30 @@ test('a test imported from an unrecognised module is named, not silently empty',
   assert.equal(recognised.unrecognizedTestImports, undefined);
   const odd = analyze(`import {test} from 'some module with spaces';`);
   assert.deepEqual(odd.unrecognizedTestImports, ['(unnamed module)']);
+});
+
+test('a promise is followed into Promise.all and through the callback that carries it', () => {
+  const facts = analyze(`import {test, expect} from '@playwright/test';
+    test('all awaited', async ({page}) => {
+      await Promise.all([expect(page.locator('a')).toBeVisible(), (expect(page.locator('b')).toBeVisible())]);
+    });
+    test('allSettled returned', ({page}) => {
+      return Promise.allSettled([expect(page.locator('a')).toBeVisible()]).then(() => {});
+    });
+    test('all dropped', async ({page}) => {
+      Promise.all([expect(page.locator('a')).toBeVisible()]);
+    });
+    test('parenthesized forEach callback', async ({page}) => {
+      [page.locator('a')].forEach((l => expect(l).toBeVisible()));
+    });
+    test('map result dropped', async ({page}) => {
+      [page.locator('a')].map(l => expect(l).toBeVisible());
+    });
+    test('map result awaited', async ({page}) => {
+      await Promise.all([page.locator('a')].map(l => expect(l).toBeVisible()));
+    });`);
+  const unawaited = facts.tests.map(t => t.assertions.map(a => a.unawaited));
+  assert.deepEqual(unawaited, [[false, false], [false], [true], [true], [true], [false]]);
+  // Promise combinators are not unknown helpers; array callbacks stay limits.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], [], [], ['unresolved-helper', 'nested-function'], ['unresolved-helper', 'nested-function'], ['unresolved-helper', 'nested-function']]);
 });

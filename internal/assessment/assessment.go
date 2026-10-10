@@ -25,7 +25,15 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v8"
+const Policy = "assessment-source-v10"
+
+// unmapped-outcome codes: a test that maps none of its requirement's
+// outcomes is its own defect; an outcome mapped nowhere in the file is one
+// gap however many tests reference the requirement.
+const (
+	CodeMapsNoOutcome  = "maps-no-outcome"
+	CodeUnmappedInFile = "unmapped-in-file"
+)
 
 // ReportVersion is the version of a single-file assess report.
 const ReportVersion = 3
@@ -77,10 +85,11 @@ type Sleep struct {
 }
 
 // ConditionalSkip is a suite modifier that may skip a test. Environment marks a
-// condition that reads process.env.
+// condition that reads process.env. AfterExecution marks modifiers in after hooks.
 type ConditionalSkip struct {
 	Location
-	Environment bool `json:"environment"`
+	Environment    bool `json:"environment"`
+	AfterExecution bool `json:"afterExecution"`
 }
 type Fact struct {
 	Location
@@ -261,7 +270,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 6 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 7 {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -296,7 +305,7 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 6 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != 7 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {
@@ -380,15 +389,37 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		requirements[r.ID] = r
 	}
 	// A requirement's outcomes may be spread over sibling tests: an outcome
-	// mapped by any test in the file covers it for every test that references
-	// the requirement and maps at least one of its outcomes. A test that maps
-	// none of them claims a requirement it does not check, and is reported for
-	// every outcome. Mapping in other files is not considered.
-	mapped := map[string]bool{}
+	// mapped by a test that references the same requirement and is not disabled
+	// or conditionally skipped before execution covers it for other tests that
+	// reference the requirement. After-hook modifiers do not exclude coverage
+	// because the test body has already run. A disabled test, a pre-execution
+	// conditional skip, or a test that does not reference the requirement never
+	// lends coverage; its own mapping still counts for itself. A test that maps
+	// none of the outcomes claims a requirement it does not check and is reported
+	// for every outcome. Mapping in other files is not considered.
+	mapped := map[string]map[string]bool{}
 	for _, fact := range facts.Tests {
-		for _, a := range fact.Assertions {
-			for _, id := range a.Outcomes {
-				mapped[id] = true
+		if fact.Disabled != nil && *fact.Disabled {
+			continue
+		}
+		preExecutionSkip := false
+		for _, skip := range fact.ConditionalSkips {
+			if !skip.AfterExecution {
+				preExecutionSkip = true
+				break
+			}
+		}
+		if preExecutionSkip {
+			continue
+		}
+		for _, requirement := range fact.Requirements {
+			if mapped[requirement] == nil {
+				mapped[requirement] = map[string]bool{}
+			}
+			for _, a := range fact.Assertions {
+				for _, id := range a.Outcomes {
+					mapped[requirement][id] = true
+				}
 			}
 		}
 	}
@@ -430,8 +461,10 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			for _, o := range r.ExpectedOutcomes {
 				if !checks {
 					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "The test references the requirement but maps none of its outcomes; helpers may protect it.", "Map an assertion in this test to an outcome of the requirement, or reference the requirement it checks.", fact.Location)
-				} else if !mapped[o.ID] {
-					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping in this file; helpers or other files may protect it.", "Review the gap and map an assertion in this file that checks this outcome.", fact.Location)
+					t.Findings[len(t.Findings)-1].Code = CodeMapsNoOutcome
+				} else if !mapped[id][o.ID] && !own[o.ID] {
+					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping in an enabled test of this file that references the requirement; helpers or other files may protect it.", "Review the gap and map an assertion in this file that checks this outcome.", fact.Location)
+					t.Findings[len(t.Findings)-1].Code = CodeUnmappedInFile
 				}
 			}
 		}
@@ -467,6 +500,14 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			add("disabled-test", "demonstrated", "engineeringQuality", "", "", "A syntactic test.skip/test.fixme declaration, unconditional suite modifier or enclosing skipped/fixme suite is present.", "Review why the test is disabled before relying on it to protect the requirement.", fact.Location)
 		}
 		for _, p := range fact.ConditionalSkips {
+			if p.AfterExecution {
+				if p.Environment {
+					add("environment-skip", "suspected", "engineeringQuality", "", "", "An after-hook test.skip/test.fixme modifier depends on an environment variable; it runs after the test body, so a skipped status does not mean the body did not run.", "Confirm the hook's effect and assess coverage from the test body assertions.", p.Location)
+				} else {
+					add("conditional-skip", "informational", "engineeringQuality", "", "", "An after-hook test.skip/test.fixme modifier may conditionally mark the test skipped, but it runs after the test body.", "Confirm the hook's effect and assess coverage from the test body assertions.", p.Location)
+				}
+				continue
+			}
 			if p.Environment {
 				add("environment-skip", "suspected", "engineeringQuality", "", "", "A test.skip/test.fixme modifier applying to this test's suite depends on an environment variable; the test may not run in some environments, such as CI.", "Confirm which environments skip it and that at least one required run still executes this test.", p.Location)
 				continue

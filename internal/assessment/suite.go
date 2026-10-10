@@ -341,7 +341,9 @@ func CountFindings(report Report) (map[string]int, int) {
 		for _, finding := range test.Findings {
 			rule := FindingRule(finding)
 			k := key{rule, finding.Requirement, finding.Outcome, finding.Location}
-			if finding.Rule == "unmapped-outcome" {
+			// An outcome mapped nowhere in the file is one gap; a test that
+			// maps none of its requirement's outcomes is a defect per test.
+			if finding.Rule == "unmapped-outcome" && finding.Code == CodeUnmappedInFile {
 				k.at = Location{}
 			}
 			if !counted[k] {

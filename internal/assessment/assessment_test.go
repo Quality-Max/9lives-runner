@@ -72,8 +72,78 @@ func TestOutcomesMappedBySiblingTestsCoverTheRequirement(t *testing.T) {
 	if strings.Join(got, " ") != "unmapped-outcome:order-items unmapped-outcome:order-count unmapped-outcome:order-items" {
 		t.Fatalf("unexpected mapping findings %v", got)
 	}
-	if counts, total := CountFindings(report); total != 2 || counts["unmapped-outcome"] != 2 {
-		t.Fatalf("two unmapped outcomes counted %d times", total)
+	// The second test's own defect counts per outcome; the outcome mapped
+	// nowhere counts once.
+	if counts, total := CountFindings(report); total != 3 || counts["unmapped-outcome/"+CodeMapsNoOutcome] != 2 || counts["unmapped-outcome/"+CodeUnmappedInFile] != 1 {
+		t.Fatalf("unmapped outcomes counted %v (%d)", counts, total)
+	}
+}
+
+func TestDisabledOrUnrelatedTestsLendNoOutcomeCoverage(t *testing.T) {
+	c, err := ParseContract([]byte(contractJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, enabled := true, false
+	runs := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order"}, Disabled: &enabled, Assertions: []Assertion{{Location: Location{2, 1}, Outcomes: []string{"order-count"}}}}
+	skipped := Fact{Location: Location{4, 1}, Requirements: []string{"checkout-order"}, Disabled: &disabled, Assertions: []Assertion{{Location: Location{5, 1}, Outcomes: []string{"order-items"}}}}
+	unrelated := Fact{Location: Location{7, 1}, Requirements: []string{}, Disabled: &enabled, Assertions: []Assertion{{Location: Location{8, 1}, Outcomes: []string{"order-items"}}}}
+	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Compiler: "5.9.3", Tests: []Fact{runs, skipped, unrelated}})
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		got = append(got, f.Code+":"+f.Outcome)
+	}
+	if strings.Join(got, " ") != CodeUnmappedInFile+":order-items" {
+		t.Fatalf("a skipped or unrelated mapping covered the running test: %v", got)
+	}
+}
+
+func TestConditionalSkipsOnlyExcludePreExecutionCoverageLenders(t *testing.T) {
+	c, err := ParseContract([]byte(contractJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := false
+	runs := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order"}, Disabled: &enabled, Assertions: []Assertion{{Location: Location{2, 1}, Outcomes: []string{"order-count"}}}}
+	lender := Fact{Location: Location{4, 1}, Requirements: []string{"checkout-order"}, Disabled: &enabled, Assertions: []Assertion{{Location: Location{5, 1}, Outcomes: []string{"order-items"}}}, ConditionalSkips: []ConditionalSkip{{Location: Location{6, 1}}}}
+
+	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Compiler: "5.9.3", Tests: []Fact{runs, lender}})
+	if !hasFinding(report.Tests[0], CodeUnmappedInFile, "order-items") {
+		t.Fatal("pre-execution conditional skip lent outcome coverage")
+	}
+
+	lender.ConditionalSkips[0].AfterExecution = true
+	report = Build([]byte("source"), []byte(contractJSON), c, Facts{Compiler: "5.9.3", Tests: []Fact{runs, lender}})
+	if hasFinding(report.Tests[0], CodeUnmappedInFile, "order-items") {
+		t.Fatal("after-hook modifier prevented a test body from lending coverage")
+	}
+}
+
+func hasFinding(test Test, code, outcome string) bool {
+	for _, finding := range test.Findings {
+		if finding.Code == code && finding.Outcome == outcome {
+			return true
+		}
+	}
+	return false
+}
+
+func TestEachTestThatMapsNoOutcomeCountsSeparately(t *testing.T) {
+	c, err := ParseContract([]byte(contractJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order"}, Assertions: []Assertion{{Location: Location{2, 1}}}}
+	second := Fact{Location: Location{4, 1}, Requirements: []string{"checkout-order"}, Assertions: []Assertion{{Location: Location{5, 1}}}}
+	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Compiler: "5.9.3", Tests: []Fact{first, second}})
+	outcomes := 0
+	for _, r := range c.Requirements {
+		if r.ID == "checkout-order" {
+			outcomes = len(r.ExpectedOutcomes)
+		}
+	}
+	if counts, total := CountFindings(report); counts["unmapped-outcome/"+CodeMapsNoOutcome] != 2*outcomes || total != 2*outcomes {
+		t.Fatalf("two tests that map nothing counted as %v (%d), want %d", counts, total, 2*outcomes)
 	}
 }
 
@@ -274,7 +344,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: 6, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 7, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -309,7 +379,7 @@ func TestRejectForeignAndIncompleteFacts(t *testing.T) {
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("duplicate test accepted")
 	}
-	if validFacts(Facts{Version: 6, Compiler: "5.9.3"}, []byte("x"), false) {
+	if validFacts(Facts{Version: 7, Compiler: "5.9.3"}, []byte("x"), false) {
 		t.Fatal("missing inventory accepted")
 	}
 }
@@ -339,8 +409,11 @@ func TestEveryFindingCarriesACode(t *testing.T) {
 	seen := map[string]bool{}
 	for _, f := range report.Tests[0].Findings {
 		want := f.Rule
-		if f.Rule == "analysis-limit" {
+		switch f.Rule {
+		case "analysis-limit":
 			want = "unresolved-helper"
+		case "unmapped-outcome":
+			want = CodeMapsNoOutcome
 		}
 		if f.Code != want {
 			t.Fatalf("finding %s has code %q", f.Rule, f.Code)
@@ -363,10 +436,20 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 	if test.Dimensions["engineeringQuality"] != "unknown" {
 		t.Fatal("informational finding raised a concern")
 	}
+	fact.ConditionalSkips[0].AfterExecution = true
+	test = Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || !strings.Contains(test.Findings[0].Message, "after the test body") || strings.Contains(test.Findings[0].Suggestion, "does not protect") {
+		t.Fatalf("after-hook skip misrepresented body execution: %+v", test.Findings)
+	}
+	fact.ConditionalSkips[0].Environment = true
+	test = Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "environment-skip" || !strings.Contains(test.Findings[0].Message, "after the test body") {
+		t.Fatalf("environment-dependent after-hook skip misrepresented body execution: %+v", test.Findings)
+	}
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: 6, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 7, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -392,7 +475,7 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 	source := []byte(strings.Repeat("xxxxxxxx\n", 256))
 	guards := []ConditionalSkip{{Location: Location{1, 1}}, {Location: Location{2, 1}}, {Location: Location{3, 1}}, {Location: Location{4, 1}}, {Location: Location{5, 1}}}
-	f := Facts{Version: 6, Compiler: "5.9.3", Tests: []Fact{}}
+	f := Facts{Version: 7, Compiler: "5.9.3", Tests: []Fact{}}
 	for line := 10; line < 210; line++ {
 		assertions := make([]Assertion, 6)
 		for i := range assertions {
@@ -500,7 +583,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v8" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v10" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -535,7 +618,7 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v8" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v10" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }

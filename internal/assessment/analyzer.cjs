@@ -142,12 +142,15 @@ function createAnalyzer(ts) {
     // Conditions that read process.env are reported separately: such a test
     // may never run in an environment like CI.
     const modifierScope = (node, scope) => {
-      let conditional = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
+      let conditional = false, afterExecution = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor === scope) return { conditional, environment };
+        if (ancestor === scope) return { conditional, environment, afterExecution };
         if (ts.isFunctionLike(ancestor)) {
           if (!isHookCallback(ancestor)) return null;
-          if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) conditional = true;
+          if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) {
+            conditional = true;
+            afterExecution = true;
+          }
           continue;
         }
         if (ts.isExpressionStatement(ancestor) || ts.isBlock(ancestor) || ts.isAwaitExpression(ancestor) || ts.isParenthesizedExpression(ancestor)
@@ -264,7 +267,7 @@ function createAnalyzer(ts) {
           if (attributed && first?.kind !== ts.SyntaxKind.FalseKeyword) {
             const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [] };
             if (!attributed.conditional && (!first || first.kind === ts.SyntaxKind.TrueKeyword)) entry.disabled = true;
-            else entry.conditional.push({ ...location(node), environment: attributed.environment });
+            else entry.conditional.push({ ...location(node), environment: attributed.environment, afterExecution: attributed.afterExecution });
             scopeModifiers.set(scope, entry);
           }
           return;
@@ -324,9 +327,18 @@ function createAnalyzer(ts) {
               // carries the test's call site, so it is reported once per
               // location however many tests call the helper.
               const at = child => ctx.site ? { ...location(child), site: ctx.site } : location(child);
-              // A callback passed to forEach has its return value discarded.
-              const discards = callback => ts.isCallExpression(callback.parent) && callback.parent.arguments.includes(callback)
-                && ts.isPropertyAccessExpression(callback.parent.expression) && callback.parent.expression.name.text === 'forEach';
+              // The outermost node of a parenthesized expression.
+              const unparen = node => { while (ts.isParenthesizedExpression(node.parent)) node = node.parent; return node; };
+              // A callback's promises are discarded by forEach, and by map or
+              // flatMap when the array of promises they return is itself dropped
+              // as an expression statement. Parentheses do not change that.
+              const discards = callback => {
+                const argument = unparen(callback);
+                const call = argument.parent;
+                if (!ts.isCallExpression(call) || !call.arguments.includes(argument) || !ts.isPropertyAccessExpression(call.expression)) return false;
+                const method = call.expression.name.text;
+                return method === 'forEach' || (['map', 'flatMap'].includes(method) && ts.isExpressionStatement(unparen(chained(call)).parent));
+              };
               // This function's own concise body or return statement passes its
               // promise to the caller, which consumes it only when `returned`.
               // A nested function returns its promise to an unknown caller: not
@@ -354,9 +366,21 @@ function createAnalyzer(ts) {
                   } else return child;
                 }
               };
+              // A promise placed in an array literal passed to Promise.all,
+              // allSettled, race or any is carried by that call.
+              const carrier = child => {
+                const outer = unparen(chained(child));
+                if (!ts.isArrayLiteralExpression(outer.parent)) return chained(child);
+                const array = unparen(outer.parent);
+                const call = array.parent;
+                if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
+                  && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
+                  && ['all', 'allSettled', 'race', 'any'].includes(call.expression.name.text)) return chained(call);
+                return chained(child);
+              };
               const consumed = child => {
-                const outer = chained(child);
-                return !ctx.floating && (ts.isAwaitExpression(outer.parent) || returnedHere(outer));
+                const outer = carrier(child);
+                return !ctx.floating && (ts.isAwaitExpression(unparen(outer).parent) || returnedHere(outer));
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
               // The outermost nested function being scanned, if any.
@@ -399,7 +423,13 @@ function createAnalyzer(ts) {
                     fact.sleeps.push(at(child));
                     order.waited = true;
                   }
-                  if (!expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
+                  // Promise.all/allSettled/race/any only combine the promises they
+                  // are given; their elements are followed by carrier().
+                  let callee = child.expression;
+                  while (ts.isPropertyAccessExpression(callee) && ['then', 'catch', 'finally'].includes(callee.name.text) && ts.isCallExpression(callee.expression)) callee = callee.expression.expression;
+                  const combinator = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
+                    && callee.expression.text === 'Promise' && ['all', 'allSettled', 'race', 'any'].includes(callee.name.text);
+                  if (!combinator && !expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
                     const helper = ts.isIdentifier(child.expression) ? resolveHelper(child.expression.text, child, fn) : null;
                     if (!helper || (!helper.marked && (ctx.depth >= 4 || ctx.stack.has(helper.fn) || order.expansions >= 64))) {
                       limited('unresolved-helper', child);
@@ -494,7 +524,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 6, compiler: ts.version, tests: results, ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 7, compiler: ts.version, tests: results, ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -517,7 +547,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 6, error: code }));
+    process.stdout.write(JSON.stringify({ version: 7, error: code }));
     process.exitCode = 2;
   }
 }

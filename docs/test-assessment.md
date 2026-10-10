@@ -110,11 +110,15 @@ When you check requirements, use a shared contract, not a document per test:
 
 Reference independently reviewed intent from a ticket, contract or supplied
 outcomes. A requirement's outcomes may be spread over the tests in a file: an
-outcome mapped by any test in the file covers it for every test that
-references the requirement and maps at least one of its outcomes, and one
-mapped nowhere in the file is reported on each of those tests. A test that
-references a requirement but maps none of its outcomes is reported for every
-outcome, as it claims a requirement it does not check. Mapping in other files
+outcome mapped by an enabled test that references the same requirement covers
+it for every test that references the requirement and maps at least one of its
+outcomes. A disabled test, or a test that references a different requirement
+or none, never covers another test. An outcome mapped nowhere that counts is
+reported on each of those tests with code `unmapped-in-file` and counted once
+per requirement and outcome in summaries. A test that references a requirement
+but maps none of its outcomes is reported for every outcome with code
+`maps-no-outcome`, as it claims a requirement it does not check, and counted
+for each such test. Mapping in other files
 of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
 records the supplied contract hash; it does not retrieve or authenticate the
 referenced requirement. Outcome IDs must be unique across the entire contract,
@@ -249,21 +253,37 @@ including locator, page, API-response and function assertions, and any
 matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
 are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
 chain on it, is awaited or returned by the function being scanned; the chained
-promise methods are not themselves matchers. A nested function's concise body
-or `return` passes the promise to a caller the analysis cannot see, so it is
-not reported as unawaited and the `nested-function` limit stands, except for a
-callback passed directly to `forEach`, which discards it. Any other matcher, such as a custom `expect.extend` matcher or
+promise methods are not themselves matchers. A matcher that is an element of
+an array literal passed to `Promise.all`, `allSettled`, `race` or `any` is
+consumed when that call (or a chain on it) is awaited or returned, so
+`await Promise.all([expect(a).toBeVisible(), expect(b).toBeVisible()])` is not
+reported, and these combinators are not unresolved helpers. A nested
+function's concise body or `return` passes the promise to a caller the
+analysis cannot see, so it is not reported as unawaited and the
+`nested-function` limit stands, except when the caller discards it: a callback
+passed to `forEach`, or to `map`/`flatMap` whose resulting array of promises
+is dropped as an expression statement, looking through parentheses in both
+cases. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v8` narrows
-the `nested-function` limit as described above; report version 3 and helper
-version 6 are unchanged. Report version 3, helper version 6 and policy
+inputs invalidate prior assessments. Policy `assessment-source-v10` excludes
+pre-execution conditional skips from outcome coverage lenders while retaining
+after-hook tests whose bodies ran. Policy `assessment-source-v9` counts
+outcome mapping only from enabled tests that reference the requirement and
+gives `unmapped-outcome` findings the codes `maps-no-outcome` and
+`unmapped-in-file`, so summaries count them as
+`unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
+It also follows a matcher's promise into `Promise.all`-style combinators and
+through `forEach`/`map` callbacks, as described above.
+Policy `assessment-source-v8` narrowed the `nested-function` limit as described
+above; report and helper versions were 3 and 6. This update increments the helper
+version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `assessment-source-v7` replaced version 2/source-v3. Every finding now carries
-`code`: the limit reason for `analysis-limit` findings and the rule name for
-all others, so `rule` is the finding family and `code` the specific reason.
+`code`: the limit reason for `analysis-limit` findings, the case for
+`unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip` and `absence-after-wait` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256`, an optional test `title` and an optional
