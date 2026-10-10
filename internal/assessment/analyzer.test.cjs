@@ -84,6 +84,7 @@ test('after-hook modifiers run after test bodies and do not disable the suite', 
     test.describe('all', () => { test.afterAll(async () => test.fixme()); test('a', async () => { expect(1).toBe(1); }); });`);
   assert(facts.tests.every(t => !t.disabled));
   assert.deepEqual(facts.tests.map(t => t.conditionalSkips.map(s => s.line)), [[2], [3]]);
+  assert(facts.tests.every(t => t.conditionalSkips.every(s => s.afterExecution)));
 });
 
 test('a shared suite modifier counts once toward the evidence limit', () => {
@@ -294,7 +295,7 @@ test('suite modifiers whose condition reads process.env are marked', () => {
     });`);
   const [test] = facts.tests;
   assert.equal(test.disabled, true);
-  assert.deepEqual(test.conditionalSkips.map(s => [s.line, s.environment]), [[2, true], [4, true], [5, false]]);
+  assert.deepEqual(test.conditionalSkips.map(s => [s.line, s.environment, s.afterExecution]), [[2, true, false], [4, true, false], [5, false, false]]);
 });
 
 test('absence assertions are marked, and negated absence matchers are presence checks', () => {

@@ -44,7 +44,7 @@ try {
     assert(!result.error && result.status === 0 && result.stderr === '');
     const report = JSON.parse(result.stdout);
     assert.equal(report.version, 3);
-    assert.equal(report.policy, 'assessment-source-v9');
+    assert.equal(report.policy, 'assessment-source-v10');
     assert.equal(report.compiler, '5.9.3');
     assert.equal(report.execution, 'not_run');
     assert.equal(report.completeness, 'partial');

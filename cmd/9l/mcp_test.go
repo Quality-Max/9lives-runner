@@ -213,7 +213,7 @@ func TestMCPAssessTestReturnsTheReport(t *testing.T) {
 	h := startMCP(t, root)
 	payload, isError := h.toolCall(t, 1, "assess_test", map[string]any{"path": "a.spec.ts"})
 	report, _ := payload["report"].(map[string]any)
-	if isError || report == nil || report["policy"] != "assessment-source-v9" || !strings.Contains(mustJSON(t, report), `"fixed-wait"`) {
+	if isError || report == nil || report["policy"] != "assessment-source-v10" || !strings.Contains(mustJSON(t, report), `"fixed-wait"`) {
 		t.Fatalf("assess_test %v", payload)
 	}
 }

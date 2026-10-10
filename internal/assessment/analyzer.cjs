@@ -142,12 +142,15 @@ function createAnalyzer(ts) {
     // Conditions that read process.env are reported separately: such a test
     // may never run in an environment like CI.
     const modifierScope = (node, scope) => {
-      let conditional = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
+      let conditional = false, afterExecution = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor === scope) return { conditional, environment };
+        if (ancestor === scope) return { conditional, environment, afterExecution };
         if (ts.isFunctionLike(ancestor)) {
           if (!isHookCallback(ancestor)) return null;
-          if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) conditional = true;
+          if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) {
+            conditional = true;
+            afterExecution = true;
+          }
           continue;
         }
         if (ts.isExpressionStatement(ancestor) || ts.isBlock(ancestor) || ts.isAwaitExpression(ancestor) || ts.isParenthesizedExpression(ancestor)
@@ -264,7 +267,7 @@ function createAnalyzer(ts) {
           if (attributed && first?.kind !== ts.SyntaxKind.FalseKeyword) {
             const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [] };
             if (!attributed.conditional && (!first || first.kind === ts.SyntaxKind.TrueKeyword)) entry.disabled = true;
-            else entry.conditional.push({ ...location(node), environment: attributed.environment });
+            else entry.conditional.push({ ...location(node), environment: attributed.environment, afterExecution: attributed.afterExecution });
             scopeModifiers.set(scope, entry);
           }
           return;
@@ -494,7 +497,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 6, compiler: ts.version, tests: results, ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 7, compiler: ts.version, tests: results, ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -517,7 +520,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 6, error: code }));
+    process.stdout.write(JSON.stringify({ version: 7, error: code }));
     process.exitCode = 2;
   }
 }

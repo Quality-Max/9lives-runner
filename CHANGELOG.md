@@ -129,6 +129,9 @@ SDK versions.
 
 ### Assess
 
+- Conditional pre-execution skips no longer lend outcome coverage to sibling
+  tests; modifiers in after hooks still do because the test body ran. Policy
+  `assessment-source-v10`.
 - Outcome mapping no longer credits disabled or unrelated tests: only an
   enabled test that references the same requirement covers a sibling test's
   outcome (#31). `unmapped-outcome` findings carry the code

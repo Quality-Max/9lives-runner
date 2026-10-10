@@ -25,7 +25,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v9"
+const Policy = "assessment-source-v10"
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -85,10 +85,11 @@ type Sleep struct {
 }
 
 // ConditionalSkip is a suite modifier that may skip a test. Environment marks a
-// condition that reads process.env.
+// condition that reads process.env. AfterExecution marks modifiers in after hooks.
 type ConditionalSkip struct {
 	Location
-	Environment bool `json:"environment"`
+	Environment    bool `json:"environment"`
+	AfterExecution bool `json:"afterExecution"`
 }
 type Fact struct {
 	Location
@@ -269,7 +270,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 6 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 7 {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -304,7 +305,7 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 6 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != 7 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {
@@ -388,16 +389,27 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		requirements[r.ID] = r
 	}
 	// A requirement's outcomes may be spread over sibling tests: an outcome
-	// mapped by an enabled test that references the same requirement covers it
-	// for every test that references the requirement and maps at least one of
-	// its outcomes. A disabled test, or one that does not reference the
-	// requirement, never lends coverage to another test; its own mapping still
-	// counts for itself, and disabled-test reports that it does not run. A test that maps none of the outcomes
-	// claims a requirement it does not check, and is reported for every
-	// outcome. Mapping in other files is not considered.
+	// mapped by a test that references the same requirement and is not disabled
+	// or conditionally skipped before execution covers it for other tests that
+	// reference the requirement. After-hook modifiers do not exclude coverage
+	// because the test body has already run. A disabled test, a pre-execution
+	// conditional skip, or a test that does not reference the requirement never
+	// lends coverage; its own mapping still counts for itself. A test that maps
+	// none of the outcomes claims a requirement it does not check and is reported
+	// for every outcome. Mapping in other files is not considered.
 	mapped := map[string]map[string]bool{}
 	for _, fact := range facts.Tests {
 		if fact.Disabled != nil && *fact.Disabled {
+			continue
+		}
+		preExecutionSkip := false
+		for _, skip := range fact.ConditionalSkips {
+			if !skip.AfterExecution {
+				preExecutionSkip = true
+				break
+			}
+		}
+		if preExecutionSkip {
 			continue
 		}
 		for _, requirement := range fact.Requirements {

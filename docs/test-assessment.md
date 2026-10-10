@@ -262,13 +262,16 @@ gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v9` counts
+inputs invalidate prior assessments. Policy `assessment-source-v10` excludes
+pre-execution conditional skips from outcome coverage lenders while retaining
+after-hook tests whose bodies ran. Policy `assessment-source-v9` counts
 outcome mapping only from enabled tests that reference the requirement and
 gives `unmapped-outcome` findings the codes `maps-no-outcome` and
 `unmapped-in-file`, so summaries count them as
 `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
 Policy `assessment-source-v8` narrowed the `nested-function` limit as described
-above; report version 3 and helper version 6 are unchanged. Report version 3, helper version 6 and policy
+above; report and helper versions were 3 and 6. This update increments the helper
+version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `assessment-source-v7` replaced version 2/source-v3. Every finding now carries
 `code`: the limit reason for `analysis-limit` findings, the case for
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
