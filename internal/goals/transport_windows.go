@@ -24,5 +24,8 @@ func listenGoalTransport() (net.Listener, string, string, error) {
 	// protected DACL grants access only to the engine's user and its workers.
 	socket := `\\.\pipe\9l-goal-` + hex.EncodeToString(nonce[:])
 	listener, err := winio.ListenPipe(socket, &winio.PipeConfig{SecurityDescriptor: "D:P(A;;GA;;;" + user.User.Sid.String() + ")"})
-	return listener, socket, "", err
+	if err != nil {
+		return nil, "", "", err
+	}
+	return resignalingListener{listener}, socket, "", nil
 }
