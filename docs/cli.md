@@ -29,6 +29,33 @@
   while watching, set `use: {launchOptions: {slowMo: 250}}` in the project's
   Playwright config: a config's `launchOptions` replaces any value a fixture
   library sets, so 9l does not offer a flag that could be silently ignored.
+- Test selection: `9l run tests/login.spec.ts:12` runs only the test at that
+  line (Playwright's `file:line` filter), and `--grep <regexp>` /
+  `--grep-invert <regexp>` pass Playwright's title filters to every job.
+  The plan shows each job's `selection`, the receipt's evidence command
+  records the filter, and a selection that matches no test leaves the run
+  incomplete with a reason naming the selection, never green.
+- Project reporters: `9l run` reads Playwright's JSON reporter as evidence,
+  which replaces the reporters in the project's config. `--reporter html`
+  (comma-separated names or module paths, up to 8) adds them back beside the
+  evidence reporter, so the HTML report is still written; `json` is reserved.
+  Traces and screenshots do not need this: they follow the config's `use`
+  settings either way.
+- Failed tests: below each failed job, `9l run` and `9l result` name every
+  failed test (up to 20 per job) with its failing line, the first lines of its
+  error and the files Playwright attached to it, such as `error-context.md`
+  (the error, an ARIA snapshot of the page and the source with the failing
+  line marked), screenshots and traces. The receipt's `failures` field holds
+  the same, with the error capped at 1 KiB and redacted. By default the
+  attachments are only referenced: they are Playwright's own files, which the
+  project's next run may delete, and 9l does not retain page content unless
+  asked. `--keep-attachments` copies them into the attempt's receipt
+  directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
+  128 MiB per attempt; only regular files inside the project). With `--sdk`
+  the engine protocol carries no titles or errors by design, so failures are
+  reported only with `--failure-details`: Playwright's JSON reporter then
+  writes a separate private report beside the evidence stream, which explains
+  failures and never validates the run.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
@@ -42,9 +69,17 @@
   requirements contract (`--requirements`); `--titles` adds literal test titles
   for local use. Static findings do not establish executed assertion coverage.
 - Experimental `9l prove`: run one spec, then re-run it once per injected
-  network fault (`abort`, `http-500`, `empty-json`) on each fetch/XHR request
-  it made, and report which faults an assertion caught and which survived.
-  Requires `@9l/playwright` 0.1.1 or newer; see [Prove](prove.md).
+  network fault (`abort`, `http-500`, `empty-json` by default; `http-401`,
+  `http-403`, `http-429` and `malformed-json` with `--faults`) on each
+  fetch/XHR request it made, and report which faults an assertion caught and
+  which survived.
+  Requires `@9l/playwright` 0.1.1 or newer, and 0.1.3 or newer for the
+  `--faults` opt-in kinds; see [Prove](prove.md).
+- Experimental `9l confirm`: run one reproduction spec on the revision a
+  finding was reported against (`--unfixed`) and on the fixing revision
+  (`--fixed`, default the working tree), each in its own Git worktree, and
+  report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
+  `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
   commit and test source for later assessment/execution checks.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
@@ -53,15 +88,19 @@
   candidate from offline Tier 1 or a Tier 2 provider in isolation, and save it
   or apply it with approval. `heal-native` is an alias. See
   [Native Tier 2](native-tier2.md).
-- `9l mcp`: serve `run_test`, `heal_test` and `assess_test` to coding agents
-  over MCP stdio. See [MCP server](mcp.md).
+- `9l mcp`: serve `run_test`, `heal_test`, `assess_test` and
+  `confirm_finding` to coding agents over MCP stdio. See
+  [MCP server](mcp.md).
 
 Playwright execution supports existing projects with a local
-`@playwright/test` dependency. It never uses `npx` to download tooling during a
-run.
+`@playwright/test` dependency. The installed `node_modules/.bin/playwright` is
+taken from the package that declares it or, in an npm, pnpm or Yarn workspace
+whose dependencies are hoisted, from the nearest ancestor that has one; the
+test runs in the declaring package's directory. It never uses `npx` to
+download tooling during a run.
 
 Release packaging targets macOS, Linux and Windows on amd64 and arm64.
-Windows ZIPs start with the next CLI release after v0.1.5. Owned process-tree
+Windows ZIPs start with CLI v0.2.0. Owned process-tree
 cancellation uses Unix process groups or Windows kill-on-close Job Objects;
 native CI exercises real Chromium timeout and cancellation cleanup.
 
@@ -93,8 +132,15 @@ recursively; shell-style globs use Go's `filepath.Glob` rules.
 
 `9l heal` and `9l mcp` are native and need no Python. Healing uses the
 provider named with `--provider` or `NINELIVES_PROVIDER`, else an installed
-`claude`, `codex` or `opencode` CLI, else a configured API key; with none it is
-offline Tier 1 only. `--run-timeout` takes a duration or, like the Python CLI,
+`claude`, `codex` or `opencode` CLI, else a configured API key; with none, or
+with `--provider none`, it is offline Tier 1 only. Auto-detection is on by
+default; `NINELIVES_AUTODETECT_PROVIDER=off` limits healing to a provider
+named with `--provider` or `NINELIVES_PROVIDER`. The resolved provider is
+printed before healing starts, and the session JSON records `provider` and
+`providerCalls`. `--provider claude`, `codex` or `opencode` uses that
+CLI's own login, so a Claude, ChatGPT or OpenCode subscription works without
+an API key; see
+[native Tier 2](native-tier2.md#healing-on-a-claude-chatgpt-or-opencode-subscription). `--run-timeout` takes a duration or, like the Python CLI,
 whole seconds. The Python CLI's other healing options, its Cypress and
 Selenium adapters and its watch/report commands remain in the Python package:
 run them with `9lives`.

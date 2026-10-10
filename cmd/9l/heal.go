@@ -69,10 +69,15 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 				}
 			}
 		}
-		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath}
+		// Read the ARIA snapshot now: the next verification run clears
+		// Playwright's output directory.
+		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath, Snapshot: playwright.PageSnapshot(receipt.Failures)}
 	}
-	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure string) (string, bool) {
-		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.ExtractSelector(failure, ""), TestCode: source})
+	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure, snapshot string) (string, bool) {
+		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source, AriaSnapshot: snapshot})
+		if old, _ := proposal.Metadata["oldSelector"].(string); healing.EquivalentSelectors(old, fmt.Sprint(proposal.Metadata["newSelector"])) {
+			return "", false // selects the same missing element; skip its verification run
+		}
 		return proposal.ProposedCode, proposal.Decision == "propose"
 	})
 }
@@ -82,6 +87,15 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 // CLI or configured API key is used when present, and nil means healing is
 // offline Tier 1 only.
 func resolveHealProvider(name, model, baseURL string) (tier2.Provider, error) {
+	// "none" keeps healing offline even when an agent CLI or API key is
+	// present, without stripping PATH or the environment.
+	explicit := strings.ToLower(strings.TrimSpace(name))
+	if explicit == "none" || explicit == "" && tier2.EnvironmentProvider() == "none" {
+		return nil, nil
+	}
+	if _, err := tier2.AutoDetectEnabled(); err != nil {
+		return nil, err
+	}
 	provider, err := tier2.Resolve(tier2.Options{Name: name, Model: model, BaseURL: baseURL})
 	if err != nil {
 		if name != "" || os.Getenv("NINELIVES_PROVIDER") != "" {
@@ -90,6 +104,18 @@ func resolveHealProvider(name, model, baseURL string) (tier2.Provider, error) {
 		return nil, nil
 	}
 	return provider, nil
+}
+
+// offlineNotice explains why healing has no Tier 2 provider.
+func offlineNotice(providerName string) string {
+	switch autoDetect, _ := tier2.AutoDetectEnabled(); {
+	case strings.EqualFold(strings.TrimSpace(providerName), "none") || providerName == "" && tier2.EnvironmentProvider() == "none":
+		return "provider none: healing with offline Tier 1 only"
+	case !autoDetect:
+		return "provider auto-detection is off (NINELIVES_AUTODETECT_PROVIDER=off): healing with offline Tier 1 only; name one with --provider"
+	default:
+		return "no Tier 2 provider found; healing with offline Tier 1 only"
+	}
 }
 
 // runTimeoutFlag accepts a Go duration such as 5m, or whole seconds as the
@@ -119,7 +145,7 @@ func (f runTimeoutFlag) Set(raw string) error {
 func healCommand(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("heal", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	providerName := fs.String("provider", "", "Tier 2 provider (claude, codex, opencode, anthropic, openai); default: an installed agent CLI or configured API key, else offline Tier 1 only")
+	providerName := fs.String("provider", "", "Tier 2 provider (claude, codex, opencode, anthropic, openai, or none for offline Tier 1 only); default: an installed agent CLI or configured API key")
 	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
 	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
 	yes := fs.Bool("yes", false, "apply verified candidate without interactive approval")
@@ -144,11 +170,19 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	}
 	provider, err := resolveHealProvider(*providerName, *model, *providerURL)
 	if err != nil {
-		fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		if _, settingErr := tier2.AutoDetectEnabled(); settingErr != nil {
+			fmt.Fprintln(errOut, "9l:", settingErr)
+		} else {
+			fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		}
 		return 2
 	}
-	if provider == nil {
-		fmt.Fprintln(errOut, "9l: no Tier 2 provider found; healing with offline Tier 1 only")
+	if provider != nil {
+		// A provider call sends the spec source and failure text off the
+		// machine and may bill the account; say which before any call.
+		fmt.Fprintf(errOut, "9l: healing provider: %s; a proposal sends the spec, the failure and a redacted page snapshot; --provider none heals offline\n", tier2.Describe(provider))
+	} else {
+		fmt.Fprintln(errOut, "9l: "+offlineNotice(*providerName))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -163,6 +197,8 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	}
 	if err != nil && ctx.Err() == nil {
 		fmt.Fprintln(errOut, "9l: heal:", healFailure(result, *yes))
+	} else if err == nil && (result.State == "unverified" || result.State == "needs_human") && result.Reason != "" {
+		fmt.Fprintf(errOut, "9l: heal: %s: %s\n", result.State, result.Reason)
 	}
 	if err != nil || (!result.Applied && result.SavedPath == "" && result.State != "passed") {
 		return 1

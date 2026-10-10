@@ -27,12 +27,16 @@ type ExecuteOptions struct {
 	MaxOutputBytes  int
 	// PassEnv names caller variables forwarded to test processes in addition
 	// to the inherited runtime environment.
-	PassEnv    []string
-	ReceiptDir string
-	Adapters   []Adapter
-	Store      Store
-	Executor   ProcessExecutor
-	Services   AttemptServiceFactory
+	PassEnv []string
+	// KeepAttachments copies each failed test's attachments into the attempt's
+	// receipt directory. Without it they are only referenced, because they
+	// can hold page content.
+	KeepAttachments bool
+	ReceiptDir      string
+	Adapters        []Adapter
+	Store           Store
+	Executor        ProcessExecutor
+	Services        AttemptServiceFactory
 }
 
 // SetupError is a plan or option problem found before any process starts.
@@ -45,7 +49,7 @@ func (err SetupError) Unwrap() error { return err.Err }
 
 func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, error) {
 	started := time.Now().UTC()
-	summary := RunSummary{Version: RunSummaryVersion, Outcome: OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Receipts: []Receipt{}}
+	summary := RunSummary{Version: RunSummaryVersion, Outcome: OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Skipped: plan.Skipped, Receipts: []Receipt{}}
 	if err := validateRunID(plan.RunID); err != nil {
 		summary.Complete = false
 		return summary, SetupError{err}
@@ -382,7 +386,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		job.Env = mergeMaps(job.Env, service.Environment())
 		withholdCredentials(job.Env, opts.Services.CredentialNames())
 	}
-	evidencePath := ""
+	evidencePath, diagnosticsPath := "", ""
 	if channel, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceChannel); ok {
 		directory, err := os.MkdirTemp("", "9lives-evidence-")
 		if err != nil {
@@ -394,6 +398,10 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		defer os.RemoveAll(directory)
 		evidencePath = filepath.Join(directory, "events.ndjson")
 		job.Env[channel.EvidenceEnv()] = evidencePath
+		if diagnostics, ok := channel.(DiagnosticsChannel); ok && diagnostics.DiagnosticsEnv() != "" {
+			diagnosticsPath = filepath.Join(directory, "diagnostics.json")
+			job.Env[diagnostics.DiagnosticsEnv()] = diagnosticsPath
+		}
 	}
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
 	if service != nil {
@@ -431,6 +439,14 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				}
 			} else {
 				validation, validationErr = adapter.Validate(output.Stdout)
+				// A truncated report never validates, even when the prefix
+				// happens to parse; name the limit rather than a parse error.
+				if output.StdoutTruncated {
+					validationErr = fmt.Errorf("structured report exceeded capture limit")
+				}
+			}
+			if validationErr != nil && job.Selection != "" && strings.Contains(validationErr.Error(), "found no tests") {
+				validationErr = fmt.Errorf("%w; the test selection (%s) may match none of its tests", validationErr, job.Selection)
 			}
 			if validationErr != nil {
 				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), "missing or invalid structured report"
@@ -490,6 +506,16 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.Status = StatusError
 			}
 			receipt.Error = "agent branch/source provenance changed or became unavailable during execution"
+		}
+	}
+	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(FailureReporter); ok && receipt.Validated && receipt.FailureCount > 0 {
+		report := output.Stdout
+		if diagnosticsPath != "" {
+			report, _ = readEvidence(diagnosticsPath, opts.MaxOutputBytes)
+		}
+		receipt.Failures = reporter.Failures(report, job.WorkDir)
+		if opts.KeepAttachments {
+			retainAttachments(filepath.Join(opts.ReceiptDir, runID, job.ID, receipt.AttemptID, "attachments"), receipt.Failures)
 		}
 	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {

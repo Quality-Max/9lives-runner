@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
+	"github.com/Quality-Max/9lives-runner/internal/confirm"
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -43,14 +44,16 @@ const mcpInstructions = "9lives Go runner. run_test executes one Playwright spec
 	"selector (offline Tier 1, then the configured agent CLI or API), verifying the candidate in an isolated copy before " +
 	"saving it as <spec>.healed or, with apply=true, writing it in place. needs_human means an assertion failed: a possible " +
 	"real bug that healing will not mask. assess_test statically reviews a spec or directory for weak or missing assertions " +
-	"and analysis limits without running it. Paths must be inside the server's working directory."
+	"and analysis limits without running it. confirm_finding runs a reproduction spec on the revision a finding was reported " +
+	"against and on the fixing revision (default: the working tree); only verdict confirmed means its assertions failed before " +
+	"and passed after, and even that does not show the spec tests the finding. Paths must be inside the server's working directory."
 
 // mcpTools are advertised by tools/list.
 var mcpTools = []map[string]any{
 	{
 		"name":        "run_test",
 		"title":       "Run a Playwright spec",
-		"description": "Run one Playwright spec through the installed project with a bounded timeout. Returns status passed, failed or incomplete, test counts, the failure context and the receipt path. incomplete is never a pass.",
+		"description": "Run one Playwright spec through the installed project with a bounded timeout. Returns status passed, failed or incomplete, test counts, each failed test with its failing line and error, Playwright's error context for the first failure (error, ARIA snapshot of the page, marked source) and the receipt path. incomplete is never a pass.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -88,6 +91,24 @@ var mcpTools = []map[string]any{
 				"requirements": map[string]any{"type": "string", "description": "Optional reviewed requirement contract JSON"},
 			},
 			"required":             []string{"path"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		"name":        "confirm_finding",
+		"title":       "Confirm a reported finding",
+		"description": "Run a reproduction spec, which must import test from @9l/playwright, once on the unfixed revision and once on the fixed revision (default: the working tree), each in its own checkout. verdict is confirmed (assertion failed before, passed after), not-reproduced, fix-ineffective, regressed or inconclusive. Write the reproduction before fixing a finding; do not call a finding confirmed without this verdict.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"spec":        map[string]any{"type": "string", "description": "Path to the reproduction spec in the working tree"},
+				"unfixed":     map[string]any{"type": "string", "description": "Git revision the finding was reported against, such as HEAD or main"},
+				"fixed":       map[string]any{"type": "string", "description": "Git revision with the fix (default: the working tree)"},
+				"finding_id":  map[string]any{"type": "string", "description": "Short label recorded as given, such as an issue key"},
+				"finding":     map[string]any{"type": "string", "description": "Finding text; only its SHA-256 is recorded"},
+				"run_timeout": map[string]any{"type": "integer", "minimum": 1, "description": "Max seconds for each of the two runs (default 300, or NINELIVES_RUN_TIMEOUT)"},
+			},
+			"required":             []string{"spec", "unfixed"},
 			"additionalProperties": false,
 		},
 	},
@@ -134,7 +155,7 @@ func (failedResult) Error() string { return "tool failed" }
 func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	providerName := fs.String("provider", "", "heal_test Tier 2 provider; default: an installed agent CLI or configured API key, else offline Tier 1 only")
+	providerName := fs.String("provider", "", "heal_test Tier 2 provider, or none for offline Tier 1 only; default: an installed agent CLI or configured API key")
 	model := fs.String("model", os.Getenv("NINELIVES_MODEL"), "provider model")
 	providerURL := fs.String("provider-url", "", "local/provider HTTP URL")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "run_test receipts")
@@ -153,7 +174,11 @@ func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	}
 	provider, err := resolveHealProvider(*providerName, *model, *providerURL)
 	if err != nil {
-		fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		if _, settingErr := tier2.AutoDetectEnabled(); settingErr != nil {
+			fmt.Fprintln(errOut, "9l:", settingErr)
+		} else {
+			fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		}
 		return exitUsage
 	}
 	server := &mcpServer{passEnv: passEnv, provider: provider, model: *model, runTimeout: nativeRunTimeout(),
@@ -276,7 +301,7 @@ func (s *mcpServer) handle(ctx context.Context, line []byte) {
 			"protocolVersion": protocol,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "9lives", "title": "9lives Go runner", "version": version},
-			"instructions":    mcpInstructions,
+			"instructions":    mcpInstructions + " heal_test provider: " + tier2.Describe(s.provider) + ".",
 		})
 	case "ping":
 		s.result(message.ID, map[string]any{})
@@ -312,7 +337,7 @@ func (s *mcpServer) call(ctx context.Context, message mcpMessage) {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	if json.Unmarshal(message.Params, &params) != nil || (params.Name != "run_test" && params.Name != "heal_test" && params.Name != "assess_test") {
+	if json.Unmarshal(message.Params, &params) != nil || (params.Name != "run_test" && params.Name != "heal_test" && params.Name != "assess_test" && params.Name != "confirm_finding") {
 		s.send(map[string]any{"jsonrpc": "2.0", "id": message.ID, "error": map[string]any{"code": -32602, "message": "Unknown tool"}})
 		return
 	}
@@ -428,6 +453,33 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 			proposals = *args.MaxProposals
 		}
 		return s.healTest(ctx, spec, args.Apply, proposals, timeout)
+	case "confirm_finding":
+		var args struct {
+			Spec       string `json:"spec"`
+			Unfixed    string `json:"unfixed"`
+			Fixed      string `json:"fixed"`
+			FindingID  string `json:"finding_id"`
+			Finding    string `json:"finding"`
+			RunTimeout *int   `json:"run_timeout"`
+		}
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
+		}
+		timeout, err := s.timeoutArgument(args.RunTimeout)
+		if err != nil {
+			return nil, err
+		}
+		spec, err := s.contained(args.Spec, false)
+		if err != nil {
+			return nil, err
+		}
+		if args.Unfixed == "" {
+			return nil, toolError{"unfixed is required"}
+		}
+		return s.confirmFinding(ctx, confirmOptions{
+			spec: spec, unfixed: args.Unfixed, fixed: args.Fixed, finding: args.Finding, findingID: args.FindingID,
+			workers: 1, timeout: timeout, maxOutputBytes: 4 << 20, passEnv: s.passEnv, receiptDir: s.receiptDir,
+		})
 	default:
 		var args struct {
 			Path         string `json:"path"`
@@ -487,8 +539,15 @@ type mcpRunResult struct {
 	SkippedTests  int    `json:"skippedTests"`
 	Reason        string `json:"reason,omitempty"`
 	Failure       string `json:"failure,omitempty"`
-	Receipt       string `json:"receipt,omitempty"`
+	// Failures names each failed test with its failing line, error start and
+	// attachments; FailureContext is the first failure's Playwright
+	// error-context.md (error, ARIA snapshot of the page, marked source).
+	Failures       []runner.TestFailure `json:"failures,omitempty"`
+	FailureContext string               `json:"failureContext,omitempty"`
+	Receipt        string               `json:"receipt,omitempty"`
 }
+
+const mcpMaxFailureContext = 8 << 10
 
 func (s *mcpServer) runTest(ctx context.Context, spec string, timeout time.Duration) (any, error) {
 	adapters := []runner.Adapter{playwright.New()}
@@ -522,6 +581,8 @@ func (s *mcpServer) runTest(ctx context.Context, spec string, timeout time.Durat
 				result.Failure = bounded(playwright.FailureContext(raw))
 			}
 		}
+		result.Failures = receipt.Failures
+		result.FailureContext = firstFailureContext(receipt.Failures)
 	} else if err != nil {
 		result.Reason = "execution did not complete"
 	}
@@ -602,18 +663,54 @@ func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (
 	return map[string]any{"version": MCPToolResultVersion, "report": report}, nil
 }
 
+func (s *mcpServer) confirmFinding(ctx context.Context, options confirmOptions) (any, error) {
+	report, saved, err := confirmFinding(ctx, options, io.Discard)
+	var setup confirm.SetupError
+	if errors.As(err, &setup) {
+		return nil, toolError{bounded(setup.Message)}
+	}
+	if err != nil {
+		return nil, toolError{"confirmation failed: " + bounded(err.Error())}
+	}
+	if saved == "" {
+		return nil, failedResult{map[string]any{"version": MCPToolResultVersion, "report": report, "error": "the confirmation report could not be saved"}}
+	}
+	return map[string]any{"version": MCPToolResultVersion, "report": report, "reportPath": saved}, nil
+}
+
 // terminalEscape matches the ANSI color and style sequences Playwright
 // writes into its error messages.
 var terminalEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
+// firstFailureContext reads the first error-context attachment, redacted
+// and bounded. The file holds page content, so it is returned to the caller
+// and never persisted by this path.
+func firstFailureContext(failures []runner.TestFailure) string {
+	for _, failure := range failures {
+		for _, attachment := range failure.Attachments {
+			if attachment.Name != "error-context" || attachment.Bytes > 1<<20 {
+				continue
+			}
+			raw, err := playwright.ReadAttachment(attachment.Path, 1<<20)
+			if err != nil {
+				return ""
+			}
+			return boundedTo(runner.RedactText(string(raw)), mcpMaxFailureContext)
+		}
+	}
+	return ""
+}
+
 // bounded keeps returned diagnostics small, free of terminal escapes and on
 // valid UTF-8 boundaries.
-func bounded(text string) string {
+func bounded(text string) string { return boundedTo(text, mcpMaxText) }
+
+func boundedTo(text string, limit int) string {
 	text = terminalEscape.ReplaceAllString(text, "")
-	if len(text) <= mcpMaxText {
+	if len(text) <= limit {
 		return text
 	}
-	cut := mcpMaxText
+	cut := limit
 	for cut > 0 && !utf8RuneStart(text[cut]) {
 		cut--
 	}

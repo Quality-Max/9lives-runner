@@ -42,6 +42,28 @@ type Adapter interface {
 	Validate(stdout []byte) (Validation, error)
 }
 
+// LineSelector adapters can narrow a planned job to the test at a line of
+// its spec, as `9l run tests/login.spec.ts:12` asks.
+type LineSelector interface {
+	SelectLine(job Job, line int) (Job, error)
+}
+
+// FailureReporter adapters describe each failed test in a report that
+// already validated. workDir is the job's working directory; attachment
+// paths outside it are not reported.
+type FailureReporter interface {
+	Failures(report []byte, workDir string) []TestFailure
+}
+
+// DiagnosticsChannel adapters write a separate per-attempt report for
+// FailureReporter beside the evidence stream, named by the returned
+// environment variable; an empty name disables it. The file never validates
+// or replaces evidence, is read only after the attempt validated, and is not
+// persisted.
+type DiagnosticsChannel interface {
+	DiagnosticsEnv() string
+}
+
 type Validation struct {
 	GoalFailed bool
 	// NonGoalFailureCount counts unexpected test failures in tests with no

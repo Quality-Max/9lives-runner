@@ -51,12 +51,12 @@ func TestHealRunsActualCandidateBytesAndSavesOnlyVerifiedCandidate(t *testing.T)
 		}
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 	}
-	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, MaxProposals: 1, Run: run}, func(string, string) (string, bool) { return "", false })
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, MaxProposals: 1, Run: run}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.State != "verified" || result.SavedPath != spec+".healed" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	// A declined/non-interactive apply saves a verified candidate, never edits source.
-	result, err = Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: &fakeProvider{responses: []string{"```typescript\n" + candidate + "```"}}, MaxProposals: 1, Run: run, Interactive: func(context.Context) bool { return false }}, func(string, string) (string, bool) { return "", false })
+	result, err = Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: &fakeProvider{responses: []string{"```typescript\n" + candidate + "```"}}, MaxProposals: 1, Run: run, Interactive: func(context.Context) bool { return false }}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.SavedPath != spec+".healed" {
 		t.Fatalf("declined proposal was not saved: %+v %v", result, err)
 	}
@@ -82,7 +82,7 @@ func TestHealRejectsBoundariesAndNeverSavesUnverifiedOutput(t *testing.T) {
 		provider := &fakeProvider{responses: []string{"```typescript\n" + candidate + "```"}}
 		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, MaxProposals: 1, Run: func(_ context.Context, _ string, label string) RunResult {
 			return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
-		}}, func(string, string) (string, bool) { return "", false })
+		}}, func(string, string, string) (string, bool) { return "", false })
 		if err != nil || result.State != "unverified" || result.SavedPath != "" {
 			t.Fatalf("unsafe candidate result=%+v err=%v", result, err)
 		}
@@ -102,7 +102,7 @@ func TestHealConcurrentEditBlocksApplyAndFailedCandidateCannotApply(t *testing.T
 			return RunResult{Passed: true, ExecutedTests: 1}
 		}
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err == nil || result.State != "concurrent_edit" || result.Applied {
 		t.Fatalf("concurrent edit applied: %+v %v", result, err)
 	}
@@ -114,7 +114,7 @@ func TestHealConcurrentEditBlocksApplyAndFailedCandidateCannotApply(t *testing.T
 			return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 		}
 		return RunResult{Passed: true, ExecutedTests: 0}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.Applied || result.SavedPath != "" {
 		t.Fatalf("zero-test result persisted: %+v %v", result, err)
 	}
@@ -165,7 +165,7 @@ func TestHealDoesNotEscalateZeroTestsOrAssertions(t *testing.T) {
 		{ExecutedTests: 1, Failure: "AssertionError: expected result"},
 	} {
 		provider := &fakeProvider{responses: []string{"unexpected"}}
-		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult { return originalResult }}, func(string, string) (string, bool) { return "", false })
+		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult { return originalResult }}, func(string, string, string) (string, bool) { return "", false })
 		if err != nil || provider.calls != 0 || result.SavedPath != "" || result.Applied {
 			t.Fatalf("escalated unsafe original result=%+v calls=%d err=%v", result, provider.calls, err)
 		}
@@ -200,7 +200,7 @@ func TestHealRefusesUnsafeTier1BeforeVerification(t *testing.T) {
 	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(_ context.Context, _ string, label string) RunResult {
 		labels = append(labels, label)
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('[data-testid=\\\"old\\\"]')"}
-	}}, func(string, string) (string, bool) { return unsafe, true })
+	}}, func(string, string, string) (string, bool) { return unsafe, true })
 	if err != nil || len(labels) != 1 || labels[0] != "original" || result.Tier1.ExecutedTests != 0 || result.Applied || result.SavedPath != "" {
 		t.Fatalf("unsafe Tier1 executed or persisted: result=%+v labels=%v err=%v", result, labels, err)
 	}
@@ -215,7 +215,7 @@ func TestHealDoesNotEscalateNonEditableOrAssertionCandidateFailures(t *testing.T
 	}
 	for _, failure := range []string{"network request failed waiting for locator('#old')", "syntax error waiting for locator('#old')"} {
 		provider := &fakeProvider{responses: []string{"unexpected"}}
-		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult { return RunResult{ExecutedTests: 1, Failure: failure} }}, func(string, string) (string, bool) { return "", false })
+		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult { return RunResult{ExecutedTests: 1, Failure: failure} }}, func(string, string, string) (string, bool) { return "", false })
 		if err != nil || provider.calls != 0 || result.State != "unverified" {
 			t.Fatalf("failure=%q result=%+v calls=%d err=%v", failure, result, provider.calls, err)
 		}
@@ -227,7 +227,7 @@ func TestHealDoesNotEscalateNonEditableOrAssertionCandidateFailures(t *testing.T
 			return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 		}
 		return RunResult{ExecutedTests: 1, Failure: "AssertionError: expected result"}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || provider.calls != 1 || result.State != "needs_human" {
 		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
 	}
@@ -258,14 +258,14 @@ func TestParseCandidateTreatsCODEInBareSourceAsSource(t *testing.T) {
 func TestHealMarksProviderCancellationCanceled(t *testing.T) {
 	dir := t.TempDir()
 	spec := filepath.Join(dir, "login.spec.ts")
-	original := "test('x', async ({ page }) => { await page.locator('#old').click(); });\n"
+	original := "test('x', async ({ page }) => {\n  await page.locator('#old').click();\n});\n"
 	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
 		t.Fatal(err)
 	}
 	provider := &fakeProvider{err: context.Canceled}
 	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult {
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if !errors.Is(err, context.Canceled) || result.State != "canceled" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -342,7 +342,7 @@ func TestHealFeedsLatestCandidateAndFailureToNextProposal(t *testing.T) {
 			return RunResult{Passed: true, ExecutedTests: 1}
 		}
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#first')"}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.State != "verified" || len(provider.prompts) != 2 {
 		t.Fatalf("result=%+v prompts=%d err=%v", result, len(provider.prompts), err)
 	}
@@ -426,7 +426,7 @@ func TestHealRejectsMismatchedTestCountAndCanceledSession(t *testing.T) {
 			return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 		}
 		return RunResult{Passed: true, ExecutedTests: 2}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.Applied || result.SavedPath != "" || result.State != "unverified" {
 		t.Fatalf("mismatched count accepted: %+v %v", result, err)
 	}
@@ -448,7 +448,7 @@ func TestHealRejectsMismatchedTestCountAndCanceledSession(t *testing.T) {
 				return receipt
 			}
 			return RunResult{}
-		}}, func(string, string) (string, bool) { return "", false })
+		}}, func(string, string, string) (string, bool) { return "", false })
 		if !errors.Is(err, context.Canceled) || result.State != "canceled" || deferred.calls != 0 || result.SavedPath != "" {
 			t.Fatalf("cancel gate failed: receipt=%+v result=%+v calls=%d err=%v", receipt, result, deferred.calls, err)
 		}
@@ -476,7 +476,7 @@ func TestHealApplyPreservesModeAndUsesVerifiedBytes(t *testing.T) {
 			return RunResult{ExecutedTests: 1, Failure: "wrong executed bytes"}
 		}
 		return RunResult{Passed: true, ExecutedTests: 1}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || !result.Applied {
 		t.Fatalf("apply=%+v err=%v", result, err)
 	}
@@ -517,7 +517,7 @@ func TestTier2AdmissionLimitPreservesOriginalAndTier1(t *testing.T) {
 					return RunResult{Passed: true, ExecutedTests: 1}
 				}
 				return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
-			}}, func(source, _ string) (string, bool) { return strings.Replace(source, "#old", "#new", 1), tc.tier1 })
+			}}, func(source, _, _ string) (string, bool) { return strings.Replace(source, "#old", "#new", 1), tc.tier1 })
 			if err != nil || provider.calls != 0 || (tc.passed && result.State != "passed") || (tc.tier1 && result.State != "verified") {
 				t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
 			}
@@ -535,7 +535,7 @@ func TestTier2RejectsOverEightKiBWithoutProviderOrMutation(t *testing.T) {
 	provider := &fakeProvider{}
 	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: func(context.Context, string, string) RunResult {
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	stored, _ := os.ReadFile(spec)
 	if err != nil || result.State != "unverified" || provider.calls != 0 || string(stored) != original {
 		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
@@ -584,7 +584,7 @@ func TestTier2AcceptsExactEightKiBCompleteCandidate(t *testing.T) {
 			return RunResult{Passed: true, ExecutedTests: 1}
 		}
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
-	}}, func(string, string) (string, bool) { return "", false })
+	}}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.State != "verified" || provider.calls != 1 {
 		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
 	}
@@ -606,16 +606,137 @@ func TestHealWithoutProviderIsOfflineTier1Only(t *testing.T) {
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
 	}
 	// A verified Tier 1 candidate needs no provider.
-	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: run}, func(string, string) (string, bool) { return candidate, true })
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: run}, func(string, string, string) (string, bool) { return candidate, true })
 	if err != nil || result.State != "verified" || result.SavedPath != spec+".healed" {
 		t.Fatalf("offline Tier 1: result=%+v err=%v", result, err)
 	}
 	// Without a Tier 1 candidate it stops, unverified, instead of calling Tier 2.
-	result, err = Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: run}, func(string, string) (string, bool) { return "", false })
+	result, err = Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: run}, func(string, string, string) (string, bool) { return "", false })
 	if err != nil || result.State != "unverified" || !strings.Contains(result.Reason, "no Tier 2 provider") || result.Applied {
 		t.Fatalf("no provider: result=%+v err=%v", result, err)
 	}
 	if source, _ := os.ReadFile(spec); string(source) != original {
 		t.Fatal("source changed")
+	}
+}
+
+func TestHealRecordsWhyTheProviderCallFailed(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "login.spec.ts")
+	if err := os.WriteFile(spec, []byte("test('x', async ({ page }) => {\n  await page.locator('#old').click();\n});\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeProvider{err: &CallError{Provider: "claude", ExitCode: 1, Diagnostic: "Not logged in · Please run /login"}}
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Provider: provider, Run: func(context.Context, string, string) RunResult {
+		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
+	}}, func(string, string, string) (string, bool) { return "", false })
+	if err == nil || result.State != "provider_error" || result.Provider != "fake" || result.ProviderCalls != 1 || result.ProviderDiagnostic != "claude provider failed (exit 1): Not logged in · Please run /login" || !strings.Contains(result.Reason, "Not logged in") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestHealDoesNotAskProviderForAnUneditableSourceShape(t *testing.T) {
+	for name, tc := range map[string]struct{ source, reason string }{
+		"locator in a variable": {"test('x', async ({ page }) => {\n  const field = page.locator('#old');\n  await field.fill('a');\n});\n", "not a direct `await page.locator('#old')"},
+		"same line as closing":  {"test('x', async ({ page }) => { await page.locator('#old').click(); });\n", "not a direct `await page.locator('#old')"},
+		"two locator calls":     {"test('x', async ({ page }) => {\n  await page.locator('#old').click();\n  await page.locator('#old').fill('a');\n});\n", "more than once"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			spec := filepath.Join(t.TempDir(), "login.spec.ts")
+			if err := os.WriteFile(spec, []byte(tc.source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			provider := &fakeProvider{responses: []string{"```typescript\n" + strings.ReplaceAll(tc.source, "#old", "#new") + "```"}}
+			result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: func(context.Context, string, string) RunResult {
+				return RunResult{ExecutedTests: 1, Failure: "TimeoutError: waiting for locator('#old')"}
+			}}, func(string, string, string) (string, bool) { return "", false })
+			if err != nil || provider.calls != 0 || result.ProviderCalls != 0 || result.Provider != "fake" || result.State != "unverified" || !strings.Contains(result.Reason, "Tier 2 was not asked") || !strings.Contains(result.Reason, tc.reason) {
+				t.Fatalf("calls=%d result=%+v err=%v", provider.calls, result, err)
+			}
+		})
+	}
+}
+
+func TestHealRepairsARenamedGetByRoleName(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "login.spec.ts")
+	original := "test('login', async ({ page }) => {\n  await page.getByRole('button', { name: 'Anmelden' }).click();\n  await expect(page.getByRole('status')).toHaveText('Willkommen');\n});\n"
+	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := strings.Replace(original, "'Anmelden'", "'Einloggen'", 1)
+	provider := &fakeProvider{responses: []string{"```typescript\n" + candidate + "```"}}
+	run := func(_ context.Context, path, _ string) RunResult {
+		data, _ := os.ReadFile(path)
+		if string(data) == candidate {
+			return RunResult{Passed: true, ExecutedTests: 1}
+		}
+		return RunResult{ExecutedTests: 1, Failure: "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n\x1b[2m  - waiting for getByRole('button', { name: 'Anmelden' })\x1b[22m"}
+	}
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: run}, func(string, string, string) (string, bool) { return "", false })
+	saved, _ := os.ReadFile(spec + ".healed")
+	if err != nil || result.State != "verified" || provider.calls != 1 || string(saved) != candidate {
+		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
+	}
+}
+
+func TestHealRepairsPageActionShorthand(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "login.spec.ts")
+	original := "test('login', async ({ page }) => {\n  await page.fill('#emailAddress', 'qa@example.test');\n  await expect(page.locator('output')).toHaveText('ok');\n});\n"
+	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := strings.Replace(original, "'#emailAddress'", "'#email'", 1)
+	provider := &fakeProvider{responses: []string{"```typescript\n" + candidate + "```"}}
+	run := func(_ context.Context, path, _ string) RunResult {
+		data, _ := os.ReadFile(path)
+		if string(data) == candidate {
+			return RunResult{Passed: true, ExecutedTests: 1}
+		}
+		return RunResult{ExecutedTests: 1, Failure: "TimeoutError: page.fill: Timeout 1500ms exceeded.\nCall log:\n  - waiting for locator('#emailAddress')"}
+	}
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: run}, func(string, string, string) (string, bool) { return "", false })
+	if err != nil || result.State != "verified" || provider.calls != 1 {
+		t.Fatalf("result=%+v calls=%d err=%v", result, provider.calls, err)
+	}
+}
+
+func TestHealExplainsWhyAProviderCandidateWasRefused(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "login.spec.ts")
+	original := "test('x', async ({ page }) => {\n  await page.locator('#old').click();\n  await expect(page.locator('#done')).toBeVisible();\n});\n"
+	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(context.Context, string, string) RunResult {
+		return RunResult{ExecutedTests: 1, Failure: "TimeoutError: waiting for locator('#old')"}
+	}
+	for name, tc := range map[string]struct{ response, reason, diagnostic string }{
+		"prose":          {"I cannot see the page, so I can't fix this.", "provider candidate refused: provider must return exactly one fenced complete file", "response began: I cannot see the page"},
+		"assertion edit": {"```ts\n" + strings.Replace(strings.Replace(original, "#old", "#new", 1), "#done", "#ok", 1) + "```", "(changed lines 2, 3)", ""},
+	} {
+		provider := &fakeProvider{responses: []string{tc.response}}
+		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: run}, func(string, string, string) (string, bool) { return "", false })
+		if err != nil || result.State != "unverified" || !strings.Contains(result.Reason, tc.reason) || !strings.HasPrefix(result.ProviderDiagnostic, tc.diagnostic) {
+			t.Fatalf("%s: result=%+v err=%v", name, result, err)
+		}
+	}
+}
+
+func TestRefusalReasonsNameTheBoundaryAndTheWaitedLocator(t *testing.T) {
+	for failure, want := range map[string]string{
+		"TimeoutError: locator.click: Timeout\nCall log:\n\x1b[2m  - waiting for getByRole('form').getByRole('button', { name: 'Go' })\x1b[22m": "it waited for getByRole('form').getByRole('button', { name: 'Go' }), which is not an editable locator",
+		"TimeoutError: locator.click: Timeout\nCall log:\n  - waiting for getByRole('button', { name: /go/i })":                                 "it waited for getByRole('button', { name: /go/i })",
+		"page.goto: net::ERR_NAME_NOT_RESOLVED; navigation failed":                                                                              "navigation problem",
+		"Error: something unexpected": "classified as unknown",
+	} {
+		if _, editable := editableFailure(failure); editable {
+			t.Fatalf("%q treated as editable", failure)
+		}
+		got := notEditableReason(failure)
+		if !strings.Contains(got, want) {
+			t.Errorf("reason for %q = %q, want it to contain %q", failure, got, want)
+		}
+		if !strings.Contains(want, "navigation") && !strings.Contains(got, "page.getBy*(") {
+			t.Errorf("reason does not name the editable shapes: %q", got)
+		}
 	}
 }

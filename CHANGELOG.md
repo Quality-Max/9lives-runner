@@ -1,23 +1,169 @@
 # Changelog
 
-## SDK 0.1.2 — 2026-10-10
+From 0.2.0 the CLI and `@9l/playwright` share one version and are released
+together by one `v<version>` tag. Earlier entries keep their separate CLI and
+SDK versions.
 
-- Refresh the npm package and installation examples from current main. SDK
-  runtime behavior and protocol are unchanged from 0.1.1.
-- Release qualification now covers native Windows amd64 and arm64, including
-  real Chromium assertions, timeout/cancel cleanup and isolated consumers;
-  Windows relies on inherited directory ACLs rather than POSIX mode bits.
+## Unreleased
 
-## CLI unreleased
+### CLI
+
+- `9l heal --provider claude` works on a Claude subscription. Provider CLIs
+  now receive the user name (`USER`, `LOGNAME`, `USERNAME`), temp, locale,
+  Windows profile, proxy and CA-certificate variables. Without `USER`,
+  Claude Code could not find a macOS keychain login and every call failed
+  as logged out. API keys are still not inherited.
+- `--provider codex` and `--provider opencode` heal on a ChatGPT or OpenCode
+  subscription through the CLI's own login; `CODEX_HOME`,
+  `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR` now reach
+  the CLI. Codex runs with `--sandbox read-only --color never` and OpenCode
+  with its read-only `plan` agent.
+- Provider use is explicit: `9l heal` prints the resolved provider and how
+  it is reached before healing starts, `--provider none` /
+  `NINELIVES_PROVIDER=none` keeps healing offline with an agent CLI
+  installed, and the session JSON and MCP `heal_test` result record
+  `provider` and `providerCalls`. `9l mcp` names its heal provider in its
+  `initialize` instructions. Auto-detection of an installed CLI or API key
+  stays on by default; the setting `NINELIVES_AUTODETECT_PROVIDER=off` turns
+  it (and a named CLI's API-key fallback) off, so only a named provider is
+  used.
+- A failed provider call records why: the session's `providerDiagnostic` and
+  `reason` carry the exit code and the last output lines, redacted and capped
+  at 512 bytes, instead of "provider did not return a usable candidate". A
+  named CLI that is not installed is named ("claude CLI was not found on
+  PATH") instead of failing without a reason. The OpenCode prompt is a
+  command-line argument and therefore visible in the local process list to
+  other users of the machine; the docs now say so (Claude and Codex read the
+  prompt on stdin).
+- Refusals name the boundary: "not an editable locator action" now says
+  what the call log waited for (or how the failure was classified) and which
+  call shapes healing repairs. `9l heal` prints the reason of an
+  `unverified` or `needs_human` session on stderr.
+- Heal failure text (`original.failure` and the others in the session JSON,
+  and the Tier 2 prompt) keeps one copy of each Playwright error, without
+  terminal escapes and in a stable order. Before, each error appeared twice
+  with ANSI codes, using half of the 4 KiB failure budget.
+- A refused provider answer says why: the parse error (for example "must
+  return exactly one fenced complete file", with the response's first 160
+  characters as `providerDiagnostic`), or the lines it changed beyond the
+  failed locator's literal.
+- Healing edits `getByRole` and other `getBy*` locators. A renamed button,
+  `page.getByRole('button', { name: 'Anmelden' })` failing in the call log,
+  can be repaired by changing only the name literal; the role, `exact`
+  option and everything else must stay the same. Before, such failures were
+  refused as "not an editable locator action" before any provider call.
+  Chained and regular-expression locators are still not edited.
+- Offline Tier 1 re-finds a renamed `getByRole` or `getByLabel` name from
+  the ARIA snapshot in the failed run's `error-context.md`, when exactly one
+  matching element remains (or exactly one shares a word with the old name).
+  A renamed button now heals with no provider at all. The `9l tier1` request
+  gains an optional `ariaSnapshot` field. The same snapshot, with values typed
+  into fields dropped, redacted and bounded to 3,000 bytes, is the page
+  state in the Tier 2 prompt.
+- Healing accepts the `page.fill('#id', …)` / `page.click('#id')` shorthand
+  for the repairable actions. A correct provider answer for that shape used
+  to be paid for and then discarded.
+- Native healing skips Tier 1's `#id` -> `[id="id"]` rewrite, which selects
+  the same missing element, instead of spending a verification run on it.
+  `9l tier1` still reports it.
+- Tier 2 no longer asks a provider when the spec has no source shape a
+  proposal could be admitted for, such as `page.fill('#id', …)` shorthand,
+  a locator used twice or an action sharing its line. Those sessions end
+  `unverified` with a reason naming the boundary and make no provider call;
+  before, the call was made and its answer always discarded.
+
+- `9l run` without `--sdk`, `9l heal` and MCP `run_test`/`heal_test` find a
+  workspace-hoisted Playwright in an ancestor `node_modules/.bin`, as the
+  SDK adapter already did. In an npm-workspace monorepo they used to skip
+  every spec with "local binary is missing".
+- `9l --help` lists `confirm_finding` among the MCP tools, and the run and
+  heal options added in this release; a test keeps the MCP line in sync
+  with the advertised tools.
+- `9l run` selects tests: `spec.ts:LINE` inputs and `--grep` /
+  `--grep-invert` pass Playwright's filters through, recorded in each job's
+  `selection` (plan, additive) and the receipt's evidence command. A
+  selection that matches nothing stays incomplete and says so.
+- `9l run --reporter html` (comma-separated) runs the project's reporters
+  beside 9l's evidence reporter, so the HTML report is still produced;
+  `json` is reserved for evidence.
+- `9l run` and `9l result` name each failed test below its job: title,
+  failing line, the first lines of the error, and Playwright's
+  `error-context.md`, screenshot and trace paths. Receipts carry the same as
+  `failures` (additive; receipt version 1). MCP `run_test` returns
+  `failures` and the first failure's `error-context.md` as `failureContext`.
+- `9l run --sdk --failure-details` reports the same per-test failures. The
+  engine protocol still carries no titles or errors; they come from
+  Playwright's JSON reporter, written to a separate private file beside the
+  evidence stream that never validates the attempt.
+- `9l run --keep-attachments` copies those attachments into the receipt
+  directory with SHA-256 digests, so the project's next run cannot delete
+  them. Without it they are only referenced.
+
+- `9l run` and `9l result` list each skipped input with its reason
+  (`SKIP <input> — <reason>`), and the run result carries them as `skipped`.
+  A run that is incomplete only because inputs were skipped now says so
+  instead of blaming planned jobs.
+
+### Assess
+
+- A file that imports `test` only from a module assess does not recognise
+  (a fixture file or another test runner) now names it: the report carries
+  `unrecognizedTestImports` and an `unrecognized-test-import` limit, and
+  suite summaries count it as `unrecognized` and "not assessed" instead of
+  assessed with 0 tests. Exit codes are unchanged.
+
+## 0.2.0 — 2026-10-10
+
+### Release process
+
+- One `v<version>` tag and one `Release` workflow release both
+  distributions: CI qualifies the commit once, the CLI archives are published
+  as a GitHub Release, and then the SDK tarball that run qualified is
+  published to npm. `npm-release.yml` is removed; the SDK is no longer
+  published on a push to `main`, and no `sdk-v` tags are created.
+- The workflow refuses a tag unless the CLI source version, the SDK manifest,
+  the lockfile and the SDK test fixture all declare it, and `npm test` fails
+  as soon as those declarations drift apart.
+- Rerunning a failed `npm` job skips publication when npm already holds the
+  identical tarball and fails when it holds different contents.
+
+### SDK
+
+- 0.2.0 has the same runtime, protocols and fault kinds as 0.1.3; only the
+  version changes, to match the CLI.
+
+### CLI
 
 - Add Windows amd64 and arm64 ZIP packaging, with `9l.exe`, legal files and
-  SHA-256 checksums, for the next CLI release after v0.1.5.
+  SHA-256 checksums. v0.2.0 is the first release with Windows assets.
 - Own Windows launcher and descendant processes through kill-on-close Job
   Objects; launch the installed Playwright JavaScript CLI with Node directly.
   Goals use an owner-restricted Windows named pipe with the existing SDK protocol.
   Native CI covers real Chromium execution, timeout/cancel cleanup and isolated
   consumers on both Windows architectures. Windows arm64 tests omit `-race`.
 - Clarify the README comparison with qmax-code's broader terminal agent.
+- Experimental `9l confirm <spec> --unfixed REV [--fixed REV]` runs a
+  reproduction spec on the revision a finding was reported against and on
+  the fixing revision (default: the working tree), each as an ordinary SDK
+  run in its own detached Git worktree with hooks disabled, and classifies
+  each test and the pair as `confirmed`, `not-reproduced`, `fix-ineffective`,
+  `regressed` or `inconclusive` (policy `confirm-v1`). The spec comes from
+  the working tree, so both sides run identical bytes; `node_modules` is
+  linked from the working tree, and a revision whose manifest or lockfile
+  differs is flagged. Exit 0 only for confirmed, 1 for another conclusive
+  verdict, 2 for usage or setup errors and 3 when inconclusive. Finding text
+  is stored only as its SHA-256. `9l mcp` serves it as `confirm_finding`.
+  A revision that commits a link or file in place of one of the spec's
+  parent directories is refused before anything is written, and a run whose
+  goal failed counts as incomplete on either side.
+  `npm run smoke:confirm` qualifies it with real Chromium (#42).
+- `9l prove --faults` selects fault kinds. New opt-in kinds: `http-401`,
+  `http-403`, `http-429` (with `Retry-After: 1`) and `malformed-json` (a
+  successful JSON body cut to its first half, so it no longer parses). The
+  default is still `abort,http-500,empty-json`. Selecting a kind the installed
+  SDK does not report exits 2 after the baseline, before any fault run.
+  Reports gain `faultKinds` and use policy `prove-network-v3`. The real
+  Chromium smoke qualifies the new kinds on the shop fixture (#43).
 
 Fixes from a CLI 0.1.5 trial on an 87-file suite:
 
@@ -48,6 +194,40 @@ Fixes from a CLI 0.1.5 trial on an 87-file suite:
   cancellable, and `heal_test` applies only with `apply: true`. A heal that
   verifies a candidate but cannot save or apply it, or whose provider fails,
   is an error result that keeps its evidence. See [MCP server](docs/mcp.md).
+
+Validator audit (#50): inputs that were accepted too generously now fail.
+
+- SDK evidence frames and prove records must be exactly one JSON object per
+  LF-terminated line. A CRLF stream, or whitespace before or after a valid
+  object, is malformed instead of being trimmed.
+- Playwright JSON reports without a per-test `status` take Playwright's own
+  outcome precedence over every attempt instead of the last one. A failed
+  attempt followed by a skipped or interrupted retry is a failure, not a
+  skip, and a failure followed by a pass is flaky.
+- A structured report cut at the capture limit is invalid for every adapter
+  ("structured report exceeded capture limit"), even if the prefix parses.
+- The persisted output's recorded size describes the redacted file that its
+  SHA-256 covers. The largest SDK stream the validator accepts is tested to
+  persist unchanged, so `prove` and `confirm` read back what was validated.
+- The install guide's checksum selection accepts exactly one line made of a
+  lowercase SHA-256, two spaces and the archive name. The shell and PowerShell
+  commands are tested as documented against trailing content, duplicates,
+  CRLF and wrong digests.
+
+## SDK 0.1.3 — 2026-10-10
+
+- The prove channel applies `http-401`, `http-403`, `http-429` and
+  `malformed-json` faults. When the engine sets
+  `NINELIVES_PROVE_CAPABILITIES=1`, a baseline reports the kinds this build
+  applies; older engines never ask and never receive the record.
+
+## SDK 0.1.2 — 2026-10-10
+
+- Refresh the npm package and installation examples from current main. SDK
+  runtime behavior and protocol are unchanged from 0.1.1.
+- Release qualification now covers native Windows amd64 and arm64, including
+  real Chromium assertions, timeout/cancel cleanup and isolated consumers;
+  Windows relies on inherited directory ACLs rather than POSIX mode bits.
 
 ## CLI 0.1.5 — 2026-10-09
 

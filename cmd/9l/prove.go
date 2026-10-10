@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -71,6 +72,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for run receipts and the proof report")
 	paths := fs.Bool("paths", false, "print request URLs (origin and path) for local use; never persisted")
+	faultList := fs.String("faults", strings.Join(prove.DefaultKinds, ","), "comma-separated fault kinds: "+strings.Join(prove.Kinds, ", "))
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	var skipPins skipPinList
@@ -80,7 +82,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		"-timeout": true, "--timeout": true, "-deadline": true, "--deadline": true,
 		"-max-faults": true, "--max-faults": true, "-max-output-bytes": true, "--max-output-bytes": true,
 		"-receipt-dir": true, "--receipt-dir": true, "-pass-env": true, "--pass-env": true,
-		"-pin-skip": true, "--pin-skip": true,
+		"-pin-skip": true, "--pin-skip": true, "-faults": true, "--faults": true,
 	})
 	if err := fs.Parse(normalized); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -94,6 +96,11 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	}
 	if *workers < 1 || *timeout <= 0 || *deadline < 0 || *maxOutputBytes < 1024 || *maxFaults < 1 || *maxFaults > maxProveFaults {
 		fmt.Fprintf(errOut, "9l: invalid limits; workers, timeout and max-output-bytes must be positive and max-faults 1..%d\n", maxProveFaults)
+		return 2
+	}
+	kinds, err := parseFaultKinds(*faultList)
+	if err != nil {
+		fmt.Fprintf(errOut, "9l: --faults: %v\n", err)
 		return 2
 	}
 	adapter, err := playwrightsdk.New().WithSkipPins(skipPins)
@@ -143,9 +150,16 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		return 1
 	}
 
-	requests, faults, notRun := prove.Plan(baseline.observations, *maxFaults)
+	// Only an SDK that reported a kind can apply it: an older one rejects an
+	// unknown fault and every test would fail without an assertion.
+	if unsupported := unsupportedKinds(kinds, baseline.observations.FaultKinds); len(unsupported) > 0 {
+		fmt.Fprintf(errOut, "9l: prove: --faults %s needs a newer @9l/playwright; the installed SDK applies only %s\n", strings.Join(unsupported, ","), strings.Join(supportedKinds(baseline.observations.FaultKinds), ", "))
+		return 2
+	}
+
+	requests, faults, notRun := prove.Plan(baseline.observations, *maxFaults, kinds)
 	report := prove.Report{
-		Version: 1, Policy: prove.Policy, Spec: settings.spec, Requests: requests, Faults: []prove.FaultReport{}, Limits: prove.Limits,
+		Version: 1, Policy: prove.Policy, Spec: settings.spec, FaultKinds: kinds, Requests: requests, Faults: []prove.FaultReport{}, Limits: prove.Limits,
 		Baseline: prove.Baseline{RunID: baseline.summary.RunID, Status: string(baseline.receipt.Status), ExecutedTests: baseline.receipt.ExecutedTests, Attempts: baseline.observations.Attempts},
 	}
 	for index, fault := range faults {
@@ -227,6 +241,10 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 	if fault != nil {
 		job.Env["NINELIVES_PROVE_FAULT"] = fault.Env()
 		mode = "fault"
+	} else {
+		// Ask the SDK which fault kinds it can apply; one that predates this
+		// ignores the variable and writes no capability record.
+		job.Env["NINELIVES_PROVE_CAPABILITIES"] = "1"
 	}
 	// A Playwright retry would hide whether the first attempt detected the
 	// fault, and the project's configured retries otherwise apply.
@@ -284,9 +302,56 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 	return result, nil
 }
 
+// parseFaultKinds returns the selected kinds in prove.Kinds order.
+func parseFaultKinds(list string) ([]string, error) {
+	selected := map[string]bool{}
+	for _, name := range strings.Split(list, ",") {
+		name = strings.TrimSpace(name)
+		if !slices.Contains(prove.Kinds, name) {
+			return nil, fmt.Errorf("unknown fault kind %q; choose from %s", name, strings.Join(prove.Kinds, ", "))
+		}
+		if selected[name] {
+			return nil, fmt.Errorf("fault kind %q is listed twice", name)
+		}
+		selected[name] = true
+	}
+	kinds := []string{}
+	for _, kind := range prove.Kinds {
+		if selected[kind] {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds, nil
+}
+
+func unsupportedKinds(kinds []string, supported map[string]bool) []string {
+	missing := []string{}
+	for _, kind := range kinds {
+		if !supported[kind] {
+			missing = append(missing, kind)
+		}
+	}
+	return missing
+}
+
+func supportedKinds(supported map[string]bool) []string {
+	kinds := []string{}
+	for _, kind := range prove.Kinds {
+		if supported[kind] {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds
+}
+
 // saveProof persists the report without request URLs beside the run receipts.
 func saveProof(receiptDir string, report prove.Report) (string, error) {
-	dir := filepath.Join(receiptDir, "proofs")
+	return saveReport(filepath.Join(receiptDir, "proofs"), report.Baseline.RunID, report)
+}
+
+// saveReport atomically writes a report as <dir>/<name>.json in a private
+// directory.
+func saveReport(dir, name string, report any) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -294,7 +359,7 @@ func saveProof(receiptDir string, report prove.Report) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, report.Baseline.RunID+".json")
+	path := filepath.Join(dir, name+".json")
 	temporary, err := os.CreateTemp(dir, ".proof-*")
 	if err != nil {
 		return "", err
@@ -323,7 +388,7 @@ func printProof(w io.Writer, report prove.Report, saved string, paths bool) {
 		if paths {
 			label += " " + request.URL
 		}
-		fmt.Fprintf(w, "  %-26s %-10s %s\n", strings.ToUpper(fault.Result), fault.Kind, label)
+		fmt.Fprintf(w, "  %-26s %-14s %s\n", strings.ToUpper(fault.Result), fault.Kind, label)
 		retried = retried || fault.Result == prove.Retried
 		// With several tests, say which one each result comes from.
 		if len(fault.Tests) > 1 {

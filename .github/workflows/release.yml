@@ -1,8 +1,18 @@
-name: Release CLI
+name: Release
 
+# One v<version> tag releases the CLI and @9l/playwright together: the tag is
+# verified against every declared version, CI qualifies the commit once, the
+# CLI archives are published as a GitHub Release, and then the SDK tarball
+# that same qualification packed is published to npm. The npm trusted
+# publisher must name this workflow file (docs/releases.md).
 on:
   push:
     tags: ['v*']
+
+# A tag is released once at a time; a rerun waits for an earlier run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -20,11 +30,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
-      - name: Verify release identity and main ancestry
+      - name: Verify the tag against the CLI and SDK versions and main ancestry
         id: identity
         env:
           REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
-        run: node scripts/verify-cli-release.cjs
+        run: node scripts/verify-release.cjs
 
   qualification:
     needs: check-tag
@@ -69,7 +79,7 @@ jobs:
           path: ${{ env.BUNDLE }}.${{ matrix.goos == 'windows' && 'zip' || 'tar.gz' }}
           if-no-files-found: error
 
-  publish:
+  github-release:
     needs: [check-tag, binaries]
     runs-on: ubuntu-24.04
     permissions:
@@ -94,3 +104,27 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           generate_release_notes: true
+
+  # Runs after the GitHub Release so the SDK never reaches npm without its
+  # CLI. A rerun skips when npm already holds these exact bytes.
+  npm:
+    needs: [check-tag, qualification, github-release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Require an OIDC-capable npm client
+        run: node -e "const v=require('node:child_process').execFileSync('npm',['--version'],{encoding:'utf8'}).trim().split('.').map(Number); if(v[0]<11 || (v[0]===11 && (v[1]<5 || (v[1]===5 && v[2]<1)))) process.exit(1)"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: playwright-package-${{ github.sha }}
+          path: .context/npm-pack/
+      - name: Publish the qualified SDK tarball using npm trusted publishing
+        run: node scripts/publish-sdk.cjs

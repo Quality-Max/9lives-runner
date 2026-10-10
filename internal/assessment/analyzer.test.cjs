@@ -615,3 +615,18 @@ test('re-review regressions: consumed concise helpers and the direct fact reserv
   assert.equal(result.tests.at(-1).assertions.length, 700);
   assert(result.tests.reduce((n, t) => n + t.assertions.length, 0) <= 2048);
 });
+
+test('a test imported from an unrecognised module is named, not silently empty', () => {
+  const foreign = analyze(`import {test, expect} from 'e2e';
+    import {test as fixtureTest} from './fixtures';
+    test('login', async () => { expect(1).toBe(1); });`);
+  assert.deepEqual(foreign.tests, []);
+  assert.deepEqual(foreign.unrecognizedTestImports, ['./fixtures', 'e2e']);
+  const recognised = analyze(`import {test, expect} from '@playwright/test';
+    import {test as other} from 'e2e';
+    test('login', async () => { expect(1).toBe(1); });`);
+  assert.equal(recognised.tests.length, 1);
+  assert.equal(recognised.unrecognizedTestImports, undefined);
+  const odd = analyze(`import {test} from 'some module with spaces';`);
+  assert.deepEqual(odd.unrecognizedTestImports, ['(unnamed module)']);
+});

@@ -1,6 +1,6 @@
 {
   "name": "@9l/playwright",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Playwright fixtures and the versioned 9lives Go engine bridge",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Quality-Max/9lives-runner#local-playwright-sdk",

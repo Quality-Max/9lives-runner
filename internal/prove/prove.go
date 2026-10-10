@@ -10,13 +10,29 @@ import (
 
 // Policy names the fault set and classification rules. Change it whenever
 // either changes, so reports from different rules are never compared as equal.
-const Policy = "prove-network-v2"
+const Policy = "prove-network-v3"
 
 const (
-	KindAbort     = "abort"
-	KindHTTP500   = "http-500"
-	KindEmptyJSON = "empty-json"
+	KindAbort         = "abort"
+	KindHTTP500       = "http-500"
+	KindEmptyJSON     = "empty-json"
+	KindHTTP401       = "http-401"
+	KindHTTP403       = "http-403"
+	KindHTTP429       = "http-429"
+	KindMalformedJSON = "malformed-json"
 )
+
+// Kinds lists every fault kind in planning order. It must match faultKinds in
+// packages/playwright/src/prove.ts.
+var Kinds = []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP401, KindHTTP403, KindHTTP429, KindMalformedJSON}
+
+// DefaultKinds is planned when no fault kinds are selected. Every SDK with
+// prove support applies these, so they need no capability record.
+var DefaultKinds = []string{KindAbort, KindHTTP500, KindEmptyJSON}
+
+// needsJSON reports whether a kind rewrites a successful JSON body, so it
+// applies only to a request whose baseline response was one.
+func needsJSON(kind string) bool { return kind == KindEmptyJSON || kind == KindMalformedJSON }
 
 // Results. Only caught and survived are conclusive about the fault.
 const (
@@ -66,9 +82,14 @@ type RequestReport struct {
 	target       Target
 }
 
-// Plan orders requests by method, origin and path and gives each the faults
-// that apply to it. Faults beyond max are returned in notRun, never dropped.
-func Plan(observations Observations, max int) (requests []RequestReport, faults, notRun []Fault) {
+// Plan orders requests by method, origin and path and gives each the selected
+// kinds that apply to it, in Kinds order. Faults beyond max are returned in
+// notRun, never dropped.
+func Plan(observations Observations, max int, kinds []string) (requests []RequestReport, faults, notRun []Fault) {
+	selected := map[string]bool{}
+	for _, kind := range kinds {
+		selected[kind] = true
+	}
 	keys := make([]string, 0, len(observations.Requests))
 	for key := range observations.Requests {
 		keys = append(keys, key)
@@ -82,11 +103,10 @@ func Plan(observations Observations, max int) (requests []RequestReport, faults,
 			Digest: hex.EncodeToString(digest[:]), Observed: request.Observed, JSON: request.JSON2xx, target: request.Target,
 		}
 		requests = append(requests, report)
-		kinds := []string{KindAbort, KindHTTP500}
-		if request.JSON2xx {
-			kinds = append(kinds, KindEmptyJSON)
-		}
-		for _, kind := range kinds {
+		for _, kind := range Kinds {
+			if !selected[kind] || (needsJSON(kind) && !request.JSON2xx) {
+				continue
+			}
 			fault := Fault{ID: fmt.Sprintf("fault-%d", len(faults)+len(notRun)+1), Kind: kind, Target: request.Target, Request: report.ID}
 			if len(faults) < max {
 				faults = append(faults, fault)
@@ -131,8 +151,9 @@ type TestResult struct {
 	TestID  string `json:"testId"`
 	Result  string `json:"result"`
 	Applied int    `json:"applied"`
-	// Reason says why an empty-json fault was not applicable: the response
-	// was not a JSON object or array, or the upstream request failed.
+	// Reason says why an empty-json or malformed-json fault was not
+	// applicable: the response was not a JSON object or array, or the
+	// upstream request failed.
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -244,10 +265,12 @@ const (
 )
 
 type Report struct {
-	Version  int    `json:"version"`
-	Policy   string `json:"policy"`
-	Spec     string `json:"spec"`
-	Complete bool   `json:"complete"`
+	Version int    `json:"version"`
+	Policy  string `json:"policy"`
+	Spec    string `json:"spec"`
+	// FaultKinds lists the kinds selected for this proof, in Kinds order.
+	FaultKinds []string `json:"faultKinds"`
+	Complete   bool     `json:"complete"`
 	// IncompleteReason names the first reason the proof is not complete.
 	IncompleteReason string          `json:"incompleteReason,omitempty"`
 	Baseline         Baseline        `json:"baseline"`

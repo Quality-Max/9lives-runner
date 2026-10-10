@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
+const {name, registryHas} = require('./sdk-registry.cjs');
 
 try {
   const root = path.resolve(__dirname, '..');
@@ -21,6 +22,15 @@ try {
     {spec: 'business-failure', adapter: 'sdk', status: 'failed', validated: true, executedTests: 1},
     {spec: 'ordinary', adapter: 'ordinary', status: 'passed', validated: true, executedTests: 1},
   ]);
+  // A rerun after a successful publication skips, but only when npm holds
+  // exactly these bytes: the same version from other source is an error.
+  if (registryHas(manifest.version)) {
+    const integrity = `sha512-${crypto.createHash('sha512').update(fs.readFileSync(tarball)).digest('base64')}`;
+    const view = spawnSync('npm', ['view', `${name}@${manifest.version}`, 'dist.integrity'], {cwd: root, encoding: 'utf8', timeout: 60000});
+    assert(!view.error && view.status === 0 && view.stdout.trim() === integrity, 'npm already has this version with different contents');
+    console.log(`${name}@${manifest.version} is already published with identical contents; nothing to do`);
+    return;
+  }
   const result = spawnSync('npm', ['publish', tarball, '--access', 'public'], {cwd: root, stdio: 'inherit', timeout: 120000});
   assert(!result.error && result.status === 0);
 } catch {

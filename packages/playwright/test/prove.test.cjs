@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
-const {matches, openProveChannel, proveProtocol, readFault, requestTarget} = require('../dist/prove.js');
+const {faultKinds, matches, openProveChannel, proveProtocol, readFault, replaceJSON, requestTarget} = require('../dist/prove.js');
 const {protocolVersion} = require('../dist/protocol.js');
 
 const request = (url, method = 'GET', resourceType = 'fetch') => ({url: () => url, method: () => method, resourceType: () => resourceType});
@@ -29,6 +29,7 @@ test('a fault matches only its method, origin and path', () => {
 
 test('the fault schema is closed', () => {
   assert.deepEqual(readFault(JSON.stringify(fault)), fault);
+  for (const kind of faultKinds) assert.equal(readFault(JSON.stringify({...fault, kind})).kind, kind);
   for (const bad of [
     'not json', '[]', 'null',
     JSON.stringify({...fault, extra: 1}),
@@ -142,6 +143,92 @@ test('empty-json replaces a JSON body, says why it could not, and leaves other r
     channel.close();
     assert.equal(fallback, 1);
     assert.equal(fs.readFileSync(file, 'utf8'), '');
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('capabilities are reported only when the engine asks, and only while observing', () => {
+  const identity = {NINELIVES_ENGINE_PROTOCOL: protocolVersion, NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001', NINELIVES_ATTEMPT_ID: 'job-001-attempt-001'};
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-caps-'));
+  try {
+    const records = (env, testId) => {
+      openProveChannel({...identity, NINELIVES_PROVE: proveProtocol, NINELIVES_PROVE_DIR: dir, ...env}, {testId, retry: 0}).close();
+      const name = createHash('sha256').update(`${process.pid}\0${testId}\0${0}`).digest('hex').slice(0, 32);
+      return fs.readFileSync(path.join(dir, `${name}.ndjson`), 'utf8').trim().split('\n').map(line => JSON.parse(line).type);
+    };
+    // An older engine does not ask and would reject a record outside its schema.
+    assert.deepEqual(records({}, 'older-engine'), ['hello']);
+    assert.deepEqual(records({NINELIVES_PROVE_CAPABILITIES: '1'}, 'observe'), ['hello', 'capabilities']);
+    assert.deepEqual(records({NINELIVES_PROVE_CAPABILITIES: '1', NINELIVES_PROVE_FAULT: JSON.stringify(fault)}, 'fault'), ['hello']);
+    const name = createHash('sha256').update(`${process.pid}\0observe\0${0}`).digest('hex').slice(0, 32);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, `${name}.ndjson`), 'utf8').split('\n')[1]), {type: 'capabilities', faults: [...faultKinds]});
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('status faults fulfill their status with an empty body', async () => {
+  const {instrument, ProveChannel} = require('../dist/prove.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-status-'));
+  try {
+    for (const [kind, expected] of [
+      ['http-500', {status: 500, body: ''}],
+      ['http-401', {status: 401, body: ''}],
+      ['http-403', {status: 403, body: ''}],
+      ['http-429', {status: 429, headers: {'retry-after': '1'}, body: ''}],
+    ]) {
+      const file = path.join(dir, `${kind}.ndjson`);
+      const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind});
+      let handler;
+      await instrument({route: async (_pattern, h) => { handler = h; }}, channel);
+      const fulfilled = [];
+      await handler({request: () => request('http://127.0.0.1:4100/api/orders', 'POST'), fulfill: async options => { fulfilled.push(options); }});
+      channel.close();
+      assert.deepEqual(fulfilled, [expected], kind);
+      assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}], kind);
+    }
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('malformed-json truncates a JSON object or array so it no longer parses', async () => {
+  for (const text of ['{}', '[]', '[1]', '{"count":2}', '  [{"name":"Book"},{"name":"Pen"}]\n', '{"a":"}"}', '[[[]]]']) {
+    const body = replaceJSON('malformed-json', text);
+    assert(body.length > 0 && body.length < text.trim().length, text);
+    assert(text.trim().startsWith(body), text);
+    assert.throws(() => JSON.parse(body), SyntaxError, text);
+  }
+  for (const text of ['"ok"', '42', 'null', 'true', '<html>', '']) {
+    assert.equal(replaceJSON('malformed-json', text), undefined, text);
+    assert.equal(replaceJSON('empty-json', text), undefined, text);
+  }
+  assert.equal(replaceJSON('empty-json', '[{"name":"Book"}]'), '[]');
+  assert.equal(replaceJSON('empty-json', '{"count":2}'), '{}');
+
+  // Through the route: applied on a JSON body, not applicable otherwise.
+  const {instrument, ProveChannel} = require('../dist/prove.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-malformed-'));
+  try {
+    for (const [name, text, records, bodies] of [
+      ['object', '{"count":2}', [{type: 'applied', fault: 'fault-1'}], ['{"cou']],
+      ['html', '<html>', [{type: 'not-applicable', fault: 'fault-1', reason: 'not-json'}], [undefined]],
+    ]) {
+      const file = path.join(dir, `${name}.ndjson`);
+      const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'malformed-json'});
+      let handler;
+      await instrument({route: async (_pattern, h) => { handler = h; }}, channel);
+      const fulfilled = [];
+      await handler({
+        request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
+        fetch: async () => ({text: async () => text}),
+        fulfill: async options => { fulfilled.push(options.body); },
+      });
+      channel.close();
+      assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), records, name);
+      assert.deepEqual(fulfilled, bodies, name);
+    }
   } finally {
     fs.rmSync(dir, {recursive: true, force: true});
   }

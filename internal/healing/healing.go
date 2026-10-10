@@ -11,14 +11,17 @@ import (
 const Version = 1
 
 type Request struct {
-	Version              int    `json:"version"`
-	Framework            string `json:"framework"`
-	ErrorMessage         string `json:"errorMessage"`
-	StackTrace           string `json:"stackTrace,omitempty"`
-	FailureType          string `json:"failureType,omitempty"`
-	FailedSelector       string `json:"failedSelector,omitempty"`
-	TestCode             string `json:"testCode"`
-	PageSnapshot         string `json:"pageSnapshot,omitempty"`
+	Version        int    `json:"version"`
+	Framework      string `json:"framework"`
+	ErrorMessage   string `json:"errorMessage"`
+	StackTrace     string `json:"stackTrace,omitempty"`
+	FailureType    string `json:"failureType,omitempty"`
+	FailedSelector string `json:"failedSelector,omitempty"`
+	TestCode       string `json:"testCode"`
+	PageSnapshot   string `json:"pageSnapshot,omitempty"`
+	// AriaSnapshot is Playwright's ARIA snapshot of the page at failure
+	// (roles and accessible names), used to re-find a getBy* locator.
+	AriaSnapshot         string `json:"ariaSnapshot,omitempty"`
 	AllowAssertionChange bool   `json:"allowAssertionChange,omitempty"`
 }
 
@@ -168,6 +171,23 @@ func Heal(request Request) Response {
 	}
 	if selector == "" || request.TestCode == "" {
 		response.Reason = "missing selector or test code"
+		return response
+	}
+	if call, ok := parseLocatorExpression(selector); ok && call.method != "locator" {
+		// CSS strategies do not apply to a getBy* locator; only its name or
+		// text can be re-found, from the ARIA snapshot.
+		if name := ariaAlternative(call, request.AriaSnapshot); name != "" {
+			if code, ok := replaceSelector(request.TestCode, selector, name, request.Framework); ok {
+				return proposal(response, code, selector, name, "aria-snapshot", .8, "re-found accessible name")
+			}
+			response.Reason = "locator is absent or ambiguous in the source"
+			return response
+		}
+		if request.AriaSnapshot == "" {
+			response.Reason = "re-finding a getBy locator offline needs the page's ARIA snapshot"
+		} else {
+			response.Reason = "the ARIA snapshot has no single renamed candidate"
+		}
 		return response
 	}
 	if strings.HasPrefix(selector, "text=") {
@@ -369,6 +389,16 @@ func transform(selector string) string {
 	}
 	return ""
 }
+
+// EquivalentSelectors reports a Tier 1 transformation that selects exactly
+// the same elements, such as #save and [id="save"] for a valid CSS
+// identifier. Verifying it can never fix a missing element, so native healing
+// skips it; the Python-parity tier1 response still reports it.
+func EquivalentSelectors(old, next string) bool {
+	m := regexp.MustCompile(`^#([A-Za-z][\w-]*)$`).FindStringSubmatch(old)
+	return len(m) == 2 && validCSSIdentifier(m[1]) && next == `[id="`+m[1]+`"]`
+}
+
 func timing(message string) bool {
 	s := strings.ToLower(message)
 	return strings.Contains(s, "timeout") || strings.Contains(s, "waiting") || strings.Contains(s, "not visible") || strings.Contains(s, "viewport")
@@ -381,7 +411,7 @@ func Validate(request Request) error {
 	if request.Framework == "" {
 		return fmt.Errorf("framework is required")
 	}
-	if len(request.TestCode) > 1<<20 || len(request.PageSnapshot) > 1<<20 || len(request.ErrorMessage) > 1<<20 || len(request.StackTrace) > 1<<20 {
+	if len(request.TestCode) > 1<<20 || len(request.PageSnapshot) > 1<<20 || len(request.AriaSnapshot) > 1<<20 || len(request.ErrorMessage) > 1<<20 || len(request.StackTrace) > 1<<20 {
 		return fmt.Errorf("request exceeds size limit")
 	}
 	switch request.Framework {

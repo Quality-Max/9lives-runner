@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.1.2`; releases use npm trusted publishing. The
+npm workspace at version `0.2.0`, the same version as the CLI; releases use npm trusted publishing. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.0. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.
@@ -33,7 +33,8 @@ temporary directory for each attempt (mode 0700 on Unix; inherited directory ACL
 `NINELIVES_ENGINE_EVENTS`; the reporter creates it exclusively and writes nothing
 to stdout. Configuration, `globalSetup`, hooks and dependencies (dotenv logs its
 startup line, for example) can print to stdout freely without affecting the
-evidence, and stdout alone never validates. Every frame contains `version`,
+evidence, and stdout alone never validates. Each frame is exactly one JSON object
+per LF-terminated line, with no CR or other surrounding whitespace. Every frame contains `version`,
 `runId`, `jobId`, `attemptId`, a contiguous `seq` starting at 1 and `type`.
 
 | Frame | Evidence |
@@ -90,6 +91,14 @@ copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
 
+`9l run --sdk --failure-details` is the opt-in exception for receipts, not for
+the protocol: Playwright's JSON reporter runs beside the engine reporter and
+writes to a separate private per-attempt file. After the attempt validates
+from the engine stream, the runner reads each failed test's title, failing
+line, bounded redacted error and attachment paths from that file into the
+receipt's `failures`, then deletes it. It never validates or replaces engine
+evidence.
+
 The runner persists validated bounded protocol output beside its local and
 canonical execution receipts and applies its existing output redaction. The
 worker's own stdout is not evidence and is not retained. Invalid/interrupted
@@ -107,8 +116,11 @@ and test attempt, whose handshake names the attempt by the engine's hashed
 test ID and retry index. A baseline records fetch/XHR method, origin and path
 (no query, headers or bodies) and response status and JSON media type; a fault
 run records only how often its one fault, from the closed
-`NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` fault was
-not applicable (`not-json` or `unreachable`). These records never enter `9l.engine/1`. Go validates
+`NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` or
+`malformed-json` fault was not applicable (`not-json` or `unreachable`). When
+the engine sets `NINELIVES_PROVE_CAPABILITIES=1`, a baseline file also lists
+the fault kinds this SDK can apply, right after the handshake; an engine that
+does not ask never receives the record. These records never enter `9l.engine/1`. Go validates
 them against a closed schema and size limits and removes the directory after
 each run. See [Prove](prove.md).
 

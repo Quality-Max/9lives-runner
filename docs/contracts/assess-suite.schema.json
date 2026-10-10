@@ -183,6 +183,12 @@
             }
           ]
         },
+        "unrecognizedTestImports": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "version": {
           "type": "integer"
         }
@@ -246,12 +252,16 @@
         },
         "tests": {
           "type": "integer"
+        },
+        "unrecognized": {
+          "type": "integer"
         }
       },
       "required": [
         "files",
         "assessed",
         "failed",
+        "unrecognized",
         "tests",
         "findings",
         "rules"

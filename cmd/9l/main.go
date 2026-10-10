@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -30,7 +31,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.1.5"
+var version = "0.2.0"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -62,6 +63,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return provenanceCommand(args[1:], out, errOut)
 	case "prove":
 		return proveCommand(args[1:], out, errOut)
+	case "confirm":
+		return confirmCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -74,19 +77,25 @@ func usage(w io.Writer) {
 
 Usage:
   9l plan <spec-or-glob>... [--format text|json] [--max-jobs N]
-  9l run  <spec-or-glob>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
+  9l run  <spec-or-glob|spec:LINE>... [--workers N] [--timeout D] [--deadline D] [--pass-env NAME]...
+          [--grep RE] [--grep-invert RE]  # Playwright title filters
+          [--reporter html,...]  # also run project reporters beside the evidence reporter
+          [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
           [--sdk]  # opt-in @9l/playwright engine protocol
+          [--failure-details]  # with --sdk, record failed test titles and errors
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <spec> [--provider NAME] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
-          # verified selector healing: offline Tier 1, then an agent CLI or API (heal-native is an alias)
-  9l mcp [--pass-env NAME]... [--provider NAME]  # MCP server on stdio: run_test, heal_test, assess_test
+  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
+          # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
+  9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
-  9l prove <spec> [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
+  9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
+  9l confirm <spec> --unfixed REV [--fixed REV] [--finding-id ID] [--format text|json]
+          # experimental: does a reproduction spec fail before a fix and pass after it?
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
@@ -247,7 +256,11 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 		for _, limit := range suite.Limits {
 			fmt.Fprintln(out, "Limit:", limit)
 		}
-		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed), %d tests, %d findings\n", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed, suite.Summary.Tests, suite.Summary.Findings)
+		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed+suite.Summary.Unrecognized)
+		if suite.Summary.Unrecognized > 0 {
+			fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
+		}
+		fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
 		writeRuleCounts(out, suite.Summary.Rules)
 	}
 	if suite.Summary.Failed > 0 {
@@ -528,7 +541,12 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
+	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
+	grepInvert := fs.String("grep-invert", "", "skip tests whose title matches this regular expression (Playwright --grep-invert)")
+	reporters := fs.String("reporter", "", "also run these Playwright reporters beside 9l's own, comma-separated (for example html); json is reserved for evidence")
+	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
+	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
 	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic")
@@ -551,6 +569,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-pass-env": true, "--pass-env": true,
 		"-agent-provenance": true, "--agent-provenance": true,
 		"-pin-skip": true, "--pin-skip": true,
+		"-reporter": true, "--reporter": true,
+		"-grep": true, "--grep": true, "-grep-invert": true, "--grep-invert": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
 		"-workers": true, "--workers": true,
@@ -640,6 +660,10 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		services = factory
 	}
 
+	if *failureDetails && !*sdk {
+		fmt.Fprintln(errOut, "9l: --failure-details requires --sdk; plain runs always report failed tests")
+		return 2
+	}
 	if len(skipPins) > 0 && !*sdk {
 		fmt.Fprintln(errOut, "9l: --pin-skip requires --sdk")
 		return 2
@@ -651,9 +675,22 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			fmt.Fprintf(errOut, "9l: --pin-skip: %v\n", err)
 			return 2
 		}
-		availableAdapters = []runner.Adapter{adapter}
+		availableAdapters = []runner.Adapter{adapter.WithFailureDetails(*failureDetails)}
 	}
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters})
+	extraReporters, err := reporterList(*reporters)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l: --reporter:", err)
+		return 2
+	}
+	var extraArgs, selection []string
+	if *grep != "" {
+		// One argument each, so a pattern starting with "-" is never an option.
+		extraArgs, selection = append(extraArgs, "--grep="+*grep), append(selection, "--grep "+strconv.Quote(*grep))
+	}
+	if *grepInvert != "" {
+		extraArgs, selection = append(extraArgs, "--grep-invert="+*grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
+	}
+	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
@@ -674,7 +711,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			}
 		},
 		AgentProvenance: agentProvenance,
-		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
+		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	// A setup error is found before any process starts: no run exists to
 	// report, cancel or retry, so it is a usage error without a result.
@@ -693,6 +730,31 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		printResult(out, result)
 	}
 	return runExitCode(result, executionFailed)
+}
+
+var reporterName = regexp.MustCompile(`^[A-Za-z0-9@./][A-Za-z0-9@/._-]{0,127}$`)
+
+// reporterList validates --reporter: names or module paths, comma-separated.
+// json is the evidence channel and cannot be added twice.
+func reporterList(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var names []string
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		switch {
+		case name == "json":
+			return nil, errors.New("json is 9l's evidence reporter and is always on")
+		case !reporterName.MatchString(name) || strings.Contains(name, ".."):
+			return nil, fmt.Errorf("%q is not a reporter name or module path", name)
+		}
+		names = append(names, name)
+	}
+	if len(names) > 8 {
+		return nil, errors.New("at most 8 reporters")
+	}
+	return names, nil
 }
 
 // Exit codes of `9l run`, part of the host contract in docs/contracts.md.
@@ -782,7 +844,11 @@ func printPlan(w io.Writer, plan runner.Plan, format string) int {
 	}
 	fmt.Fprintf(w, "run %s: %d job(s), %d skipped\n", plan.RunID, len(plan.Jobs), len(plan.Skipped))
 	for _, job := range plan.Jobs {
-		fmt.Fprintf(w, "  RUN  %s [%s]\n", job.Spec, job.Adapter)
+		if job.Selection != "" {
+			fmt.Fprintf(w, "  RUN  %s [%s] (%s)\n", job.Spec, job.Adapter, job.Selection)
+		} else {
+			fmt.Fprintf(w, "  RUN  %s [%s]\n", job.Spec, job.Adapter)
+		}
 	}
 	for _, skip := range plan.Skipped {
 		fmt.Fprintf(w, "  SKIP %s — %s\n", skip.Input, skip.Reason)
@@ -791,6 +857,7 @@ func printPlan(w io.Writer, plan runner.Plan, format string) int {
 }
 
 func printResult(w io.Writer, result runner.RunSummary) {
+	clearable := false
 	fmt.Fprintf(w, "run %s: %d passed, %d failed, %d canceled, %d timed out, %d errors (%s)\n", result.RunID, result.Passed, result.Failed, result.Canceled, result.TimedOut, result.Errors, time.Duration(result.DurationMS)*time.Millisecond)
 	for _, receipt := range result.Receipts {
 		fmt.Fprintf(w, "  %-8s %s", strings.ToUpper(string(receipt.Status)), receipt.Spec)
@@ -801,13 +868,68 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		if receipt.Error != "" {
 			fmt.Fprintf(w, "           %s\n", receiptReason(receipt.Error))
 		}
+		for _, failure := range receipt.Failures {
+			printFailure(w, failure)
+			for _, attachment := range failure.Attachments {
+				clearable = clearable || !attachment.Retained
+			}
+		}
+		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
+			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
+		}
+	}
+	for _, skip := range result.Skipped {
+		fmt.Fprintf(w, "  SKIP     %s — %s\n", receiptReason(skip.Input), receiptReason(skip.Reason))
+	}
+	if clearable {
+		fmt.Fprintln(w, "  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.")
 	}
 	switch {
 	case result.Outcome == runner.OutcomeFailed:
 		fmt.Fprintln(w, "  FAILED: every planned job ran and at least one test failed")
+	case !result.Complete && result.SkippedInputs > 0 && result.Passed == result.PlannedJobs && len(result.Receipts) == result.PlannedJobs:
+		fmt.Fprintf(w, "  INCOMPLETE: %d input(s) were skipped and not run; a skipped input is never a pass\n", result.SkippedInputs)
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
+}
+
+// printFailure shows which test failed, where and why, and the files that
+// explain it, below its receipt line.
+func printFailure(w io.Writer, failure runner.TestFailure) {
+	fmt.Fprintf(w, "           ✗ %s", receiptReason(failure.Title))
+	if failure.Location != "" {
+		fmt.Fprintf(w, "  %s", receiptReason(failure.Location))
+	}
+	fmt.Fprintln(w)
+	shown := 0
+	for _, line := range strings.Split(failure.Message, "\n") {
+		if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "Call log:") {
+			continue
+		}
+		if shown == 3 {
+			break
+		}
+		fmt.Fprintf(w, "             %s\n", receiptReason(line))
+		shown++
+	}
+	for _, attachment := range failure.Attachments {
+		label := attachment.Name
+		if label == "error-context" {
+			label = "context"
+		}
+		fmt.Fprintf(w, "             %s: %s\n", receiptReason(label), receiptReason(displayPath(attachment.Path)))
+	}
+}
+
+// displayPath shortens a path below the working directory.
+func displayPath(path string) string {
+	if cwd, err := os.Getwd(); err == nil {
+		if relative, err := filepath.Rel(cwd, path); err == nil && !strings.HasPrefix(relative, "..") {
+			return relative
+		}
+	}
+	return filepath.Clean(path)
 }
 
 // receiptReason is the receipt's error on one line of at most 300 characters,

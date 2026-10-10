@@ -33,6 +33,14 @@ counts once per requirement and outcome. `--titles` adds literal test titles (fi
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
 
+Only `test` imported by name from `@playwright/test` or `@9l/playwright` is
+recognised. A file that imports `test` only from another module, such as a
+fixture file that re-exports it or another test runner's package, reports no
+tests and says so: `unrecognizedTestImports` names the modules (package-like
+names only; anything else is `(unnamed module)`), and an
+`unrecognized-test-import` limit explains that its tests were not assessed,
+instead of a silent "0 tests, 0 findings".
+
 ### Suites
 
 ```sh
@@ -44,8 +52,11 @@ A single regular file gives the single-file report described below. Several
 inputs, a directory or a quoted pattern give one combined suite report
 (`version` 1) with the shared `policy`, `requirementsSHA256`, `execution` and
 `completeness`, one `files` entry per file holding its single-file `report` or
-an `error` code, a `summary` (files, assessed, not assessed, tests, findings and
-per-rule counts) and the union of limits. A directory contributes files named
+an `error` code, a `summary` (files, assessed, failed, unrecognized, tests,
+findings and per-rule counts) and the union of limits. A file with an
+unrecognised `test` import counts as `unrecognized`, not `assessed`, and the
+text summary lists it as not assessed; unlike a failed file it does not make
+the command exit 2. A directory contributes files named
 like Playwright's default `testMatch` (`*.spec.*`/`*.test.*` with `js`, `ts`,
 `jsx`, `tsx`, `mjs`, `cjs`, `mts` or `cts`). A pattern matches path segments,
 with `**` matching any number of directories, and takes every matching file. A

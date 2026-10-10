@@ -274,6 +274,12 @@
         "failureCount": {
           "type": "integer"
         },
+        "failures": {
+          "items": {
+            "$ref": "#/$defs/TestFailure"
+          },
+          "type": "array"
+        },
         "finishedAt": {
           "format": "date-time",
           "type": "string"
@@ -359,6 +365,21 @@
       ],
       "type": "object"
     },
+    "Skipped": {
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "reason"
+      ],
+      "type": "object"
+    },
     "Termination": {
       "properties": {
         "detail": {
@@ -382,6 +403,57 @@
       },
       "required": [
         "kind"
+      ],
+      "type": "object"
+    },
+    "TestAttachment": {
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "retained": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "bytes",
+        "retained"
+      ],
+      "type": "object"
+    },
+    "TestFailure": {
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/TestAttachment"
+          },
+          "type": "array"
+        },
+        "location": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
       ],
       "type": "object"
     }
@@ -438,6 +510,12 @@
     },
     "runId": {
       "type": "string"
+    },
+    "skipped": {
+      "items": {
+        "$ref": "#/$defs/Skipped"
+      },
+      "type": "array"
     },
     "skippedInputs": {
       "type": "integer"

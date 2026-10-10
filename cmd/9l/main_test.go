@@ -5,7 +5,9 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -150,5 +152,125 @@ func TestPrintResultShowsWhyAJobDidNotPass(t *testing.T) {
 	if !strings.Contains(text, "  ERROR    .context/a.spec.ts\n           Playwright found no tests in this spec  [31mtestDir\n") ||
 		!strings.Contains(text, "           "+strings.Repeat("x", 299)+"…\n") || strings.Count(text, "\n") != 7 {
 		t.Fatalf("text summary:\n%s", text)
+	}
+}
+
+func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
+	errorContext := filepath.Join(t.TempDir(), "test-results", "login", "error-context.md")
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/login.spec.ts", FailureCount: 1,
+		Failures: []runner.TestFailure{{
+			Title: "login › renamed button", Location: "tests/login.spec.ts:9",
+			Message:     "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Login' })\n  - second\n  - third",
+			Attachments: []runner.TestAttachment{{Name: "error-context", Path: errorContext}},
+		}},
+	}}})
+	want := "  FAILED   tests/login.spec.ts\n" +
+		"           ✗ login › renamed button  tests/login.spec.ts:9\n" +
+		"             TimeoutError: locator.click: Timeout 1500ms exceeded.\n" +
+		"             - waiting for getByRole('button', { name: 'Login' })\n" +
+		"             - second\n" +
+		"             context: " + displayPath(errorContext) + "\n" +
+		"  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.\n"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
+func TestPrintResultExplainsSkippedInputs(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeIncomplete, PlannedJobs: 1, Passed: 1, SkippedInputs: 1,
+		Skipped:  []runner.Skipped{{Input: "tests/missing.spec.ts", Reason: "no matching files"}},
+		Receipts: []runner.Receipt{{Status: runner.StatusPassed, Spec: "tests/ok.spec.ts"}}})
+	if !strings.Contains(out.String(), "  SKIP     tests/missing.spec.ts — no matching files\n  INCOMPLETE: 1 input(s) were skipped and not run; a skipped input is never a pass\n") {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
+func TestProviderNoneKeepsHealingOfflineWithAnAgentCLIInstalled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell stand-in for an agent CLI")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NINELIVES_PROVIDER", "")
+	if provider, err := resolveHealProvider("", "", ""); err != nil || provider == nil || provider.Name() != "claude" {
+		t.Fatalf("auto-detection: %v %v", provider, err)
+	}
+	if provider, err := resolveHealProvider("none", "", ""); err != nil || provider != nil {
+		t.Fatalf("--provider none: %v %v", provider, err)
+	}
+	t.Setenv("NINELIVES_PROVIDER", "none")
+	if provider, err := resolveHealProvider("", "", ""); err != nil || provider != nil {
+		t.Fatalf("NINELIVES_PROVIDER=none: %v %v", provider, err)
+	}
+	if provider, err := resolveHealProvider("claude", "", ""); err != nil || provider == nil {
+		t.Fatalf("an explicit flag overrides the environment: %v %v", provider, err)
+	}
+}
+
+func TestPrintPlanShowsTheTestSelection(t *testing.T) {
+	var out bytes.Buffer
+	printPlan(&out, runner.Plan{RunID: "run-x", Jobs: []runner.Job{{Spec: "tests/a.spec.ts", Adapter: "playwright", Selection: `line 12, --grep "login"`}}}, "text")
+	if !strings.Contains(out.String(), "  RUN  tests/a.spec.ts [playwright] (line 12, --grep \"login\")\n") {
+		t.Fatalf("plan:\n%s", out.String())
+	}
+}
+
+func TestReporterListKeepsJSONForEvidence(t *testing.T) {
+	if got, err := reporterList("html, list, ./reporters/slack.ts, @acme/reporter"); err != nil || strings.Join(got, ",") != "html,list,./reporters/slack.ts,@acme/reporter" {
+		t.Fatalf("got=%v err=%v", got, err)
+	}
+	for _, bad := range []string{"json", "html,json", "html --grep x", "../reporter.js", ""} {
+		got, err := reporterList(bad)
+		if bad == "" {
+			if err != nil || got != nil {
+				t.Fatalf("empty: %v %v", got, err)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("%q accepted as %v", bad, got)
+		}
+	}
+}
+
+func TestUsageNamesEveryMCPTool(t *testing.T) {
+	var out bytes.Buffer
+	usage(&out)
+	for _, tool := range mcpTools {
+		if name := tool["name"].(string); !strings.Contains(out.String(), name) {
+			t.Errorf("usage omits MCP tool %s", name)
+		}
+	}
+}
+
+func TestAutoDetectSettingKeepsHealingOfflineUnlessAProviderIsNamed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell stand-in for an agent CLI")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NINELIVES_PROVIDER", "")
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "off")
+	if provider, err := resolveHealProvider("", "", ""); err != nil || provider != nil {
+		t.Fatalf("auto-detected with the setting off: %v %v", provider, err)
+	}
+	if notice := offlineNotice(""); !strings.Contains(notice, "auto-detection is off") {
+		t.Fatalf("notice=%q", notice)
+	}
+	if provider, err := resolveHealProvider("claude", "", ""); err != nil || provider == nil {
+		t.Fatalf("named provider: %v %v", provider, err)
+	}
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "sometimes")
+	if _, err := resolveHealProvider("", "", ""); err == nil {
+		t.Fatal("invalid setting accepted")
 	}
 }
