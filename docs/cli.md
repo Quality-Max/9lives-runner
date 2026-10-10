@@ -47,6 +47,11 @@
   fetch/XHR request it made, and report which faults an assertion caught and
   which survived.
   Requires `@9l/playwright` 0.1.1 or newer; see [Prove](prove.md).
+- Experimental `9l confirm`: run one reproduction spec on the revision a
+  finding was reported against (`--unfixed`) and on the fixing revision
+  (`--fixed`, default the working tree), each in its own Git worktree, and
+  report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
+  `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
   commit and test source for later assessment/execution checks.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
@@ -55,8 +60,9 @@
   candidate from offline Tier 1 or a Tier 2 provider in isolation, and save it
   or apply it with approval. `heal-native` is an alias. See
   [Native Tier 2](native-tier2.md).
-- `9l mcp`: serve `run_test`, `heal_test` and `assess_test` to coding agents
-  over MCP stdio. See [MCP server](mcp.md).
+- `9l mcp`: serve `run_test`, `heal_test`, `assess_test` and
+  `confirm_finding` to coding agents over MCP stdio. See
+  [MCP server](mcp.md).
 
 Playwright execution supports existing projects with a local
 `@playwright/test` dependency. It never uses `npx` to download tooling during a
