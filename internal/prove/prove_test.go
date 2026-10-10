@@ -153,7 +153,7 @@ func TestPlanOrdersRequestsAndKeepsFaultsBeyondTheBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests, faults, notRun := Plan(observations, 5)
+	requests, faults, notRun := Plan(observations, 5, DefaultKinds)
 	if len(requests) != 3 || requests[0].ID != "req-1" || requests[0].Method != "GET" || requests[2].Method != "POST" {
 		t.Fatalf("requests not ordered by method, origin and path: %#v", requests)
 	}
@@ -268,5 +268,88 @@ func TestReadChannelPairsResponsesWithinEachAttempt(t *testing.T) {
 	dir := writeChannel(t, hello("observe")+observed("GET", "/api/cart", 500, false), helloFor("observe", testA, 1)+response)
 	if _, err := ReadChannel(dir, "observe", ""); err == nil {
 		t.Fatal("accepted a response-only stream because another attempt recorded the request")
+	}
+}
+
+func capabilityRecord(kinds ...string) string {
+	return `{"type":"capabilities","faults":["` + strings.Join(kinds, `","`) + `"]}` + "\n"
+}
+
+func TestReadChannelPlansOnlyKindsEveryAttemptCanApply(t *testing.T) {
+	extended := capabilityRecord(Kinds...)
+	cases := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"an SDK without capability records applies the defaults", []string{hello("observe")}, DefaultKinds},
+		{"advertised kinds are added to the defaults", []string{hello("observe") + capabilityRecord("abort", "http-401")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP401}},
+		{"every kind", []string{hello("observe") + extended + observed("GET", "/a", 200, true)}, Kinds},
+		{"names this engine does not know are ignored", []string{hello("observe") + capabilityRecord("http-429", "future-fault")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP429}},
+		{"one older worker limits the plan to the defaults", []string{hello("observe") + extended, helloFor("observe", testB, 0)}, DefaultKinds},
+		{"workers agree only on their common kinds", []string{hello("observe") + capabilityRecord("http-401", "http-403"), helloFor("observe", testB, 0) + capabilityRecord("http-403", "malformed-json")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP403}},
+	}
+	for _, test := range cases {
+		observations, err := ReadChannel(writeChannel(t, test.files...), "observe", "")
+		if err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		got := []string{}
+		for _, kind := range Kinds {
+			if observations.FaultKinds[kind] {
+				got = append(got, kind)
+			}
+		}
+		if strings.Join(got, ",") != strings.Join(test.want, ",") || len(observations.FaultKinds) != len(test.want) {
+			t.Errorf("%s: kinds %v, want %v", test.name, got, test.want)
+		}
+	}
+}
+
+func TestReadChannelRejectsInvalidCapabilities(t *testing.T) {
+	many := make([]string, maxCapabilities+1)
+	for index := range many {
+		many[index] = "kind-" + itoa(index+1)
+	}
+	for name, content := range map[string]string{
+		"empty list":           hello("observe") + `{"type":"capabilities","faults":[]}` + "\n",
+		"not a list":           hello("observe") + `{"type":"capabilities","faults":"abort"}` + "\n",
+		"null list":            hello("observe") + `{"type":"capabilities","faults":null}` + "\n",
+		"non-string name":      hello("observe") + `{"type":"capabilities","faults":[1]}` + "\n",
+		"duplicate name":       hello("observe") + capabilityRecord("abort", "abort"),
+		"uppercase name":       hello("observe") + capabilityRecord("HTTP-401"),
+		"oversized name":       hello("observe") + capabilityRecord(strings.Repeat("a", 33)),
+		"too many names":       hello("observe") + capabilityRecord(many...),
+		"extra field":          hello("observe") + `{"type":"capabilities","faults":["abort"],"version":2}` + "\n",
+		"after a request":      hello("observe") + observed("GET", "/a", 200, true) + capabilityRecord("abort"),
+		"sent twice":           hello("observe") + capabilityRecord("abort") + capabilityRecord("abort"),
+		"before the handshake": capabilityRecord("abort") + hello("observe"),
+	} {
+		if _, err := ReadChannel(writeChannel(t, content), "observe", ""); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := ReadChannel(writeChannel(t, hello("fault")+capabilityRecord("abort")), "fault", "fault-1"); err == nil {
+		t.Error("accepted capabilities during a fault run")
+	}
+}
+
+func TestPlanUsesTheSelectedKindsInKindsOrder(t *testing.T) {
+	observations, err := ReadChannel(writeChannel(t, hello("observe")+observed("GET", "/api/cart", 200, true)+observed("GET", "/api/text", 200, false)), "observe", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, faults, notRun := Plan(observations, 24, []string{KindMalformedJSON, KindHTTP429, KindHTTP401})
+	kinds := []string{}
+	for _, fault := range append(faults, notRun...) {
+		kinds = append(kinds, fault.Request+":"+fault.Kind)
+	}
+	// malformed-json, like empty-json, needs a successful JSON baseline response.
+	want := "req-1:http-401 req-1:http-429 req-1:malformed-json req-2:http-401 req-2:http-429"
+	if strings.Join(kinds, " ") != want || len(notRun) != 0 {
+		t.Fatalf("faults %q, want %q", strings.Join(kinds, " "), want)
+	}
+	if env := faults[2].Env(); env != `{"id":"fault-3","kind":"malformed-json","method":"GET","origin":"`+origin+`","path":"/api/cart"}` {
+		t.Fatalf("fault env %s", env)
 	}
 }

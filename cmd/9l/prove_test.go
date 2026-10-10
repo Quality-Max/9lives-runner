@@ -41,8 +41,11 @@ type fakeProveWorker struct {
 	corrupt       bool
 	corruptFaults bool
 	// delay makes every run outlast a short --deadline.
-	delay    time.Duration
-	commands [][]string
+	delay time.Duration
+	// capabilities is what the SDK reports when the engine asks; nil plays
+	// an SDK that predates capability records.
+	capabilities []string
+	commands     [][]string
 }
 
 const fakeOrigin = "http://127.0.0.1:4100"
@@ -87,6 +90,9 @@ func (worker *fakeProveWorker) Run(ctx context.Context, job runner.Job, _ int) r
 	for index, test := range worker.tests {
 		channel := []string{fmt.Sprintf(`{"type":"hello","protocol":"%s","mode":"%s","testId":"%s","retry":0}`, prove.Protocol, mode, test.id)}
 		passed := worker.baselineOK
+		if fault == nil && worker.capabilities != nil && job.Env["NINELIVES_PROVE_CAPABILITIES"] == "1" {
+			channel = append(channel, `{"type":"capabilities","faults":["`+strings.Join(worker.capabilities, `","`)+`"]}`)
+		}
 		if fault == nil {
 			for _, path := range test.requests {
 				channel = append(channel,
@@ -215,7 +221,7 @@ func TestProveClassifiesEachFaultAndPersistsAReportWithoutURLs(t *testing.T) {
 	}
 	report := proveReport(t, stdout, stderr)
 	want := "req-1:abort:caught req-1:http-500:caught req-1:empty-json:caught req-2:abort:survived req-2:http-500:survived req-2:empty-json:survived"
-	if faultResults(report) != want || !report.Complete || report.IncompleteReason != "" || report.Policy != "prove-network-v2" || report.Summary != (prove.Summary{Faults: 6, Caught: 3, Survived: 3, Exercised: 6}) {
+	if faultResults(report) != want || !report.Complete || report.IncompleteReason != "" || report.Policy != "prove-network-v3" || strings.Join(report.FaultKinds, ",") != "abort,http-500,empty-json" || report.Summary != (prove.Summary{Faults: 6, Caught: 3, Survived: 3, Exercised: 6}) {
 		t.Fatalf("results %q\nreport %+v", faultResults(report), report)
 	}
 	if tests := report.Faults[0].Tests; len(tests) != 1 || tests[0].TestID != strings.Repeat("a", 64) || tests[0].Result != prove.Caught || tests[0].Applied != 1 {
@@ -385,7 +391,10 @@ func TestProveRefusesWithoutAGreenInstrumentedBaseline(t *testing.T) {
 }
 
 func TestProveRejectsInvalidUsage(t *testing.T) {
-	for _, args := range [][]string{{}, {"a.spec.ts", "b.spec.ts"}, {"a.spec.ts", "--format", "xml"}, {"a.spec.ts", "--max-faults", "0"}, {"a.spec.ts", "--max-faults", "257"}, {"a.spec.ts", "--pin-skip", "no separator"}} {
+	for _, args := range [][]string{
+		{}, {"a.spec.ts", "b.spec.ts"}, {"a.spec.ts", "--format", "xml"}, {"a.spec.ts", "--max-faults", "0"}, {"a.spec.ts", "--max-faults", "257"}, {"a.spec.ts", "--pin-skip", "no separator"},
+		{"a.spec.ts", "--faults", "delay"}, {"a.spec.ts", "--faults", "abort,abort"}, {"a.spec.ts", "--faults", ""}, {"a.spec.ts", "--faults", "abort,"},
+	} {
 		if code, _, _ := runProve(t, shopWorker(), args...); code != 2 {
 			t.Fatalf("args %q: code=%d", args, code)
 		}
@@ -416,5 +425,48 @@ func TestProveSeparatesUsageFromOperationalFailures(t *testing.T) {
 	}
 	if code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--receipt-dir", blocked); code != 1 {
 		t.Fatalf("operational failure: code=%d stderr=%s", code, stderr)
+	}
+}
+
+func TestProveAppliesSelectedFaultKindsTheSDKReports(t *testing.T) {
+	project := proveProject(t)
+	worker := shopWorker()
+	worker.capabilities = prove.Kinds
+	code, stdout, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--faults", "malformed-json, http-401,http-403,http-429", "--format", "json", "--receipt-dir", t.TempDir())
+	report := proveReport(t, stdout, stderr)
+	want := "req-1:http-401:caught req-1:http-403:caught req-1:http-429:caught req-1:malformed-json:caught req-2:http-401:survived req-2:http-403:survived req-2:http-429:survived req-2:malformed-json:survived"
+	if code != 0 || faultResults(report) != want || strings.Join(report.FaultKinds, ",") != "http-401,http-403,http-429,malformed-json" || !report.Complete {
+		t.Fatalf("code=%d results %q kinds %v stderr=%s", code, faultResults(report), report.FaultKinds, stderr)
+	}
+	// One baseline and one run per fault.
+	if len(worker.commands) != 9 {
+		t.Fatalf("runs=%d", len(worker.commands))
+	}
+	_, text, _ := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--faults", "malformed-json", "--receipt-dir", t.TempDir())
+	if !strings.Contains(text, "CAUGHT                     malformed-json req-1 GET") {
+		t.Fatalf("text output misaligns the longest kind:\n%s", text)
+	}
+}
+
+func TestProveRefusesKindsAnOlderSDKCannotApply(t *testing.T) {
+	project := proveProject(t)
+	spec := filepath.Join(project, "tests/shop.spec.ts")
+	// An SDK without capability records would reject the unknown fault and
+	// fail every test without an assertion, so no fault run is started.
+	worker := shopWorker()
+	code, stdout, stderr := runProve(t, worker, spec, "--faults", "abort,http-401", "--receipt-dir", t.TempDir())
+	if code != 2 || !strings.Contains(stderr, "--faults http-401 needs a newer @9l/playwright") || !strings.Contains(stderr, "applies only abort, http-500, empty-json") || strings.Contains(stdout, "fault 1/") || len(worker.commands) != 1 {
+		t.Fatalf("code=%d runs=%d stdout=%s stderr=%s", code, len(worker.commands), stdout, stderr)
+	}
+	// The default kinds still run against such an SDK.
+	worker = shopWorker()
+	if code, _, stderr := runProve(t, worker, spec, "--receipt-dir", t.TempDir()); code != 0 || len(worker.commands) != 7 {
+		t.Fatalf("default kinds with an older SDK: code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
+	}
+	// An SDK that reports some new kinds is refused only for the others.
+	worker = shopWorker()
+	worker.capabilities = []string{"abort", "http-500", "empty-json", "http-401"}
+	if code, _, stderr := runProve(t, worker, spec, "--faults", "http-401,http-429", "--receipt-dir", t.TempDir()); code != 2 || !strings.Contains(stderr, "--faults http-429 needs") || len(worker.commands) != 1 {
+		t.Fatalf("partly capable SDK: code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
 	}
 }

@@ -42,8 +42,10 @@
   requirements contract (`--requirements`); `--titles` adds literal test titles
   for local use. Static findings do not establish executed assertion coverage.
 - Experimental `9l prove`: run one spec, then re-run it once per injected
-  network fault (`abort`, `http-500`, `empty-json`) on each fetch/XHR request
-  it made, and report which faults an assertion caught and which survived.
+  network fault (`abort`, `http-500`, `empty-json` by default; `http-401`,
+  `http-403`, `http-429` and `malformed-json` with `--faults`) on each
+  fetch/XHR request it made, and report which faults an assertion caught and
+  which survived.
   Requires `@9l/playwright` 0.1.1 or newer; see [Prove](prove.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
   commit and test source for later assessment/execution checks.

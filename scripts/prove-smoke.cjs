@@ -1,7 +1,8 @@
 // Qualify `9l prove` against the synthetic shop fixture with real Chromium.
 // The cart and order requests are asserted, recommendations are not: every
 // fault on the first two must be caught and every fault on the third must
-// survive. No account, provider or external server is involved.
+// survive, for the default kinds and again for the opt-in kinds. No account,
+// provider or external server is involved.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -47,7 +48,8 @@ async function main() {
   const report = JSON.parse(proved.stdout);
   stage = 'report';
   assert.equal(report.version, 1);
-  assert.equal(report.policy, 'prove-network-v2');
+  assert.equal(report.policy, 'prove-network-v3');
+  assert.deepEqual(report.faultKinds, ['abort', 'http-500', 'empty-json']);
   assert.equal(report.complete, true);
   assert.equal(report.baseline.status, 'passed');
   const byPath = Object.fromEntries(report.requests.map(request => [new URL(request.url).pathname, request.id]));
@@ -74,7 +76,25 @@ async function main() {
   const saved = fs.readFileSync(path.join(receipts, 'proofs', `${report.baseline.runId}.json`), 'utf8');
   assert(!saved.includes('/api/') && !saved.includes('127.0.0.1'), 'persisted report must not contain request URLs');
   assert.deepEqual(JSON.parse(saved).summary, report.summary);
-  console.log('Prove: real Chromium baseline, 9 isolated fault runs, 6 caught on asserted requests, 3 survived on the unasserted request; persisted report has no URLs');
+
+  // The opt-in kinds, which the SDK reports in the baseline's capabilities.
+  stage = 'prove opt-in kinds';
+  const optIn = ['http-401', 'http-403', 'http-429', 'malformed-json'];
+  const extended = invoke(engine, ['prove', 'testdata/sdk/tests/prove-shop.spec.ts', '--faults', optIn.join(','), '--format', 'json', '--paths', '--timeout', '60s',
+    '--pass-env', 'NINELIVES_PROVE_SHOP_PORT', '--receipt-dir', receipts], {NINELIVES_PROVE_SHOP_PORT: port});
+  stage = `prove opt-in kinds exit ${extended.status}`;
+  assert.equal(extended.status, 0);
+  const second = JSON.parse(extended.stdout);
+  stage = 'opt-in report';
+  assert.equal(second.complete, true);
+  assert.deepEqual(second.faultKinds, optIn);
+  const secondByPath = Object.fromEntries(second.requests.map(request => [new URL(request.url).pathname, request.id]));
+  const secondResults = path => second.faults.filter(fault => fault.request === secondByPath[path]).map(fault => `${fault.kind}:${fault.result}`);
+  for (const path of ['/api/cart', '/api/orders']) assert.deepEqual(secondResults(path), optIn.map(kind => `${kind}:caught`), path);
+  assert.deepEqual(secondResults('/api/recommendations'), optIn.map(kind => `${kind}:survived`));
+  assert.deepEqual(second.summary, {faults: 12, caught: 8, survived: 4, inconclusive: 0, notRun: 0, exercised: 12});
+  assert(second.faults.every(fault => fault.applied > 0 && fault.runId));
+  console.log('Prove: real Chromium baselines; 9 default fault runs (6 caught on asserted requests, 3 survived on the unasserted one) and 12 opt-in fault runs (8 caught, 4 survived); persisted report has no URLs');
 }
 
 main().catch(error => {

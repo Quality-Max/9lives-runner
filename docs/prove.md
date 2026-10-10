@@ -2,7 +2,8 @@
 
 Status: experimental. `9l prove` needs `@9l/playwright` 0.1.1 or newer, the
 first release with the prove channel, and a CLI built from `main` until the
-next CLI release. Qualified with real Chromium
+next CLI release. The opt-in kinds selected with `--faults` also need an SDK
+built from `main` until the next SDK release. Qualified with real Chromium
 on one synthetic fixture and one retry control, see
 [Qualification](#qualification). No accuracy, latency or cost claim is made
 for other applications.
@@ -29,6 +30,31 @@ prove tests/checkout.spec.ts: 3 request(s) observed in 1 instrumented test attem
 Summary: 9 fault(s): 6 caught, 3 survived, 0 inconclusive, 0 not run
 ```
 
+## Fault kinds
+
+| Kind | Injected | Applies to | Default |
+| --- | --- | --- | --- |
+| `abort` | Network failure | Every request | yes |
+| `http-500` | Status 500, empty body | Every request | yes |
+| `empty-json` | The real response with `[]` or `{}` as its body | Successful JSON baseline responses | yes |
+| `http-401` | Status 401, empty body | Every request | no |
+| `http-403` | Status 403, empty body | Every request | no |
+| `http-429` | Status 429, `Retry-After: 1`, empty body | Every request | no |
+| `malformed-json` | The real response with its JSON cut to the first half, so it no longer parses | Successful JSON baseline responses | no |
+
+Select kinds with `--faults`, for example
+`9l prove tests/checkout.spec.ts --faults http-401,http-403,malformed-json`.
+The default is `abort,http-500,empty-json`. The authentication and
+rate-limit kinds check that a test notices a rejected session or a throttled
+dependency instead of continuing as if the request had succeeded;
+`malformed-json` checks that a test notices a response the application
+cannot parse. Faults are planned in the table's order, whatever order you list.
+
+The SDK reports in the baseline which kinds it can apply. An SDK that
+predates this applies only the defaults, so selecting another kind exits 2
+after the baseline, naming the kinds the installed SDK supports, before any
+fault run starts.
+
 A survived fault is the finding: that request can fail, return an error or
 return nothing, and the test still passes. A caught fault means an assertion
 failed while the fault was injected. It does not show that the assertion checks
@@ -41,11 +67,10 @@ the intended behavior, only that it is not indifferent to this request.
    request (method, origin and path; never query strings, headers or bodies)
    and whether its response was successful JSON. The baseline must pass and be
    complete; a failing test proves nothing about faults.
-2. **Plan.** Requests are ordered by method, origin and path. Each gets an
-   `abort` fault (network failure) and an `http-500` fault (status 500, empty
-   body); a request whose baseline response was successful JSON also gets an
-   `empty-json` fault (the same response with `[]` or `{}` as its body).
-   `--max-faults` (default 24, at most 256) bounds the runs; the rest are
+2. **Plan.** Requests are ordered by method, origin and path. Each gets one
+   fault per selected kind that applies to it; `empty-json` and
+   `malformed-json` apply only to a request whose baseline response was
+   successful JSON. `--max-faults` (default 24, at most 256) bounds the runs; the rest are
    reported as `not-run`, never dropped.
 3. **Fault runs.** Each fault runs the spec again, alone, in its own receipted
    run with the project's Playwright retries disabled (`--retries=0`). The
@@ -65,7 +90,7 @@ the intended behavior, only that it is not indifferent to this request.
 | `failed-without-assertion` | The fault was applied and the test failed, but no assertion step failed (for example an action timed out) |
 | `retried` | Playwright ran the test more than once in the fault run; a later attempt can hide what the first detected, so nothing is concluded |
 | `not-exercised` | The fault was never applied to this test's requests, so nothing is credited to it, whatever the test did |
-| `not-applicable` | `empty-json` met a response that was not a JSON object or array (`not-json`), or the upstream request failed in the fault run (`unreachable`) |
+| `not-applicable` | `empty-json` or `malformed-json` met a response that was not a JSON object or array (`not-json`), or the upstream request failed in the fault run (`unreachable`) |
 
 The fault's result follows from its tests, counting only those the fault was
 applied to: `retried` if any was retried; otherwise `survived` if any passed,
@@ -90,6 +115,9 @@ or `context` fixture. Tests that never use a browser context are untouched.
   fault reports `not-exercised`. Start it on a fixed port and pass it with
   `--pass-env`, as the [fixture](../testdata/sdk/tests/prove-shop.spec.ts) does.
 - **One spec at a time.** Each fault re-runs the whole spec; keep it focused.
+- **Kinds.** `--faults` selects the [fault kinds](#fault-kinds); each kind
+  adds up to one run per request, so a long list needs a larger
+  `--max-faults`.
 - **Limits.** `--timeout` bounds each run, `--deadline` the whole session,
   `--workers` each run's concurrency. `--pass-env` and `--pin-skip` behave as
   in `9l run`. `--max-faults` bounds the fault runs; the proof is then
@@ -133,13 +161,15 @@ through unchanged.
   routes run first. A test route must call `route.fallback()` for the fault
   to apply; a catch-all route that calls `route.continue()`, as request
   loggers often do, makes every fault `not-exercised`.
-- Faults are network-level only. Delays, partial bodies, changed fields and
-  application-side mutations are not implemented.
+- Faults are network-level only. Delays, redirects, changed fields and
+  application-side mutations are not implemented; `malformed-json` truncates
+  a body but never changes individual fields.
 - Results describe one execution per fault. A nondeterministic application
   can produce a different result on another run.
 
-The policy name `prove-network-v2` in each report identifies these fault kinds
-and rules; it changes whenever either does.
+The policy name `prove-network-v3` in each report identifies the available
+fault kinds and rules, and `faultKinds` lists the kinds selected for that
+proof; the policy changes whenever the kinds or rules do.
 
 ## Qualification
 
@@ -164,8 +194,22 @@ report, the receipts and the persisted file:
 | `GET /api/recommendations` | no | survived | survived | survived |
 
 Nine isolated fault runs, every fault applied, the proof complete with policy
-`prove-network-v2`, each fault carrying one per-test result, all ten receipts
+`prove-network-v3`, each fault carrying one per-test result, all ten receipts
 validated with one executed test, and no URL in the saved report.
+
+A second proof selects the opt-in kinds with
+`--faults http-401,http-403,http-429,malformed-json`:
+
+| Request | Asserted | `http-401` | `http-403` | `http-429` | `malformed-json` |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/cart` | yes | caught | caught | caught | caught |
+| `POST /api/orders` | yes | caught | caught | caught | caught |
+| `GET /api/recommendations` | no | survived | survived | survived | survived |
+
+Twelve isolated fault runs, every fault applied and the proof complete. The
+fixture treats any unsuccessful status alike, so this qualifies that each kind
+is delivered to the page and classified, not that an application
+distinguishes 401 from 429.
 
 A second control, run by hand with the same fixture plus
 `test.describe.configure({retries: 1})`, gives `retried` for all six cart and
