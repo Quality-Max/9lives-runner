@@ -238,6 +238,21 @@ async function main() {
   const cuePolicy = invoke('testdata/sdk/tests/goal-cue-policy.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json']);
   assert.equal(cuePolicy.code, 3);
   assert.equal(cuePolicy.summary.receipts[0].goals[0].status, 'policy_blocked');
+  // A generic control inside a risky named form is blocked by its context.
+  const contextPolicy = invoke('testdata/sdk/tests/goal-context-policy.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json']);
+  assert.equal(contextPolicy.code, 3);
+  assert.equal(contextPolicy.summary.receipts[0].goals[0].status, 'policy_blocked');
+  // Identical controls are told apart by their form, or the goal stops.
+  const distinct = invoke('testdata/sdk/tests/goal-ambiguous-distinct.spec.ts', ['--goal-script', 'testdata/sdk/ambiguous-distinct-script.json']);
+  assert.equal(distinct.code, 0);
+  assert.equal(distinct.summary.receipts[0].goals[0].status, 'completed');
+  const namedForms = invoke('testdata/sdk/tests/goal-ambiguous-forms.spec.ts', ['--goal-script', 'testdata/sdk/ambiguous-distinct-script.json']);
+  assert.equal(namedForms.code, 0);
+  assert.equal(namedForms.summary.receipts[0].goals[0].status, 'completed');
+  const identical = invoke('testdata/sdk/tests/goal-ambiguous-identical.spec.ts', ['--goal-script', 'testdata/sdk/ambiguous-identical-script.json']);
+  assert.equal(identical.code, 3);
+  assert.equal(identical.summary.receipts[0].goals[0].status, 'ambiguous_target');
+  assert(!identical.summary.receipts[0].goals[0].decisions.some(decision => decision.action === 'click'));
   const deadlineGoal = invoke('testdata/sdk/tests/goal-deadline.spec.ts', ['--goal-script', 'testdata/sdk/click-script.json']);
   assert.equal(deadlineGoal.code, 3);
   assert.equal(deadlineGoal.summary.receipts[0].goals[0].status, 'budget_exhausted');

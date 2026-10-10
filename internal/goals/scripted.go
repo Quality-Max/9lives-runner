@@ -22,6 +22,9 @@ type scriptStep struct {
 	Action    string `json:"action"`
 	Label     string `json:"label,omitempty"`
 	Parameter string `json:"parameter,omitempty"`
+	// Context and Ordinal pick one of several controls that share a label.
+	Context string `json:"context,omitempty"`
+	Ordinal int    `json:"ordinal,omitempty"`
 }
 
 func LoadScript(path string) (*Scripted, error) {
@@ -41,7 +44,7 @@ func LoadScript(path string) (*Scripted, error) {
 		return nil, errors.New("invalid goal script")
 	}
 	for _, s := range script.Steps {
-		if !slices.Contains([]string{"click", "fill", "select", "check", "wait", "complete", "unresolved"}, s.Action) || len(s.Label) > 160 {
+		if !slices.Contains([]string{"click", "fill", "select", "check", "wait", "complete", "unresolved"}, s.Action) || len(s.Label) > 160 || len(s.Context) > 160 || s.Ordinal < 0 || s.Ordinal > 25 {
 			return nil, errors.New("invalid goal script")
 		}
 	}
@@ -68,7 +71,8 @@ func (s *Scripted) CompleteDecision(ctx context.Context, prompt, model string, m
 			}
 			matches := 0
 			for _, c := range state.Controls {
-				if c.Label == step.Label && slices.Contains(c.Actions, step.Action) {
+				if c.Label == step.Label && slices.Contains(c.Actions, step.Action) &&
+					(step.Context == "" || c.Context == step.Context) && (step.Ordinal == 0 || c.Ordinal == step.Ordinal) {
 					d.TargetID = c.ID
 					matches++
 				}

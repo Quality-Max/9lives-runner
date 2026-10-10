@@ -8,11 +8,18 @@ SDK versions.
 
 ### SDK
 
-- Release alongside CLI 0.2.5. SDK runtime behavior and protocols are
-  unchanged from 0.2.0.
+- Goal observation sends `context` and `ordinal` for controls that share
+  role and label (#46). An older CLI rejects those fields, so with it a goal
+  on a page with such duplicates stops as an invalid request instead of
+  acting; pages without duplicates are unaffected. Use the matching CLI.
 
 ### CLI
 
+- Goals tell apart controls that share role and label: such controls carry
+  the name of their form, fieldset, dialog or landmark (`context`) and an
+  `ordinal`, and a choice the engine still cannot distinguish stops the
+  goal as `ambiguous_target` instead of guessing (#46). Scripted goal steps
+  accept `context` and `ordinal`.
 - Receipts carry each test's annotations (`annotations`, additive), and
   `9l run`/`9l result` print the non-built-in ones under the job, so a test
   that recorded why it returned early is no longer an unexplained green
