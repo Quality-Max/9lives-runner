@@ -125,6 +125,30 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	}, nil
 }
 
+// SelectLine narrows a job to the test at line with Playwright's own
+// `file:line` filter.
+func (Adapter) SelectLine(job runner.Job, line int) (runner.Job, error) {
+	return SelectLine(job, line)
+}
+
+// SelectLine appends :line to the job's file filter argument.
+func SelectLine(job runner.Job, line int) (runner.Job, error) {
+	relative, err := filepath.Rel(job.WorkDir, job.Spec)
+	if err != nil {
+		return job, fmt.Errorf("cannot resolve the spec for line selection")
+	}
+	filter := TestFileFilter(job.WorkDir, relative)
+	command := append([]string{}, job.Command...)
+	for i, argument := range command {
+		if argument == filter {
+			command[i] = fmt.Sprintf("%s:%d", filter, line)
+			job.Command = command
+			return job, nil
+		}
+	}
+	return job, fmt.Errorf("cannot select a line: the planned command has no file filter")
+}
+
 func findProject(start string) (string, string, error) {
 	for directory := start; ; directory = filepath.Dir(directory) {
 		packagePath := filepath.Join(directory, "package.json")

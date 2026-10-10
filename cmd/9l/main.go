@@ -532,6 +532,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
+	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
+	grepInvert := fs.String("grep-invert", "", "skip tests whose title matches this regular expression (Playwright --grep-invert)")
 	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
@@ -557,6 +559,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-pass-env": true, "--pass-env": true,
 		"-agent-provenance": true, "--agent-provenance": true,
 		"-pin-skip": true, "--pin-skip": true,
+		"-grep": true, "--grep": true, "-grep-invert": true, "--grep-invert": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
 		"-workers": true, "--workers": true,
@@ -663,7 +666,14 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		}
 		availableAdapters = []runner.Adapter{adapter.WithFailureDetails(*failureDetails)}
 	}
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters})
+	var extraArgs, selection []string
+	if *grep != "" {
+		extraArgs, selection = append(extraArgs, "--grep", *grep), append(selection, "--grep "+strconv.Quote(*grep))
+	}
+	if *grepInvert != "" {
+		extraArgs, selection = append(extraArgs, "--grep-invert", *grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
+	}
+	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " ")})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
@@ -792,7 +802,11 @@ func printPlan(w io.Writer, plan runner.Plan, format string) int {
 	}
 	fmt.Fprintf(w, "run %s: %d job(s), %d skipped\n", plan.RunID, len(plan.Jobs), len(plan.Skipped))
 	for _, job := range plan.Jobs {
-		fmt.Fprintf(w, "  RUN  %s [%s]\n", job.Spec, job.Adapter)
+		if job.Selection != "" {
+			fmt.Fprintf(w, "  RUN  %s [%s] (%s)\n", job.Spec, job.Adapter, job.Selection)
+		} else {
+			fmt.Fprintf(w, "  RUN  %s [%s]\n", job.Spec, job.Adapter)
+		}
 	}
 	for _, skip := range plan.Skipped {
 		fmt.Fprintf(w, "  SKIP %s — %s\n", skip.Input, skip.Reason)

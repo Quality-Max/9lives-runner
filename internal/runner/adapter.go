@@ -42,6 +42,12 @@ type Adapter interface {
 	Validate(stdout []byte) (Validation, error)
 }
 
+// LineSelector adapters can narrow a planned job to the test at a line of
+// its spec, as `9l run tests/login.spec.ts:12` asks.
+type LineSelector interface {
+	SelectLine(job Job, line int) (Job, error)
+}
+
 // FailureReporter adapters describe each failed test in a report that
 // already validated. workDir is the job's working directory; attachment
 // paths outside it are not reported.

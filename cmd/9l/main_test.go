@@ -211,3 +211,11 @@ func TestProviderNoneKeepsHealingOfflineWithAnAgentCLIInstalled(t *testing.T) {
 		t.Fatalf("an explicit flag overrides the environment: %v %v", provider, err)
 	}
 }
+
+func TestPrintPlanShowsTheTestSelection(t *testing.T) {
+	var out bytes.Buffer
+	printPlan(&out, runner.Plan{RunID: "run-x", Jobs: []runner.Job{{Spec: "tests/a.spec.ts", Adapter: "playwright", Selection: `line 12, --grep "login"`}}}, "text")
+	if !strings.Contains(out.String(), "  RUN  tests/a.spec.ts [playwright] (line 12, --grep \"login\")\n") {
+		t.Fatalf("plan:\n%s", out.String())
+	}
+}

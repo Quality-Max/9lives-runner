@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -18,7 +19,15 @@ type PlanOptions struct {
 	MaxOutputBytes int
 	Deadline       time.Duration
 	Adapters       []Adapter
+	// ExtraArgs are appended to every job's command, such as Playwright's
+	// --grep filter, and so recorded in its receipt's evidence command.
+	ExtraArgs []string
+	// Selection describes ExtraArgs for the plan and diagnostics.
+	Selection string
 }
+
+// lineInput matches `<spec>:<line>`.
+var lineInput = regexp.MustCompile(`^(.+):([1-9][0-9]{0,6})$`)
 
 // BuildPlan resolves every candidate before execution and reserves the
 // run-wide job budget up front.
@@ -29,7 +38,15 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 	}
 	seen := map[string]bool{}
 	for _, input := range inputs {
-		matches, err := expand(input, opts.Adapters)
+		pattern, line := input, 0
+		if m := lineInput.FindStringSubmatch(input); m != nil {
+			if _, err := os.Stat(input); os.IsNotExist(err) {
+				if info, err := os.Stat(m[1]); err == nil && info.Mode().IsRegular() {
+					pattern, line = m[1], atoi(m[2])
+				}
+			}
+		}
+		matches, err := expand(pattern, opts.Adapters)
 		if err != nil {
 			return Plan{}, fmt.Errorf("%q: %w", input, err)
 		}
@@ -42,10 +59,14 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 			if err != nil {
 				return Plan{}, err
 			}
-			if seen[absolute] {
+			key := absolute
+			if line > 0 {
+				key = fmt.Sprintf("%s:%d", absolute, line)
+			}
+			if seen[key] {
 				continue
 			}
-			seen[absolute] = true
+			seen[key] = true
 			candidate := adapterFor(opts.Adapters, absolute)
 			if candidate == nil {
 				plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: "unsupported spec; currently supported: Playwright .spec/.test JS, JSX, TS, and TSX files"})
@@ -60,6 +81,24 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 				plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: err.Error()})
 				continue
 			}
+			var selections []string
+			if line > 0 {
+				selector, ok := candidate.(LineSelector)
+				if !ok {
+					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot select a test by line"})
+					continue
+				}
+				if job, err = selector.SelectLine(job, line); err != nil {
+					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: err.Error()})
+					continue
+				}
+				selections = append(selections, fmt.Sprintf("line %d", line))
+			}
+			if len(opts.ExtraArgs) > 0 {
+				job.Command = append(job.Command, opts.ExtraArgs...)
+				selections = append(selections, opts.Selection)
+			}
+			job.Selection = strings.Join(selections, ", ")
 			plan.Jobs = append(plan.Jobs, job)
 		}
 	}
@@ -95,6 +134,14 @@ func expand(input string, adapters []Adapter) ([]string, error) {
 	}
 	sort.Strings(matches)
 	return matches, nil
+}
+
+func atoi(digits string) int {
+	value := 0
+	for _, digit := range digits {
+		value = value*10 + int(digit-'0')
+	}
+	return value
 }
 
 func ignoredDirectory(name string) bool {

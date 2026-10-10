@@ -237,6 +237,9 @@
         "input": {
           "type": "string"
         },
+        "selection": {
+          "type": "string"
+        },
         "spec": {
           "type": "string"
         },

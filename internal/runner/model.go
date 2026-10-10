@@ -29,6 +29,9 @@ type Job struct {
 	Command   []string          `json:"command"`
 	Env       map[string]string `json:"-"`
 	DependsOn []string          `json:"dependsOn"`
+	// Selection describes a test filter narrowing the spec, such as
+	// `line 12` or `--grep login`; empty runs every test in it.
+	Selection string `json:"selection,omitempty"`
 }
 
 type Skipped struct {

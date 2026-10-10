@@ -445,6 +445,9 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 					validationErr = fmt.Errorf("structured report exceeded capture limit")
 				}
 			}
+			if validationErr != nil && job.Selection != "" && strings.Contains(validationErr.Error(), "found no tests") {
+				validationErr = fmt.Errorf("%w; the test selection (%s) may match none of its tests", validationErr, job.Selection)
+			}
 			if validationErr != nil {
 				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), "missing or invalid structured report"
 			} else if err := validateValidation(validation); err != nil {

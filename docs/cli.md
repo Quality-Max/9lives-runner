@@ -29,6 +29,12 @@
   while watching, set `use: {launchOptions: {slowMo: 250}}` in the project's
   Playwright config: a config's `launchOptions` replaces any value a fixture
   library sets, so 9l does not offer a flag that could be silently ignored.
+- Test selection: `9l run tests/login.spec.ts:12` runs only the test at that
+  line (Playwright's `file:line` filter), and `--grep <regexp>` /
+  `--grep-invert <regexp>` pass Playwright's title filters to every job.
+  The plan shows each job's `selection`, the receipt's evidence command
+  records the filter, and a selection that matches no test leaves the run
+  incomplete with a reason naming the selection, never green.
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`
