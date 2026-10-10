@@ -93,6 +93,9 @@ func resolveHealProvider(name, model, baseURL string) (tier2.Provider, error) {
 	if explicit == "none" || explicit == "" && tier2.EnvironmentProvider() == "none" {
 		return nil, nil
 	}
+	if _, err := tier2.AutoDetectEnabled(); err != nil {
+		return nil, err
+	}
 	provider, err := tier2.Resolve(tier2.Options{Name: name, Model: model, BaseURL: baseURL})
 	if err != nil {
 		if name != "" || os.Getenv("NINELIVES_PROVIDER") != "" {
@@ -101,6 +104,18 @@ func resolveHealProvider(name, model, baseURL string) (tier2.Provider, error) {
 		return nil, nil
 	}
 	return provider, nil
+}
+
+// offlineNotice explains why healing has no Tier 2 provider.
+func offlineNotice(providerName string) string {
+	switch autoDetect, _ := tier2.AutoDetectEnabled(); {
+	case strings.EqualFold(strings.TrimSpace(providerName), "none") || providerName == "" && tier2.EnvironmentProvider() == "none":
+		return "provider none: healing with offline Tier 1 only"
+	case !autoDetect:
+		return "provider auto-detection is off (NINELIVES_AUTODETECT_PROVIDER=off): healing with offline Tier 1 only; name one with --provider"
+	default:
+		return "no Tier 2 provider found; healing with offline Tier 1 only"
+	}
 }
 
 // runTimeoutFlag accepts a Go duration such as 5m, or whole seconds as the
@@ -155,18 +170,19 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	}
 	provider, err := resolveHealProvider(*providerName, *model, *providerURL)
 	if err != nil {
-		fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		if _, settingErr := tier2.AutoDetectEnabled(); settingErr != nil {
+			fmt.Fprintln(errOut, "9l:", settingErr)
+		} else {
+			fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		}
 		return 2
 	}
-	switch {
-	case provider != nil:
+	if provider != nil {
 		// A provider call sends the spec source and failure text off the
 		// machine and may bill the account; say which before any call.
 		fmt.Fprintf(errOut, "9l: healing provider: %s; a proposal sends the spec, the failure and a redacted page snapshot; --provider none heals offline\n", tier2.Describe(provider))
-	case strings.EqualFold(strings.TrimSpace(*providerName), "none") || *providerName == "" && tier2.EnvironmentProvider() == "none":
-		fmt.Fprintln(errOut, "9l: provider none: healing with offline Tier 1 only")
-	default:
-		fmt.Fprintln(errOut, "9l: no Tier 2 provider found; healing with offline Tier 1 only")
+	} else {
+		fmt.Fprintln(errOut, "9l: "+offlineNotice(*providerName))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

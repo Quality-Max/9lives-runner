@@ -23,7 +23,10 @@ SDK versions.
   `NINELIVES_PROVIDER=none` keeps healing offline with an agent CLI
   installed, and the session JSON and MCP `heal_test` result record
   `provider` and `providerCalls`. `9l mcp` names its heal provider in its
-  `initialize` instructions.
+  `initialize` instructions. Auto-detection of an installed CLI or API key
+  stays on by default; the setting `NINELIVES_AUTODETECT_PROVIDER=off` turns
+  it (and a named CLI's API-key fallback) off, so only a named provider is
+  used.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".

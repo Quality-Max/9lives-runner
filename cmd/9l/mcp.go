@@ -174,7 +174,11 @@ func mcpCommand(args []string, in io.Reader, out, errOut io.Writer) int {
 	}
 	provider, err := resolveHealProvider(*providerName, *model, *providerURL)
 	if err != nil {
-		fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		if _, settingErr := tier2.AutoDetectEnabled(); settingErr != nil {
+			fmt.Fprintln(errOut, "9l:", settingErr)
+		} else {
+			fmt.Fprintln(errOut, "9l: heal provider unavailable")
+		}
 		return exitUsage
 	}
 	server := &mcpServer{passEnv: passEnv, provider: provider, model: *model, runTimeout: nativeRunTimeout(),

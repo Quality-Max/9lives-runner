@@ -388,3 +388,33 @@ func TestDescribeNamesHowEachProviderIsReached(t *testing.T) {
 		t.Errorf("Describe(nil) = %q", got)
 	}
 }
+
+func TestAutoDetectOffUsesOnlyANamedProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NINELIVES_PROVIDER", "")
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "off")
+	if provider, err := Resolve(Options{}); !errors.Is(err, ErrAutoDetectOff) || provider != nil {
+		t.Fatalf("auto-detected with the setting off: %v %v", provider, err)
+	}
+	// A named CLI still works, without the unnamed API-key fallback.
+	provider, err := Resolve(Options{Name: "claude"})
+	if _, cli := provider.(CLIProvider); err != nil || !cli {
+		t.Fatalf("named provider: %#v %v", provider, err)
+	}
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "")
+	if provider, err := Resolve(Options{Name: "claude"}); err != nil || Describe(provider) != "claude (CLI, its own login), then openai (API key OPENAI_API_KEY) if the CLI fails" {
+		t.Fatalf("default keeps the fallback: %v %v", Describe(provider), err)
+	}
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "maybe")
+	if _, err := Resolve(Options{Name: "claude"}); err == nil {
+		t.Fatal("invalid setting accepted")
+	}
+}

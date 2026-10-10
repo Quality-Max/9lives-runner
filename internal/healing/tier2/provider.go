@@ -58,6 +58,13 @@ func Resolve(options Options) (Provider, error) {
 			name = "claude"
 		}
 	}
+	autoDetect, err := AutoDetectEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if name == "" && !autoDetect {
+		return nil, ErrAutoDetectOff
+	}
 	if name == "" {
 		for _, candidate := range []string{"claude", "codex", "opencode"} {
 			if _, err := exec.LookPath(candidate); err == nil {
@@ -83,7 +90,9 @@ func Resolve(options Options) (Provider, error) {
 	switch name {
 	case "claude", "codex", "opencode":
 		primary := CLIProvider{name: name, timeout: timeout}
-		if fallback := availableHTTPProvider(options, timeout); fallback != nil {
+		// The API-key fallback is a provider nobody named; it follows the
+		// auto-detection setting.
+		if fallback := availableHTTPProvider(options, timeout); fallback != nil && autoDetect {
 			return fallbackProvider{primary: primary, fallback: fallback}, nil
 		}
 		return primary, nil
@@ -91,6 +100,24 @@ func Resolve(options Options) (Provider, error) {
 		return httpProvider(name, options.BaseURL, timeout), nil
 	default:
 		return nil, fmt.Errorf("unknown healing provider %q", name)
+	}
+}
+
+// ErrAutoDetectOff means no provider was named and auto-detection is off.
+var ErrAutoDetectOff = errors.New("healing provider auto-detection is off (NINELIVES_AUTODETECT_PROVIDER)")
+
+// AutoDetectEnabled reads NINELIVES_AUTODETECT_PROVIDER. On (the default),
+// healing picks an installed agent CLI or a configured API key when no
+// provider is named, and a CLI falls back to a configured API. Off, only a
+// provider named with --provider or NINELIVES_PROVIDER is used.
+func AutoDetectEnabled() (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("NINELIVES_AUTODETECT_PROVIDER"))) {
+	case "", "1", "on", "true", "yes":
+		return true, nil
+	case "0", "off", "false", "no":
+		return false, nil
+	default:
+		return false, errors.New("NINELIVES_AUTODETECT_PROVIDER must be on or off")
 	}
 }
 

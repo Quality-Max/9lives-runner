@@ -247,3 +247,29 @@ func TestUsageNamesEveryMCPTool(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoDetectSettingKeepsHealingOfflineUnlessAProviderIsNamed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell stand-in for an agent CLI")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NINELIVES_PROVIDER", "")
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "off")
+	if provider, err := resolveHealProvider("", "", ""); err != nil || provider != nil {
+		t.Fatalf("auto-detected with the setting off: %v %v", provider, err)
+	}
+	if notice := offlineNotice(""); !strings.Contains(notice, "auto-detection is off") {
+		t.Fatalf("notice=%q", notice)
+	}
+	if provider, err := resolveHealProvider("claude", "", ""); err != nil || provider == nil {
+		t.Fatalf("named provider: %v %v", provider, err)
+	}
+	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "sometimes")
+	if _, err := resolveHealProvider("", "", ""); err == nil {
+		t.Fatal("invalid setting accepted")
+	}
+}

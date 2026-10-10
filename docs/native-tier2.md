@@ -53,6 +53,14 @@ otherwise saves the verified candidate as `<spec>.healed` (see
 Providers resolve in explicit option, `NINELIVES_PROVIDER`, installed CLI,
 then configured-key order. `--provider none` (or `NINELIVES_PROVIDER=none`)
 heals with offline Tier 1 only even when an agent CLI or API key is present.
+Auto-detection is on by default; the setting `NINELIVES_AUTODETECT_PROVIDER=off`
+turns it off, so healing never picks an installed CLI or a configured API key
+on its own and a named CLI does not fall back to an API: only a provider
+named with `--provider` or `NINELIVES_PROVIDER` is used, otherwise healing is
+offline. Set it in the shell profile, CI environment or MCP server
+configuration (`claude mcp add 9lives -e NINELIVES_AUTODETECT_PROVIDER=off -- 9l mcp`).
+Values other than on/off (`1`/`0`, `true`/`false`, `yes`/`no`) are a usage
+error.
 Before healing starts, the command prints the resolved provider and how it is
 reached to stderr, for example
 `9l: healing provider: claude (CLI, its own login); a proposal sends the spec, the failure and a redacted page snapshot; --provider none heals offline`.

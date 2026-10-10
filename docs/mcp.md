@@ -34,7 +34,9 @@ project's own Playwright configuration, exactly like `9l run` and `9l heal`.
 `heal_test` is the [native healing session](native-tier2.md): one offline
 Tier 1 attempt, then Tier 2 proposals from the provider `9l mcp` was started
 with (`--provider`, `NINELIVES_PROVIDER`, an installed agent CLI or a
-configured API key; no provider, or `--provider none`, means Tier 1 only).
+configured API key; no provider, or `--provider none`, means Tier 1 only;
+`NINELIVES_AUTODETECT_PROVIDER=off` in the server's environment disables the
+installed-CLI and API-key detection).
 The server names that provider in its `initialize` instructions, and each
 result records `provider` and `providerCalls`; a failed call carries
 `providerDiagnostic`. Every candidate runs in an
