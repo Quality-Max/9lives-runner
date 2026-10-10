@@ -110,11 +110,15 @@ When you check requirements, use a shared contract, not a document per test:
 
 Reference independently reviewed intent from a ticket, contract or supplied
 outcomes. A requirement's outcomes may be spread over the tests in a file: an
-outcome mapped by any test in the file covers it for every test that
-references the requirement and maps at least one of its outcomes, and one
-mapped nowhere in the file is reported on each of those tests. A test that
-references a requirement but maps none of its outcomes is reported for every
-outcome, as it claims a requirement it does not check. Mapping in other files
+outcome mapped by an enabled test that references the same requirement covers
+it for every test that references the requirement and maps at least one of its
+outcomes. A disabled test, or a test that references a different requirement
+or none, never covers another test. An outcome mapped nowhere that counts is
+reported on each of those tests with code `unmapped-in-file` and counted once
+per requirement and outcome in summaries. A test that references a requirement
+but maps none of its outcomes is reported for every outcome with code
+`maps-no-outcome`, as it claims a requirement it does not check, and counted
+for each such test. Mapping in other files
 of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
 records the supplied contract hash; it does not retrieve or authenticate the
 referenced requirement. Outcome IDs must be unique across the entire contract,
@@ -258,12 +262,16 @@ gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v8` narrows
-the `nested-function` limit as described above; report version 3 and helper
-version 6 are unchanged. Report version 3, helper version 6 and policy
+inputs invalidate prior assessments. Policy `assessment-source-v9` counts
+outcome mapping only from enabled tests that reference the requirement and
+gives `unmapped-outcome` findings the codes `maps-no-outcome` and
+`unmapped-in-file`, so summaries count them as
+`unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
+Policy `assessment-source-v8` narrowed the `nested-function` limit as described
+above; report version 3 and helper version 6 are unchanged. Report version 3, helper version 6 and policy
 `assessment-source-v7` replaced version 2/source-v3. Every finding now carries
-`code`: the limit reason for `analysis-limit` findings and the rule name for
-all others, so `rule` is the finding family and `code` the specific reason.
+`code`: the limit reason for `analysis-limit` findings, the case for
+`unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip` and `absence-after-wait` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256`, an optional test `title` and an optional

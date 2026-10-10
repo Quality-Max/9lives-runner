@@ -129,6 +129,13 @@ SDK versions.
 
 ### Assess
 
+- Outcome mapping no longer credits disabled or unrelated tests: only an
+  enabled test that references the same requirement covers a sibling test's
+  outcome (#31). `unmapped-outcome` findings carry the code
+  `maps-no-outcome` (counted per test) or `unmapped-in-file` (counted once
+  per requirement and outcome), so summaries count
+  `unmapped-outcome/maps-no-outcome` and `unmapped-outcome/unmapped-in-file`.
+  Policy `assessment-source-v9`.
 - A file that imports `test` only from a module assess does not recognise
   (a fixture file or another test runner) now names it: the report carries
   `unrecognizedTestImports` and an `unrecognized-test-import` limit, and

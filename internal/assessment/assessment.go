@@ -25,7 +25,15 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v8"
+const Policy = "assessment-source-v9"
+
+// unmapped-outcome codes: a test that maps none of its requirement's
+// outcomes is its own defect; an outcome mapped nowhere in the file is one
+// gap however many tests reference the requirement.
+const (
+	CodeMapsNoOutcome  = "maps-no-outcome"
+	CodeUnmappedInFile = "unmapped-in-file"
+)
 
 // ReportVersion is the version of a single-file assess report.
 const ReportVersion = 3
@@ -380,15 +388,26 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		requirements[r.ID] = r
 	}
 	// A requirement's outcomes may be spread over sibling tests: an outcome
-	// mapped by any test in the file covers it for every test that references
-	// the requirement and maps at least one of its outcomes. A test that maps
-	// none of them claims a requirement it does not check, and is reported for
-	// every outcome. Mapping in other files is not considered.
-	mapped := map[string]bool{}
+	// mapped by an enabled test that references the same requirement covers it
+	// for every test that references the requirement and maps at least one of
+	// its outcomes. A disabled test, or one that does not reference the
+	// requirement, never lends coverage to another test; its own mapping still
+	// counts for itself, and disabled-test reports that it does not run. A test that maps none of the outcomes
+	// claims a requirement it does not check, and is reported for every
+	// outcome. Mapping in other files is not considered.
+	mapped := map[string]map[string]bool{}
 	for _, fact := range facts.Tests {
-		for _, a := range fact.Assertions {
-			for _, id := range a.Outcomes {
-				mapped[id] = true
+		if fact.Disabled != nil && *fact.Disabled {
+			continue
+		}
+		for _, requirement := range fact.Requirements {
+			if mapped[requirement] == nil {
+				mapped[requirement] = map[string]bool{}
+			}
+			for _, a := range fact.Assertions {
+				for _, id := range a.Outcomes {
+					mapped[requirement][id] = true
+				}
 			}
 		}
 	}
@@ -430,8 +449,10 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			for _, o := range r.ExpectedOutcomes {
 				if !checks {
 					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "The test references the requirement but maps none of its outcomes; helpers may protect it.", "Map an assertion in this test to an outcome of the requirement, or reference the requirement it checks.", fact.Location)
-				} else if !mapped[o.ID] {
-					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping in this file; helpers or other files may protect it.", "Review the gap and map an assertion in this file that checks this outcome.", fact.Location)
+					t.Findings[len(t.Findings)-1].Code = CodeMapsNoOutcome
+				} else if !mapped[id][o.ID] && !own[o.ID] {
+					add("unmapped-outcome", "suspected", "intentAlignment", id, o.ID, "A required outcome has no declared direct assertion mapping in an enabled test of this file that references the requirement; helpers or other files may protect it.", "Review the gap and map an assertion in this file that checks this outcome.", fact.Location)
+					t.Findings[len(t.Findings)-1].Code = CodeUnmappedInFile
 				}
 			}
 		}
