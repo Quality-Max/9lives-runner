@@ -27,13 +27,23 @@ git push origin v0.2.0
 
 The commands above release CLI and SDK 0.2.0; choose the matching version for
 a later release. Never move a published tag to different source. The tag
-starts two workflows: `release.yml` publishes the CLI archives (below) and
-`npm-release.yml` publishes the SDK (see
-[trusted publications](#subsequent-trusted-publications)). Each rejects a
-private repository, a tag whose version differs from any declared CLI or SDK
-version, a noncanonical repository or a tag outside main's history, and each
-runs the entire reusable CI workflow before it publishes. They fail
-independently: rerun the failed one.
+starts one workflow, `release.yml`, which runs in this order:
+
+1. `check-tag` rejects a private repository, a noncanonical repository, a tag
+   outside main's history, or a tag that differs from any declared CLI or SDK
+   version.
+2. `qualification` runs the entire reusable CI workflow once; its `sdk` job
+   packs and qualifies the SDK tarball.
+3. `binaries` builds and exercises the six CLI archives on native runners.
+4. `github-release` validates the archives, writes `SHA256SUMS` and publishes
+   the GitHub Release.
+5. `npm` publishes the SDK tarball from step 2 (see
+   [trusted publications](#subsequent-trusted-publications)).
+
+The SDK therefore never reaches npm without its CLI release. If a job fails,
+rerun the failed jobs of the same run: published GitHub assets are not
+overwritten, and the `npm` job skips when npm already holds the identical
+tarball (it fails if npm has that version with different contents).
 
 Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup
@@ -49,9 +59,8 @@ pass checkout assertions, business failure, owned timeout/cancel and clean
 consumer checks before release packaging. Windows arm64 has no Go race
 detector; its Go tests run without `-race`. Windows ZIPs start with
 CLI v0.2.0. Only the final publishing job has repository
-write permission; its actions are pinned to commit SHAs. The release workflow
-publishes GitHub assets; the SDK is published by `npm-release.yml` from the
-same tag. Archives are not Apple notarized.
+write permission; its actions are pinned to commit SHAs. Archives are not
+Apple notarized.
 Published assets are not overwritten by a workflow rerun.
 
 After publication, download the matching native archive and checksum file,
@@ -95,9 +104,20 @@ publication does not receive GitHub Actions provenance.
 
 ## Subsequent trusted publications
 
-The package's npm trusted publisher is configured for GitHub owner
-`Quality-Max`, repository `9lives-runner` and workflow `npm-release.yml`, with
-both the publish and stage publish permissions. SDK 0.1.0 was the first
+The package's npm trusted publisher must name GitHub owner `Quality-Max`,
+repository `9lives-runner` and workflow `release.yml`, with both the publish
+and stage publish permissions. Through SDK 0.1.3 it named `npm-release.yml`,
+which no longer exists. Before the first release from `release.yml`, an npm
+owner of `@9l/playwright` moves it (npm 11.5.1 or newer):
+
+```sh
+npm trust list @9l/playwright
+npm trust revoke @9l/playwright --id=<id of the npm-release.yml entry>
+npm trust github @9l/playwright --file release.yml --repository Quality-Max/9lives-runner --allow-publish --allow-stage-publish
+```
+
+Without it the `npm` job fails with `ENEEDAUTH` after the GitHub Release is
+published; fix the publisher and rerun that job. SDK 0.1.0 was the first
 automated publication: tag `sdk-v0.1.0` on `48f9cf3`, with npm provenance.
 
 The workflow runs a direct `npm publish`, so the publisher needs the publish
@@ -106,13 +126,11 @@ a missing publisher fails with `ENEEDAUTH`. npm accepts one publisher per
 matching workflow, so changing permissions means revoking the existing entry
 first (`npm trust list`, then `npm trust revoke --id=<id>`) and creating it
 again with `--allow-publish --allow-stage-publish`. After a configuration fix,
-rerun the failed publish job; the qualified tarball artifact is reused.
+rerun the failed `npm` job; the qualified tarball artifact is reused.
 
 Publication runs from the `v<version>` tag that also releases the CLI; it no
-longer runs on a push to `main`, and no `sdk-v` tags are created. The workflow
-skips when the registry already has the version (so a rerun after a
-successful publication does nothing), otherwise runs the complete CI workflow
-and publishes the exact qualified tarball using short-lived OIDC
+longer runs on a push to `main`, and no `sdk-v` tags are created. It publishes
+the exact tarball the run's CI qualified, using short-lived OIDC
 authentication on a GitHub-hosted runner. Public trusted publication
 automatically receives npm provenance. SDK 0.1.0 through 0.1.3 were published
 from `sdk-v` tags or pushes to `main`; SDK 0.2.0 is the first published from a
@@ -127,7 +145,6 @@ gh repo deploy-key delete <sdk-release-tag-key-id>
 gh secret delete SDK_RELEASE_TAG_KEY
 ```
 
-Never push a `v<version>` tag for a version npm already has under a different
-commit: npm rejects republishing a version, so the SDK side would skip while
-the CLI side released different source. Binary archives include the root
-LICENSE and NOTICE.
+Never push a `v<version>` tag for a version npm already has from other source:
+npm rejects republishing a version, so the `npm` job fails after the CLI was
+released. Binary archives include the root LICENSE and NOTICE.
