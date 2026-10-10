@@ -517,12 +517,19 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			receipt.Error = "agent branch/source provenance changed or became unavailable during execution"
 		}
 	}
-	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(FailureReporter); ok && receipt.Validated && receipt.FailureCount > 0 {
-		report := output.Stdout
-		if diagnosticsPath != "" {
-			report, _ = readEvidence(diagnosticsPath, opts.MaxOutputBytes)
-		}
-		receipt.Failures = reporter.Failures(report, job.WorkDir)
+	// Per-test details come from the framework's own report: the evidence
+	// itself, or a separate diagnostics report beside an engine stream.
+	detailReport := output.Stdout
+	if diagnosticsPath != "" {
+		detailReport, _ = readEvidence(diagnosticsPath, opts.MaxOutputBytes)
+	} else if _, engine := adapterNamed(opts.Adapters, job.Adapter).(DiagnosticsChannel); engine {
+		detailReport = nil // an engine stream carries no titles or annotations
+	}
+	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(AnnotationReporter); ok && receipt.Validated && detailReport != nil {
+		receipt.Annotations = reporter.Annotations(detailReport)
+	}
+	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(FailureReporter); ok && receipt.Validated && receipt.FailureCount > 0 && detailReport != nil {
+		receipt.Failures = reporter.Failures(detailReport, job.WorkDir)
 		if opts.KeepAttachments {
 			retainAttachments(filepath.Join(opts.ReceiptDir, runID, job.ID, receipt.AttemptID, "attachments"), receipt.Failures)
 		}

@@ -13,6 +13,10 @@ SDK versions.
 
 ### CLI
 
+- Receipts carry each test's annotations (`annotations`, additive), and
+  `9l run`/`9l result` print the non-built-in ones under the job, so a test
+  that recorded why it returned early is no longer an unexplained green
+  (#39, part 1).
 - SDK goals run on a subscription: `--goal-provider claude`, `codex` or
   `opencode` uses that CLI's own login, with no API key and no fallback.
   Each decision runs the CLI in a decision-only mode (Claude Code with no

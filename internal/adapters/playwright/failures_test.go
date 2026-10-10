@@ -137,6 +137,34 @@ func TestReadAttachmentRefusesNonRegularAndOversizedFiles(t *testing.T) {
 	}
 }
 
+func TestAnnotationsComeFromTheLastAttemptBoundedAndRedacted(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"title": "f.spec.ts", "suites": []any{map[string]any{"title": "icons", "specs": []any{
+		map[string]any{"title": "returns early", "tests": []any{map[string]any{"status": "expected", "projectName": "chromium",
+			"annotations": []any{map[string]any{"type": "static", "description": "only static"}},
+			"results": []any{
+				map[string]any{"status": "failed", "annotations": []any{map[string]any{"type": "icon-font", "description": "first attempt"}}},
+				map[string]any{"status": "passed", "annotations": []any{
+					map[string]any{"type": "icon-font", "description": "0 visible icon(s)\n\x1b[31mtoken=abc123\x1b[0m\x1b]8;;https://example.test\x07\x1b]8;;\x07"},
+					map[string]any{"type": strings.Repeat("t", runner.MaxAnnotationTypeBytes+10), "description": strings.Repeat("é", 400)},
+					map[string]any{"type": "", "description": "untyped"},
+				}},
+			}}}},
+	}}}}}})
+	got := New().Annotations(raw)
+	if len(got) != 2 || got[0].Test != "[chromium] icons › returns early" || got[0].Type != "icon-font" || got[0].Description != "0 visible icon(s) token=[REDACTED]" {
+		t.Fatalf("annotations=%+v", got)
+	}
+	if len(got[1].Type) > runner.MaxAnnotationTypeBytes || !utf8.ValidString(got[1].Type) {
+		t.Fatalf("type not bounded: %d bytes", len(got[1].Type))
+	}
+	if len(got[1].Description) > runner.MaxAnnotationDescriptionBytes || !utf8.ValidString(got[1].Description) {
+		t.Fatalf("description not bounded: %d bytes", len(got[1].Description))
+	}
+	if New().Annotations([]byte("not json")) != nil {
+		t.Fatal("invalid report produced annotations")
+	}
+}
+
 func TestFailureContextIsRedactedBeforeClipping(t *testing.T) {
 	// The context leaves the machine in provider prompts, MCP results and
 	// session JSON: secrets in error text must be redacted, and the 3,000-byte

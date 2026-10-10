@@ -418,6 +418,12 @@
         "agentProvenance": {
           "$ref": "#/$defs/ProvenanceAssessment"
         },
+        "annotations": {
+          "items": {
+            "$ref": "#/$defs/TestAnnotation"
+          },
+          "type": "array"
+        },
         "assertionCoverage": {
           "type": "string"
         },
@@ -667,6 +673,24 @@
       },
       "required": [
         "kind"
+      ],
+      "type": "object"
+    },
+    "TestAnnotation": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "test": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "test",
+        "type"
       ],
       "type": "object"
     },

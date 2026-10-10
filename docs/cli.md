@@ -50,6 +50,15 @@
   evidence reporter, so the HTML report is still written; `json` is reserved.
   Traces and screenshots do not need this: they follow the config's `use`
   settings either way.
+- Test annotations: receipts carry each test's annotations from its last
+  attempt (`annotations`: test title, type, description; up to 100 per job,
+  descriptions capped at 256 bytes and redacted), including ones a test pushes
+  at run time, such as a note that it returned early on an older build. `9l run`
+  and `9l result` print them under the job as `note  <test> — <type>:
+  <description>`, except Playwright's own `skip`, `fixme`, `fail` and `slow`,
+  which stay in the receipt only. A passed job with such a note may not have
+  exercised everything its tests can check. With `--sdk`, annotations need
+  `--failure-details`, because the engine protocol carries no titles.
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`

@@ -115,6 +115,7 @@ async function main() {
   assert.equal(receipt.validated, true);
   assert.equal(receipt.executedTests, 1);
   assert.equal(receipt.verifiedAssertions, 0); // A step category is not proof of assertion coverage.
+  assert.equal(receipt.annotations, undefined); // Runtime annotations are opt-in with --failure-details.
   const frames = readEvents(receipt);
   assert(frames.some(frame => frame.type === 'step_end' && frame.category === 'assertion'));
   assert(frames.some(frame => frame.type === 'test_end' && frame.artifacts.some(artifact => artifact.kind === 'json' && !artifact.retained)));
@@ -129,6 +130,14 @@ async function main() {
   assert.equal(canonical.correlation.attempt_id, receipt.attemptId);
   assert.equal(canonical.counts.total, 1);
   assert.equal(canonical.counts.availability, 'available');
+  const annotated = invoke('testdata/sdk/tests/checkout.spec.ts', ['--failure-details']);
+  assert.equal(annotated.code, 0);
+  assert.equal(annotated.summary.receipts[0].status, 'passed');
+  assert.deepEqual(annotated.summary.receipts[0].annotations, [{
+    test: 'synthetic checkout confirms an order',
+    type: 'smoke-runtime',
+    description: 'runtime annotation reaches receipts',
+  }]);
   const failing = invoke('testdata/sdk/tests/defect.spec.ts');
   assert.equal(failing.code, 1);
   assert.equal(failing.summary.outcome, 'failed');

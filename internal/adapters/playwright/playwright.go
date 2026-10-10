@@ -436,11 +436,13 @@ type failureSuite struct {
 		File  string `json:"file"`
 		Line  int    `json:"line"`
 		Tests []struct {
-			Status      string `json:"status"`
-			ProjectName string `json:"projectName"`
+			Status      string             `json:"status"`
+			ProjectName string             `json:"projectName"`
+			Annotations []reportAnnotation `json:"annotations"`
 			Results     []struct {
-				Status string `json:"status"`
-				Errors []struct {
+				Status      string             `json:"status"`
+				Annotations []reportAnnotation `json:"annotations"`
+				Errors      []struct {
 					Message  string `json:"message"`
 					Location *struct {
 						File string `json:"file"`
@@ -455,6 +457,72 @@ type failureSuite struct {
 			} `json:"results"`
 		} `json:"tests"`
 	} `json:"specs"`
+}
+
+type reportAnnotation struct {
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+// Annotations lists every test's annotations from its last attempt, which
+// includes ones the test pushed at run time, such as a note that it returned
+// early. Static annotations stand in for a test without attempts.
+func (Adapter) Annotations(raw []byte) []runner.TestAnnotation {
+	var parsed failureReport
+	if json.Unmarshal(raw, &parsed) != nil {
+		return nil
+	}
+	annotations := []runner.TestAnnotation{}
+	var walk func(failureSuite, []string)
+	walk = func(current failureSuite, titles []string) {
+		for _, spec := range current.Specs {
+			for _, test := range spec.Tests {
+				reported := test.Annotations
+				if n := len(test.Results); n > 0 && test.Results[n-1].Annotations != nil {
+					reported = test.Results[n-1].Annotations
+				}
+				title := strings.Join(append(append([]string{}, titles...), spec.Title), " › ")
+				if test.ProjectName != "" {
+					title = "[" + test.ProjectName + "] " + title
+				}
+				for _, annotation := range reported {
+					if len(annotations) == runner.MaxReportedAnnotations || annotation.Type == "" {
+						continue
+					}
+					annotations = append(annotations, runner.TestAnnotation{
+						Test:        boundedText(title, 512),
+						Type:        boundedText(annotation.Type, runner.MaxAnnotationTypeBytes),
+						Description: boundedText(annotation.Description, runner.MaxAnnotationDescriptionBytes),
+					})
+				}
+			}
+		}
+		for _, child := range current.Suites {
+			walk(child, append(append([]string{}, titles...), child.Title))
+		}
+	}
+	for _, file := range parsed.Suites {
+		walk(file, nil)
+	}
+	return annotations
+}
+
+// boundedText is text without terminal escapes or line breaks, redacted
+// and cut on a rune boundary.
+func boundedText(text string, limit int) string {
+	text = runner.RedactText(strings.Join(strings.Fields(runner.StripTerminalEscapes(text)), " "))
+	if len(text) <= limit {
+		return text
+	}
+	const ellipsis = "…"
+	if limit < len(ellipsis) {
+		return ""
+	}
+	cut := limit - len(ellipsis)
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + ellipsis
 }
 
 // Failures lists each unexpected test of a validated report with its failing

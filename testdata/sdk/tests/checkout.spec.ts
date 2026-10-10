@@ -1,6 +1,7 @@
 import {test, expect} from '@9l/playwright';
 
 test('synthetic checkout confirms an order', async ({page, n9l}, testInfo) => {
+  testInfo.annotations.push({type: 'smoke-runtime', description: 'runtime annotation reaches receipts'});
   await page.setContent(`<button type="button" onclick="document.querySelector('[role=status]').textContent='Order confirmed: 1 item'">Place order</button><p role="status">Cart: 1 item</p>`);
   await n9l.step('place the order', async () => {
     await page.getByRole('button', {name: 'Place order'}).click();
