@@ -159,6 +159,14 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(string, string) (
 			}
 			return result, nil
 		}
+		// SafeCandidate can only admit a selector change in a direct locator
+		// action. Asking a provider for any other source shape spends a paid
+		// call whose answer must be discarded.
+		if ok, why := healing.EditableLocatorAction(latestSource, failedSelector, opts.Framework); !ok {
+			result.State = "unverified"
+			result.Reason = "Tier 2 was not asked: " + why
+			return result, nil
+		}
 		prompt := Prompt(opts.Framework, latestSource, latestFailure)
 		if len(prompt) > maxTier2PromptBytes {
 			result.State = "unverified"

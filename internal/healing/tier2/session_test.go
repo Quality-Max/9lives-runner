@@ -258,7 +258,7 @@ func TestParseCandidateTreatsCODEInBareSourceAsSource(t *testing.T) {
 func TestHealMarksProviderCancellationCanceled(t *testing.T) {
 	dir := t.TempDir()
 	spec := filepath.Join(dir, "login.spec.ts")
-	original := "test('x', async ({ page }) => { await page.locator('#old').click(); });\n"
+	original := "test('x', async ({ page }) => {\n  await page.locator('#old').click();\n});\n"
 	if err := os.WriteFile(spec, []byte(original), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -623,7 +623,7 @@ func TestHealWithoutProviderIsOfflineTier1Only(t *testing.T) {
 func TestHealRecordsWhyTheProviderCallFailed(t *testing.T) {
 	dir := t.TempDir()
 	spec := filepath.Join(dir, "login.spec.ts")
-	if err := os.WriteFile(spec, []byte("test('x', async ({ page }) => { await page.locator('#old').click(); });\n"), 0600); err != nil {
+	if err := os.WriteFile(spec, []byte("test('x', async ({ page }) => {\n  await page.locator('#old').click();\n});\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	provider := &fakeProvider{err: &CallError{Provider: "claude", ExitCode: 1, Diagnostic: "Not logged in · Please run /login"}}
@@ -632,5 +632,27 @@ func TestHealRecordsWhyTheProviderCallFailed(t *testing.T) {
 	}}, func(string, string) (string, bool) { return "", false })
 	if err == nil || result.State != "provider_error" || result.ProviderDiagnostic != "claude provider failed (exit 1): Not logged in · Please run /login" || !strings.Contains(result.Reason, "Not logged in") {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestHealDoesNotAskProviderForAnUneditableSourceShape(t *testing.T) {
+	for name, tc := range map[string]struct{ source, reason string }{
+		"page action shorthand": {"test('x', async ({ page }) => {\n  await page.fill('#old', 'a');\n});\n", "no page.locator('#old') call"},
+		"same line as closing":  {"test('x', async ({ page }) => { await page.locator('#old').click(); });\n", "not a direct `await page.locator('#old')"},
+		"two locator calls":     {"test('x', async ({ page }) => {\n  await page.locator('#old').click();\n  await page.locator('#old').fill('a');\n});\n", "more than one"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			spec := filepath.Join(t.TempDir(), "login.spec.ts")
+			if err := os.WriteFile(spec, []byte(tc.source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			provider := &fakeProvider{responses: []string{"```typescript\n" + strings.ReplaceAll(tc.source, "#old", "#new") + "```"}}
+			result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Provider: provider, Run: func(context.Context, string, string) RunResult {
+				return RunResult{ExecutedTests: 1, Failure: "TimeoutError: waiting for locator('#old')"}
+			}}, func(string, string) (string, bool) { return "", false })
+			if err != nil || provider.calls != 0 || result.State != "unverified" || !strings.Contains(result.Reason, "Tier 2 was not asked") || !strings.Contains(result.Reason, tc.reason) {
+				t.Fatalf("calls=%d result=%+v err=%v", provider.calls, result, err)
+			}
+		})
 	}
 }

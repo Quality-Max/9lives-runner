@@ -16,6 +16,11 @@ SDK versions.
 - A failed provider call records why: the session's `providerDiagnostic` and
   `reason` carry the exit code and the last output lines, redacted and capped
   at 512 bytes, instead of "provider did not return a usable candidate".
+- Tier 2 no longer asks a provider when the spec has no source shape a
+  proposal could be admitted for, such as `page.fill('#id', …)` shorthand,
+  a locator used twice or an action sharing its line. Those sessions end
+  `unverified` with a reason naming the boundary and make no provider call;
+  before, the call was made and its answer always discarded.
 
 ## 0.2.0 — 2026-10-10
 

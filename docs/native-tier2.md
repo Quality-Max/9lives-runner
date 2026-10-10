@@ -19,7 +19,11 @@ may change only the literal selector of the failed direct Playwright action;
 imports, assertions, comments, tests, control flow, and unrelated actions are
 byte-for-byte preserved. Every proposal, including the last allowed one, runs
 in a fresh copy and receipt directory. A failed, malformed, timed-out, or
-zero-test candidate is never saved or applied.
+zero-test candidate is never saved or applied. Before each Tier 2 call the
+session checks that the spec holds exactly one direct
+`await page.locator('<failed selector>').<action>(...)` statement outside an
+assertion; otherwise no proposal could be admitted, so it ends `unverified`
+with a `Tier 2 was not asked: …` reason and makes no provider call.
 
 The command prints only a JSON session result on stdout; the terminal diff and prompt use stderr. With `--yes`, it applies only after
 the original file SHA-256 still matches the bytes that were tested. On a

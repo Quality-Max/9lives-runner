@@ -368,6 +368,38 @@ func ExactLocatorSelectorReplacement(source, candidate, old, framework string) b
 	return ok && expected == candidate
 }
 
+// EditableLocatorAction reports whether ExactLocatorSelectorReplacement can
+// accept any candidate for this failed selector: the source must hold exactly
+// one direct `await page.locator('<selector>').<action>(…)` statement outside
+// an assertion. Tier 2 checks this before asking a provider, so a proposal
+// that can never be admitted is not requested. The reason names the boundary.
+func EditableLocatorAction(source, selector, framework string) (bool, string) {
+	if selector == "" {
+		return false, "the failure names no locator selector"
+	}
+	matches, ok := sourceLocators(source, selector, framework)
+	switch {
+	case !ok:
+		return false, "the spec uses syntax outside the editable source subset (escaped identifiers, template interpolation, JSX or unbalanced brackets)"
+	case len(matches) == 0:
+		return false, "no page.locator(" + quoteSelector(selector) + ") call in the spec holds the failed selector"
+	case len(matches) > 1:
+		return false, "the failed selector appears in more than one page.locator(...) call"
+	case assertionOwnsMatch(source, matches[0], framework):
+		return false, "the failed locator is inside an assertion, which healing does not edit"
+	case !sourceArgumentContextSafe(matches[0]) || !directActionMatch(source, matches[0]):
+		return false, "the failed locator is not a direct `await page.locator(" + quoteSelector(selector) + ").<action>(...)` statement on one line"
+	}
+	return true, ""
+}
+
+func quoteSelector(selector string) string {
+	if len(selector) > 120 {
+		selector = selector[:120] + "…"
+	}
+	return "'" + selector + "'"
+}
+
 func directActionMatch(code string, m literalMatch) bool {
 	tokens := m.tokens
 	if m.call == 0 || tokens[m.call].text != "page" || tokens[m.call-1].text != "await" {
