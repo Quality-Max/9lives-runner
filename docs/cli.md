@@ -93,8 +93,11 @@
   [MCP server](mcp.md).
 
 Playwright execution supports existing projects with a local
-`@playwright/test` dependency. It never uses `npx` to download tooling during a
-run.
+`@playwright/test` dependency. The installed `node_modules/.bin/playwright` is
+taken from the package that declares it or, in an npm, pnpm or Yarn workspace
+whose dependencies are hoisted, from the nearest ancestor that has one; the
+test runs in the declaring package's directory. It never uses `npx` to
+download tooling during a run.
 
 Release packaging targets macOS, Linux and Windows on amd64 and arm64.
 Windows ZIPs start with CLI v0.2.0. Owned process-tree

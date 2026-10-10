@@ -63,6 +63,10 @@ SDK versions.
   `unverified` with a reason naming the boundary and make no provider call;
   before, the call was made and its answer always discarded.
 
+- `9l run` without `--sdk`, `9l heal` and MCP `run_test`/`heal_test` find a
+  workspace-hoisted Playwright in an ancestor `node_modules/.bin`, as the
+  SDK adapter already did. In an npm-workspace monorepo they used to skip
+  every spec with "local binary is missing".
 - `9l run` selects tests: `spec.ts:LINE` inputs and `--grep` /
   `--grep-invert` pass Playwright's filters through, recorded in each job's
   `selection` (plan, additive) and the receipt's evidence command. A

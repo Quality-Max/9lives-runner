@@ -158,11 +158,8 @@ func findProject(start string) (string, string, error) {
 				DevDependencies map[string]string `json:"devDependencies"`
 			}
 			if json.Unmarshal(data, &manifest) == nil && (manifest.Dependencies["@playwright/test"] != "" || manifest.DevDependencies["@playwright/test"] != "") {
-				binary := filepath.Join(directory, "node_modules", ".bin", "playwright")
-				if runtime.GOOS == "windows" {
-					binary += ".cmd"
-				}
-				if info, statErr := os.Stat(binary); statErr != nil || info.IsDir() {
+				binary := installedBinary(directory)
+				if binary == "" {
 					return "", "", fmt.Errorf("Playwright is declared in %s but its local binary is missing; install project dependencies first", packagePath)
 				}
 				return directory, binary, nil
@@ -174,6 +171,25 @@ func findProject(start string) (string, string, error) {
 		}
 	}
 	return "", "", fmt.Errorf("no package.json with @playwright/test found; standalone scaffolding is not implemented yet")
+}
+
+// installedBinary finds node_modules/.bin/playwright in the project or, for
+// a workspace package whose dependencies are hoisted, in an ancestor
+// directory. It never downloads anything.
+func installedBinary(project string) string {
+	name := "playwright"
+	if runtime.GOOS == "windows" {
+		name += ".cmd"
+	}
+	for directory := project; ; directory = filepath.Dir(directory) {
+		binary := filepath.Join(directory, "node_modules", ".bin", name)
+		if info, err := os.Stat(binary); err == nil && !info.IsDir() {
+			return binary
+		}
+		if filepath.Dir(directory) == directory {
+			return ""
+		}
+	}
 }
 
 type report struct {

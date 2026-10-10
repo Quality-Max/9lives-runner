@@ -235,3 +235,25 @@ func TestPlanSelectsALineAndPassesGrepThrough(t *testing.T) {
 		t.Fatalf("reporters not added: %+v %v", plan, err)
 	}
 }
+
+func TestPlanFindsWorkspaceHoistedPlaywright(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "package.json"), `{"private":true,"workspaces":["packages/*"]}`, 0o600)
+	binary := filepath.Join(root, "node_modules", ".bin", "playwright")
+	if runtime.GOOS == "windows" {
+		binary += ".cmd"
+		write(t, filepath.Join(root, "node_modules", "@playwright", "test", "cli.js"), "placeholder", 0o600)
+	}
+	write(t, binary, "#!/bin/sh\n", 0o700)
+	app := filepath.Join(root, "packages", "app")
+	write(t, filepath.Join(app, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
+	spec := filepath.Join(app, "tests", "a.spec.ts")
+	write(t, spec, "", 0o600)
+	plan, err := runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}})
+	if err != nil || len(plan.Jobs) != 1 {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	if job := plan.Jobs[0]; job.WorkDir != app || (runtime.GOOS != "windows" && job.Command[0] != binary) {
+		t.Fatalf("job=%+v", job)
+	}
+}
