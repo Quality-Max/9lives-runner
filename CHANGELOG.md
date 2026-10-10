@@ -8,13 +8,16 @@ SDK versions.
 
 ### Release process
 
-- One `v<version>` tag releases both distributions: `release.yml` publishes
-  the CLI archives and `npm-release.yml` publishes the SDK. The SDK is no
-  longer published on a push to `main`, and no `sdk-v` tags are created.
-- Both workflows refuse a tag unless the CLI source version, the SDK
-  manifest, the lockfile and the SDK test fixture all declare it, and
-  `npm test` fails as soon as those declarations drift apart.
-- A rerun of a release that already reached npm skips publication.
+- One `v<version>` tag and one `Release` workflow release both
+  distributions: CI qualifies the commit once, the CLI archives are published
+  as a GitHub Release, and then the SDK tarball that run qualified is
+  published to npm. `npm-release.yml` is removed; the SDK is no longer
+  published on a push to `main`, and no `sdk-v` tags are created.
+- The workflow refuses a tag unless the CLI source version, the SDK manifest,
+  the lockfile and the SDK test fixture all declare it, and `npm test` fails
+  as soon as those declarations drift apart.
+- Rerunning a failed `npm` job skips publication when npm already holds the
+  identical tarball and fails when it holds different contents.
 
 ### SDK
 
