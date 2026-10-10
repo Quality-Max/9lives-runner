@@ -194,14 +194,16 @@ type RunSummary struct {
 	Complete   bool       `json:"complete"`
 	// PlannedJobs and SkippedInputs come from the plan, so a host can see a
 	// dropped spec without reading plan.json.
-	PlannedJobs   int       `json:"plannedJobs"`
-	SkippedInputs int       `json:"skippedInputs"`
-	Passed        int       `json:"passed"`
-	Failed        int       `json:"failed"`
-	Canceled      int       `json:"canceled"`
-	TimedOut      int       `json:"timedOut"`
-	Errors        int       `json:"errors"`
-	Receipts      []Receipt `json:"receipts"`
+	PlannedJobs   int `json:"plannedJobs"`
+	SkippedInputs int `json:"skippedInputs"`
+	// Skipped explains each skipped input, as in the plan.
+	Skipped  []Skipped `json:"skipped,omitempty"`
+	Passed   int       `json:"passed"`
+	Failed   int       `json:"failed"`
+	Canceled int       `json:"canceled"`
+	TimedOut int       `json:"timedOut"`
+	Errors   int       `json:"errors"`
+	Receipts []Receipt `json:"receipts"`
 }
 
 type RunStatus struct {

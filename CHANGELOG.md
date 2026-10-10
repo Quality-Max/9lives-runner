@@ -40,6 +40,11 @@ SDK versions.
   directory with SHA-256 digests, so the project's next run cannot delete
   them. Without it they are only referenced.
 
+- `9l run` and `9l result` list each skipped input with its reason
+  (`SKIP <input> — <reason>`), and the run result carries them as `skipped`.
+  A run that is incomplete only because inputs were skipped now says so
+  instead of blaming planned jobs.
+
 ## 0.2.0 — 2026-10-10
 
 ### Release process

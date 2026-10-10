@@ -365,6 +365,21 @@
       ],
       "type": "object"
     },
+    "Skipped": {
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "reason"
+      ],
+      "type": "object"
+    },
     "Termination": {
       "properties": {
         "detail": {
@@ -495,6 +510,12 @@
     },
     "runId": {
       "type": "string"
+    },
+    "skipped": {
+      "items": {
+        "$ref": "#/$defs/Skipped"
+      },
+      "type": "array"
     },
     "skippedInputs": {
       "type": "integer"

@@ -822,12 +822,17 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}
 	}
+	for _, skip := range result.Skipped {
+		fmt.Fprintf(w, "  SKIP     %s — %s\n", receiptReason(skip.Input), receiptReason(skip.Reason))
+	}
 	if clearable {
 		fmt.Fprintln(w, "  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.")
 	}
 	switch {
 	case result.Outcome == runner.OutcomeFailed:
 		fmt.Fprintln(w, "  FAILED: every planned job ran and at least one test failed")
+	case !result.Complete && result.SkippedInputs > 0 && result.Passed == result.PlannedJobs && len(result.Receipts) == result.PlannedJobs:
+		fmt.Fprintf(w, "  INCOMPLETE: %d input(s) were skipped and not run; a skipped input is never a pass\n", result.SkippedInputs)
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}

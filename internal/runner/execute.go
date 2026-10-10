@@ -49,7 +49,7 @@ func (err SetupError) Unwrap() error { return err.Err }
 
 func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, error) {
 	started := time.Now().UTC()
-	summary := RunSummary{Version: RunSummaryVersion, Outcome: OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Receipts: []Receipt{}}
+	summary := RunSummary{Version: RunSummaryVersion, Outcome: OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, Complete: len(plan.Jobs) > 0 && len(plan.Skipped) == 0, PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Skipped: plan.Skipped, Receipts: []Receipt{}}
 	if err := validateRunID(plan.RunID); err != nil {
 		summary.Complete = false
 		return summary, SetupError{err}

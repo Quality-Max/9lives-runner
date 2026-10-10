@@ -587,6 +587,12 @@
         "runId": {
           "type": "string"
         },
+        "skipped": {
+          "items": {
+            "$ref": "#/$defs/Skipped"
+          },
+          "type": "array"
+        },
         "skippedInputs": {
           "type": "integer"
         },

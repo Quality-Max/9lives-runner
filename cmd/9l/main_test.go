@@ -174,3 +174,13 @@ func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 		t.Fatalf("text summary:\n%s", out.String())
 	}
 }
+
+func TestPrintResultExplainsSkippedInputs(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeIncomplete, PlannedJobs: 1, Passed: 1, SkippedInputs: 1,
+		Skipped:  []runner.Skipped{{Input: "tests/missing.spec.ts", Reason: "no matching files"}},
+		Receipts: []runner.Receipt{{Status: runner.StatusPassed, Spec: "tests/ok.spec.ts"}}})
+	if !strings.Contains(out.String(), "  SKIP     tests/missing.spec.ts — no matching files\n  INCOMPLETE: 1 input(s) were skipped and not run; a skipped input is never a pass\n") {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
