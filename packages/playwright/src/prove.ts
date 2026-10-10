@@ -10,7 +10,8 @@ import {engineIdentity} from './protocol';
 // Records go to a private per-test file that Go names and removes. They never
 // enter the 9l.engine/1 stream, whose metadata excludes URLs by design.
 export const proveProtocol = '9l.prove/1';
-export const faultKinds = ['abort', 'http-500', 'empty-json'] as const;
+// Must match prove.Kinds in internal/prove/prove.go.
+export const faultKinds = ['abort', 'http-500', 'empty-json', 'http-401', 'http-403', 'http-429', 'malformed-json'] as const;
 export type FaultKind = typeof faultKinds[number];
 export type Target = {method: string; origin: string; path: string};
 export type Fault = Target & {id: string; kind: FaultKind};
@@ -98,14 +99,29 @@ export function openProveChannel(env: NodeJS.ProcessEnv, testInfo: {testId: stri
   // reporter uses, so Go can judge each test separately and notice retries.
   const testId = createHash('sha256').update(testInfo.testId).digest('hex');
   channel.record({type: 'hello', protocol: proveProtocol, mode: fault ? 'fault' : 'observe', testId, retry: testInfo.retry});
+  // Only an engine that asks gets this record: an older one rejects records
+  // outside its schema. It tells Go which kinds this build can apply.
+  if (!fault && env.NINELIVES_PROVE_CAPABILITIES === '1') channel.record({type: 'capabilities', faults: [...faultKinds]});
   return channel;
 }
 
-function emptyLike(text: string): string | undefined {
+const statusFaults: Partial<Record<FaultKind, {status: number; headers?: Record<string, string>}>> = {
+  'http-500': {status: 500},
+  'http-401': {status: 401},
+  'http-403': {status: 403},
+  'http-429': {status: 429, headers: {'retry-after': '1'}},
+};
+
+// The replacement body for a JSON object or array, or undefined when the
+// response is neither. malformed-json keeps the first half of the trimmed
+// text: any proper prefix of an object or array leaves a bracket unclosed.
+export function replaceJSON(kind: 'empty-json' | 'malformed-json', text: string): string | undefined {
   let value: unknown;
   try { value = JSON.parse(text); } catch { return undefined; }
-  if (Array.isArray(value)) return '[]';
-  return value !== null && typeof value === 'object' ? '{}' : undefined;
+  if (value === null || typeof value !== 'object') return undefined;
+  if (kind === 'empty-json') return Array.isArray(value) ? '[]' : '{}';
+  const trimmed = text.trim();
+  return trimmed.slice(0, Math.max(1, Math.floor(trimmed.length / 2)));
 }
 
 function isJSON(contentType: string | undefined) {
@@ -135,10 +151,12 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
     // page already cancelled rejects here, and must not count as applied.
     const applied = () => channel.record({type: 'applied', fault: fault.id});
     if (fault.kind === 'abort') return route.abort('failed').then(applied);
-    if (fault.kind === 'http-500') return route.fulfill({status: 500, body: ''}).then(applied);
-    // empty-json needs the real response first; say why when it cannot be
-    // replaced: the upstream was unreachable, or the body was not an object
-    // or array.
+    const status = statusFaults[fault.kind];
+    if (status) return route.fulfill({...status, body: ''}).then(applied);
+    const kind = fault.kind as 'empty-json' | 'malformed-json';
+    // The JSON faults need the real response first; say why when it cannot
+    // be replaced: the upstream was unreachable, or the body was not an
+    // object or array.
     let response;
     try {
       response = await route.fetch();
@@ -146,11 +164,11 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
       channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
       return route.continue().catch(() => {});
     }
-    const empty = emptyLike(await response.text().catch(() => ''));
-    if (empty === undefined) {
+    const body = replaceJSON(kind, await response.text().catch(() => ''));
+    if (body === undefined) {
       channel.record({type: 'not-applicable', fault: fault.id, reason: 'not-json'});
       return route.fulfill({response});
     }
-    return route.fulfill({response, body: empty}).then(applied);
+    return route.fulfill({response, body}).then(applied);
   });
 }

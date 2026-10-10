@@ -29,6 +29,8 @@ const (
 	maxTotalBytes = 8 << 20
 	maxRecords    = 2000
 	maxPathBytes  = 2048
+	// A capability record lists at most this many fault kind names.
+	maxCapabilities = 32
 )
 
 var (
@@ -36,9 +38,10 @@ var (
 	faultPattern  = regexp.MustCompile(`^fault-[1-9][0-9]{0,3}$`)
 	filePattern   = regexp.MustCompile(`^[a-f0-9]{32}\.ndjson$`)
 	testPattern   = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	kindPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 )
 
-// Reasons an empty-json fault was not applicable to a request.
+// Reasons an empty-json or malformed-json fault was not applicable to a request.
 const (
 	ReasonNotJSON     = "not-json"
 	ReasonUnreachable = "unreachable"
@@ -59,8 +62,8 @@ type Request struct {
 	Target
 	ResourceType string
 	Observed     int
-	// JSON2xx records a successful JSON response, the precondition for an
-	// empty-json fault.
+	// JSON2xx records a successful JSON response, the precondition for the
+	// empty-json and malformed-json faults.
 	JSON2xx bool
 }
 
@@ -89,6 +92,9 @@ type Observations struct {
 	// test ID, merged over its attempts.
 	Tests    map[string]*Attempt
 	Overflow bool
+	// FaultKinds holds the kinds every instrumented attempt can apply. An
+	// SDK that predates capability records applies DefaultKinds only.
+	FaultKinds map[string]bool
 }
 
 // Applied sums the fault's applications over every test.
@@ -101,23 +107,25 @@ func (observations Observations) Applied() int {
 }
 
 type record struct {
-	Type         string `json:"type"`
-	Protocol     string `json:"protocol"`
-	Mode         string `json:"mode"`
-	Method       string `json:"method"`
-	Origin       string `json:"origin"`
-	Path         string `json:"path"`
-	ResourceType string `json:"resourceType"`
-	Status       int    `json:"status"`
-	JSON         bool   `json:"json"`
-	Fault        string `json:"fault"`
-	Reason       string `json:"reason"`
-	TestID       string `json:"testId"`
-	Retry        int    `json:"retry"`
+	Type         string   `json:"type"`
+	Protocol     string   `json:"protocol"`
+	Mode         string   `json:"mode"`
+	Method       string   `json:"method"`
+	Origin       string   `json:"origin"`
+	Path         string   `json:"path"`
+	ResourceType string   `json:"resourceType"`
+	Status       int      `json:"status"`
+	JSON         bool     `json:"json"`
+	Fault        string   `json:"fault"`
+	Reason       string   `json:"reason"`
+	TestID       string   `json:"testId"`
+	Retry        int      `json:"retry"`
+	Faults       []string `json:"faults"`
 }
 
 var recordFields = map[string][]string{
 	"hello":          {"type", "protocol", "mode", "testId", "retry"},
+	"capabilities":   {"type", "faults"},
 	"request":        {"type", "method", "origin", "path", "resourceType"},
 	"response":       {"type", "method", "origin", "path", "status", "json"},
 	"applied":        {"type", "fault"},
@@ -135,6 +143,7 @@ func ReadChannel(dir, mode, fault string) (Observations, error) {
 		return observations, errors.New("unsupported prove mode")
 	}
 	seen := map[string]bool{}
+	var kinds map[string]bool
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return observations, errors.New("prove evidence directory unavailable")
@@ -154,11 +163,57 @@ func ReadChannel(dir, mode, fault string) (Observations, error) {
 		if total += len(raw); total > maxTotalBytes {
 			return observations, errors.New("prove evidence size limit exceeded")
 		}
-		if err := observations.add(raw, mode, fault, seen); err != nil {
+		supported, err := observations.add(raw, mode, fault, seen)
+		if err != nil {
 			return observations, err
 		}
+		// Workers can load different SDK builds in principle; plan only what
+		// every one of them can apply.
+		if kinds == nil {
+			kinds = supported
+		}
+		for kind := range kinds {
+			if !supported[kind] {
+				delete(kinds, kind)
+			}
+		}
 	}
+	if kinds == nil {
+		kinds = defaultKinds()
+	}
+	observations.FaultKinds = kinds
 	return observations, nil
+}
+
+func defaultKinds() map[string]bool {
+	kinds := map[string]bool{}
+	for _, kind := range DefaultKinds {
+		kinds[kind] = true
+	}
+	return kinds
+}
+
+// capabilities validates a capability record. Names this engine does not know
+// are ignored, so a newer SDK can advertise kinds an older engine never plans.
+func capabilities(names []string) (map[string]bool, error) {
+	if len(names) == 0 || len(names) > maxCapabilities {
+		return nil, errors.New("invalid prove capabilities")
+	}
+	kinds, known := defaultKinds(), map[string]bool{}
+	for _, kind := range Kinds {
+		known[kind] = true
+	}
+	listed := map[string]bool{}
+	for _, name := range names {
+		if !kindPattern.MatchString(name) || listed[name] {
+			return nil, errors.New("invalid prove capabilities")
+		}
+		listed[name] = true
+		if known[name] {
+			kinds[name] = true
+		}
+	}
+	return kinds, nil
 }
 
 func readBounded(path string) ([]byte, error) {
@@ -174,14 +229,17 @@ func readBounded(path string) ([]byte, error) {
 	return raw, nil
 }
 
-func (observations *Observations) add(raw []byte, mode, fault string, seen map[string]bool) error {
+// add validates one test attempt's file and returns the fault kinds it can
+// apply.
+func (observations *Observations) add(raw []byte, mode, fault string, seen map[string]bool) (map[string]bool, error) {
 	if len(raw) == 0 || !bytes.HasSuffix(raw, []byte("\n")) || !utf8.Valid(raw) {
-		return errors.New("missing or unfinished prove evidence")
+		return nil, errors.New("missing or unfinished prove evidence")
 	}
 	lines := bytes.Split(raw[:len(raw)-1], []byte("\n"))
 	if len(lines) > maxRecords {
-		return errors.New("prove record limit exceeded")
+		return nil, errors.New("prove record limit exceeded")
 	}
+	supported := defaultKinds()
 	// Each file is one test attempt's context, where a response always
 	// follows its request; pair them here, before attempts are merged.
 	requested := map[string]bool{}
@@ -189,17 +247,17 @@ func (observations *Observations) add(raw []byte, mode, fault string, seen map[s
 	for index, line := range lines {
 		entry, err := decodeRecord(line)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if index == 0 {
 			if entry.Type != "hello" || entry.Protocol != Protocol || entry.Mode != mode || !testPattern.MatchString(entry.TestID) || entry.Retry < 0 || entry.Retry > 1024 {
-				return errors.New("missing or mismatched prove handshake")
+				return nil, errors.New("missing or mismatched prove handshake")
 			}
 			// One file per test attempt: a second file for the same attempt
 			// would let a worker vouch for itself twice.
 			key := fmt.Sprintf("%s:%d", entry.TestID, entry.Retry)
 			if seen[key] {
-				return errors.New("duplicate prove attempt")
+				return nil, errors.New("duplicate prove attempt")
 			}
 			seen[key] = true
 			observations.Attempts++
@@ -212,11 +270,11 @@ func (observations *Observations) add(raw []byte, mode, fault string, seen map[s
 		switch entry.Type {
 		case "request", "response":
 			if mode != "observe" {
-				return errors.New("observation recorded during a fault run")
+				return nil, errors.New("observation recorded during a fault run")
 			}
 			target := Target{entry.Method, entry.Origin, entry.Path}
 			if !validTarget(target) {
-				return errors.New("invalid request target")
+				return nil, errors.New("invalid request target")
 			}
 			request := observations.Requests[target.Key()]
 			if request == nil {
@@ -225,42 +283,51 @@ func (observations *Observations) add(raw []byte, mode, fault string, seen map[s
 			}
 			if entry.Type == "request" {
 				if entry.ResourceType != "fetch" && entry.ResourceType != "xhr" {
-					return errors.New("unsupported resource type")
+					return nil, errors.New("unsupported resource type")
 				}
 				request.ResourceType = entry.ResourceType
 				request.Observed++
 				requested[target.Key()] = true
 			} else {
 				if !requested[target.Key()] {
-					return errors.New("response without a recorded request")
+					return nil, errors.New("response without a recorded request")
 				}
 				if entry.Status < 100 || entry.Status > 599 {
-					return errors.New("invalid response status")
+					return nil, errors.New("invalid response status")
 				}
 				request.JSON2xx = request.JSON2xx || (entry.JSON && entry.Status >= 200 && entry.Status < 300)
 			}
 		case "applied", "not-applicable":
 			if mode != "fault" || entry.Fault != fault {
-				return errors.New("invalid fault record")
+				return nil, errors.New("invalid fault record")
 			}
 			if entry.Type == "applied" {
 				test.Applied++
 			} else {
 				if entry.Reason != ReasonNotJSON && entry.Reason != ReasonUnreachable {
-					return errors.New("invalid fault record")
+					return nil, errors.New("invalid fault record")
 				}
 				test.NotApplicable[entry.Reason]++
 			}
+		case "capabilities":
+			// Sent once, right after the handshake, and only while observing:
+			// the baseline decides which kinds are planned.
+			if mode != "observe" || index != 1 {
+				return nil, errors.New("unexpected prove capabilities")
+			}
+			if supported, err = capabilities(entry.Faults); err != nil {
+				return nil, err
+			}
 		case "overflow":
 			if index != len(lines)-1 {
-				return errors.New("record after overflow")
+				return nil, errors.New("record after overflow")
 			}
 			observations.Overflow = true
 		default:
-			return errors.New("unexpected prove record")
+			return nil, errors.New("unexpected prove record")
 		}
 	}
-	return nil
+	return supported, nil
 }
 
 func validTarget(target Target) bool {
