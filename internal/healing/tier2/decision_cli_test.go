@@ -66,3 +66,30 @@ func TestDecisionCLIRunsDecisionOnlyAndWithoutCredentials(t *testing.T) {
 		t.Fatalf("missing CLI: %v", err)
 	}
 }
+
+func TestDecisionWithoutReportedUsageIsRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture")
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\ncat >/dev/null\nprintf '{\"is_error\":false,\"result\":\"{\\\\\"action\\\\\":\\\\\"wait\\\\\"}\"}'\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, err := (CLIProvider{name: "claude", timeout: cliTestTimeout}).CompleteDecision(context.Background(), "p", "", 512)
+	var callErr *CallError
+	if !errors.As(err, &callErr) || !strings.Contains(callErr.Diagnostic, "no token usage") {
+		t.Fatalf("unmetered decision accepted: %v", err)
+	}
+}
+
+func TestOpenCodeErrorEventKeepsItsMessage(t *testing.T) {
+	_, err := parseOpenCodeDecision([]byte(`{"type":"error","error":{"name":"ProviderAuthError","data":{"message":"Login expired for token=abc123, run opencode auth login"}}}`))
+	if err == nil || !strings.Contains(err.Error(), "ProviderAuthError: Login expired") || strings.Contains(err.Error(), "abc123") {
+		t.Fatalf("err=%v", err)
+	}
+	if _, err := parseOpenCodeDecision([]byte(`{"type":"error","error":{}}`)); err == nil || err.Error() != "opencode reported an error" {
+		t.Fatalf("empty payload: %v", err)
+	}
+}

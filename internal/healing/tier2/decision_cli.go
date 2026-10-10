@@ -147,6 +147,11 @@ func (p CLIProvider) CompleteDecision(ctx context.Context, prompt, model string,
 	if strings.TrimSpace(completion.Text) == "" {
 		return Completion{}, &CallError{Provider: p.name, ExitCode: -1, Diagnostic: "empty response"}
 	}
+	// A CLI cannot cap generation, so reported usage is the only budget
+	// check; a decision without it is refused rather than accepted unmetered.
+	if !completion.UsageAvailable {
+		return Completion{}, &CallError{Provider: p.name, ExitCode: -1, Diagnostic: "reported no token usage, so the decision cannot be checked against the goal budget"}
+	}
 	return completion, nil
 }
 
@@ -263,9 +268,45 @@ func parseOpenCodeDecision(raw []byte) (Completion, error) {
 				completion.UsageAvailable = true
 			}
 		case "error":
-			return Completion{}, errors.New("opencode reported an error")
+			return Completion{}, errors.New(openCodeErrorMessage(event.Error))
 		}
 	}
 	completion.Text = text.String()
 	return completion, nil
+}
+
+// openCodeErrorMessage keeps a bounded, redacted message from an OpenCode
+// error event, such as {"name":"ProviderAuthError","data":{"message":"…"}},
+// so a login or model failure is diagnosable.
+func openCodeErrorMessage(raw json.RawMessage) string {
+	var payload any
+	if json.Unmarshal(raw, &payload) != nil {
+		return "opencode reported an error"
+	}
+	var name, message string
+	var visit func(any)
+	visit = func(value any) {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return
+		}
+		if text, ok := object["message"].(string); ok && message == "" {
+			message = text
+		}
+		if text, ok := object["name"].(string); ok && name == "" {
+			name = text
+		}
+		visit(object["data"])
+		visit(object["error"])
+	}
+	visit(payload)
+	if text, ok := payload.(string); ok {
+		message = text
+	}
+	diagnostic := cliDiagnostic(strings.TrimSpace(name + ": " + message))
+	diagnostic = strings.TrimPrefix(strings.TrimSuffix(diagnostic, ":"), ": ")
+	if diagnostic == "" {
+		return "opencode reported an error"
+	}
+	return "opencode reported an error: " + diagnostic
 }

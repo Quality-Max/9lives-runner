@@ -59,6 +59,8 @@ The answer is decoded and checked exactly like an API answer. A CLI cannot cap
 generation the way an API's `max_tokens` does; each call reports its usage
 instead (input including cache, output plus reasoning), and a decision whose
 reported usage exceeds its reservation stops the goal as `budget_exhausted`.
+A CLI answer without reported usage is a provider error, never an unmetered
+decision.
 The reservation adds each CLI's fixed input overhead, its own system prompt
 and tools: 8,192 tokens for Claude Code and 32,768 for Codex and OpenCode
 (measured at about 0.8k, 18–19k and 17k). With Codex or OpenCode the default
