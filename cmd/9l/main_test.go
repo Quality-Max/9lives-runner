@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -272,5 +273,26 @@ func TestAutoDetectSettingKeepsHealingOfflineUnlessAProviderIsNamed(t *testing.T
 	t.Setenv("NINELIVES_AUTODETECT_PROVIDER", "sometimes")
 	if _, err := resolveHealProvider("", "", ""); err == nil {
 		t.Fatal("invalid setting accepted")
+	}
+}
+
+func TestProjectNamesAreBounded(t *testing.T) {
+	var names projectNames
+	for _, bad := range []string{"", "  ", "a\nb", strings.Repeat("x", 129)} {
+		if names.Set(bad) == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for i := 0; i < 16; i++ {
+		if err := names.Set(fmt.Sprintf("p%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if names.Set("one too many") == nil {
+		t.Fatal("17th project accepted")
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"run", "x.spec.ts", "--config", "missing.config.ts"}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "--config must name an existing") {
+		t.Fatalf("missing config: %d %q", code, stderr.String())
 	}
 }

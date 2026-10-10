@@ -15,6 +15,12 @@ SDK versions.
   the decision schema; OpenCode's read-only plan agent), and its reported
   usage is checked against a reservation that includes the CLI's fixed
   input overhead.
+- `9l run --config <file>` and `--project <name>` (repeatable) choose the
+  Playwright config and projects, recorded in each job's `selection` and
+  the receipt's evidence command (#38). A spec the config finds no tests in
+  now names the config file and its `testDir`, and a run whose test runner
+  exits before writing a report, such as for an unknown project, carries
+  the runner's own `Error:` line.
 - Goal prompts list the goal's earlier actions (typed action, target role
   and label, parameter name, outcome; never values) and say when to `wait`
   for a control that has not appeared. Before, a model could not see that a

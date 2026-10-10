@@ -203,6 +203,15 @@ type report struct {
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
+	// Config names the configuration Playwright used, so a spec it found no
+	// tests in can be explained.
+	Config *struct {
+		ConfigFile string `json:"configFile"`
+		Projects   []struct {
+			Name    string `json:"name"`
+			TestDir string `json:"testDir"`
+		} `json:"projects"`
+	} `json:"config"`
 }
 type suite struct {
 	Suites []suite `json:"suites"`
@@ -287,7 +296,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 				return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright reported an error before finding any test, such as a spec or import that fails to load; see the attempt's structured report")
 			}
 		}
-		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright found no tests in this spec; check that the project's Playwright config includes it (testDir, testMatch, testIgnore)")
+		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright found no tests in this spec%s; check that the config includes it (testDir, testMatch, testIgnore), or choose another config or project with --config or --project", configSummary(parsed))
 	}
 	if validation.ExecutedTests == 0 {
 		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests")
@@ -299,6 +308,33 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		validation.Description += fmt.Sprintf("; %d flaky test(s) passed on retry", flaky)
 	}
 	return validation, nil
+}
+
+// configSummary names the config file and its projects' test directories,
+// relative to the config, as " under playwright.config.ts (testDir tests)".
+func configSummary(parsed report) string {
+	if parsed.Config == nil || parsed.Config.ConfigFile == "" {
+		return ""
+	}
+	base := filepath.Dir(parsed.Config.ConfigFile)
+	var dirs []string
+	seen := map[string]bool{}
+	for _, project := range parsed.Config.Projects {
+		dir := project.TestDir
+		if relative, err := filepath.Rel(base, dir); err == nil && !strings.HasPrefix(relative, "..") {
+			dir = relative
+		}
+		dir = filepath.ToSlash(dir)
+		if dir != "" && !seen[dir] && len(dirs) < 4 {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	summary := " under " + filepath.Base(parsed.Config.ConfigFile)
+	if len(dirs) > 0 {
+		summary += " (testDir " + strings.Join(dirs, ", ") + ")"
+	}
+	return summary
 }
 
 func hasCompletedAttempt(results []struct {

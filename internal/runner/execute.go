@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 type ExecuteOptions struct {
@@ -445,6 +447,13 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 					validationErr = fmt.Errorf("structured report exceeded capture limit")
 				}
 			}
+			// A runner that exits before writing its report, such as Playwright
+			// with an unknown --project or a broken config, says why on stderr.
+			if validationErr != nil && len(output.Stdout) == 0 && receipt.ExitCode != 0 {
+				if reason := runnerErrorLine(output.Stderr); reason != "" {
+					validationErr = fmt.Errorf("%w; the test runner reported: %s", validationErr, reason)
+				}
+			}
 			if validationErr != nil && job.Selection != "" && strings.Contains(validationErr.Error(), "found no tests") {
 				validationErr = fmt.Errorf("%w; the test selection (%s) may match none of its tests", validationErr, job.Selection)
 			}
@@ -524,6 +533,29 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	receipt = persistAttempt(receipt, store, output.Stdout, output.Stderr)
 	_ = store.AppendEvent(ProgressEvent{Type: "attempt_finished", JobID: job.ID, AttemptID: receipt.AttemptID, Detail: string(receipt.Status)})
 	return receipt
+}
+
+var runnerEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// runnerErrorLine is the first `Error:` line a test runner printed, redacted
+// and at most 300 bytes, or "".
+func runnerErrorLine(stderr []byte) string {
+	for _, line := range strings.Split(string(stderr), "\n") {
+		line = strings.TrimSpace(runnerEscape.ReplaceAllString(line, ""))
+		if !strings.HasPrefix(line, "Error: ") {
+			continue
+		}
+		line = RedactText(line)
+		if len(line) > 300 {
+			cut := 300
+			for cut > 0 && !utf8.RuneStart(line[cut]) {
+				cut--
+			}
+			line = line[:cut] + "…"
+		}
+		return line
+	}
+	return ""
 }
 
 // classifyRun separates a run that proved a failure from one that proved

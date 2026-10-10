@@ -86,3 +86,16 @@ func TestPassedAttemptReportsNoFailures(t *testing.T) {
 		t.Fatalf("summary=%+v err=%v", summary, err)
 	}
 }
+
+func TestRunnerErrorLineNamesWhyNoReportWasWritten(t *testing.T) {
+	stderr := []byte("\x1b[31mError: Project(s) \"nope\" not found. Available projects: \"chromium\"\x1b[39m\n    at filterProjects (index.js:1)\n")
+	if got := runnerErrorLine(stderr); got != `Error: Project(s) "nope" not found. Available projects: "chromium"` {
+		t.Fatalf("got %q", got)
+	}
+	if got := runnerErrorLine([]byte("Error: token=abc123\n")); strings.Contains(got, "abc123") {
+		t.Fatalf("not redacted: %q", got)
+	}
+	if got := runnerErrorLine([]byte("warning only\n")); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}
