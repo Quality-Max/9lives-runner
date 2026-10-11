@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "requirements": [
+    {
+      "id": "empty-sign-in",
+      "reference": "QualityMax Demo Bank public sign-in form",
+      "revision": "demo-1",
+      "expectedOutcomes": [
+        {
+          "id": "sign-in-visible",
+          "description": "Signed-out visitors see the Demo Bank title."
+        },
+        {
+          "id": "empty-username-invalid",
+          "description": "An empty required username remains invalid."
+        },
+        {
+          "id": "remains-signed-out",
+          "description": "An empty submission keeps the sign-in prompt visible."
+        },
+        {
+          "id": "empty-username-preserved",
+          "description": "Empty submission does not populate the username."
+        }
+      ]
+    }
+  ]
+}

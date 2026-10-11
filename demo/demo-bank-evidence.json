@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-11",
+  "runnerRevision": "481743c1bc24155820745dcc2430976190c7fed5",
+  "application": "QualityMax Demo Bank public deployment",
+  "target": "https://qualitymax-demo-bank.vercel.app/",
+  "platform": "macOS ARM64",
+  "scope": "One empty-sign-in test; no credentials entered, no authentication or banking transaction. Public credential hint removed before captures and failure snapshots.",
+  "generation": {
+    "agent": "codex",
+    "provenanceSourceMatched": true
+  },
+  "assessment": {
+    "advisory": true,
+    "completeness": "partial",
+    "findingCodes": [
+      "fixed-wait"
+    ],
+    "fixedWaitRemovedBeforeExecution": true,
+    "sourceSHA256": "ad40bcf4dcf475816d1dc4d06977742af104188ada87de19b74989611a81bd23"
+  },
+  "original": {
+    "outcome": "failed",
+    "complete": false,
+    "passed": 0,
+    "failed": 1,
+    "sourceSHA256": "67599f83a3a4f2efa50c420de5fff2547b8985475732898ee2fe5a1823d6b9e1"
+  },
+  "healing": {
+    "state": "verified",
+    "provider": "none",
+    "providerCalls": 0,
+    "sessionSeconds": 5.74,
+    "candidateVerified": true,
+    "applied": false,
+    "onlyLocatorEdit": true,
+    "assertionsPreservedByteForByte": true,
+    "candidateSHA256": "e276636d89aeefa508e4e4a977be5dde3a0ad08144b83cd61f33413bd216736f"
+  },
+  "presentation": "Browser capture and receipt replay; later fault, confirmation and MCP/SDK examples are illustrations, not executed bank results. One seeded locator case, not a comparative benchmark."
+}
