@@ -44,3 +44,67 @@ builds the CLI and copies the checkout fixture into `/tmp/9l-demo`; the
 planted defect is the fixture's `missing-order` control from
 [checkout qualification](../docs/test-assessment.md#checkout-qualification).
 
+
+## Illustrated feature tour
+
+`workflow-illustration.gif` is a ten-frame, 1280 × 720 replay and feature tour.
+Frames 1–5 use an actual browser capture of the public
+[QualityMax demo bank](https://qualitymax-demo-bank.vercel.app/) and sanitized results.
+Codex drafted an empty-sign-in test; `9l provenance` captured its source;
+`assess` flagged a seeded fixed wait (removed before execution); `run` failed
+on a deliberately stale “Log In” locator; offline `heal` changed only that
+literal to “Sign In” and verified one passing test in isolation. All assertions
+were preserved byte for byte. No provider calls were made. The candidate was
+saved for review; the original was not applied. The session took 5.74 seconds
+on macOS ARM64, including the original run and candidate verification.
+
+This is a screenshot-and-receipt replay, not a continuous screen recording.
+It shows one seeded locator case, not an application regression or a comparative
+benchmark. No credentials were entered, authentication performed or banking
+transaction submitted. The public credential hint was removed before browser
+captures and failure snapshots. The displayed browser capture is a closer view
+of the same form for legibility; the test ran at 1280 × 720.
+[`demo-bank-evidence.json`](demo-bank-evidence.json) contains reviewed evidence
+fields and source hashes, without credentials, cookies or session data.
+
+Frames 6–8 illustrate documented experimental fault testing, finding
+confirmation and MCP/SDK features; those examples were not run against the bank.
+Every frame labels whether it shows actual bank results or an illustration.
+`workflow-illustration.png` is the still overview for reduced-motion visitors.
+The landing pages show the full-width GIF with a show/hide control. Memes
+remain on 9lives.run.
+
+The tour was checked against the Go v0.3 documentation:
+
+- [Agent QA skill](../skills/9lives-qa/SKILL.md) and [creation provenance](../docs/test-assessment.md#agent-creation-and-execution-provenance): the coding agent writes the spec; there is no native generation command.
+- [Assessment](../docs/test-assessment.md) and [execution](../docs/cli.md): static findings are advisory; passing assertions are not full requirement coverage.
+- [Native healing](../docs/native-tier2.md): supported locator edits only, assertions preserved, isolated verification before acceptance.
+- [Fault testing](../docs/prove.md) and [finding confirmation](../docs/confirm.md): experimental features with bounded claims about their results.
+- [MCP](../docs/mcp.md), [SDK](../docs/sdk-bridge.md), [goals](../docs/goals.md) and [platform installation](../docs/install.md): Windows provider CLI integrations and live model accuracy remain unqualified.
+
+To reproduce, install Pillow and Playwright in your own Python environment,
+install its Chromium browser, then run `python demo/render-workflow.py`.
+The renderer captures the code-native `workflow-illustration.html` storyboard
+and its reviewed bank browser screenshot, then encodes the frames as a GIF.
+It replays the documented results; it never executes 9l or calls a model.
+To repeat the bank workflow, use [`bank/`](bank/), which includes the generated
+draft, pinned Playwright dependency, configuration and reviewed requirement contract:
+
+```sh
+mkdir -p .context
+go build -o .context/9l ./cmd/9l
+cd demo/bank
+npm ci --ignore-scripts
+npm exec playwright install chromium
+mkdir -p .context
+../../.context/9l provenance tests/bank.spec.ts --agent codex > .context/provenance.json
+../../.context/9l assess tests/bank.spec.ts --requirements requirements.json --agent-provenance .context/provenance.json
+# Review the finding and remove the seeded await page.waitForTimeout(400) line.
+../../.context/9l run tests/bank.spec.ts
+../../.context/9l heal tests/bank.spec.ts --provider none
+```
+
+The original run should fail on the seeded button name. The healed candidate
+should pass without changing assertions. Inspect `tests/bank.spec.ts.healed`
+before accepting it. The public deployment can change, so outcomes and timing
+may differ. The same GIF and poster are copied into QualityMax and 9lives.run.

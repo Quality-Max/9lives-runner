@@ -18,6 +18,28 @@ QA agent that drives broader repository workflows.
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
+## The 9lives feature loop
+
+Create with your coding agent. Assess, run, heal and challenge with 9lives.
+
+![9lives workflow with real QualityMax Demo Bank assessment and offline healing, followed by illustrated fault testing, confirmation, MCP and SDK features](demo/workflow-illustration.gif)
+
+**Real QualityMax Demo Bank assessment and offline healing, replayed from a browser capture and receipts.** A deliberately stale “Log In” locator was repaired to “Sign In”, preserving all assertions. The isolated candidate passed one test; no model/provider calls were made. The 5.74-second session is one observed seeded case, not a comparative benchmark. Later fault, confirmation and agent-tool examples are labeled illustrations.
+[Sanitized run evidence](demo/demo-bank-evidence.json).
+[Still poster](demo/workflow-illustration.png) · [Storyboard, sources and rendering](demo/README.md#illustrated-feature-tour).
+
+- **Agent-assisted test generation:** your coding agent creates Playwright specs using the optional [QA skill](skills/9lives-qa/SKILL.md). Record creation provenance, assess the draft and execute it; there is no native `9l generate` command.
+- **Assessment:** `9l assess` reviews waits, skips, missing or unawaited assertions, and requirement mappings. Findings are advisory.
+- **Execution:** `plan`, `run`, `status`, `result` and `cancel` bound execution and retain attributable terminal receipts.
+- **Healing:** experimental native `9l heal` preserves assertions and verifies supported locator-only candidates in isolation before acceptance.
+- **Fault testing and confirmation:** experimental `prove` injects fetch/XHR faults; `confirm` compares a reproduction on unfixed and fixed Git revisions. Their results have [documented limits](docs/README.md).
+- **Agent integration and SDK:** native `9l mcp` provides execution, assessment, healing and confirmation tools; the optional SDK adds named steps and bounded goals. Goal completion is unverified.
+- **Cross-platform:** native Linux, macOS and Windows binaries on x64 and ARM64. Windows provider CLI shell integrations remain unqualified.
+
+Built by QualityMax without any external funding. Keep your suite. Inspect the evidence.
+
+### Recorded checkout demonstration
+
 ![9l assess flags a sleep before an absence check and an unmapped requirement outcome; 9l run passes the checkout fixture in Chromium, then fails it with a planted defect that only the order-count assertion catches](demo/9l-demo.gif)
 
 Recorded against the repository's synthetic checkout fixture with real
