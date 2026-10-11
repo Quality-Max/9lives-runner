@@ -1,13 +1,13 @@
 {
   "date": "2026-10-11",
-  "runnerRevision": "481743c1bc24155820745dcc2430976190c7fed5",
-  "application": "QualityMax Demo Bank public deployment",
+  "runnerRevision": "9252c71c6b233074f143e97145c4e9103cbe7ac3",
   "target": "https://qualitymax-demo-bank.vercel.app/",
-  "platform": "macOS ARM64",
-  "scope": "One empty-sign-in test; no credentials entered, no authentication or banking transaction. Public credential hint removed before captures and failure snapshots.",
+  "platform": "darwin/arm64",
+  "scope": "One signed-out form test in real Chromium. No credentials entered or banking transactions. Public credential hint removed before captures.",
   "generation": {
     "agent": "codex",
-    "provenanceSourceMatched": true
+    "mode": "Checked-in agent-authored draft; replay does not call a model.",
+    "sourceSHA256": "40d512342d80d04b44a287282651ea53e3706861ba497b1b14bc1fc4890c303c"
   },
   "assessment": {
     "advisory": true,
@@ -15,26 +15,24 @@
     "findingCodes": [
       "fixed-wait"
     ],
-    "fixedWaitRemovedBeforeExecution": true,
-    "sourceSHA256": "ad40bcf4dcf475816d1dc4d06977742af104188ada87de19b74989611a81bd23"
+    "fixedWaitRemovedBeforeExecution": true
   },
   "original": {
     "outcome": "failed",
-    "complete": false,
     "passed": 0,
     "failed": 1,
-    "sourceSHA256": "67599f83a3a4f2efa50c420de5fff2547b8985475732898ee2fe5a1823d6b9e1"
+    "sourceSHA256": "25cce08b95021d9b20bc1b994ca26eddcaac2d356df706d19a3e2668bf006244"
   },
   "healing": {
     "state": "verified",
     "provider": "none",
     "providerCalls": 0,
-    "sessionSeconds": 5.74,
+    "executedTests": 1,
     "candidateVerified": true,
     "applied": false,
     "onlyLocatorEdit": true,
     "assertionsPreservedByteForByte": true,
-    "candidateSHA256": "e276636d89aeefa508e4e4a977be5dde3a0ad08144b83cd61f33413bd216736f"
+    "candidateSHA256": "17fe2551cdb4be16225dbe0e7be37a3a030310a5cc14247228a569a6a614370b"
   },
-  "presentation": "Browser capture and receipt replay; later fault, confirmation and MCP/SDK examples are illustrations, not executed bank results. One seeded locator case, not a comparative benchmark."
+  "presentation": "Edited replay from real browser captures and checked CLI results. Seeded stale locator, not an observed application regression or speed benchmark."
 }

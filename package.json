@@ -15,7 +15,8 @@
     "smoke:visual": "npm run build && node scripts/visual-smoke.cjs",
     "smoke:assessment-portability": "node scripts/assessment-portability-smoke.cjs",
     "parser:check": "node scripts/bundle-assessment-parser.cjs --check",
-    "demo": "npm run build && go run ./cmd/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json"
+    "demo": "npm run build && go run ./cmd/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json",
+    "demo:bank": "node demo/bank/run-demo.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

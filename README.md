@@ -18,15 +18,24 @@ QA agent that drives broader repository workflows.
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
-## The 9lives feature loop
+## Watch it repair a Demo Bank test
 
-Create with your coding agent. Assess, run, heal and challenge with 9lives.
+A deliberately stale button name breaks a Playwright test against the public
+[QualityMax Demo Bank](https://qualitymax-demo-bank.vercel.app/). Follow the draft
+through assessment, failure, offline repair and a passing candidate.
 
-![9lives workflow with real QualityMax Demo Bank assessment and offline healing, followed by illustrated fault testing, confirmation, MCP and SDK features](demo/workflow-illustration.gif)
+![9lives Demo Bank walkthrough: draft a Playwright test, assess the fixed wait, reproduce a stale locator failure, repair Log In to Sign In offline, and verify the unchanged assertions](demo/demo-bank.gif)
 
-**Real QualityMax Demo Bank assessment and offline healing, replayed from a browser capture and receipts.** A deliberately stale “Log In” locator was repaired to “Sign In”, preserving all assertions. The isolated candidate passed one test; no model/provider calls were made. The 5.74-second session is one observed seeded case, not a comparative benchmark. Later fault, confirmation and agent-tool examples are labeled illustrations.
-[Sanitized run evidence](demo/demo-bank-evidence.json).
-[Still poster](demo/workflow-illustration.png) · [Storyboard, sources and rendering](demo/README.md#illustrated-feature-tour).
+The GIF is a 68.5-second edited replay of real browser captures and checked CLI
+results, with large text and one step per frame. Experimental healing changed
+one locator literal, preserved every assertion and verified one passing test.
+The candidate was saved for review; the original file was not changed.
+
+[Run this example](demo/README.md#qualitymax-demo-bank) ·
+[Still image](demo/demo-bank.png) ·
+[Checked results](demo/demo-bank-evidence.json)
+
+## Main features
 
 - **Agent-assisted test generation:** your coding agent creates Playwright specs using the optional [QA skill](skills/9lives-qa/SKILL.md). Record creation provenance, assess the draft and execute it; there is no native `9l generate` command.
 - **Assessment:** `9l assess` reviews waits, skips, missing or unawaited assertions, and requirement mappings. Findings are advisory.
@@ -38,14 +47,8 @@ Create with your coding agent. Assess, run, heal and challenge with 9lives.
 
 Built by QualityMax without any external funding. Keep your suite. Inspect the evidence.
 
-### Recorded checkout demonstration
-
-![9l assess flags a sleep before an absence check and an unmapped requirement outcome; 9l run passes the checkout fixture in Chromium, then fails it with a planted defect that only the order-count assertion catches](demo/9l-demo.gif)
-
-Recorded against the repository's synthetic checkout fixture with real
-Chromium and no model or account. Assessment is advisory; a passing run proves
-the assertions passed, not that they cover the requirements.
-See [how it is recorded](demo/README.md#recording).
+For the separate SDK checkout fixture and its original terminal recording,
+see the [local checkout demo](demo/README.md#local-checkout-demo).
 
 ## Start with an executed result
 

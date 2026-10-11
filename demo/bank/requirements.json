@@ -15,6 +15,10 @@
           "description": "An empty required username remains invalid."
         },
         {
+          "id": "invalid-field-focused",
+          "description": "Submitting the empty form focuses the required username field."
+        },
+        {
           "id": "remains-signed-out",
           "description": "An empty submission keeps the sign-in prompt visible."
         },
