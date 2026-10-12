@@ -4,6 +4,7 @@ exports.SUPPORTED_CHECKS = void 0;
 exports.resolveChecks = resolveChecks;
 exports.isBenignNavigationAbort = isBenignNavigationAbort;
 exports.scanUrl = scanUrl;
+exports.looksStateChanging = looksStateChanging;
 exports.checkSecurityHeaders = checkSecurityHeaders;
 const common_1 = require("./common");
 const cookies_1 = require("./checks/cookies");
@@ -592,6 +593,20 @@ async function checkLinks(baseUrl, hrefs, maxLinks, allowPrivateNetwork, private
             const url = new URL(href, baseUrl);
             let status;
             if (url.origin === baseUrl.origin && authenticatedSameOriginStatus) {
+                // A same-origin link is requested with the page's session, and many
+                // applications sign out or change data on a GET (or a HEAD routed to
+                // it). Requesting such a link would act as the user, so it is skipped
+                // and reported instead of checked.
+                if (looksStateChanging(url)) {
+                    findings.push({
+                        severity: 'info',
+                        category: 'links',
+                        message: 'Link not requested with the session because it looks like it signs out or changes data.',
+                        url: (0, network_policy_1.safeUrlForDisplay)(url),
+                        suggestion: 'Check this link by hand if it should be verified.',
+                    });
+                    return;
+                }
                 status = await authenticatedSameOriginStatus(url.toString());
             }
             if (status === undefined) {
@@ -619,6 +634,18 @@ async function checkLinks(baseUrl, hrefs, maxLinks, allowPrivateNetwork, private
         }
     });
     return findings;
+}
+const STATE_CHANGING_LINK = /(?:^|[/_.?=&-])(?:log-?out|log_out|log-?off|sign-?out|sign_out|delete|destroy|remove|unsubscribe|revoke|deactivate|disable)(?:$|[/_.?=&-])/i;
+/** Whether a same-origin link's path or query names a sign-out or a data change. */
+function looksStateChanging(url) {
+    let target = `${url.pathname}${url.search}`;
+    try {
+        target = decodeURIComponent(target);
+    }
+    catch {
+        // Keep the encoded form; a malformed escape cannot hide a keyword that matters.
+    }
+    return STATE_CHANGING_LINK.test(target);
 }
 async function withConcurrency(items, limit, worker) {
     let next = 0;

@@ -35,6 +35,11 @@ SDK versions.
   origin or a private host name (such as a Docker Compose service) is
   explained without disclosing what it resolved to. A missing browser names
   `npx playwright install chromium` instead of Playwright's banner.
+- An authenticated scan no longer requests same-origin links that look like
+  they sign out or change data (`logout`, `sign_out`, `delete`, `remove`,
+  `unsubscribe` and similar); each is reported as a skipped `info` finding.
+  Redaction also covers `id_token`, `refresh_token`, session ids, `Basic`
+  credentials and JSON Web Tokens.
 
 ## 0.3.0 — 2026-10-11
 

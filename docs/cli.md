@@ -134,7 +134,15 @@ a login, `--storage-state <file>` with `--acknowledge-private-content`: the
 Playwright storage-state file must be inside the working directory, its
 cookies and storage are loaded into a throwaway browser context and never
 printed, but the report may reflect private account data. Keep that file
-out of version control and out of shared artifacts.
+out of version control and out of shared artifacts. Credential shapes in
+returned text (tokens in URLs, `Bearer`/`Basic` values, JSON Web Tokens) are
+redacted on a best-effort basis; that is not a guarantee. An authenticated
+scan checks same-origin links with the session, except links whose path or
+query names a sign-out or data change (`logout`, `sign_out`, `delete`,
+`remove`, `unsubscribe` and similar): those are reported as skipped `info`
+findings rather than requested. Use `--max-links 0` to request none.
+Destinations are checked before each request; a hostname whose DNS answer
+changes between that check and the connection is not yet pinned (#108).
 
 `scan` and `inspect` are observations from one cold page load on this
 machine, not field data. They run in a Node helper embedded in the binary,
