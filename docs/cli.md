@@ -106,9 +106,58 @@
   candidate from offline Tier 1 or a Tier 2 provider in isolation, and save it
   or apply it with approval. `heal-native` is an alias. See
   [Native Tier 2](native-tier2.md).
-- `9l mcp`: serve `run_test`, `heal_test`, `assess_test` and
-  `confirm_finding` to coding agents over MCP stdio. See
+- `9l mcp`: serve `run_test`, `heal_test`, `assess_test`,
+  `confirm_finding`, `scan_url`, `inspect_page` and
+  `generate_playwright_repro` to coding agents over MCP stdio. See
   [MCP server](mcp.md).
+- `9l scan <url>`: load the page once in Chromium and report console errors
+  and failed requests, broken links, accessibility, Core Web Vitals (LCP,
+  CLS, TTFB, FCP; INP is not measured), SEO, security headers, cookies and
+  trackers, mixed content and page weight, with a 0–100 score. `--checks`
+  selects checks by exact name (an unknown name is refused), `--format`
+  is `markdown` (default), `json` or `issue` (one tracker-ready block per
+  finding, filtered by `--min-severity`), and `--out` writes the report to a
+  file. `--baseline <previous.json>` adds the new, fixed and unchanged
+  findings, and `--fail-on-new` exits 1 when there is a new one.
+  `--weight-budget total_bytes=500000,request_count=40` scans against your
+  own page-weight budget (also `render_blocking`, `image_bytes`,
+  `script_bytes`).
+- `9l inspect <url>`: the page's ranked locators (test id, role and label
+  before text and position), each control's locator stability and a page
+  testability verdict, as Markdown or `--format json`;
+  `--accessibility-tree` adds Chromium's accessibility tree. A control is
+  quoted by its accessible name only; a `name` attribute is shown as
+  `[name=…] (no accessible name)`.
+
+Both take `--viewport WIDTHxHEIGHT` (default 1366x900) and, for a page behind
+a login, `--storage-state <file>` with `--acknowledge-private-content`: the
+Playwright storage-state file must be inside the working directory, its
+cookies and storage are loaded into a throwaway browser context and never
+printed, but the report may reflect private account data. Keep that file
+out of version control and out of shared artifacts.
+
+`scan` and `inspect` are observations from one cold page load on this
+machine, not field data. They run in a Node helper embedded in the binary,
+with the project's Playwright and its installed Chromium: run them in the
+project directory after `npx playwright install chromium`. The helper gets
+only the variables it needs to find Node and the browser; credentials and
+`--pass-env` values are not passed. Requests to private, link-local and
+loopback addresses are refused, including through DNS, redirects and page
+subrequests; `--allow-private-network` permits a loopback target such as a
+local dev server, and only its origin. A `--baseline` file must be inside the
+working directory. Both exit 0 with a result, 1 for new findings under
+`--fail-on-new`, 2 for invalid arguments and 3 when no result was produced,
+such as a refused or unreachable target, a missing browser or `--timeout`
+(default 300 s, or `NINELIVES_RUN_TIMEOUT`).
+
+```bash
+9l scan https://example.com --format markdown
+9l scan http://localhost:3000/ --allow-private-network --format json --out scan.json
+9l scan http://localhost:3000/ --allow-private-network --baseline scan.json --fail-on-new
+9l inspect http://localhost:3000/login --allow-private-network
+9l inspect http://localhost:3000/account --allow-private-network \
+  --storage-state playwright/.auth/user.json --acknowledge-private-content
+```
 
 Playwright execution supports existing projects with a local
 `@playwright/test` dependency. The installed `node_modules/.bin/playwright` is

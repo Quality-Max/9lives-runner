@@ -4,6 +4,38 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### CLI
+
+- `9l scan <url>` and `9l inspect <url>` bring the qmax-mcp page checks into
+  the runner, relicensed under Apache-2.0: console errors and failed requests,
+  broken links, accessibility, Core Web Vitals, SEO, security headers,
+  cookies and trackers, mixed content and page weight from one Chromium page
+  load, findings with stable ids, `--baseline` comparison with
+  `--fail-on-new`, Markdown and tracker-issue reports, and ranked locators
+  with a testability verdict. They run in a Node helper embedded in the
+  binary with the project's own Playwright; the helper inherits only what it
+  needs to find Node and the browser. Exit 3 means no result was produced.
+- `9l mcp` adds `scan_url`, `inspect_page` and `generate_playwright_repro`,
+  with snake_case arguments like the other tools. Reproductions are written
+  by Go inside the working directory, only as `.spec`/`.test` files and
+  never over an existing file without `overwrite`; `sdk: true` targets
+  `confirm_finding`. qmax-mcp's `run_playwright_test` and its hosted-account
+  proxy are not carried over: `run_test` executes a generated reproduction.
+- `9l scan` and `9l inspect` accept `--storage-state` with
+  `--acknowledge-private-content` and `--viewport`, and `scan` accepts
+  `--weight-budget`, matching the MCP tools.
+- `inspect` no longer presents a control's `name` attribute as its accessible
+  name: each control gains `accessibleName`, and an unnamed control found by
+  a test id or id keeps its stable rating with an "easy to locate, not
+  accessible" caveat.
+- A refused destination says which rule applied: a loopback target without
+  consent names `--allow-private-network`, and with consent a second local
+  origin or a private host name (such as a Docker Compose service) is
+  explained without disclosing what it resolved to. A missing browser names
+  `npx playwright install chromium` instead of Playwright's banner.
+
 ## 0.3.0 — 2026-10-11
 
 ### SDK
