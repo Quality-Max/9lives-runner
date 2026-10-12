@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -118,12 +120,28 @@ func browserProject(t *testing.T) string {
 		}
 		t.Skip("npm ci and npm exec playwright install chromium to run browser checks")
 	}
+	browserOnce.Do(func() {
+		probe := exec.Command("node", "-e", "require('playwright').chromium.launch().then(b => b.close(), () => process.exit(1))")
+		probe.Dir = filepath.Dir(modules)
+		browserInstalled = probe.Run() == nil
+	})
+	if !browserInstalled {
+		if os.Getenv("NINELIVES_REQUIRE_BROWSER") == "1" {
+			t.Fatal("NINELIVES_REQUIRE_BROWSER=1 but Chromium cannot launch; run npm exec playwright install chromium")
+		}
+		t.Skip("npm exec playwright install chromium to run browser checks")
+	}
 	root := t.TempDir()
 	if err := os.Symlink(modules, filepath.Join(root, "node_modules")); err != nil {
 		t.Skip("symlinks unavailable")
 	}
 	return root
 }
+
+var (
+	browserOnce      sync.Once
+	browserInstalled bool
+)
 
 const browserFixture = `<!doctype html><html lang="en"><head><title>Fixture</title></head><body>
 <h1>Checkout</h1><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
