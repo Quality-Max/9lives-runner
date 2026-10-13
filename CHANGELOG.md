@@ -4,6 +4,14 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Skill
+
+- The `9lives-qa` skill can run the pinned QualityMax grader
+  (`qualitymax-grader@0.2.0`) as an advisory hygiene pass. It reports the grade
+  separately and never as a 9lives result or as coverage evidence.
+
 ## 0.4.0 — 2026-10-13
 
 ### SDK

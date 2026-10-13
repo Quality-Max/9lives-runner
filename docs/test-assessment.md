@@ -399,6 +399,19 @@ disclosed; direct review still works. Broader website audits apply only when
 requested. These are optional instructions, not runner plugins or an automatic
 quality gate. They require no platform account; agent/model usage may cost money.
 
+The skill can also run the
+[QualityMax grader](https://github.com/Quality-Max/qualitymax-grader)
+(`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) as a
+hygiene pass before a spec is committed. It grades source A–F from text
+patterns and checks some things `9l assess` does not: `page.pause()`,
+`debugger`, XPath and `nth-child` selectors, `getByRole` without a name and
+markdown fences left in generated code. Its grade stays separate from this
+report. It is not a dimension, a gate or evidence of coverage: it gave
+`testdata/assessment/tests/checkout.spec.ts` a B (89/100), while assessment with
+the fixture's requirements reports a test that maps none of its requirement's
+outcomes. 9lives does not bundle or install the grader; `npx` downloads it from
+npm.
+
 One canonical skill is linked into `.agents/skills/9lives-qa` and
 `.claude/skills/9lives-qa`, the documented project discovery locations for
 [Codex](https://learn.chatgpt.com/docs/build-skills) and
