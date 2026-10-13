@@ -41,10 +41,10 @@ def test_installer_defaults_to_the_release_with_page_checks():
     assert "9l scan" in installer
 
 
-def test_site_uses_the_original_qualitymax_favicon():
+def test_site_uses_the_qualitymax_pendant_favicon():
     layout = (WEBSITE / "app" / "layout.tsx").read_text()
 
-    assert "https://qualitymax.io/static/img/favicon-color-round.png" in layout
+    assert "/qualitymax-pendant.svg" in layout
 
 
 def test_root_uses_accept_header_for_installer_content_negotiation():
