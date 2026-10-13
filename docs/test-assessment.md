@@ -287,20 +287,18 @@ opening parentheses. CSS order pseudo-classes such as `:nth-child`,
 `:first-child` and `:last-of-type` are `positional-css`; `nth=`,
 `:nth-match()`, `first()`, `last()` and `nth()` with a literal index are
 `position`. Template selectors with substitutions are not checked.
-`unnamed-role` (informational, raising no concern) marks `getByRole` without a
-`name` option, unless its options are not a literal object or contain a spread
-or computed key; a role that is unique by design, such as one status region,
-needs no name. These findings have their own budget of 512 per file, separate
-from assertion and wait facts. Beyond it, the rest are dropped and the report
+Role locators without a `name` are not findings: the role can be unique by
+design. Debugging and selector findings have their own budget of 512 per file,
+separate from assertion and wait facts. Beyond it, the rest are dropped and the report
 lists a limit. A markdown fence outside a string or comment is a `syntax`
 failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v11` adds the
-`debugging-leftover`, `fragile-selector` and `unnamed-role` rules and the
-`hazardsTruncated` limit; the helper version is 8 and report version 3 is
-unchanged. Policy `assessment-source-v10` excludes
+inputs invalidate prior assessments. Policy `assessment-source-v12` removes
+the noisy `unnamed-role` advisory introduced in v11. The `debugging-leftover` and `fragile-selector` rules and
+`hazardsTruncated` limit remain; the helper version is 9 and report version 3
+is unchanged. Policy `assessment-source-v10` excludes
 pre-execution conditional skips from outcome coverage lenders while retaining
 after-hook tests whose bodies ran. Policy `assessment-source-v9` counts
 outcome mapping only from enabled tests that reference the requirement and
@@ -317,7 +315,7 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip`, `absence-after-wait`,
-`debugging-leftover`, `fragile-selector` and `unnamed-role` rules, the `unknown-matcher` limit
+`debugging-leftover` and `fragile-selector` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256`, an optional test `title` and an optional
 finding `site` before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic

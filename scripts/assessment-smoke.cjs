@@ -72,9 +72,9 @@ try {
   const assessment = JSON.parse(assessed.stdout);
   assert.equal(assessment.tests.length, 3);
   assert.deepEqual(assessment.tests[0].findings.filter(f => f.rule === 'unmapped-outcome').map(f => f.outcome), ['order-count', 'order-items']);
-  // getByRole('status') has no name: informational, and it raises no concern.
+  // A unique status role needs no name and produces no advisory finding.
   for (const test of assessment.tests.slice(1)) {
-    assert.deepEqual(test.findings.map(f => `${f.rule}:${f.classification}`), ['unnamed-role:informational']);
+    assert.deepEqual(test.findings, []);
     assert.equal(test.dimensions.engineeringQuality, 'unknown');
   }
   assert(assessment.tests.every(t => t.dimensions.runtimeEvidence === 'unknown'));

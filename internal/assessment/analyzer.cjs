@@ -67,13 +67,6 @@ function createAnalyzer(ts) {
     if ((['first', 'last'].includes(method.text) && args.length === 0) || (method.text === 'nth' && args.length === 1 && ts.isNumericLiteral(index))) {
       return [{ node: method, kind: 'position' }];
     }
-    if (method.text === 'getByRole' && args.length > 0) {
-      const options = args[1];
-      // A spread, computed key or non-literal options value may supply a name.
-      const named = !!options && (!ts.isObjectLiteralExpression(options) || options.properties.some(property => ts.isSpreadAssignment(property)
-        || !property.name || ts.isComputedPropertyName(property.name) || property.name.text === 'name'));
-      return named ? [] : [{ node: method, kind: 'unnamed-role' }];
-    }
     const valued = valueSelectorMethods.has(method.text);
     if (!selectorMethods.has(method.text) && !(valued && args.length >= 2 && !ts.isObjectLiteralExpression(args[1]))) return [];
     return args.slice(0, method.text === 'dragAndDrop' ? 2 : 1).flatMap(arg => {
@@ -584,7 +577,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 8, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 9, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -607,7 +600,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 8, error: code }));
+    process.stdout.write(JSON.stringify({ version: 9, error: code }));
     process.exitCode = 2;
   }
 }
