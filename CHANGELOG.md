@@ -6,9 +6,15 @@ SDK versions.
 
 ## Unreleased
 
+## 0.4.5 — 2026-10-13
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.5 is released with CLI 0.4.5.
+
 ### Assess
 
-Policy `assessment-source-v11`; the analyzer helper version is 8 and report
+Policy `assessment-source-v12`; the analyzer helper version is 9 and report
 version 3 is unchanged.
 
 - `debugging-leftover` reports `page.pause()` on a browser fixture and
@@ -17,7 +23,8 @@ version 3 is unchanged.
   `:nth-child`, and `first()`, `last()`, `nth(<literal>)`, `nth=` and
   `:nth-match()` (codes `xpath`, `positional-css`, `position`). Values typed
   into locators and key presses are not read as selectors.
-- `unnamed-role` reports `getByRole` without a `name`, as informational.
+- Remove the noisy `unnamed-role` advisory introduced in unreleased policy
+  v11. A unique role such as `status`, `alert` or `button` needs no name.
 - These findings have their own budget of 512 per file, so they never cut
   assertion analysis short; a report that reaches it says so in its limits.
 

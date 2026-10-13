@@ -680,11 +680,11 @@ test('debugging leftovers and structural or positional selectors are hazards', (
       await tab.getByRole('alert', {exact: true}).click();
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
-    'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16', 'unnamed-role@17']);
-  assert.equal(facts.version, 8);
+    'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
+  assert.equal(facts.version, 9);
 });
 
-test('values, keys, named roles and non-page pauses are not hazards', () => {
+test('values, keys, role locators and non-page pauses are not hazards', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
     test('t', async ({page}) => {
       await page.getByLabel('URL').fill('//example.com');
@@ -692,6 +692,9 @@ test('values, keys, named roles and non-page pauses are not hazards', () => {
       await page.getByRole('textbox', {name: 'Q'}).first;
       await page.keyboard.press('..');
       await page.getByRole('button', {name: 'Save'}).click();
+      await page.getByRole('button').click();
+      await expect(page.getByRole('status')).toBeVisible();
+      await expect(page.getByRole('alert', {exact: true})).toBeVisible();
       await page.getByRole('button', { name }).click();
       await page.getByRole('button', options).click();
       await page.getByRole('button', {...options}).click();
@@ -733,7 +736,7 @@ test('hazards have their own budget and never cut assertion analysis short', () 
     async function open(page) { await page.locator('//nav').click(); }
     test('t', async ({page}) => { await open(page); await open(page); await expect(page).toHaveURL('/'); });`);
   assert.deepEqual(kinds(once.tests[0]), ['xpath@2<3']);
-  const checks = Array.from({ length: 10 }, () => 'await expect(page.getByRole("a")).toBeVisible();').join(' ');
+  const checks = Array.from({ length: 10 }, () => 'await expect(page.locator("//a")).toBeVisible();').join(' ');
   const tests = Array.from({ length: 60 }, (_, i) => `test('t${i}', async ({page}) => { await check(page); });`).join('\n');
   const facts = analyze(`import {test,expect} from '@playwright/test';\nasync function check(page) { ${checks} }\n${tests}`);
   assert.equal(facts.tests.reduce((n, t) => n + t.assertions.length, 0), 600);

@@ -25,7 +25,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v11"
+const Policy = "assessment-source-v12"
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -106,7 +106,6 @@ var hazardRules = map[string]hazardRule{
 	"xpath":              {"fragile-selector", "suspected", "An XPath selector depends on document structure; markup changes can break it or make it match a different element.", selectorSuggestion},
 	"positional-css":     {"fragile-selector", "suspected", "A positional CSS selector, such as :nth-child, depends on element order; inserting or reordering elements can make it match a different element.", selectorSuggestion},
 	"position":           {"fragile-selector", "suspected", "A positional locator (first, last, nth or nth=) picks an element by order; it hides ambiguity and can act on a different element when the page changes.", selectorSuggestion},
-	"unnamed-role":       {"unnamed-role", "informational", "A getByRole locator has no name; it relies on the role being unique where it is used, and strict mode fails once another element with that role appears.", "Add the accessible name, or keep it where the role is unique by design, such as a single status region."},
 }
 
 // ConditionalSkip is a suite modifier that may skip a test. Environment marks a
@@ -299,7 +298,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 8 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 9 {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -334,7 +333,7 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 8 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != 9 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {
@@ -415,7 +414,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise (only @playwright/test and @9l/playwright), so its tests were not assessed.")
 	}
 	if facts.HazardsTruncated {
-		report.Limits = append(report.Limits, "More than 512 debugging-leftover, fragile-selector and unnamed-role findings: the rest were not reported.")
+		report.Limits = append(report.Limits, "More than 512 debugging-leftover and fragile-selector findings: the rest were not reported.")
 	}
 	checked := contract != nil
 	if checked {
