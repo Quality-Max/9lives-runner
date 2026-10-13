@@ -25,7 +25,13 @@ export const metadata: Metadata = {
     description: 'Run Playwright locally with Go, keep your assertions, and inspect attributable evidence.',
     images: ['/og.png'],
   },
-  icons: { icon: 'https://qualitymax.io/static/img/favicon-color-round.png' },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
+      { url: '/qualitymax-pendant.svg', type: 'image/svg+xml', sizes: 'any' },
+    ],
+    apple: { url: '/apple-touch-icon.png', sizes: '180x180' },
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
