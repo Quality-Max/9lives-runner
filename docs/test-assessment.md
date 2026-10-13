@@ -437,8 +437,9 @@ The skill can also run the
 hygiene pass before a spec is committed. It grades source A–F from text
 patterns. Assessment now reports its pause, debugger, XPath, positional selector
 and unnamed role checks itself; the grader adds style checks such as
-`test.step()` use, file length and a minimum assertion count. Its grade stays
-separate from this report. It is not a dimension, a gate or evidence of coverage: it gave
+`test.step()` use, file length, a minimum assertion count and markdown fences
+left in generated code. Its grade stays separate from this report. It is not a
+dimension, a gate or evidence of coverage: it gave
 `testdata/assessment/tests/checkout.spec.ts` a B (89/100), while assessment with
 the fixture's requirements reports a test that maps none of its requirement's
 outcomes. 9lives does not bundle or install the grader; `npx` downloads it from

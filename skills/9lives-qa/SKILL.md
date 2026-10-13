@@ -24,9 +24,9 @@ specialist check.
 Assessment reports debugging leftovers (`page.pause()`, `debugger`), fragile
 XPath and positional selectors, and `getByRole` without a name. For a further
 style pass on a new or generated spec before it is committed, the QualityMax
-grader checks `test.step()` use, file length and assertion counts. Run a pinned
-version when the user allows npm downloads; it reads source only and makes no
-model or network calls itself:
+grader adds style checks such as `test.step()` use, file length, assertion
+counts and leftover markdown fences. Run a pinned version when the user allows
+npm downloads; it reads source only and makes no model or network calls itself:
 
 ```sh
 npx --yes qualitymax-grader@0.2.0 path/to/checkout.spec.ts --format json --min-grade F
@@ -37,7 +37,9 @@ its letter grade and score separately and label them as the grader's. They come
 from text patterns: a grade measures hygiene, not whether the test protects a
 requirement or passed. Never present it as a 9lives result, merge it into
 assessment dimensions or let it outweigh an assessment concern. Treat each
-grader issue as a suspected finding until you have checked it in the source. Website, accessibility, performance and security skills apply
+grader issue as a suspected finding until you have checked it in the source;
+for example, `getByRole('status')` is usually unique even without a name.
+Website, accessibility, performance and security skills apply
 only when the requested scope includes those concerns; do not run every scan.
 Skill advice does not establish assertion coverage or satisfy a required gate.
 
