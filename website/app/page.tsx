@@ -172,7 +172,7 @@ export default function Home() {
         </div>
 
         <p className="trust-line">Apache-2.0 <span>•</span> No QualityMax account <span>•</span> Linux · macOS · Windows <span>•</span> x64 & ARM64</p>
-        <p className="hero-note">One local Playwright workflow across your team’s machines. The Go runner v0.4.0 has native binaries for all three platforms.</p>
+        <p className="hero-note">One local Playwright workflow across your team’s machines. The Go runner v0.4.5 has native binaries for all three platforms.</p>
         <p className="hero-note">Built by QualityMax without any external funding. Our ambition: become a leading name in modern test automation, with practical AI and proof you can inspect.</p>
         <p className="hero-note">
           The macOS/Linux shell installer downloads a checksum-verified binary; Go and Python are not required.
@@ -322,7 +322,7 @@ export default function Home() {
           Keep Python for its existing MCP contracts, watch and history reports, Cypress/Selenium,
           standalone-spec scaffolding, and existing Action or pre-commit integrations.
           Go v0.4 has native <code>9l heal</code>, <code>9l mcp</code>, <code>9l scan</code>, and <code>9l inspect</code>;
-          native healing is experimental. The website shell installer installs Go v0.4.0.
+          native healing is experimental. The website shell installer installs Go v0.4.5.
         </p>
         <div className="inline-command">
           <code>{pythonCommand}</code>
