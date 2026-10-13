@@ -25,7 +25,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v10"
+const Policy = "assessment-source-v12"
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -38,6 +38,9 @@ const (
 // ReportVersion is the version of a single-file assess report.
 const ReportVersion = 3
 const MaxSource = 1 << 20
+
+// maxHazards bounds hazards per file separately from assertion and wait facts.
+const maxHazards = 512
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$`)
 
@@ -84,6 +87,27 @@ type Sleep struct {
 	Site *Location `json:"site,omitempty"`
 }
 
+// Hazard is a debugging leftover or a locator tied to document structure or
+// element order. Kind selects its rule and code; Site is the test's call site
+// when it is inside an inlined helper.
+type Hazard struct {
+	Location
+	Site *Location `json:"site,omitempty"`
+	Kind string    `json:"kind"`
+}
+
+type hazardRule struct{ rule, classification, message, suggestion string }
+
+const selectorSuggestion = "Prefer getByRole with a name, getByLabel or a test ID observed on the page, narrowed until it matches one element."
+
+var hazardRules = map[string]hazardRule{
+	"page-pause":         {"debugging-leftover", "demonstrated", "A page.pause() call is present; it stops a headed or debug run until someone resumes it.", "Remove the debugging pause before committing."},
+	"debugger-statement": {"debugging-leftover", "demonstrated", "A debugger statement is present; it stops the run whenever a debugger is attached.", "Remove the debugger statement before committing."},
+	"xpath":              {"fragile-selector", "suspected", "An XPath selector depends on document structure; markup changes can break it or make it match a different element.", selectorSuggestion},
+	"positional-css":     {"fragile-selector", "suspected", "A positional CSS selector, such as :nth-child, depends on element order; inserting or reordering elements can make it match a different element.", selectorSuggestion},
+	"position":           {"fragile-selector", "suspected", "A positional locator (first, last, nth or nth=) picks an element by order; it hides ambiguity and can act on a different element when the page changes.", selectorSuggestion},
+}
+
 // ConditionalSkip is a suite modifier that may skip a test. Environment marks a
 // condition that reads process.env. AfterExecution marks modifiers in after hooks.
 type ConditionalSkip struct {
@@ -97,6 +121,7 @@ type Fact struct {
 	Requirements     []string          `json:"requirements"`
 	Assertions       []Assertion       `json:"assertions"`
 	Sleeps           []Sleep           `json:"sleeps"`
+	Hazards          []Hazard          `json:"hazards"`
 	ConditionalSkips []ConditionalSkip `json:"conditionalSkips"`
 	Disabled         *bool             `json:"disabled"`
 	Exclusive        bool              `json:"exclusive"`
@@ -110,6 +135,9 @@ type Facts struct {
 	// UnrecognizedTestImports names modules a `test` binding was imported
 	// from when none came from @playwright/test or @9l/playwright.
 	UnrecognizedTestImports []string `json:"unrecognizedTestImports,omitempty"`
+	// HazardsTruncated marks a file whose hazards exceeded their own budget;
+	// the remaining ones were dropped.
+	HazardsTruncated bool `json:"hazardsTruncated,omitempty"`
 }
 type Finding struct {
 	Rule           string `json:"rule"`
@@ -270,7 +298,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 7 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 9 {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -305,7 +333,7 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 7 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != 9 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {
@@ -328,9 +356,9 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 		return len(values) <= 128
 	}
 	seen, modifiers := map[Location]bool{}, map[Location]bool{}
-	total := 0
+	total, hazards := 0, 0
 	for _, t := range f.Tests {
-		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.ConditionalSkips == nil || len(t.ConditionalSkips) > 16 || t.Disabled == nil ||
+		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.Hazards == nil || t.ConditionalSkips == nil || len(t.ConditionalSkips) > 16 || t.Disabled == nil ||
 			(!titles && t.Title != "") || len(t.Title) > 1024 || !utf8.ValidString(t.Title) || !ids(t.Requirements) || t.Limits == nil || len(t.Limits) > len(analysisLimits) || t.Unsupported != (len(t.Limits) > 0) {
 			return false
 		}
@@ -352,6 +380,12 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 				return false
 			}
 		}
+		hazards += len(t.Hazards)
+		for _, h := range t.Hazards {
+			if !valid(h.Location) || (h.Site != nil && !valid(*h.Site)) || hazardRules[h.Kind].rule == "" {
+				return false
+			}
+		}
 		applied := map[Location]bool{}
 		for _, p := range t.ConditionalSkips {
 			if !valid(p.Location) || applied[p.Location] {
@@ -363,7 +397,8 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 		total += len(t.Assertions) + len(t.Sleeps) + len(t.Limits)
 	}
 	// A shared suite modifier counts once, however many tests it applies to.
-	return total+len(modifiers) <= 2048
+	// A truncated file spent the whole hazard budget.
+	return total+len(modifiers) <= 2048 && hazards <= maxHazards && (!f.HazardsTruncated || hazards == maxHazards)
 }
 
 // Build derives findings from parsed facts. A nil contract means none was
@@ -377,6 +412,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 	if len(facts.UnrecognizedTestImports) > 0 {
 		report.UnrecognizedTestImports = facts.UnrecognizedTestImports
 		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise (only @playwright/test and @9l/playwright), so its tests were not assessed.")
+	}
+	if facts.HazardsTruncated {
+		report.Limits = append(report.Limits, "More than 512 debugging-leftover and fragile-selector findings: the rest were not reported.")
 	}
 	checked := contract != nil
 	if checked {
@@ -492,6 +530,12 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 				add("absence-after-wait", "suspected", "assertionAdequacy", "", "", "The first recognized assertion after a fixed wait checks that something is absent or did not happen; if the application is merely slow, it passes without the outcome having occurred.", "Assert a positive completion signal first, such as the response, a confirmation or the final URL, then check the absence.", next.Location)
 				t.Findings[len(t.Findings)-1].Site = next.Site
 			}
+		}
+		for _, h := range fact.Hazards {
+			r := hazardRules[h.Kind]
+			add(r.rule, r.classification, "engineeringQuality", "", "", r.message, r.suggestion, h.Location)
+			t.Findings[len(t.Findings)-1].Site = h.Site
+			t.Findings[len(t.Findings)-1].Code = h.Kind
 		}
 		if fact.Exclusive {
 			add("exclusive-test", "demonstrated", "engineeringQuality", "", "", "A syntactic test.only call is present; check whether it limits suite execution.", "Remove an active only before running the complete suite.", fact.Location)

@@ -344,7 +344,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: 7, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 9, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -379,7 +379,7 @@ func TestRejectForeignAndIncompleteFacts(t *testing.T) {
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("duplicate test accepted")
 	}
-	if validFacts(Facts{Version: 7, Compiler: "5.9.3"}, []byte("x"), false) {
+	if validFacts(Facts{Version: 9, Compiler: "5.9.3"}, []byte("x"), false) {
 		t.Fatal("missing inventory accepted")
 	}
 }
@@ -449,7 +449,7 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: 7, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: 9, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -475,13 +475,13 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 	source := []byte(strings.Repeat("xxxxxxxx\n", 256))
 	guards := []ConditionalSkip{{Location: Location{1, 1}}, {Location: Location{2, 1}}, {Location: Location{3, 1}}, {Location: Location{4, 1}}, {Location: Location{5, 1}}}
-	f := Facts{Version: 7, Compiler: "5.9.3", Tests: []Fact{}}
+	f := Facts{Version: 9, Compiler: "5.9.3", Tests: []Fact{}}
 	for line := 10; line < 210; line++ {
 		assertions := make([]Assertion, 6)
 		for i := range assertions {
 			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}}
 		}
-		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}})
+		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}})
 	}
 	if !validFacts(f, source, false) {
 		t.Fatal("shared modifiers counted once per test")
@@ -502,7 +502,7 @@ func TestAssessSuiteGuardWithoutContract(t *testing.T) {
 	source := []byte("import {test,expect} from '@playwright/test';\n" +
 		"test.describe('weekday flows', () => {\n" +
 		"  test.skip(isWeekend(), 'Only meaningful on business days');\n" +
-		"  test('shows today', async ({page}) => { await expect(page.getByRole('heading')).toBeVisible(); });\n" +
+		"  test('shows today', async ({page}) => { await expect(page.getByRole('heading', {name: 'Today'})).toBeVisible(); });\n" +
 		"});\n")
 	for _, titles := range []bool{false, true} {
 		report, err := Assess(context.Background(), source, nil, Options{Titles: titles})
@@ -562,14 +562,14 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 	requireNode(t)
 	source := []byte("import {test,expect} from '@playwright/test';\n" +
 		"test('toast disappears', async ({page}) => {\n" +
-		"  await page.getByRole('button').click();\n" +
+		"  await page.getByRole('button', {name: 'Close'}).click();\n" +
 		"  await page.waitForTimeout(2000);\n" +
-		"  await expect(page.getByRole('alert')).toBeHidden();\n" +
+		"  await expect(page.getByRole('alert', {name: 'Error'})).toBeHidden();\n" +
 		"});\n" +
 		"test('saved first', async ({page}) => {\n" +
 		"  await page.waitForTimeout(2000);\n" +
 		"  await expect(page.getByText('Saved')).toBeVisible();\n" +
-		"  await expect(page.getByRole('alert')).toBeHidden();\n" +
+		"  await expect(page.getByRole('alert', {name: 'Error'})).toBeHidden();\n" +
 		"});\n")
 	report, err := Assess(context.Background(), source, nil, Options{})
 	if err != nil {
@@ -583,7 +583,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v10" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v12" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -594,8 +594,8 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 		"// @9l-assertion-helper\n" +
 		"import { expectOrderSaved } from './checks';\n" +
 		"import { seed } from './data';\n" +
-		"async function fillCheckout(page) { await page.getByRole('button').click(); }\n" +
-		"async function closesToast(page) { await page.waitForTimeout(2000); await expect(page.getByRole('alert')).toBeHidden(); }\n" +
+		"async function fillCheckout(page) { await page.getByRole('button', {name: 'Pay'}).click(); }\n" +
+		"async function closesToast(page) { await page.waitForTimeout(2000); await expect(page.getByRole('alert', {name: 'Error'})).toBeHidden(); }\n" +
 		"test('confirmed', async ({page}) => { await fillCheckout(page); await expectOrderSaved(page); });\n" +
 		"test('action only', async ({page}) => { await fillCheckout(page); });\n" +
 		"test('toast', async ({page}) => { await closesToast(page); });\n" +
@@ -618,7 +618,112 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v10" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v12" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
+	}
+}
+
+func TestHazardEvidenceIsValidated(t *testing.T) {
+	f := Facts{Version: 9, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	if !validFacts(f, []byte("xx"), false) {
+		t.Fatal("valid hazard rejected")
+	}
+	for _, hazards := range [][]Hazard{
+		nil,
+		{{Location: Location{1, 2}, Kind: "unknown"}},
+		{{Location: Location{1, 2}, Kind: "unnamed-role"}},
+		{{Location: Location{9, 1}, Kind: "xpath"}},
+		{{Location: Location{1, 2}, Site: &Location{9, 1}, Kind: "page-pause"}},
+	} {
+		f.Tests[0].Hazards = hazards
+		if validFacts(f, []byte("xx"), false) {
+			t.Fatalf("invalid hazard evidence accepted: %+v", hazards)
+		}
+	}
+	f.Version = 8
+	f.Tests[0].Hazards = []Hazard{}
+	if validFacts(f, []byte("xx"), false) {
+		t.Fatal("facts from the previous helper version accepted")
+	}
+}
+
+func TestHazardsBecomeEngineeringQualityFindings(t *testing.T) {
+	site := &Location{2, 1}
+	hazards := []Hazard{{Location: Location{3, 1}, Site: site, Kind: "page-pause"}, {Location: Location{4, 1}, Kind: "debugger-statement"},
+		{Location: Location{5, 1}, Kind: "xpath"}, {Location: Location{6, 1}, Kind: "positional-css"}, {Location: Location{7, 1}, Kind: "position"}}
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{{Location: Location{8, 1}}}, Hazards: hazards}
+	report := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}})
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		if f.Dimension != "engineeringQuality" || f.Message == "" || f.Suggestion == "" {
+			t.Fatalf("hazard finding without dimension or guidance: %+v", f)
+		}
+		got = append(got, FindingRule(f)+":"+f.Classification)
+	}
+	want := "debugging-leftover/page-pause:demonstrated debugging-leftover/debugger-statement:demonstrated fragile-selector/xpath:suspected fragile-selector/positional-css:suspected fragile-selector/position:suspected"
+	if strings.Join(got, " ") != want || report.Tests[0].Findings[0].Site != site || report.Tests[0].Dimensions["engineeringQuality"] != "concern" {
+		t.Fatalf("hazard findings %v", got)
+	}
+}
+
+func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"async function inspect(page) { await page.pause(); }\n" +
+		"test('cart', async ({page}) => {\n" +
+		"  debugger;\n" +
+		"  await inspect(page);\n" +
+		"  await page.locator('//table/tr[2]').click();\n" +
+		"  await page.locator('ul > li:nth-child(3)').click();\n" +
+		"  await page.getByRole('row').first().click();\n" +
+		"  await page.getByLabel('Website').fill('//example.com');\n" +
+		"  await page.keyboard.press('Enter');\n" +
+		"  await expect(page.getByText('Saved')).toBeVisible();\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		site := ""
+		if f.Site != nil {
+			site = "via" + fmt.Sprint(f.Site.Line)
+		}
+		got = append(got, FindingRule(f)+"@"+fmt.Sprint(f.Line)+site)
+	}
+	// A value typed into a field and a key press are not selectors.
+	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v12" {
+		t.Fatalf("hazard findings %q under %s", got, report.Policy)
+	}
+	counts, total := CountFindings(report)
+	if total != 5 || counts["fragile-selector/xpath"] != 1 || counts["debugging-leftover/page-pause"] != 1 {
+		t.Fatalf("hazard counts %v (%d)", counts, total)
+	}
+}
+
+func TestTruncatedHazardsAreBoundedAndDisclosed(t *testing.T) {
+	source := []byte(strings.Repeat("xxxxxxxxxx\n", 600))
+	hazards := make([]Hazard, maxHazards+1)
+	for i := range hazards {
+		hazards[i] = Hazard{Location: Location{i%600 + 1, i/600 + 1}, Kind: "xpath"}
+	}
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}
+	f := Facts{Version: 9, Compiler: "5.9.3", Tests: []Fact{fact}, HazardsTruncated: true}
+	if validFacts(f, source, false) {
+		t.Fatal("more hazards than the budget accepted")
+	}
+	f.Tests[0].Hazards = hazards[:maxHazards]
+	if !validFacts(f, source, false) {
+		t.Fatal("a spent hazard budget rejected")
+	}
+	f.Tests[0].Hazards = hazards[:1]
+	if validFacts(f, source, false) {
+		t.Fatal("truncation claimed with budget left")
+	}
+	report := Build(source, nil, Contract{}, f)
+	if !strings.Contains(strings.Join(report.Limits, "\n"), "More than 512") {
+		t.Fatalf("truncated hazards not disclosed: %v", report.Limits)
 	}
 }

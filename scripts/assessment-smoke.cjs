@@ -72,8 +72,11 @@ try {
   const assessment = JSON.parse(assessed.stdout);
   assert.equal(assessment.tests.length, 3);
   assert.deepEqual(assessment.tests[0].findings.filter(f => f.rule === 'unmapped-outcome').map(f => f.outcome), ['order-count', 'order-items']);
-  assert.equal(assessment.tests[1].findings.length, 0);
-  assert.equal(assessment.tests[2].findings.length, 0);
+  // A unique status role needs no name and produces no advisory finding.
+  for (const test of assessment.tests.slice(1)) {
+    assert.deepEqual(test.findings, []);
+    assert.equal(test.dimensions.engineeringQuality, 'unknown');
+  }
   assert(assessment.tests.every(t => t.dimensions.runtimeEvidence === 'unknown'));
   const observations = {};
   for (const control of ['baseline', 'missing-order', 'setup-failure', 'timeout']) {

@@ -4,6 +4,36 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+## 0.4.5 — 2026-10-13
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.5 is released with CLI 0.4.5.
+
+### Assess
+
+Policy `assessment-source-v12`; the analyzer helper version is 9 and report
+version 3 is unchanged.
+
+- `debugging-leftover` reports `page.pause()` on a browser fixture and
+  `debugger` statements (codes `page-pause`, `debugger-statement`).
+- `fragile-selector` reports XPath selectors, positional CSS such as
+  `:nth-child`, and `first()`, `last()`, `nth(<literal>)`, `nth=` and
+  `:nth-match()` (codes `xpath`, `positional-css`, `position`). Values typed
+  into locators and key presses are not read as selectors.
+- Remove the noisy `unnamed-role` advisory introduced in unreleased policy
+  v11. A unique role such as `status`, `alert` or `button` needs no name.
+- These findings have their own budget of 512 per file, so they never cut
+  assertion analysis short; a report that reaches it says so in its limits.
+
+### Skill
+
+- The `9lives-qa` skill can run the pinned QualityMax grader
+  (`qualitymax-grader@0.2.0`) as an advisory hygiene pass. It reports the grade
+  separately and never as a 9lives result or as coverage evidence.
+
 ## 0.4.0 — 2026-10-13
 
 ### SDK
