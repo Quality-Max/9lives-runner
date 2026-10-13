@@ -60,6 +60,7 @@ def installer(tmp_path):
         executable(source / "9l", f"#!/bin/sh\nprintf '9l {version} (Go runner)\\n'\n")
         (source / "LICENSE").write_text("Apache-2.0 fixture\n")
         (source / "NOTICE").write_text("Release notice fixture\n")
+        (source / "THIRD-PARTY-NOTICES.txt").write_text("Go dependency notices fixture\n")
         archive = assets / f"{bundle}.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
             for artifact in source.iterdir():
@@ -94,8 +95,9 @@ def test_installs_verified_platform_and_prints_usable_path(installer, system, ar
         f"https://github.com/Quality-Max/9lives-runner/releases/download/v0.1.1/{bundle}.tar.gz",
         "https://github.com/Quality-Max/9lives-runner/releases/download/v0.1.1/SHA256SUMS",
     ]
-    for artifact in ("9l", "LICENSE", "NOTICE"):
+    for artifact in ("9l", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"):
         assert (destination / artifact).read_bytes() == (source / artifact).read_bytes()
+    assert sorted(path.name for path in destination.iterdir()) == ["9l", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"]
     assert os.access(destination / "9l", os.X_OK)
     path_line = next(line.strip() for line in result.stdout.splitlines() if line.strip().startswith("export PATH="))
     selected = subprocess.run(
@@ -134,12 +136,13 @@ def test_bad_checksums_never_install_or_replace_a_binary(installer, checksum):
     assert list(temporary.iterdir()) == []
 
 
-def test_missing_release_artifact_never_installs(installer):
+@pytest.mark.parametrize("missing", ["NOTICE", "THIRD-PARTY-NOTICES.txt"])
+def test_missing_release_artifact_never_installs(installer, missing):
     package, run, _, destination, _, _, temporary = installer
-    package(missing="NOTICE")
+    package(missing=missing)
     result = run()
     assert result.returncode != 0
-    assert "missing a regular NOTICE" in result.stderr
+    assert f"missing a regular {missing}" in result.stderr
     assert not destination.exists()
     assert list(temporary.iterdir()) == []
 
@@ -202,3 +205,42 @@ def test_rejects_unsupported_targets_before_download(installer, key, value):
     environment[key] = value
     assert run().returncode != 0
     assert not requests.exists()
+
+
+@pytest.mark.parametrize("legal", ["LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"])
+@pytest.mark.parametrize("kind", ["file-symlink", "directory-symlink", "directory"])
+def test_legal_file_destinations_never_redirect_writes(installer, legal, kind):
+    package, run, _, destination, assets, requests, _ = installer
+    package()
+    destination.mkdir()
+    outside = assets / "outside"
+    outside.mkdir()
+    victim = outside / "victim.txt"
+    victim.write_text("unrelated file\n")
+    if kind == "file-symlink":
+        (destination / legal).symlink_to(victim)
+    elif kind == "directory-symlink":
+        (destination / legal).symlink_to(outside)
+    else:
+        (destination / legal).mkdir()
+    result = run()
+    assert result.returncode != 0
+    assert f"destination {legal} is not a regular file" in result.stderr
+    assert victim.read_text() == "unrelated file\n"
+    assert sorted(path.name for path in outside.iterdir()) == ["victim.txt"]
+    assert not (destination / "9l").exists()
+    assert not requests.exists()
+
+
+def test_update_replaces_regular_legal_files(installer):
+    package, run, _, destination, _, _, _ = installer
+    source = package()
+    destination.mkdir()
+    executable(destination / "9l", "#!/bin/sh\necho '9l 0.0.0 (Go runner)'\n")
+    for legal in ("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"):
+        (destination / legal).write_text("previous release\n")
+    result = run()
+    assert result.returncode == 0, result.stderr
+    for artifact in ("9l", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"):
+        assert (destination / artifact).read_bytes() == (source / artifact).read_bytes()
+    assert not list(destination.glob(".9l-install.*"))

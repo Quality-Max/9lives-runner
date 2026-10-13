@@ -42,7 +42,7 @@ const pageChecks = [
   ['console', 'JavaScript errors, warnings, and failed requests'],
   ['links', 'Broken and redirecting links'],
   ['accessibility', 'Missing alt text, unlabelled controls, heading structure'],
-  ['performance', 'Core Web Vitals: LCP, CLS, TTFB, FCP'],
+  ['performance', 'Core Web Vitals LCP and CLS, plus TTFB and FCP load timings'],
   ['seo', 'Title and meta description'],
   ['security_headers', 'CSP, HSTS, X-Content-Type-Options, Referrer-Policy'],
   ['cookies', 'Cookie flags, third-party cookies, trackers before consent'],

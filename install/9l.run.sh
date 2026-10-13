@@ -55,11 +55,18 @@ if [ -e "$INSTALL_DIR/9l" ]; then
     *) fail "destination 9l belongs to another CLI; choose a separate NINELIVES_INSTALL_DIR" ;;
   esac
 fi
+# Legal files replace only regular files: a symlink or directory there could
+# redirect the write outside the installation directory.
+for legal in LICENSE NOTICE THIRD-PARTY-NOTICES.txt; do
+  if [ -L "$INSTALL_DIR/$legal" ] || { [ -e "$INSTALL_DIR/$legal" ] && [ ! -f "$INSTALL_DIR/$legal" ]; }; then
+    fail "destination $legal is not a regular file; choose a separate NINELIVES_INSTALL_DIR"
+  fi
+done
 
 task_tmp="$(mktemp -d "${TMPDIR:-/tmp}/9lives-install.XXXXXXXX")"
-staged_binary=""
+staging=""
 cleanup() {
-  if [ -n "$staged_binary" ]; then rm -f "$staged_binary"; fi
+  if [ -n "$staging" ]; then rm -rf "$staging"; fi
   rm -rf "$task_tmp"
 }
 trap cleanup EXIT
@@ -84,7 +91,7 @@ awk -v archive="$archive" 'NF == 2 && $2 == archive { print }' "$task_tmp/SHA256
 ) || fail "release checksum verification failed"
 
 tar -xzf "$task_tmp/$archive" -C "$task_tmp"
-for artifact in 9l LICENSE NOTICE; do
+for artifact in 9l LICENSE NOTICE THIRD-PARTY-NOTICES.txt; do
   [ -f "$task_tmp/$bundle/$artifact" ] && [ ! -L "$task_tmp/$bundle/$artifact" ] ||
     fail "release is missing a regular $artifact file"
 done
@@ -94,13 +101,19 @@ case "$release_identity" in
   *) fail "release binary version does not match $VERSION" ;;
 esac
 mkdir -p "$INSTALL_DIR"
-staged_binary="$(mktemp "$INSTALL_DIR/.9l-install.XXXXXXXX")"
-cp "$task_tmp/$bundle/9l" "$staged_binary"
-chmod 755 "$staged_binary"
-cp "$task_tmp/$bundle/LICENSE" "$INSTALL_DIR/LICENSE"
-cp "$task_tmp/$bundle/NOTICE" "$INSTALL_DIR/NOTICE"
-mv -f "$staged_binary" "$INSTALL_DIR/9l"
-staged_binary=""
+# Copy into a fresh directory on the same file system, then rename each file
+# into place, so no write follows an existing destination path.
+staging="$(mktemp -d "$INSTALL_DIR/.9l-install.XXXXXXXX")"
+for artifact in 9l LICENSE NOTICE THIRD-PARTY-NOTICES.txt; do
+  cp "$task_tmp/$bundle/$artifact" "$staging/$artifact"
+done
+chmod 755 "$staging/9l"
+for legal in LICENSE NOTICE THIRD-PARTY-NOTICES.txt; do
+  mv -f "$staging/$legal" "$INSTALL_DIR/$legal"
+done
+mv -f "$staging/9l" "$INSTALL_DIR/9l"
+rmdir "$staging"
+staging=""
 
 say "installed: $release_identity"
 say "binary: $INSTALL_DIR/9l"

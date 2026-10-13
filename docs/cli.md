@@ -111,8 +111,8 @@
   `generate_playwright_repro` to coding agents over MCP stdio. See
   [MCP server](mcp.md).
 - `9l scan <url>`: load the page once in Chromium and report console errors
-  and failed requests, broken links, accessibility, Core Web Vitals (LCP,
-  CLS, TTFB, FCP; INP is not measured), SEO, security headers, cookies and
+  and failed requests, broken links, accessibility, the Core Web Vitals LCP
+  and CLS (INP is not measured) with TTFB and FCP, SEO, security headers, cookies and
   trackers, mixed content and page weight, with a 0–100 score. `--checks`
   selects checks by exact name (an unknown name is refused), `--format`
   is `markdown` (default), `json` or `issue` (one tracker-ready block per

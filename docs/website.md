@@ -11,7 +11,10 @@ not one of the repository's npm workspaces.
 `install/9l.run.sh` is the canonical installer. `website/public/install.sh`
 must be a byte-identical copy: `curl -fsSL https://9lives.run/install.sh | sh`
 serves it, and the site's proxy sends non-HTML requests for `/` to it. The
-installer downloads one pinned, checksum-verified release.
+installer downloads one pinned, checksum-verified release and installs `9l`,
+`LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` by renaming them from a fresh
+staging directory. It refuses a destination `9l` that is a symlink or another
+CLI, and legal-file destinations that are not regular files.
 
 ## Checks
 

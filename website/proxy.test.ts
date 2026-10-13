@@ -26,6 +26,26 @@ describe('installer content negotiation', () => {
     expect(response.headers.get('x-middleware-next')).toBe('1');
   });
 
+  it('treats text/html with q=0 as refusing HTML', () => {
+    for (const accept of ['text/html;q=0', 'text/html; q=0.0, */*', 'application/json, TEXT/HTML;Q=0']) {
+      const response = proxy(new NextRequest('https://9lives.run/', { headers: { accept } }));
+
+      expect(response.status, accept).toBe(307);
+      expect(response.headers.get('location')).toBe('https://9lives.run/install.sh');
+    }
+  });
+
+  it('serves HTML when any text/html range has a positive quality', () => {
+    const response = proxy(
+      new NextRequest('https://9lives.run/', {
+        headers: { accept: 'text/html;q=0, text/html;level=1;q=0.5' },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-middleware-next')).toBe('1');
+  });
+
   it('redirects command-line GET requests to the installer', () => {
     const response = proxy(
       new NextRequest('https://9lives.run/', {
