@@ -373,6 +373,7 @@ export default function Home() {
         <nav className="legal-links" aria-label="Legal information">
           <a href="https://qualitymax.io/legal">Imprint / Impressum</a>
           <a href="https://qualitymax.io/privacy">Privacy / Datenschutz</a>
+          <button type="button" data-qm-cookie-settings hidden style={{ background: 'none', border: 0, padding: 0, color: 'inherit', font: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}>Cookie settings</button>
           <a href="https://qualitymax.io/terms">Terms / Nutzungsbedingungen</a>
         </nav>
         <div className="service-legal">
