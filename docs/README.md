@@ -19,6 +19,7 @@
 | [Architecture](architecture.md) | You need package boundaries and design decisions |
 | [Development](development.md) | You are validating a contribution |
 | [Release runbook](releases.md) | You are qualifying and publishing a distribution |
+| [Website and installer](website.md) | You are changing 9lives.run or the `install.sh` it serves |
 
 Dated benchmark and validation records document their own source and limits.
 They are not claims of production performance or independent semantic proof.

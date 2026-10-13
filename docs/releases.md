@@ -70,6 +70,10 @@ alone is not native runtime qualification. If a release is defective, stop
 recommending it and publish a fixed version; do not silently replace its bytes
 or reuse a version number.
 
+Once the release is verified, bump the version that
+`curl -fsSL https://9lives.run/install.sh | sh` installs in a separate change;
+see [Website and installer](website.md#bumping-the-installed-release).
+
 ## Qualify the SDK
 
 From a clean checkout:

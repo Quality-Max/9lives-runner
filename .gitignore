@@ -9,3 +9,4 @@ __pycache__/
 /packages/*/dist/
 /playwright-report/
 /.context/
+.pytest_cache/
