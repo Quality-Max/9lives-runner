@@ -65,6 +65,10 @@ func run(args []string, out, errOut io.Writer) int {
 		return proveCommand(args[1:], out, errOut)
 	case "confirm":
 		return confirmCommand(args[1:], out, errOut)
+	case "scan":
+		return scanCommand(args[1:], out, errOut)
+	case "inspect":
+		return inspectCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -91,7 +95,12 @@ Usage:
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
-  9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding
+  9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding,
+          # scan_url, inspect_page, generate_playwright_repro
+  9l scan <url> [--checks LIST] [--format markdown|json|issue] [--baseline FILE [--fail-on-new]] [--allow-private-network]
+          # one Chromium page load: console, links, accessibility, vitals, SEO, headers, cookies, mixed content, weight
+  9l inspect <url> [--format markdown|json] [--allow-private-network]  # ranked locators and testability
+          # scan and inspect: [--viewport WxH] [--storage-state FILE --acknowledge-private-content]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults

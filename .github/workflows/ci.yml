@@ -106,6 +106,12 @@ jobs:
         run: go test ./cmd/9l -run '^TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured$' -count=1
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke
+      - name: Verify embedded browser checks and run them in real Chromium
+        run: npm run smoke:browser
+      - name: Qualify 9l scan, 9l inspect and the MCP browser tools in real Chromium
+        env:
+          NINELIVES_REQUIRE_BROWSER: '1'
+        run: go test ./cmd/9l -run '^(TestBrowserToolsScanAndInspectALocalPage|TestScanFailsOnNewFindingsSinceItsBaseline|TestInspectLoadsAStorageStateForAnAuthenticatedPage|TestScanNamesTheInstallCommandForAMissingBrowser)$' -count=1
       - name: Validate emitted CLI documents against published schemas
         run: npm run smoke:contracts
       - run: npm run smoke:assessment

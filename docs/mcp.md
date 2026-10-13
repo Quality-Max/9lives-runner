@@ -23,6 +23,9 @@ PATH; use the Go binary's absolute path in the host configuration.
 | `heal_test` | `spec`, optional `apply` (default false), `max_proposals` (1–5, default 1), `run_timeout` | Native healing session: `state`, run results, `savedPath` or `applied`, `diff`, and a `note` for `needs_human` |
 | `assess_test` | `path` (spec or directory), optional `requirements` | The [assessment](test-assessment.md) report under `report`; a suite with unassessed files also carries `error` |
 | `confirm_finding` | `spec`, `unfixed` (Git revision), optional `fixed` (default the working tree), `finding_id`, `finding`, `run_timeout` (seconds, per run) | The [confirmation](confirm.md) report under `report` and its `reportPath`; only `verdict` `confirmed` means the reproduction failed before and passed after |
+| `scan_url` | `url`, optional `checks`, `max_links` (0–250, default 50), `baseline` (a previous result or a path to one), `weight_budget`, `viewport`, `screenshot`, `allow_private_network`, `storage_state_path` with `acknowledge_private_content: true`, `format` (`json`, `markdown`, `issue`), `min_severity`, `timeout` (seconds) | The [scan](cli.md) result: `score`, `findings` with stable `id`s, reproduction steps and fixes, `metrics`, and with a baseline a `delta` of `new`, `fixed` and `unchanged`. `markdown` and `issue` return the rendered text instead of JSON |
+| `inspect_page` | `url`, optional `include_accessibility_tree`, `include_forms`, `viewport`, `allow_private_network`, `storage_state_path` with `acknowledge_private_content: true`, `format` (`json`, `markdown`), `timeout` | Title, headings, forms and `interactive` controls with ranked `recommendedLocator`, `stability` and the page testability verdict; optionally Chromium's accessibility tree |
+| `generate_playwright_repro` | `url`, optional `goal`, `finding` (a `scan_url` finding), `test_name`, `output_path`, `overwrite`, `sdk` | `filePath` (relative), `code` and `assumptions`. Nothing is run |
 
 Each result is the JSON text content of the tool result, with `version: 1`.
 Only `run_test` status `passed` means the spec passed with complete,
@@ -50,11 +53,35 @@ failure or a verified candidate that could not be saved or applied, returns
 `applied` means something was written. Heal calls run one at a time; a heal
 waiting for its turn can be cancelled.
 
+`scan_url` and `inspect_page` are observations of one cold page load, not
+authorization to change a site and not field data. They run in the same Node
+helper as [`9l scan` and `9l inspect`](cli.md), with the project's Playwright
+and Chromium, and share their network policy: private, link-local and
+loopback destinations are refused, through DNS, redirects and subrequests,
+and `allow_private_network: true` permits only a loopback target's origin.
+`storage_state_path` loads a Playwright storage-state file inside the working
+directory into a throwaway browser context; its credentials are not returned,
+but findings and inspected structure may reflect private account data, so
+`acknowledge_private_content: true` is required. A `markdown` or `issue`
+`format` returns the report as text instead of the versioned JSON.
+
+`generate_playwright_repro` writes a deterministic spec for a finding, URL or
+goal and runs nothing. `output_path` is relative to the working directory and
+must name a `.spec` or `.test` file; by default a new file is written below
+`.9lives/repros`, which a Playwright `testDir` usually does not include, so
+pass a path inside it before `run_test`. An existing file is replaced only
+with `overwrite: true`, never through a symbolic link. `sdk: true` imports
+`test` and `expect` from `@9l/playwright`, which `confirm_finding` requires.
+Use `run_test` to execute a generated reproduction; there is no separate tool
+that runs inline code.
+
 ## Boundaries
 
 - Every path must resolve, after symbolic links, inside the directory the
   server started in, because running or healing a spec executes it. Set
-  `NINELIVES_MCP_UNRESTRICTED=1` to lift this.
+  `NINELIVES_MCP_UNRESTRICTED=1` to lift this for the test tools; files read
+  by `scan_url` and `inspect_page` and written by
+  `generate_playwright_repro` stay inside that directory regardless.
 - Test processes receive only the environment variables named with
   `--pass-env` when the server starts. Tools cannot add names.
 - Up to four tool calls run at once; more are refused rather than queued.

@@ -42,7 +42,8 @@ The candidate was saved for review; the original file was not changed.
 - **Execution:** `plan`, `run`, `status`, `result` and `cancel` bound execution and retain attributable terminal receipts.
 - **Healing:** experimental native `9l heal` preserves assertions and verifies supported locator-only candidates in isolation before acceptance.
 - **Fault testing and confirmation:** experimental `prove` injects fetch/XHR faults; `confirm` compares a reproduction on unfixed and fixed Git revisions. Their results have [documented limits](docs/README.md).
-- **Agent integration and SDK:** native `9l mcp` provides execution, assessment, healing and confirmation tools; the optional SDK adds named steps and bounded goals. Goal completion is unverified.
+- **Page checks:** `9l scan` reports console, link, accessibility, Core Web Vitals, SEO, security-header, cookie, mixed-content and page-weight findings from one Chromium page load, with baseline comparison; `9l inspect` ranks a page's locators. Both are observations, not test results.
+- **Agent integration and SDK:** native `9l mcp` provides execution, assessment, healing, confirmation, page scan, page inspection and reproduction tools; the optional SDK adds named steps and bounded goals. Goal completion is unverified.
 - **Cross-platform:** native Linux, macOS and Windows binaries on x64 and ARM64. Windows provider CLI shell integrations remain unqualified.
 
 Built by QualityMax without any external funding. Keep your suite. Inspect the evidence.
@@ -178,7 +179,7 @@ Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
 
 | Tool | Use it for |
 | --- | --- |
-| [qmax-mcp](https://github.com/Quality-Max/qmax-mcp) | Browser scanning, page inspection and focused Playwright reproductions |
+| [qmax-mcp](https://github.com/Quality-Max/qmax-mcp) | The earlier standalone npm server for scans and inspection; its checks now ship in `9l scan`, `9l inspect` and `9l mcp`, and its hosted-account proxy is not included |
 | [9lives Python](https://github.com/Quality-Max/9lives) | Python-only healing options, Cypress/Selenium adapters and watch/report commands |
 
 These are separate distributions. Installing this runner or SDK does not

@@ -134,7 +134,7 @@ func TestMCPProtocolFraming(t *testing.T) {
 	for _, tool := range h.next(t)["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "run_test,heal_test,assess_test,confirm_finding" {
+	if strings.Join(names, ",") != "run_test,heal_test,assess_test,confirm_finding,scan_url,inspect_page,generate_playwright_repro" {
 		t.Fatalf("tools %v", names)
 	}
 	for line, code := range map[string]float64{

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
+	"github.com/Quality-Max/9lives-runner/internal/browsercheck"
 	"github.com/Quality-Max/9lives-runner/internal/confirm"
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
@@ -45,7 +46,12 @@ const mcpInstructions = "9lives Go runner. run_test executes one Playwright spec
 	"real bug that healing will not mask. assess_test statically reviews a spec or directory for weak or missing assertions " +
 	"and analysis limits without running it. confirm_finding runs a reproduction spec on the revision a finding was reported " +
 	"against and on the fixing revision (default: the working tree); only verdict confirmed means its assertions failed before " +
-	"and passed after, and even that does not show the spec tests the finding. Paths must be inside the server's working directory."
+	"and passed after, and even that does not show the spec tests the finding. scan_url loads a page once in Chromium and reports " +
+	"console, link, accessibility, Core Web Vitals, SEO, security-header, cookie, mixed-content and page-weight findings; " +
+	"inspect_page returns the page's structure and ranked role/name locators. Both are observations, not authorization to change " +
+	"a site; loopback targets need allow_private_network. generate_playwright_repro writes a deterministic spec for a finding, URL " +
+	"or goal and runs nothing; run it with run_test, or generate it with sdk true and use confirm_finding. Paths must be inside " +
+	"the server's working directory."
 
 // mcpTools are advertised by tools/list.
 var mcpTools = []map[string]any{
@@ -111,7 +117,114 @@ var mcpTools = []map[string]any{
 			"additionalProperties": false,
 		},
 	},
+	{
+		"name":        "scan_url",
+		"title":       "Scan a URL",
+		"description": "Load a URL once in Chromium and report console errors, failed requests, broken links, accessibility, Core Web Vitals (INP is not measured), SEO, security headers, cookies and trackers, mixed content and page weight, with a 0-100 score, graded findings, reproduction steps and suggested fixes. Makes outbound requests. baseline (a previous JSON result or a path to one) adds a delta of new, fixed and unchanged findings. format markdown returns a graded report; issue returns one tracker-ready block per finding. storage_state_path loads a Playwright storage-state file for an authenticated page and requires acknowledge_private_content true; its credentials are never returned. screenshot writes a temporary file.",
+		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": mergeProperties(pageProperties, map[string]any{
+				"checks":     map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "enum": browsercheck.Checks}, "description": "Checks to run (default: all)"},
+				"baseline":   map[string]any{"type": []string{"string", "object"}, "description": "A previous scan result, or a path to one saved as JSON"},
+				"max_links":  map[string]any{"type": "integer", "minimum": 0, "maximum": 250, "description": "Maximum links to check (default 50)"},
+				"screenshot": map[string]any{"type": "boolean", "description": "Capture a screenshot to a temporary file"},
+				"weight_budget": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"total_bytes":     map[string]any{"type": "integer", "minimum": 1},
+						"request_count":   map[string]any{"type": "integer", "minimum": 1},
+						"render_blocking": map[string]any{"type": "integer", "minimum": 0},
+						"image_bytes":     map[string]any{"type": "integer", "minimum": 1},
+						"script_bytes":    map[string]any{"type": "integer", "minimum": 1},
+					},
+					"additionalProperties": false,
+					"description":          "Page-weight budget to scan against",
+				},
+				"format":       map[string]any{"type": "string", "enum": []string{"json", "markdown", "issue"}, "default": "json"},
+				"min_severity": map[string]any{"type": "string", "enum": severities, "description": "With format issue, only findings at or above this severity"},
+			}),
+			"required":             []string{"url"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		"name":        "inspect_page",
+		"title":       "Inspect a page",
+		"description": "Load a URL in Chromium and return its title, headings, forms and interactive controls with ranked role/name, label and test-id locators, each control's locator stability, a page testability verdict and, on request, Chromium's accessibility tree. Makes outbound requests; does not intentionally change the page. storage_state_path loads a Playwright storage-state file for an authenticated page and requires acknowledge_private_content true; its credentials are never returned.",
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": mergeProperties(pageProperties, map[string]any{
+				"include_accessibility_tree": map[string]any{"type": "boolean", "description": "Include Chromium's accessibility tree"},
+				"include_forms":              map[string]any{"type": "boolean", "description": "Include form structure"},
+				"format":                     map[string]any{"type": "string", "enum": []string{"json", "markdown"}, "default": "json"},
+			}),
+			"required":             []string{"url"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		"name":        "generate_playwright_repro",
+		"title":       "Generate a Playwright reproduction",
+		"description": "Write a minimal Playwright spec for a scan finding, URL or plain-language goal from deterministic templates. Makes no network request and runs nothing. output_path is relative to the server's working directory and must name a .spec or .test file (default: a new file below .9lives/repros); an existing file is replaced only with overwrite true. sdk true imports from @9l/playwright, as confirm_finding requires. Review the selectors and assertions before relying on it.",
+		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false},
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"url":         map[string]any{"type": "string", "format": "uri", "description": "Page the reproduction opens"},
+				"goal":        map[string]any{"type": "string", "description": "What the reproduction should show"},
+				"finding":     map[string]any{"type": "object", "description": "A finding from scan_url"},
+				"test_name":   map[string]any{"type": "string", "description": "Test title"},
+				"output_path": map[string]any{"type": "string", "description": "Spec path relative to the working directory"},
+				"overwrite":   map[string]any{"type": "boolean", "default": false},
+				"sdk":         map[string]any{"type": "boolean", "default": false, "description": "Import test and expect from @9l/playwright"},
+			},
+			"required":             []string{"url"},
+			"additionalProperties": false,
+		},
+	},
 }
+
+// pageProperties are the scan_url and inspect_page arguments that choose and load the page.
+var pageProperties = map[string]any{
+	"url":                         map[string]any{"type": "string", "format": "uri", "description": "http or https URL"},
+	"allow_private_network":       map[string]any{"type": "boolean", "description": "Permit a loopback target such as a locally started app; other private addresses stay blocked"},
+	"storage_state_path":          map[string]any{"type": "string", "description": "Playwright storage-state file inside the working directory, for an authenticated page"},
+	"acknowledge_private_content": map[string]any{"type": "boolean", "const": true, "description": "Required with storage_state_path: the result may contain private page content"},
+	"viewport": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"width":  map[string]any{"type": "integer", "minimum": 320, "maximum": 3840},
+			"height": map[string]any{"type": "integer", "minimum": 320, "maximum": 2400},
+		},
+		"required":             []string{"width", "height"},
+		"additionalProperties": false,
+	},
+	"timeout": map[string]any{"type": "integer", "minimum": 1, "description": "Max seconds for the check (default 300, or NINELIVES_RUN_TIMEOUT)"},
+}
+
+func mergeProperties(sets ...map[string]any) map[string]any {
+	merged := map[string]any{}
+	for _, set := range sets {
+		for name, schema := range set {
+			merged[name] = schema
+		}
+	}
+	return merged
+}
+
+// mcpToolNames are the tools tools/call accepts.
+var mcpToolNames = func() map[string]bool {
+	names := map[string]bool{}
+	for _, tool := range mcpTools {
+		names[tool["name"].(string)] = true
+	}
+	return names
+}()
+
+// textResult is a tool result returned as its text rather than as JSON.
+type textResult string
 
 type mcpMessage struct {
 	ID     json.RawMessage `json:"id,omitempty"`
@@ -336,7 +449,7 @@ func (s *mcpServer) call(ctx context.Context, message mcpMessage) {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	if json.Unmarshal(message.Params, &params) != nil || (params.Name != "run_test" && params.Name != "heal_test" && params.Name != "assess_test" && params.Name != "confirm_finding") {
+	if json.Unmarshal(message.Params, &params) != nil || !mcpToolNames[params.Name] {
 		s.send(map[string]any{"jsonrpc": "2.0", "id": message.ID, "error": map[string]any{"code": -32602, "message": "Unknown tool"}})
 		return
 	}
@@ -376,6 +489,10 @@ func (s *mcpServer) call(ctx context.Context, message mcpMessage) {
 				text = tool.message
 			}
 			s.toolResult(message.ID, map[string]any{"version": MCPToolResultVersion, "error": text}, true)
+			return
+		}
+		if text, ok := payload.(textResult); ok {
+			s.result(message.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": string(text)}}, "isError": false})
 			return
 		}
 		s.toolResult(message.ID, payload, false)
@@ -479,6 +596,8 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 			spec: spec, unfixed: args.Unfixed, fixed: args.Fixed, finding: args.Finding, findingID: args.FindingID,
 			workers: 1, timeout: timeout, maxOutputBytes: 4 << 20, passEnv: s.passEnv, receiptDir: s.receiptDir,
 		})
+	case "scan_url", "inspect_page", "generate_playwright_repro":
+		return s.browserTool(ctx, name, raw)
 	default:
 		var args struct {
 			Path         string `json:"path"`
