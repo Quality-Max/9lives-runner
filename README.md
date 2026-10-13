@@ -18,6 +18,19 @@ QA agent that drives broader repository workflows.
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
+## Try the interactive demo
+
+[Open the demo on 9lives.run](https://9lives.run/demo.html) — no install or
+account needed. Five tabs show a broken locator, a missing check, the agent
+workflow, a real Codex run, and a verified application fix. Inspect the
+scrollable console, compare before/after receipts, and explore caught faults.
+
+The page presents recorded results; clicking through does not run tests or
+call a model. Includes QualityMax light and dark themes. The
+[single HTML file](docs/explainer/demo.html) also works offline.
+To execute the eight-experiment walkthrough yourself, see the
+[release lab](demo/release-lab/README.md).
+
 ## Watch it repair a Demo Bank test
 
 A deliberately stale button name breaks a Playwright test against the public

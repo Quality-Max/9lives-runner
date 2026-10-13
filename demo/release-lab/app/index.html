@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Studio supply — 9l release lab</title>
+  <meta name="description" content="A local, synthetic checkout for the 9lives experimental feature demo.">
+  <style>
+    :root{color-scheme:light;--ink:#20201e;--paper:#f4f2ec;--line:#d9d7ce;--accent:#b8432d}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header,main,footer{max-width:1120px;margin:auto;padding:24px 36px}header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.brand{font-size:24px;font-weight:800;letter-spacing:-1px}.brand span{color:var(--accent)}.tag,.eyebrow{font:11px/1.5 ui-monospace,monospace;letter-spacing:1.5px;text-transform:uppercase}.tag{border:1px solid var(--line);padding:7px 10px;border-radius:4px}.intro{padding:24px 0 28px}h1{font-size:clamp(34px,5vw,56px);letter-spacing:-2.5px;line-height:1.08;margin:12px 0}h2{font-size:21px;letter-spacing:-.5px;margin:0 0 18px}.muted{color:#696960}.layout{display:grid;grid-template-columns:1.4fr 1fr;gap:28px}.card{background:#fffef9;border:1px solid var(--line);border-radius:12px;padding:25px}.items{list-style:none;padding:0;margin:0}.items li{display:flex;align-items:center;gap:20px;padding:18px 0;border-bottom:1px solid var(--line)}.items li:first-child{padding-top:0}.items li:last-child{border-bottom:0;padding-bottom:0}.item-info{flex:1}.price{font-size:17px;font-weight:600}.art{width:94px;height:100px;border-radius:7px;background:#e6e6da;display:grid;place-items:center;flex-shrink:0}.notebook{height:65px;width:45px;border-radius:2px 5px 5px 2px;background:#b8432d;box-shadow:inset 5px 0 #923323,3px 4px #cccaba;transform:rotate(-9deg);position:relative}.notebook:after{content:'FIELD\A NOTES';white-space:pre;position:absolute;top:15px;left:11px;font:6px/1.6 monospace;letter-spacing:1px;color:#fff}.mug{width:49px;height:49px;background:#ebcc72;border-radius:3px 3px 17px 17px;box-shadow:inset 0 4px #b6a064;position:relative;transform:rotate(7deg)}.mug:after{content:'';position:absolute;right:-17px;top:7px;width:20px;height:28px;border:7px solid #ebcc72;border-radius:0 12px 12px 0}.recommend{margin-top:20px;border:1px dashed #aaa99f;border-radius:8px;padding:16px;display:flex;justify-content:space-between;gap:15px}.recommend span{font-size:12px;color:#696960}.total{display:flex;justify-content:space-between;margin:24px 0;font-size:20px;font-weight:650}label{display:block;font-size:12px;font-weight:650;margin:14px 0 6px}input{width:100%;border:1px solid #b7b8af;border-radius:5px;background:#fff;padding:12px;font:inherit;color:var(--ink)}button{cursor:pointer;width:100%;border-radius:5px;padding:13px 18px;border:1px solid var(--ink);background:var(--ink);color:#fff;font:600 14px/1.4 inherit;margin-top:14px}button.secondary{background:transparent;color:var(--ink)}button:hover{filter:brightness(1.2)}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #b8432d;outline-offset:3px}[role=status]{font-size:13px;min-height:20px;margin:12px 0 0}.order-state{border-top:1px solid var(--line);padding-top:14px;color:#285642}.note{font-size:12px;color:#696960}footer{display:flex;justify-content:space-between;gap:20px;font-size:12px;color:#696960}a{color:inherit}#promo{padding:8px;font-size:12px}.footnote{margin-top:24px;padding:14px 18px;background:#e9e7df;border-radius:6px;font-size:12px}@media(max-width:700px){header,main,footer{padding:20px}.layout{grid-template-columns:1fr}.tag{font-size:9px}.intro{padding-top:10px}footer{flex-wrap:wrap}}
+  </style>
+</head>
+<body>
+  <header><div class="brand">9l<span> / </span>studio supply</div><span class="tag">Release lab · synthetic store</span></header>
+  <main>
+    <div class="intro"><div class="eyebrow">Small objects. Real assertions.</div><h1>A good day starts<br>with the essentials.</h1><p class="muted">Two items. One checkout. A few ways a green test can fool you.</p></div>
+    <div class="layout">
+      <section><div class="card"><h2>Your everyday kit</h2><ul class="items" aria-label="Cart"></ul><div class="total"><span>Subtotal</span><span>€42.00</span></div><p class="note">Delivery is imaginary. The browser checks are real.</p></div>
+        <aside class="recommend" aria-label="Recommended"><span>Pairs well with your kit</span><strong id="recommendation">Loading…</strong></aside>
+        <div class="footnote">Demo contract: show both cart items, confirm the correct count, and display the recommended pencil set.</div>
+      </section>
+      <section class="card"><h2>Make it yours</h2>
+        <form aria-label="Customer details"><label for="customer">Your name</label><input id="customer" autocomplete="off" placeholder="Ada" required><button class="secondary" type="submit">Continue to review</button><p role="status" aria-label="Profile">Your details stay in this browser.</p></form>
+        <div style="margin-top:20px"><!-- QUALITY --></div>
+        <button id="order" type="button">Place order</button><p role="status" aria-label="Order" class="order-state">Your kit is ready.</p><p class="note">Local demo · no payment · no account</p>
+      </section>
+    </div>
+  </main>
+  <footer><span>9lives experimental walkthrough / 01</span><a href="/help">Shipping & support</a><span>Runs entirely on localhost ↗</span></footer>
+  <script>
+    const orderStatus = document.querySelector('[aria-label="Order"]');
+    async function read(url, options) { const response = await fetch(url, options); if (!response.ok) throw new Error('Demo request failed'); return response.json(); }
+    read('/api/cart').then(items => {
+      for (const [index, item] of items.entries()) {
+        const li = document.createElement('li');
+        li.innerHTML = '<div class="art" aria-hidden="true"><div class="' + (index ? 'mug' : 'notebook') + '"></div></div><div class="item-info"><strong></strong><div class="muted">One for your desk · Qty 1</div></div><span class="price"></span>';
+        li.querySelector('strong').textContent = item.name;
+        li.querySelector('.price').textContent = '€' + item.price.toFixed(2);
+        document.querySelector('.items').append(li);
+      }
+    }).catch(() => { orderStatus.textContent = 'Cart unavailable'; });
+    read('/api/recommendations').then(items => { document.querySelector('#recommendation').textContent = items.map(item => item.name).join(', '); }).catch(() => { document.querySelector('#recommendation').textContent = 'Suggestions unavailable'; });
+    document.querySelector('form').onsubmit = event => {
+      event.preventDefault();
+      document.querySelector('[aria-label="Profile"]').textContent = (/* PROFILE_BUG */ false) ? 'Profile unavailable' : 'Ready for ' + document.querySelector('#customer').value;
+    };
+    document.querySelector('#order').onclick = async () => {
+      try { const order = await read('/api/orders', {method: 'POST'}); orderStatus.textContent = 'Order confirmed: ' + order.count + ' items'; }
+      catch { orderStatus.textContent = 'Order failed'; }
+    };
+  </script>
+</body>
+</html>

@@ -105,6 +105,7 @@ jobs:
       - name: Assessment CLI provenance diagnostic
         run: go test ./cmd/9l -run '^TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured$' -count=1
       - run: npm exec playwright install --with-deps chromium
+      - run: npm run smoke:demo
       - run: npm run smoke
       - name: Verify embedded browser checks and run them in real Chromium
         run: npm run smoke:browser
