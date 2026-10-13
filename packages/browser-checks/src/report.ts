@@ -388,7 +388,11 @@ function controlLabel(control: InspectResult['interactive'][number]): string {
   const label = handle ? `${kind} ${handle}` : kind;
   // Only a role that needs a name is missing one: an unnamed list, group or
   // test-id wrapper is not a defect, and saying so would read as one.
-  return control.role && ROLES_REQUIRING_A_NAME.has(control.role) ? `${label} (no accessible name)` : label;
+  return control.type?.toLowerCase() !== 'hidden' &&
+    control.role &&
+    ROLES_REQUIRING_A_NAME.has(control.role)
+    ? `${label} (no accessible name)`
+    : label;
 }
 
 /**

@@ -203,3 +203,13 @@ test('accessible names follow the browser for selects, input buttons and structu
   assert.equal(list.role, 'list');
   assert.equal(list.locatorNote, undefined, 'an unnamed list is not flagged');
 });
+
+test('an unnamed progressbar is identified as requiring an accessible name', async () => {
+  const result = await inspectFixture('<div role="progressbar" data-testid="upload"></div>');
+  const progressbar = control(result, (item) => item.role === 'progressbar');
+  const treeNode = result.accessibilityTree.find((item) => item.role === 'progressbar');
+
+  assert.equal(progressbar.accessibleName, '');
+  assert.match(progressbar.locatorNote, /no accessible name/);
+  assert.equal(treeNode.unnamed, true);
+});

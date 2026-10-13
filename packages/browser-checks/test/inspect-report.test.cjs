@@ -221,3 +221,54 @@ test('the inaccessible-handle caveat needs a stable handle on a role that requir
   assert.equal(inaccessibleHandleNote({ ...base, role: 'list', tag: 'div' }), undefined);
   assert.equal(inaccessibleHandleNote({ ...base, type: 'hidden' }), undefined);
 });
+
+test('required-name roles include progressbar', () => {
+  const { flattenAccessibilityTree } = require('../dist/inspect-page.js');
+  const report = renderInspectReport(
+    inspectResult({
+      interactive: [{ tag: 'div', role: 'progressbar', stability: 'stable', selector: '[data-testid="upload"]' }],
+      testability: { controls: 1, stable: 1, acceptable: 0, fragile: 0, none: 0, score: 100 },
+    })
+  );
+  const tree = flattenAccessibilityTree([
+    { nodeId: 'progress', role: { value: 'progressbar' }, name: { value: '' }, backendDOMNodeId: 1 },
+  ]);
+
+  assert.match(report, /\| progressbar .* \(no accessible name\) \|/);
+  assert.equal(tree.find((node) => node.role === 'progressbar').unnamed, true);
+});
+
+test('unmatched browser names keep the DOM estimate and warn about it', () => {
+  const { mergeBrowserAccessibleNames } = require('../dist/inspect-page.js');
+  const items = [
+    { tag: 'button', accessibleName: 'DOM button estimate' },
+    { tag: 'button', accessibleName: 'DOM missing estimate' },
+    { tag: 'div', accessibleName: 'DOM mismatched estimate' },
+  ];
+  const mapped = mergeBrowserAccessibleNames(items, [
+    { tag: 'button', name: 'Browser button name' },
+    undefined,
+    { tag: 'span', name: 'Wrong element name' },
+  ]);
+
+  assert.deepEqual(
+    mapped.interactive.map((item) => item.accessibleName),
+    ['Browser button name', 'DOM missing estimate', 'DOM mismatched estimate']
+  );
+  assert.match(mapped.warning, /could not be matched to every interactive element/);
+  assert.match(mapped.warning, /estimated from the DOM/);
+});
+
+test('the Markdown report does not mark hidden inputs as missing an accessible name', () => {
+  const report = renderInspectReport(
+    inspectResult({
+      interactive: [
+        { tag: 'input', type: 'hidden', role: 'textbox', stability: 'stable', selector: '#csrf' },
+      ],
+      testability: { controls: 1, stable: 1, acceptable: 0, fragile: 0, none: 0, score: 100 },
+    })
+  );
+
+  assert.match(report, /\| textbox `#csrf` \|/);
+  assert.doesNotMatch(report, /textbox `#csrf` \(no accessible name\)/);
+});

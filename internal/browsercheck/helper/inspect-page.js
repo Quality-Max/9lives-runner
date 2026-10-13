@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.emptySnapshotWarnings = emptySnapshotWarnings;
 exports.summarizeTestability = summarizeTestability;
 exports.flattenAccessibilityTree = flattenAccessibilityTree;
+exports.mergeBrowserAccessibleNames = mergeBrowserAccessibleNames;
 exports.inaccessibleHandleNote = inaccessibleHandleNote;
 exports.inspectPage = inspectPage;
 const common_1 = require("./common");
@@ -253,6 +254,23 @@ async function readBrowserAccessibility(page) {
     finally {
         await session.detach().catch(() => undefined);
     }
+}
+function mergeBrowserAccessibleNames(interactive, browserNames) {
+    let usedDomEstimate = false;
+    const merged = interactive.map((item, index) => {
+        const computed = browserNames?.[index];
+        if (!computed || computed.tag !== item.tag) {
+            usedDomEstimate = true;
+            return item;
+        }
+        return { ...item, accessibleName: computed.name };
+    });
+    return {
+        interactive: merged,
+        warning: usedDomEstimate
+            ? "The browser's accessibility tree could not be matched to every interactive element, so accessible names are estimated from the DOM."
+            : undefined,
+    };
 }
 /**
  * The caveat for a durable handle on a control that has no accessible name.
@@ -590,14 +608,12 @@ async function inspectPage(args) {
         catch (error) {
             accessibilityWarning = `The browser's accessibility tree could not be read, so accessible names are estimated from the DOM: ${error instanceof Error ? error.message : String(error)}`;
         }
-        const interactive = snapshot.interactive.map((item, index) => {
-            // Trust the browser's name only when the CDP match is the same element.
-            const computed = browserAccessibility?.interactiveNames[index];
-            const accessibleName = computed && computed.tag === item.tag ? computed.name : item.accessibleName;
+        const mappedInteractive = mergeBrowserAccessibleNames(snapshot.interactive, browserAccessibility?.interactiveNames);
+        accessibilityWarning ??= mappedInteractive.warning;
+        const interactive = mappedInteractive.interactive.map((item) => {
             return {
                 ...item,
-                accessibleName,
-                locatorNote: item.locatorNote ?? inaccessibleHandleNote({ ...item, accessibleName }),
+                locatorNote: item.locatorNote ?? inaccessibleHandleNote(item),
                 href: item.href ? (0, network_policy_1.safeUrlForDisplay)(item.href) : undefined,
             };
         });
