@@ -19,7 +19,25 @@ Use the existing free QA skills when installed, reading only those relevant:
 
 These skills are optional agent instructions, not executable runner plugins.
 If unavailable, review the same evidence directly and disclose the missing
-specialist check. Website, accessibility, performance and security skills apply
+specialist check.
+
+For a hygiene pass on a new or generated spec before it is committed, the
+QualityMax grader adds checks assessment does not make: `page.pause()`,
+`debugger`, XPath and `nth-child` selectors, `getByRole` without a name and
+leftover markdown fences. Run a pinned version when the user allows npm
+downloads; it reads source only and makes no model or network calls itself:
+
+```sh
+npx --yes qualitymax-grader@0.2.0 path/to/checkout.spec.ts --format json --min-grade F
+```
+
+`--min-grade F` keeps the exit code zero so the result stays advisory. Report
+its letter grade and score separately and label them as the grader's. They come
+from text patterns: a grade measures hygiene, not whether the test protects a
+requirement or passed. Never present it as a 9lives result, merge it into
+assessment dimensions or let it outweigh an assessment concern. Treat each
+grader issue as a suspected finding until you have checked it in the source;
+for example, `getByRole('status')` is usually unique even without a name. Website, accessibility, performance and security skills apply
 only when the requested scope includes those concerns; do not run every scan.
 Skill advice does not establish assertion coverage or satisfy a required gate.
 

@@ -233,6 +233,7 @@ Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
 | --- | --- |
 | [qmax-mcp](https://github.com/Quality-Max/qmax-mcp) | The earlier standalone npm server for scans and inspection; its checks now ship in `9l scan`, `9l inspect` and `9l mcp`, and its hosted-account proxy is not included |
 | [9lives Python](https://github.com/Quality-Max/9lives) | Python-only healing options, Cypress/Selenium adapters and watch/report commands |
+| [qualitymax-grader](https://github.com/Quality-Max/qualitymax-grader) | An offline A–F hygiene grade for a spec before it is committed, run by the QA skill alongside `9l assess`; the grade is not a 9lives result or coverage evidence |
 
 These are separate distributions. Installing this runner or SDK does not
 install or configure them. The Python package also provides a `9l` command;
