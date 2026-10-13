@@ -297,15 +297,18 @@ function codeSpan(value) {
  */
 function controlLabel(control) {
     const kind = control.role || (control.type ? `${control.tag}[${control.type}]` : control.tag);
-    if (control.nameSource === 'name-attribute' && control.name) {
-        return `${kind} [name=${control.name}] (no accessible name)`;
-    }
-    if (control.name)
-        return `${kind} “${control.name}”`;
-    const label = control.selector ? `${kind} ${codeSpan(control.selector)}` : kind;
-    // A role that differs from the tag is a widget role (`checkbox` for an
-    // <input>); a wrapper carrying only a test id keeps its tag and needs no name.
-    return control.role && control.role !== control.tag ? `${label} (no accessible name)` : label;
+    const accessibleName = control.accessibleName ?? (control.nameSource === 'name-attribute' ? '' : (control.name ?? ''));
+    if (accessibleName)
+        return `${kind} “${accessibleName}”`;
+    const handle = control.nameSource === 'name-attribute' && control.name
+        ? `[name=${control.name}]`
+        : control.selector
+            ? codeSpan(control.selector)
+            : '';
+    const label = handle ? `${kind} ${handle}` : kind;
+    // Only a role that needs a name is missing one: an unnamed list, group or
+    // test-id wrapper is not a defect, and saying so would read as one.
+    return control.role && common_1.ROLES_REQUIRING_A_NAME.has(control.role) ? `${label} (no accessible name)` : label;
 }
 /**
  * Render an `inspect_page` result as a shareable Markdown report.

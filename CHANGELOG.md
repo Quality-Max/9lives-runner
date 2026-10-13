@@ -4,6 +4,22 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### CLI
+
+- `inspect` takes each control's `accessibleName` from Chromium's
+  accessibility tree, the name its tree node carries, instead of estimating
+  it from the DOM; the estimate remains only as a fallback, with a warning,
+  when the tree cannot be read. A `<select>`'s option text is no longer
+  taken as its name, so an unlabelled select found by an id gets the "easy
+  to locate, not accessible" caveat, and an `<input type="submit">` is
+  named by its value. Locator names follow the same rules: input buttons
+  are named by their value and image inputs by their alt text, and content
+  names a control only for roles that take their name from content.
+- The Markdown report adds `(no accessible name)` only for roles that need
+  a name; an unnamed `list` or `group` is no longer flagged.
+
 ## 0.4.0 — 2026-10-13
 
 ### SDK
