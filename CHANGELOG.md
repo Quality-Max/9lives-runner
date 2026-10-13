@@ -6,6 +6,21 @@ SDK versions.
 
 ## Unreleased
 
+### Assess
+
+Policy `assessment-source-v11`; the analyzer helper version is 8 and report
+version 3 is unchanged.
+
+- `debugging-leftover` reports `page.pause()` on a browser fixture and
+  `debugger` statements (codes `page-pause`, `debugger-statement`).
+- `fragile-selector` reports XPath selectors, positional CSS such as
+  `:nth-child`, and `first()`, `last()`, `nth(<literal>)`, `nth=` and
+  `:nth-match()` (codes `xpath`, `positional-css`, `position`). Values typed
+  into locators and key presses are not read as selectors.
+- `unnamed-role` reports `getByRole` without a `name`, as informational.
+- These findings have their own budget of 512 per file, so they never cut
+  assertion analysis short; a report that reaches it says so in its limits.
+
 ### Skill
 
 - The `9lives-qa` skill can run the pinned QualityMax grader

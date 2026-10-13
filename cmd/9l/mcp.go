@@ -88,7 +88,7 @@ var mcpTools = []map[string]any{
 	{
 		"name":        "assess_test",
 		"title":       "Assess a spec's assertions",
-		"description": "Statically review a spec file, or every spec in a directory, for missing, unawaited or weak assertions, fixed waits, disabled tests and analysis limits. Advisory; nothing is executed.",
+		"description": "Statically review a spec file, or every spec in a directory, for missing, unawaited or weak assertions, fixed waits, disabled tests, debugging leftovers, fragile selectors and analysis limits. Advisory; nothing is executed.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -160,7 +160,7 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("tests/a.spec.ts", "test('a', async ({page}) => { await page.waitForTimeout(1); await expect(page.getByRole('alert')).toBeHidden(); });\n")
+	write("tests/a.spec.ts", "test('a', async ({page}) => { await page.waitForTimeout(1); await expect(page.getByRole('alert', {name: 'Error'})).toBeHidden(); });\n")
 	write("tests/nested/b.test.ts", "test('b', () => { expect(1).toBe(1); });\n")
 	t.Chdir(root)
 

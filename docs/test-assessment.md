@@ -22,7 +22,8 @@ go build -o .context/9l ./cmd/9l
 
 `--requirements` is optional. Without it, the code-level checks still run
 (fixed waits, exclusive, disabled and conditionally skipped tests, missing and
-unawaited assertions, analysis limits). Requirement references are not
+unawaited assertions, debugging leftovers, fragile selectors, unnamed roles,
+analysis limits). Requirement references are not
 checked, `purpose` and `intentAlignment` stay unknown, `requirementsSHA256` is
 omitted and the report lists the missing contract as a limit. An empty
 `--requirements` value is a usage error rather than a silent skip. The text
@@ -267,9 +268,39 @@ cases. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
+Debugging leftovers and locators tied to page structure or element order are
+engineering-quality findings, reported once per test at their location, with
+`site` when they are in a helper the test calls. They are found wherever test
+bodies and resolved helpers are scanned, including nested functions, and add no
+`nested-function` limit; hooks, unresolved helpers and page functions are not
+scanned. `debugging-leftover` (demonstrated) has the codes `page-pause`, for a
+`pause()` call on a browser fixture chain, and `debugger-statement`.
+`fragile-selector` (suspected) has the codes `xpath`, `positional-css` and
+`position`. It checks literal selectors passed to `locator`, `frameLocator`,
+`$`, `$$`, `$eval`, `$$eval`, `waitForSelector` and the page actions that take
+a selector first. `fill`, `type`, `press`, `selectOption`, `setInputFiles`,
+`getAttribute`, `dispatchEvent` and `dragAndDrop` are checked only in their page
+form with a second argument that is not an options object, so a value typed
+into a locator, such as `fill('//example.com')`, is not a selector. A part of a
+`>>` chain is XPath when it starts with `xpath=`, `//` or `..`, optionally after
+opening parentheses. CSS order pseudo-classes such as `:nth-child`,
+`:first-child` and `:last-of-type` are `positional-css`; `nth=`,
+`:nth-match()`, `first()`, `last()` and `nth()` with a literal index are
+`position`. Template selectors with substitutions are not checked.
+`unnamed-role` (informational, raising no concern) marks `getByRole` without a
+`name` option, unless its options are not a literal object or contain a spread
+or computed key; a role that is unique by design, such as one status region,
+needs no name. These findings have their own budget of 512 per file, separate
+from assertion and wait facts. Beyond it, the rest are dropped and the report
+lists a limit. A markdown fence outside a string or comment is a `syntax`
+failure, not a finding.
+
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v10` excludes
+inputs invalidate prior assessments. Policy `assessment-source-v11` adds the
+`debugging-leftover`, `fragile-selector` and `unnamed-role` rules and the
+`hazardsTruncated` limit; the helper version is 8 and report version 3 is
+unchanged. Policy `assessment-source-v10` excludes
 pre-execution conditional skips from outcome coverage lenders while retaining
 after-hook tests whose bodies ran. Policy `assessment-source-v9` counts
 outcome mapping only from enabled tests that reference the requirement and
@@ -285,7 +316,8 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `code`: the limit reason for `analysis-limit` findings, the case for
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
-`conditional-skip`, `environment-skip` and `absence-after-wait` rules, the `unknown-matcher` limit
+`conditional-skip`, `environment-skip`, `absence-after-wait`,
+`debugging-leftover`, `fragile-selector` and `unnamed-role` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256`, an optional test `title` and an optional
 finding `site` before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
@@ -403,10 +435,10 @@ The skill can also run the
 [QualityMax grader](https://github.com/Quality-Max/qualitymax-grader)
 (`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) as a
 hygiene pass before a spec is committed. It grades source A–F from text
-patterns and checks some things `9l assess` does not: `page.pause()`,
-`debugger`, XPath and `nth-child` selectors, `getByRole` without a name and
-markdown fences left in generated code. Its grade stays separate from this
-report. It is not a dimension, a gate or evidence of coverage: it gave
+patterns. Assessment now reports its pause, debugger, XPath, positional selector
+and unnamed role checks itself; the grader adds style checks such as
+`test.step()` use, file length and a minimum assertion count. Its grade stays
+separate from this report. It is not a dimension, a gate or evidence of coverage: it gave
 `testdata/assessment/tests/checkout.spec.ts` a B (89/100), while assessment with
 the fixture's requirements reports a test that maps none of its requirement's
 outcomes. 9lives does not bundle or install the grader; `npx` downloads it from
