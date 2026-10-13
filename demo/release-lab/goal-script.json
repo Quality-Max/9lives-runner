@@ -1,0 +1,1 @@
+{"version":"9l.goal/1","steps":[{"action":"fill","label":"Your name","parameter":"name"},{"action":"click","label":"Continue to review"},{"action":"complete"}]}

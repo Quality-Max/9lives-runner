@@ -186,3 +186,10 @@ footer .legal-note { grid-column: 1 / -1; }
 @media (max-width: 1080px) { #page-checks .step-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { #page-checks .step-grid { grid-template-columns: 1fr; } }
 
+
+/* Open the standalone, offline-capable demo before installing the runner. */
+.demo-cta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 24px 0; }
+.demo-cta a { background: #6366f1; color: #fff; padding: 13px 20px; border-radius: 8px; font-weight: 600; text-decoration: none; }
+.demo-cta a:hover { background: #4f46e5; }
+.demo-cta a:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 4px; }
+.demo-cta > span { color: var(--text-secondary, #a1a1aa); font-size: 13px; }

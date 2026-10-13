@@ -146,6 +146,8 @@ export default function Home() {
           Run locally with the Go runner, keep your assertions, and inspect the result.
         </p>
 
+        <p className="demo-cta"><a href="/demo.html">Try the interactive demo <span aria-hidden="true">→</span></a><span>No install needed · real Codex logs · verified fixes</span></p>
+
         <div className="command-stack" aria-label="Quick start commands">
           <div className="command-card primary-command">
             <span className="command-label">Install on macOS or Linux</span>

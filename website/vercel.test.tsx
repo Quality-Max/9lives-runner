@@ -25,6 +25,8 @@ it('allows the rendered demo through the deployed frame policy without allowing 
     ?? directives.get('default-src');
   expect(allowedFrames).toEqual([demoOrigin]);
   expect(demoOrigin).toBe('https://app.supademo.com');
+  // The standalone demo embeds the official fonts so it also works offline.
+  expect(directives.get('font-src')).toEqual(["'self'", 'data:']);
   expect(directives.get('default-src')).toEqual(["'self'"]);
   expect(directives.get('frame-ancestors')).toEqual(["'none'"]);
 });

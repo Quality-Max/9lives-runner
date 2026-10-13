@@ -77,3 +77,9 @@ describe('Page checks', () => {
     expect(screen.queryAllByRole('link').some((link) => link.getAttribute('href')?.startsWith('https://qmax.run'))).toBe(false);
   });
 });
+
+it('offers the standalone demo before installation', () => {
+  render(<Home />);
+  expect(screen.getByRole('link', { name: /try the interactive demo/i }).getAttribute('href'))
+    .toBe('/demo.html');
+});

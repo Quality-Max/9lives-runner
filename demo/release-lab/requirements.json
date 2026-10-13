@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "requirements": [{
+    "id": "studio-checkout",
+    "reference": "demo/release-lab/README.md — synthetic demo contract (agent-authored proposal, not a production requirement)",
+    "revision": "1",
+    "expectedOutcomes": [
+      {"id": "cart-items", "description": "The cart displays exactly two items."},
+      {"id": "order-count", "description": "Placing the order confirms two items."},
+      {"id": "recommendation", "description": "The pencil set recommendation is visible."}
+    ]
+  }]
+}

@@ -54,3 +54,7 @@ def test_root_uses_accept_header_for_installer_content_negotiation():
     assert "'/install.sh'" in proxy
     assert "NextResponse.redirect" in proxy
     assert "matcher: ['/']" in proxy
+
+
+def test_public_demo_matches_canonical_offline_demo():
+    assert (WEBSITE / "public" / "demo.html").read_bytes() == (ROOT / "docs" / "explainer" / "demo.html").read_bytes()
