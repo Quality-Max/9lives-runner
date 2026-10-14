@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -101,38 +102,84 @@ func TestReceiptFilesNeverDisagreeWhenPersistenceFails(t *testing.T) {
 	}
 }
 
-// stubbornExecutor ignores cancellation for a while, like a process group
-// being escalated from SIGTERM to SIGKILL.
-type stubbornExecutor struct{ hold time.Duration }
+// stubbornExecutor holds termination open until the test releases it, like a
+// process group being escalated from SIGTERM to SIGKILL.
+type stubbornExecutor struct {
+	terminating chan struct{}
+	release     chan struct{}
+}
 
 func (executor stubbornExecutor) Run(ctx context.Context, job Job, _ int) ProcessOutput {
 	<-ctx.Done()
-	time.Sleep(executor.hold)
+	close(executor.terminating)
+	<-executor.release
 	return ProcessOutput{Executed: true, ExitCode: -1, Err: ctx.Err()}
 }
 
 func TestHeartbeatContinuesWhileTerminatingAfterDeadline(t *testing.T) {
 	root := t.TempDir()
 	plan := Plan{Version: 1, RunID: "run-heartbeat-cleanup", Jobs: []Job{fakeJob("job-001", "sleep", 0)}}
-	deadline := 50 * time.Millisecond
-	started := time.Now()
+	ctx, cancel := context.WithCancel(context.Background())
+	executor := stubbornExecutor{terminating: make(chan struct{}), release: make(chan struct{})}
+	release := sync.OnceFunc(func() { close(executor.release) })
+	var summary RunSummary
+	var runErr error
 	done := make(chan struct{})
 	go func() {
-		_, _ = Execute(context.Background(), plan, ExecuteOptions{RunDeadline: deadline, Timeout: time.Minute, ReceiptDir: root, Executor: stubbornExecutor{hold: 2500 * time.Millisecond}, Adapters: []Adapter{fakeAdapter{}}})
+		// Allow startup under the race detector before the run deadline expires.
+		summary, runErr = Execute(ctx, plan, ExecuteOptions{RunDeadline: 2 * time.Second, Timeout: time.Minute, ReceiptDir: root, Executor: executor, Adapters: []Adapter{fakeAdapter{}}})
 		close(done)
 	}()
-	time.Sleep(1600 * time.Millisecond)
-	info, err := os.Stat(filepath.Join(root, plan.RunID, "heartbeat"))
-	if err != nil {
-		t.Fatal(err)
+	defer func() {
+		cancel()
+		release()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Error("run did not finish after releasing termination")
+		}
+	}()
+	select {
+	case <-executor.terminating:
+	case <-done:
+		t.Fatalf("run finished before the executor began termination: %v", runErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("executor did not observe the run deadline")
 	}
-	if !info.ModTime().After(started.Add(deadline + heartbeatInterval/2)) {
-		t.Fatalf("heartbeat stopped when the run deadline expired: last beat %v after start", info.ModTime().Sub(started))
+	// Observe a persisted heartbeat after termination starts, rather than
+	// assuming a fixed sleep lands between deadline expiry and cleanup ending.
+	terminatingAt := time.Now()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	wait := time.NewTimer(5 * heartbeatInterval)
+	defer wait.Stop()
+waitForHeartbeat:
+	for {
+		select {
+		case <-ticker.C:
+			info, err := os.Stat(filepath.Join(root, plan.RunID, "heartbeat"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.ModTime().After(terminatingAt) {
+				break waitForHeartbeat
+			}
+		case <-wait.C:
+			t.Fatal("heartbeat stopped while the executor was terminating after the run deadline")
+		}
 	}
 	if status, err := LoadStatus(root, plan.RunID); err != nil || status.State != "running" {
 		t.Fatalf("live run reported %q: %v", status.State, err)
 	}
-	<-done
+	release()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not finish after releasing termination")
+	}
+	if !errors.Is(runErr, context.DeadlineExceeded) || len(summary.Receipts) != 1 || !summary.Receipts[0].Executed || summary.Receipts[0].Status != StatusTimedOut {
+		t.Fatalf("expected an executed, timed-out attempt: summary=%#v err=%v", summary, runErr)
+	}
 	events, err := readEvents(filepath.Join(root, plan.RunID, "events.jsonl"))
 	if err != nil {
 		t.Fatal(err)
