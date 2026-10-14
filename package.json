@@ -10,6 +10,7 @@
     "smoke:contracts": "npm run build && node scripts/contracts-smoke.cjs",
     "smoke:package": "npm run build && node scripts/package-smoke.cjs",
     "smoke:assessment": "node scripts/assessment-smoke.cjs",
+    "smoke:healing-targets": "node scripts/healing-targets-smoke.cjs",
     "smoke:browser": "npm run build && node scripts/bundle-browser-checks.cjs --check && node --test packages/browser-checks/test/browser/*.test.cjs",
     "smoke:prove": "npm run build && node scripts/prove-smoke.cjs",
     "smoke:confirm": "npm run build && node scripts/confirm-smoke.cjs",

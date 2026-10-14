@@ -116,6 +116,8 @@ jobs:
       - name: Validate emitted CLI documents against published schemas
         run: npm run smoke:contracts
       - run: npm run smoke:assessment
+      - name: Qualify duplicate Edit targets and assertion canary in real Chromium
+        run: npm run smoke:healing-targets
       - name: Qualify 9l prove fault injection in real Chromium
         run: npm run smoke:prove
       - name: Qualify 9l confirm across Git revisions in real Chromium

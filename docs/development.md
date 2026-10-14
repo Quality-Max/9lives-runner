@@ -23,6 +23,7 @@ npm test
 npm run demo
 npm run smoke
 npm run smoke:assessment
+npm run smoke:healing-targets
 npm run smoke:package
 npm run smoke:prove
 # Independent CLI schema qualification (Python 3.11+ with jsonschema==4.26.0):
@@ -43,6 +44,11 @@ the synthetic shop fixture with real Chromium and checks that faults on the
 asserted requests are caught and faults on the unasserted one survive, see
 [Prove](prove.md#qualification). No model or platform
 account is needed for these checks.
+
+The [duplicate-target qualification](healing-targets.md) pairs weak editor-opened
+and exact-record-ID checks, reverses the record rows, and runs a separate
+wrong-ID canary. Its expected failures are checked by the smoke script; they
+are not skipped or marked as expected failures in Playwright.
 
 ## Go and offline compatibility
 

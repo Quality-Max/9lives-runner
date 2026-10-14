@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "requirements": [{
+    "id": "intended-record",
+    "reference": "https://github.com/Quality-Max/9lives-runner/issues/80",
+    "revision": "two-record-slice-1",
+    "expectedOutcomes": [{
+      "id": "exact-record-id",
+      "description": "Editing record-a opens an editor displaying exactly record-a, even when the rows are reordered."
+    }]
+  }]
+}
