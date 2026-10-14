@@ -1,10 +1,27 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%20viewBox%3D%220%200%2064%2064%22%3E%0A%20%20%3Ctitle%3EQualityMax%20pyramid%20pendant%3C%2Ftitle%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3CradialGradient%20id%3D%22enamel%22%20cx%3D%2230%25%22%20cy%3D%2222%25%22%20r%3D%2295%25%22%3E%0A%20%20%20%20%20%20%3Cstop%20stop-color%3D%22%236D60E4%22%2F%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22.42%22%20stop-color%3D%22%234338CA%22%2F%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%221%22%20stop-color%3D%22%2329215F%22%2F%3E%0A%20%20%20%20%3C%2FradialGradient%3E%0A%20%20%3C%2Fdefs%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%228%22%20r%3D%225%22%20fill%3D%22none%22%20stroke%3D%22%23A78BFA%22%20stroke-width%3D%223%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2236%22%20r%3D%2225%22%20fill%3D%22url%28%23enamel%29%22%20stroke%3D%22%23A78BFA%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%3Cpath%20fill%3D%22%23F8F7FF%22%20fill-rule%3D%22evenodd%22%20transform%3D%22translate%2814.3%2020.424%29%20scale%28.236%29%22%20d%3D%22M150%20103.237L75%20132L0%20103.237L75%200L150%20103.237ZM23.7988%2096.1783L75%20115.814L126.201%2096.1783L117.099%2083.6503L75.2517%2099.6991L33.0096%2083.4993L23.7988%2096.1783ZM42.2062%2070.8399L75.2517%2083.513L107.902%2070.9914L98.2409%2057.6924L75%2066.6057L51.7576%2057.6919L42.2062%2070.8399ZM60.9542%2045.0331L75%2050.4196L89.0448%2045.0331L75%2025.7006L60.9542%2045.0331Z%22%2F%3E%0A%3C%2Fsvg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="See a broken Playwright locator, inspect the actual button, and follow a verified 9lives repair—with or without an agent. No install needed.">
 <title>Find the break. Check the repair. · 9lives demo</title>
+<link rel="canonical" href="https://9lives.run/demo.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="9Lives">
+<meta property="og:url" content="https://9lives.run/demo.html">
+<meta property="og:title" content="Find the break. Check the repair. · 9lives demo">
+<meta property="og:description" content="See a broken Playwright locator, inspect the actual button, and follow a verified 9lives repair—with or without an agent. No install needed.">
+<meta property="og:image" content="https://9lives.run/og-demo.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="9Lives by QualityMax — Find the break. Check the repair. Interactive demo; no install needed.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Find the break. Check the repair. · 9lives demo">
+<meta name="twitter:description" content="See a broken Playwright locator, inspect the actual button, and follow a verified 9lives repair—with or without an agent. No install needed.">
+<meta name="twitter:image" content="https://9lives.run/og-demo.png">
+<meta name="twitter:image:alt" content="9Lives by QualityMax — Find the break. Check the repair. Interactive demo; no install needed.">
 <script>
 (() => {
   let theme;
@@ -589,7 +606,7 @@ MCP → confirm_finding(spec, unfixed, fixed)
 
 <p class="sr-only" id="announcement" role="status" aria-live="polite" aria-atomic="true"></p>
 </main>
-<footer><span>9lives · Open-source tools for more useful tests.</span><a href="https://github.com/Quality-Max/9lives-runner">Explore the project ↗</a></footer>
+<footer><button type="button" data-qm-cookie-settings hidden style="background:none;border:0;padding:0;color:inherit;font:inherit;text-decoration:underline">Cookie settings</button><span>9lives · Open-source tools for more useful tests.</span><a href="https://github.com/Quality-Max/9lives-runner">Explore the project ↗</a></footer>
 </div>
 <script>
 'use strict';
@@ -1053,5 +1070,175 @@ byId('profile-button').addEventListener('click',()=>{
 });
 render();
 </script>
+<!-- qualitymax-analytics:start -->
+<script>
+/* QualityMax's public-site consent banner, PostHog project and GA4 property. */
+(function () {
+  'use strict';
+  if (window.QualityMaxCookies) return;
+  const production = /^(www\.)?9lives\.run$/.test(location.hostname);
+  const preview = location.hostname.endsWith('.vercel.app');
+  // Downloaded/GitHub demos remain entirely offline.
+  if (!production && !preview) return;
+  const consentKey = 'qm_cookie_consent';
+  const measurementId = 'G-B0P0BRN845';
+  let consent = null;
+  let loading = false;
+  let providersStarted = false;
+  let gaReady = false;
+  let phReady = false;
+  try {
+    const stored = JSON.parse(localStorage.getItem(consentKey));
+    if (stored && stored.version === '1' && typeof stored.analytics === 'boolean') consent = stored;
+  } catch { /* Unavailable storage leaves the banner visible. */ }
+
+  function allowed() {
+    return production && !navigator.webdriver && navigator.doNotTrack !== '1' &&
+      consent?.analytics === true && !document.cookie.split(';').some(item => item.trim() === 'qm_analytics_opt_out=1');
+  }
+
+  function loadScript(id, src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.id = id;
+      script.async = true;
+      script.src = src;
+      const timer = setTimeout(() => { script.remove(); reject(new Error('Analytics load timed out')); }, 10000);
+      script.onload = () => { clearTimeout(timer); resolve(); };
+      script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('Analytics unavailable')); };
+      document.head.appendChild(script);
+    });
+  }
+
+  function pageView() {
+    if (!allowed()) return;
+    const properties = { surface: '9lives', page_path: location.pathname + location.hash };
+    if (phReady) window.posthog.capture('page_view', properties);
+    if (gaReady) window.gtag('event', 'page_view', {
+      ...properties, page_location: location.href, page_title: document.title,
+    });
+  }
+
+  async function startGoogle() {
+    window['ga-disable-' + measurementId] = false;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag('consent', 'default', {
+      analytics_storage: 'granted', ad_storage: 'denied',
+      ad_user_data: 'denied', ad_personalization: 'denied',
+    });
+    window.gtag('js', new Date());
+    window.gtag('config', measurementId, {
+      send_page_view: false, allow_google_signals: false, allow_ad_personalization_signals: false,
+    });
+    await loadScript('qm-google-analytics', 'https://www.googletagmanager.com/gtag/js?id=' + measurementId);
+    if (allowed()) gaReady = true;
+  }
+
+  async function startPostHog() {
+    const response = await fetch('/api/posthog/config', { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return;
+    const config = await response.json();
+    if (!allowed() || config.enabled !== true || config.host !== 'https://t.qualitymax.io') return;
+    await loadScript('qm-posthog', config.host + '/static/array.js');
+    if (!allowed() || !window.posthog) return;
+    window.posthog.init(config.api_key, {
+      api_host: config.host, ui_host: 'https://eu.posthog.com', defaults: '2026-01-30',
+      person_profiles: 'identified_only', capture_pageview: 'history_change', capture_pageleave: true,
+      capture_heatmaps: true, persistence: 'localStorage', respect_dnt: true, autocapture: true,
+      disable_session_recording: false,
+      session_recording: { maskAllInputs: true, maskInputOptions: { password: true, email: true } },
+      loaded: function (posthog) {
+        if (!allowed()) { posthog.opt_out_capturing(); return; }
+        posthog.opt_in_capturing({ captureEventName: false });
+        phReady = true;
+        posthog.capture('page_view', { surface: '9lives', page_path: location.pathname + location.hash });
+      },
+    });
+  }
+
+  async function start() {
+    if (!allowed() || loading) return;
+    loading = true;
+    providersStarted = true;
+    // Provider failures remain independent and never break the page.
+    await Promise.allSettled([startGoogle(), startPostHog()]);
+    if (gaReady && allowed()) window.gtag('event', 'page_view', {
+      surface: '9lives', page_path: location.pathname + location.hash,
+      page_location: location.href, page_title: document.title,
+    });
+  }
+
+  function clearAnalyticsStorage() {
+    // Delete analytics identifiers only; retain the visitor's consent choice.
+    try {
+      Object.keys(localStorage).filter(key => key.startsWith('ph_')).forEach(key => localStorage.removeItem(key));
+    } catch { /* Storage may be blocked. */ }
+    document.cookie.split(';').forEach(item => {
+      const name = item.trim().split('=')[0];
+      if (!name.startsWith('_ga') && !name.startsWith('ph_')) return;
+      ['', '; Domain=' + location.hostname, '; Domain=.9lives.run'].forEach(domain => {
+        document.cookie = name + '=; Max-Age=0; Path=/; SameSite=Lax; Secure' + domain;
+      });
+    });
+  }
+
+  function choose(analytics) {
+    consent = { analytics, timestamp: new Date().toISOString(), version: '1' };
+    try { localStorage.setItem(consentKey, JSON.stringify(consent)); } catch { /* Keep this session's choice in memory. */ }
+    document.getElementById('qm-cookie-banner')?.remove();
+    if (analytics) {
+      document.cookie = 'qm_analytics_opt_out=; Max-Age=0; Path=/; SameSite=Lax; Secure';
+      void start();
+    } else {
+      window['ga-disable-' + measurementId] = true;
+      if (phReady) window.posthog.opt_out_capturing();
+      clearAnalyticsStorage();
+      // Unload already loaded SDKs, recording and pending analytics requests.
+      if (providersStarted) location.reload();
+    }
+  }
+
+  function showBanner() {
+    if (document.getElementById('qm-cookie-banner')) return;
+    const banner = document.createElement('section');
+    banner.id = 'qm-cookie-banner';
+    banner.setAttribute('aria-label', 'Cookie preferences');
+    banner.innerHTML = `
+      <div style="position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#1a1a2e;color:#e8e6f0;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid #2a2a4a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;box-shadow:0 -4px 20px rgba(0,0,0,0.3)">
+        <div style="flex:1;min-width:min(280px,100%)">
+          <strong>We value your privacy</strong>
+          <p style="margin:4px 0 0;color:#a0a0b8;font-size:13px">We use cookies for essential functionality and optional analytics to improve our product.
+            <a href="https://qualitymax.io/privacy" style="color:#6366f1;text-decoration:underline">Privacy Policy</a>
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="qm-cookie-reject" style="padding:8px 20px;min-height:44px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #3a3a5a;background:transparent;color:#a0a0b8">Essential Only</button>
+          <button type="button" id="qm-cookie-accept" style="padding:8px 20px;min-height:44px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:0;background:#6366f1;color:#fff">Accept All</button>
+        </div>
+      </div>`;
+    document.body.appendChild(banner);
+    banner.querySelector('#qm-cookie-reject').onclick = () => choose(false);
+    banner.querySelector('#qm-cookie-accept').onclick = () => choose(true);
+  }
+
+  window.QualityMaxCookies = { show: showBanner };
+  window.cookieConsentAllowsAnalytics = allowed;
+  window.cookieConsentOptOut = () => choose(false);
+  window.cookieConsentOptIn = () => choose(true);
+  function mount() {
+    document.querySelectorAll('[data-qm-cookie-settings]').forEach(button => {
+      button.hidden = false;
+      button.addEventListener('click', showBanner);
+    });
+    if (!consent) showBanner();
+    void start();
+  }
+  window.addEventListener('hashchange', pageView);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
+  else mount();
+})();
+</script>
+<!-- qualitymax-analytics:end -->
 </body>
 </html>

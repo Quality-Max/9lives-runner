@@ -12,7 +12,7 @@
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "vitest run",
-    "prebuild": "node scripts/indexnow.mjs prepare",
+    "prebuild": "node ../scripts/sync-demo.cjs && node scripts/indexnow.mjs prepare",
     "prebuild:vercel": "node scripts/indexnow.mjs prepare"
   },
   "dependencies": {
