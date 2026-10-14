@@ -19,7 +19,7 @@
 
 <text x="282" y="72" fill="#a1a1aa" font-family="Arial,sans-serif" font-size="25">/ 9lives</text>
 <text x="58" y="184" fill="#a5b4fc" font-family="Arial,sans-serif" font-size="15" letter-spacing="2">OPEN-SOURCE PLAYWRIGHT TOOLS</text>
-<g font-family="Arial,sans-serif" font-weight="bold" font-size="58"><text x="58" y="264" fill="#fafafa">Codex fixes.</text><text x="58" y="336" fill="#818cf8">9l checks the change.</text></g>
+<g font-family="Arial,sans-serif" font-weight="bold" font-size="58"><text x="58" y="264" fill="#fafafa">Agent fixes.</text><text x="58" y="336" fill="#818cf8">9l checks the change.</text></g>
 <text x="58" y="388" fill="#a1a1aa" font-family="Arial,sans-serif" font-size="23">Same test. Before / after. Inspect the evidence.</text>
 <g font-family="Arial,sans-serif"><rect x="58" y="438" width="338" height="114" rx="12" fill="#1c1c22" stroke="#3f3f46"/><text x="80" y="470" font-size="14" fill="#a1a1aa">BEFORE THE FIX</text><text x="80" y="507" font-size="26" fill="#f87171">Assertion failed</text>
 <rect x="420" y="438" width="338" height="114" rx="12" fill="#1c1c22" stroke="#3f3f46"/><text x="442" y="470" font-size="14" fill="#a1a1aa">AFTER THE FIX</text><text x="442" y="507" font-size="26" fill="#4ade80">Test passed</text>

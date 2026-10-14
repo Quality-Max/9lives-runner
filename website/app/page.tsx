@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import { Brand } from './brand';
 import { CopyButton } from './copy-button';
 import { ThemeToggle } from './theme-toggle';
 
@@ -15,7 +15,7 @@ const stories = [
   { id: 'locator', number: '01', title: 'A renamed button', copy: 'Repair a broken locator while keeping the original assertions.', label: 'Illustrated walkthrough' },
   { id: 'coverage', number: '02', title: 'A missing check', copy: 'See how a green test can miss the outcome that matters.', label: 'Illustrated walkthrough' },
   { id: 'flow', number: '03', title: 'Behind the agent', copy: 'Follow observed controls, bounded actions, and execution receipts.', label: 'Algorithm walkthrough' },
-  { id: 'live', number: '04', title: 'A real Codex run', copy: 'Inspect saved provider decisions and browser execution logs.', label: 'Recorded execution' },
+  { id: 'live', number: '04', title: 'A real agent run', copy: 'Inspect saved provider decisions and browser execution logs.', label: 'Recorded execution' },
   { id: 'proof', number: '05', title: 'Prove the fix', copy: 'Compare the same test before and after a fix. Then challenge it with faults.', label: 'Recorded execution' },
 ];
 const workflow = [
@@ -42,12 +42,6 @@ const ecosystem = [
   { title: 'Free QA Skills', copy: 'Open skills for test quality, accessibility, security, and more.', href: 'https://github.com/Quality-Max/free-qa-skills' },
 ];
 
-function Brand() {
-  return <a className="qualitymax-brand" href="https://qualitymax.io" aria-label="QualityMax home">
-    <Image className="brand-dark" src="/brand/logo-wordmark-white.svg" alt="QualityMax" width={144} height={22} loading="eager" unoptimized />
-    <Image className="brand-light" src="/brand/logo-wordmark-color.svg" alt="" width={144} height={22} loading="eager" unoptimized />
-  </a>;
-}
 function Command({ label, value }: { label: string; value: string }) {
   return <div className="command-card"><span className="command-label">{label}</span><div><code>{value}</code><CopyButton value={value} /></div></div>;
 }
@@ -57,14 +51,14 @@ export default function Home() {
     <a className="skip-link" href="#main">Skip to content</a>
     <header className="site-header wrap">
       <div className="brand-lockup"><Brand /><a className="product-logo" href="#main" aria-label="9lives home">9<span>lives</span></a></div>
-      <nav aria-label="Primary navigation"><a href="#demo">Demo</a><a href="#workflow">Workflow</a><a href="#start">Get started</a><a href={documentation}>Documentation</a><a href={repository}>GitHub <span aria-hidden="true">↗</span></a></nav>
+      <nav aria-label="Primary navigation"><a href="#demo">Demo</a><a href="#workflow">Workflow</a><a href="/memes">Memes</a><a href="#start">Get started</a><a href={documentation}>Documentation</a><a href={repository}>GitHub <span aria-hidden="true">↗</span></a></nav>
       <ThemeToggle />
     </header>
     <main id="main">
       <section className="hero wrap" aria-labelledby="hero-title">
         <div className="hero-content">
           <p className="eyebrow">9lives / Open-source Playwright tools</p>
-          <h1 id="hero-title">Codex fixes.<br /><span>9l checks the change.</span></h1>
+          <h1 id="hero-title">Agent fixes.<br /><span>9l checks the change.</span></h1>
           <p className="hero-copy">Your agent proposes a fix. Run the test, compare the results, and check what its assertions catch. Keep your Playwright suite and inspect the evidence locally.</p>
           <div className="actions"><a className="button primary" href="/demo.html#proof">Explore the real experiment <span aria-hidden="true">↗</span></a><a className="button secondary" href="#start">Run it yourself <span aria-hidden="true">↓</span></a></div>
           <p className="small-note">No account needed · Apache-2.0 · macOS, Linux &amp; Windows</p>
@@ -74,14 +68,14 @@ export default function Home() {
           <div className="evidence-title"><span className="badge">Same test. Two app revisions.</span><h2>The test tells the<br />revisions apart.</h2></div>
           <div className="revision-pair"><div className="verdict failed"><span>Before the fix</span><strong>Assertion failed</strong><code>0636853e13</code></div><div className="verdict passed"><span>After the fix</span><strong>Test passed</strong><code>6e5f24ccd2</code></div></div>
           <div className="terminal-summary"><p><span>9l MCP</span><code>confirm_finding</code><strong>confirmed</strong></p><p><span>9l prove</span><code>500 · 401 · malformed JSON</code><strong>3 faults caught</strong></p></div>
-          <p className="evidence-footnote">Seven Chromium executions on a synthetic profile app. Saved results; opening the demo does not run Codex.</p>
+          <p className="evidence-footnote">Seven Chromium executions on a synthetic profile app. Saved results; opening the demo does not run an agent.</p>
           <a className="text-link" href="/demo.html#proof">Inspect the patch, logs, and receipts <span aria-hidden="true">→</span></a>
         </div>
       </section>
       <div className="principles wrap"><span>Ordinary Playwright specs</span><span>Explicit assertions</span><span>Bounded local execution</span><span>Attributable receipts</span></div>
 
       <section className="section wrap" id="demo" aria-labelledby="demo-heading">
-        <div className="section-heading"><p className="eyebrow">Start with the evidence</p><h2 id="demo-heading">Five ways to look past a green test.</h2><p>Follow a locator repair, find a missing assertion, or inspect a real Codex run and checked application fix. Choose where to begin.</p></div>
+        <div className="section-heading"><p className="eyebrow">Start with the evidence</p><h2 id="demo-heading">Five ways to look past a green test.</h2><p>Follow a locator repair, find a missing assertion, or inspect a real agent run and checked application fix. Choose where to begin.</p></div>
         <div className="story-grid">{stories.map(story => <a className="story-card" key={story.id} href={`/demo.html#${story.id}`}><span className="story-number">{story.number} <span aria-hidden="true">↗</span></span><h3>{story.title}</h3><p>{story.copy}</p><span className="story-label">{story.label}</span></a>)}</div>
         <p className="section-note">The first three tabs explain the workflow. The last two show recorded execution. Full traces scroll, highlights stay easy to find, and evidence extracts are downloadable.</p>
       </section>
