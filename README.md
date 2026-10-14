@@ -1,70 +1,90 @@
 # 9lives runner
 
 [![npm version](https://img.shields.io/npm/v/@9l/playwright?cacheSeconds=3600)](https://www.npmjs.com/package/@9l/playwright)
-[![npm downloads](https://img.shields.io/npm/dm/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
 [![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Run Playwright tests with bounded execution and attributable receipts. Add
-named steps and natural-language goals while keeping explicit assertions as
-the test oracle. Local execution needs no QualityMax account or hosted service.
+[![9lives by QualityMax: Codex fixes. 9l checks the change.](docs/assets/9lives-overview.svg)](https://9lives.run/demo.html#proof)
 
-9lives runs, assesses, and stress-tests Playwright tests locally;
-[qmax-code](https://github.com/Quality-Max/qmax-code) is the terminal coding and
-QA agent that drives broader repository workflows.
+Your coding agent proposes a fix. **9lives runs the test, compares the results,
+and records what its assertions caught.** Keep your Playwright suite and inspect
+the evidence locally. No QualityMax account or hosted service required.
 
-[Documentation](docs/README.md) · [Explainer](https://quality-max.github.io/9lives-runner/) ·
-[Local demo](demo/README.md) ·
-[npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
+[Interactive demo](https://9lives.run/demo.html#proof) ·
+[Website](https://9lives.run) · [Documentation](docs/README.md) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
-## Try the interactive demo
+## Inspect a real experiment
 
-[Open the demo on 9lives.run](https://9lives.run/demo.html) — no install or
-account needed. Five tabs show a broken locator, a missing check, the agent
-workflow, a real Codex run, and a verified application fix. Inspect the
-scrollable console, compare before/after receipts, and explore caught faults.
+The demo leads with an application fix: **the same reviewed test fails before
+the patch and passes after it**. Experimental fix confirmation compares the two
+Git revisions. Three injected request faults then each cause an assertion failure.
+Inspect the patch, scroll the console, and download the evidence extracts.
 
-The page presents recorded results; clicking through does not run tests or
-call a model. Includes QualityMax light and dark themes. The
-[single HTML file](docs/explainer/demo.html) also works offline.
-To execute the eight-experiment walkthrough yourself, see the
-[release lab](demo/release-lab/README.md).
+| Chapter | What you can inspect | Evidence type |
+| --- | --- | --- |
+| [A renamed button](https://9lives.run/demo.html#locator) | A broken locator and a verified repair with assertions preserved | Illustrated walkthrough |
+| [A missing check](https://9lives.run/demo.html#coverage) | A green test that misses a required outcome | Illustrated walkthrough |
+| [Behind the agent](https://9lives.run/demo.html#flow) | Observed controls, bounded actions, and execution receipts | Algorithm walkthrough |
+| [A real Codex run](https://9lives.run/demo.html#live) | Saved provider decisions and browser execution logs | Recorded execution |
+| [Prove the fix](https://9lives.run/demo.html#proof) | Before/after receipts and three caught faults | Recorded execution |
 
-## Watch it repair a Demo Bank test
+The last experiment records **seven Chromium executions on one synthetic profile
+app**, captured on 13 October 2026. Opening the demo does not execute tests or call
+Codex. It works in light and dark themes and as a [single offline HTML file](docs/explainer/demo.html).
+To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
+The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
 
-A deliberately stale button name breaks a Playwright test against the public
-[QualityMax Demo Bank](https://qualitymax-demo-bank.vercel.app/). Follow the draft
-through assessment, failure, offline repair and a passing candidate.
+## From a failure to a checked fix
 
-![9lives Demo Bank walkthrough: draft a Playwright test, assess the fixed wait, reproduce a stale locator failure, repair Log In to Sign In offline, and verify the unchanged assertions](demo/demo-bank.gif)
+1. **Reproduce:** run a reviewed Playwright spec with an assertion that fails on the broken app.
+2. **Review:** inspect your agent's proposed application patch or locator repair; preserve the intended behavior.
+3. **Confirm:** experimental `9l confirm` / MCP `confirm_finding` runs the same reproduction on each Git revision in isolation.
+4. **Challenge:** experimental `9l prove` injects supported fetch/XHR faults and reruns the test.
 
-The GIF is a 68.5-second edited replay of real browser captures and checked CLI
-results, with large text and one step per frame. Experimental healing changed
-one locator literal, preserved every assertion and verified one passing test.
-The candidate was saved for review; the original file was not changed.
+A passing receipt means the assertions passed and the execution report was
+validated. Confirmation shows that the test distinguishes the revisions. A
+caught fault means an assertion failed under that fault. **None establishes full
+requirement coverage.** See the [confirmation](docs/confirm.md) and [fault testing](docs/prove.md) contracts.
 
-[Run this example](demo/README.md#qualitymax-demo-bank) ·
-[Still image](demo/demo-bank.png) ·
-[Checked results](demo/demo-bank-evidence.json)
+## Run your existing Playwright tests
 
-## Main features
+Install the native CLI on macOS or Linux:
 
-- **Agent-assisted test generation:** your coding agent creates Playwright specs using the optional [QA skill](skills/9lives-qa/SKILL.md). Record creation provenance, assess the draft and execute it; there is no native `9l generate` command.
-- **Assessment:** `9l assess` reviews waits, skips, missing or unawaited assertions, and requirement mappings. Findings are advisory.
-- **Execution:** `plan`, `run`, `status`, `result` and `cancel` bound execution and retain attributable terminal receipts.
-- **Healing:** experimental native `9l heal` preserves assertions and verifies supported locator-only candidates in isolation before acceptance.
-- **Fault testing and confirmation:** experimental `prove` injects fetch/XHR faults; `confirm` compares a reproduction on unfixed and fixed Git revisions. Their results have [documented limits](docs/README.md).
-- **Page checks:** `9l scan` reports console, link, accessibility, Core Web Vitals, SEO, security-header, cookie, mixed-content and page-weight findings from one Chromium page load, with baseline comparison; `9l inspect` ranks a page's locators. Both are observations, not test results.
-- **Agent integration and SDK:** native `9l mcp` provides execution, assessment, healing, confirmation, page scan, page inspection and reproduction tools; the optional SDK adds named steps and bounded goals. Goal completion is unverified.
-- **Cross-platform:** native Linux, macOS and Windows binaries on x64 and ARM64. Windows provider CLI shell integrations remain unqualified.
+```sh
+curl -fsSL https://9lives.run/install.sh | sh
+export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
+9l run tests/ --timeout 5m --format json
+```
 
-Built by QualityMax without any external funding. Keep your suite. Inspect the evidence.
+Your project supplies its Playwright dependencies, browsers, configuration, and
+assertions. The SDK is optional. Native v0.4.5 binaries support macOS, Linux and
+Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
+and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
+other browser engines are unqualified.
 
-For the separate SDK checkout fixture and its original terminal recording,
-see the [local checkout demo](demo/README.md#local-checkout-demo).
+Connect the tools to a coding agent through native MCP. For Claude Code:
 
-## Start with an executed result
+```sh
+claude mcp add 9lives -- 9l mcp
+```
+
+The [agent setup guide](docs/agent-setup.md) covers Codex, Claude, and the optional
+[QA skill](skills/9lives-qa/SKILL.md). Native tools expose execution, assessment,
+healing, page inspection, reproduction generation, and fix confirmation.
+[qmax-code](https://github.com/Quality-Max/qmax-code) is the separate QA terminal
+that can run standalone or connect to QualityMax.
+
+## What is available
+
+- **Local execution:** `plan`, `run`, `status`, `result`, and `cancel` bound execution and record attributable terminal receipts.
+- **Assessment:** `9l assess` advises on waits, skips, assertions, requirement mappings, and source provenance.
+- **Page observations:** `9l scan` runs nine check categories; `9l inspect` ranks controls and locators.
+- **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
+- **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
+- **Planned:** independent behavioral verification, verified replay, and native mobile qualification.
+
+## Add the optional SDK
 
 Install the published SDK in your Playwright project:
 
@@ -92,7 +112,7 @@ macOS/Linux assets only.
 The npm package supplies the fixtures; it does not install
 the CLI or browsers.
 
-### Run a test
+### Run with SDK steps
 
 Keep your application's existing Playwright configuration and reviewed
 assertions. For an application serving a checkout page:

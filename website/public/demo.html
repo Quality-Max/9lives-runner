@@ -727,7 +727,8 @@ const locatorScenes = [
   {title:'Update the instruction. Keep the check.',copy:'The proposed repair changes one button name in a separate copy of the test. The check for “Ready for Ada” stays the same.',insight:'A proposed repair still needs a test run.',detail:'9l runs the repaired copy separately. Your original test file stays unchanged.',action:'Check the repaired copy',summary:'One name changes. The check stays.',meaning:'Red is the old instruction; green is the proposed replacement. The repaired copy must still check that the profile says “Ready for Ada”.'},
   {title:'The repaired copy passed.',copy:'Your original test is unchanged. Review the change before applying it. 9l repaired the test’s instructions; the website needed no change.',insight:'One repaired test ran and passed.',detail:'This confirms the repaired copy passed its original check. It does not establish that the whole website is correct.',action:'Try it again',summary:'The repaired copy passed.',meaning:'Your original test is unchanged. Review the change before applying it.'}
 ];
-let journey = location.hash === '#proof' ? 'proof' : location.hash === '#live' ? 'live' : location.hash === '#flow' ? 'flow' : 'locator';
+const initialJourney = location.hash.slice(1);
+let journey = ['locator','coverage','flow','live','proof'].includes(initialJourney) ? initialJourney : 'locator';
 let mode = 'solo';
 let inspectorTab = 'console';
 let selectedTarget = 'missing';

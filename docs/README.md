@@ -2,8 +2,10 @@
 
 | Guide | Start here when |
 | --- | --- |
+| [Interactive demo](https://9lives.run/demo.html#proof) | You want to inspect recorded agent runs, before/after receipts, and caught faults |
+| [Release lab](../demo/release-lab/README.md) | You want to execute the eight-chapter local walkthrough |
 | [Install](install.md) | You need the npm SDK and Go CLI |
-| [Explainer](https://quality-max.github.io/9lives-runner/) ([source](explainer/README.md)) | You want the one-page overview of test shape, model-free runs and shipped versus planned status |
+| [Explainer](https://quality-max.github.io/9lives-runner/) ([source](explainer/README.md)) | You want the evidence-first overview, ordinary Playwright setup, and capability boundaries |
 | [Local checkout demo](../demo/README.md) | You want an executed result without an application server |
 | [Existing application](run-existing-project.md) | You are adding an isolated harness to a project |
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |

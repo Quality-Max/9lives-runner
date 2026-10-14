@@ -1,28 +1,24 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { themeBootstrap } from './theme-bootstrap';
 import './globals.css';
-
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
-const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
-
 export const metadata: Metadata = {
   metadataBase: new URL('https://9lives.run'),
-  title: '9Lives — Your tests have nine lives',
-  description: 'The Go runner for local Playwright tests: bounded execution, validated receipts, and optional AI help. Python compatibility remains available in maintenance mode.',
+  title: '9lives — Codex fixes. 9l checks the change.',
+  description: 'Run Playwright tests locally, confirm a fix against the same test, and challenge assertions with controlled faults. Explore real Codex and 9l execution evidence.',
   alternates: { canonical: '/' },
   openGraph: {
-    title: '9Lives — Your tests have nine lives',
-    description: 'Ordinary Playwright tests. Bounded AI help. Evidence for every attempt. Install the Go runner for macOS or Linux.',
+    title: '9lives — Codex fixes. 9l checks the change.',
+    description: 'From a reproduced failure to a checked fix. Inspect real Codex runs, before/after receipts, and caught faults with the open-source 9lives runner.',
     url: 'https://9lives.run',
     siteName: '9Lives',
     type: 'website',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: '9Lives by QualityMax — Your tests have nine lives' }],
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: '9lives by QualityMax — Codex fixes. 9l checks the change.' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '9Lives — Your tests have nine lives',
-    description: 'Run Playwright locally with Go, keep your assertions, and inspect attributable evidence.',
+    title: '9lives — Codex fixes. 9l checks the change.',
+    description: 'Your agent proposes a fix. 9l runs the tests, compares revisions, and records what the assertions caught.',
     images: ['/og.png'],
   },
   icons: {
@@ -36,8 +32,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head>
+      <body>
         {children}
         <Script src="/qualitymax-analytics.js" strategy="afterInteractive" />
       </body>

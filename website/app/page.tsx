@@ -1,390 +1,119 @@
 import Image from 'next/image';
 import { CopyButton } from './copy-button';
+import { ThemeToggle } from './theme-toggle';
 
 const installCommand = 'curl -fsSL https://9lives.run/install.sh | sh';
 const pathCommand = 'export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"';
 const runCommand = '9l run tests/ --timeout 5m --format json';
 const scanCommand = '9l scan https://your-app.dev --format markdown';
 const mcpCommand = 'claude mcp add 9lives -- 9l mcp';
-const pythonCommand = 'uv tool install 9lives';
-const runnerSite = 'https://quality-max.github.io/9lives-runner/';
+const repository = 'https://github.com/Quality-Max/9lives-runner';
+const documentation = 'https://quality-max.github.io/9lives-runner/';
 const migrationGuide = 'https://github.com/Quality-Max/9lives/blob/main/docs/MIGRATING_TO_GO.md';
-const interactiveDemo = 'https://app.supademo.com/demo/cmv43czgb0031wi0jzgno1y8r?utm_source=link';
 
-const memes = [
-  {
-    file: 'button-rename-launch',
-    title: 'One button. A whole afternoon.',
-    alt: 'One button rename. The black Qmax kitten slumps over a failing laptop labeled My afternoon, then sits calmly beside a passing laptop labeled After the re-run. Repair the locator. Keep the assertion.',
-    copy: 'A locator repair still has to pass the original assertions.',
-  },
-  {
-    file: 'harry-potter-launch',
-    title: 'Less panic. More proof.',
-    alt: 'Magical-school cat parody: You\'re a tester, Harry. The black Qmax kitten in wizard glasses faces a failing laptop, then a passing one. Locatorus Brokenus becomes Rerunus Verifiedus. Even magic needs a re-run.',
-    copy: 'Even a little UI magic deserves a real test result.',
-  },
-  {
-    file: 'lotr-launch',
-    title: 'A tiny change. An epic detour.',
-    alt: 'Epic fantasy cat parody: One does not simply rename a button. The black Qmax kitten wears a grey wizard cloak beside a failing laptop, then reviews a passing result. Repair. Re-run. Review.',
-    copy: 'The journey ends with evidence, not a hopeful green badge.',
-  },
-  {
-    file: 'batman-catwoman-launch',
-    title: 'Your tests deserve nine lives.',
-    alt: 'Original feline superhero parody: The button moved. A black kitten in a bat-eared cape sees FAIL; the Qmax kitten in a violet mask sees PASS. Another long night. Nine lives. Keep the assertion. Verify the fix.',
-    copy: 'Keep the assertion. Make the fix earn its green.',
-  },
+const stories = [
+  { id: 'locator', number: '01', title: 'A renamed button', copy: 'Repair a broken locator while keeping the original assertions.', label: 'Illustrated walkthrough' },
+  { id: 'coverage', number: '02', title: 'A missing check', copy: 'See how a green test can miss the outcome that matters.', label: 'Illustrated walkthrough' },
+  { id: 'flow', number: '03', title: 'Behind the agent', copy: 'Follow observed controls, bounded actions, and execution receipts.', label: 'Algorithm walkthrough' },
+  { id: 'live', number: '04', title: 'A real Codex run', copy: 'Inspect saved provider decisions and browser execution logs.', label: 'Recorded execution' },
+  { id: 'proof', number: '05', title: 'Prove the fix', copy: 'Compare the same test before and after a fix. Then challenge it with faults.', label: 'Recorded execution' },
 ];
-
+const workflow = [
+  { number: '01', title: 'Reproduce the failure', tool: 'run_test', copy: 'Start with a reviewed Playwright spec and an assertion that fails on the broken application.' },
+  { number: '02', title: 'Review the change', tool: 'Your coding agent', copy: 'Inspect the proposed application patch or locator repair. Keep the test’s intended behavior and assertions.' },
+  { number: '03', title: 'Confirm the fix', tool: 'confirm_finding · experimental', copy: 'Run the same reproduction on each Git revision in isolation. Inspect the failing result before and the passing result after.' },
+  { number: '04', title: 'Challenge the test', tool: '9l prove · experimental', copy: 'Inject supported fetch/XHR faults and rerun. See which faults caused an assertion failure and which survived.' },
+];
 const pageChecks = [
   ['console', 'JavaScript errors, warnings, and failed requests'],
   ['links', 'Broken and redirecting links'],
-  ['accessibility', 'Missing alt text, unlabelled controls, heading structure'],
-  ['performance', 'Core Web Vitals LCP and CLS, plus TTFB and FCP load timings'],
-  ['seo', 'Title and meta description'],
-  ['security_headers', 'CSP, HSTS, X-Content-Type-Options, Referrer-Policy'],
-  ['cookies', 'Cookie flags, third-party cookies, trackers before consent'],
-  ['mixed_content', 'HTTP resources and form actions on HTTPS pages'],
-  ['weight', 'Transfer size, requests, render-blocking and oversized assets'],
+  ['accessibility', 'Alt text, control names, and heading structure'],
+  ['performance', 'LCP, CLS, TTFB, and FCP from one cold page load'],
+  ['seo', 'Page title and meta description'],
+  ['security_headers', 'CSP, HSTS, and browser security headers'],
+  ['cookies', 'Cookie flags, trackers, and tracking before consent'],
+  ['mixed_content', 'HTTP resources and forms on HTTPS pages'],
+  ['weight', 'Transfer bytes, requests, and oversized assets'],
 ];
-
-const verificationSteps = [
-  {
-    number: '01',
-    title: 'scan_url — find what broke',
-    copy: 'Nine checks from one Chromium page load, with graded findings, reproduction steps, and suggested fixes.',
-  },
-  {
-    number: '02',
-    title: 'inspect_page — see what a test can use',
-    copy: 'Page structure, accessible names, and ranked Playwright locators with a stability verdict for each control.',
-  },
-  {
-    number: '03',
-    title: 'generate_playwright_repro — keep the failure',
-    copy: 'A deterministic, reviewable spec for a finding, written inside the project. Nothing runs until you choose.',
-  },
-  {
-    number: '04',
-    title: 'run_test or confirm_finding — prove it',
-    copy: 'Execute the repro with validated receipts, or check that it fails before the fix and passes after it.',
-  },
-];
-
-const healingSteps = [
-  {
-    number: '01',
-    title: 'Plan your tests',
-    copy: 'Inspect discovered specs before execution. Keep your existing Playwright configuration and assertions.',
-  },
-  {
-    number: '02',
-    title: 'Run with bounds',
-    copy: 'Go owns concurrency, deadlines, cancellation, and a terminal outcome for every required test.',
-  },
-  {
-    number: '03',
-    title: 'Inspect the evidence',
-    copy: 'Validated receipts distinguish completed tests from missing evidence, skips, and interrupted runs.',
-  },
-];
-
 const ecosystem = [
-  {
-    eyebrow: 'Ship in the cloud',
-    title: 'QualityMax Cloud',
-    copy: 'Hosted test management, execution, and quality intelligence for growing teams.',
-    href: 'https://qualitymax.io',
-  },
-  {
-    eyebrow: 'Code with evidence',
-    title: 'qmax-code',
-    copy: 'Agentic delivery loops that keep implementation, QA, and release evidence together.',
-    href: 'https://github.com/Quality-Max/qmax-code',
-  },
-  {
-    eyebrow: 'Grade your specs',
-    title: 'QualityMax Grader',
-    copy: 'An offline A–F quality grade for Playwright specs before they reach the repository.',
-    href: 'https://github.com/Quality-Max/qualitymax-grader',
-  },
-  {
-    eyebrow: 'Equip your agent',
-    title: 'Free QA Skills',
-    copy: 'Open QA skills for test quality, selectors, dependencies, accessibility, security, and more.',
-    href: 'https://github.com/Quality-Max/free-qa-skills',
-  },
+  { title: 'QualityMax Cloud', copy: 'Hosted test management, execution, and quality intelligence.', href: 'https://qualitymax.io' },
+  { title: 'qmax-code', copy: 'A QA terminal that can run standalone or connect to QualityMax.', href: 'https://github.com/Quality-Max/qmax-code' },
+  { title: 'QualityMax Grader', copy: 'An offline A–F quality grade for Playwright specs.', href: 'https://github.com/Quality-Max/qualitymax-grader' },
+  { title: 'Free QA Skills', copy: 'Open skills for test quality, accessibility, security, and more.', href: 'https://github.com/Quality-Max/free-qa-skills' },
 ];
+
+function Brand() {
+  return <a className="qualitymax-brand" href="https://qualitymax.io" aria-label="QualityMax home">
+    <Image className="brand-dark" src="/brand/logo-wordmark-white.svg" alt="QualityMax" width={144} height={22} loading="eager" unoptimized />
+    <Image className="brand-light" src="/brand/logo-wordmark-color.svg" alt="" width={144} height={22} loading="eager" unoptimized />
+  </a>;
+}
+function Command({ label, value }: { label: string; value: string }) {
+  return <div className="command-card"><span className="command-label">{label}</span><div><code>{value}</code><CopyButton value={value} /></div></div>;
+}
 
 export default function Home() {
-  return (
-    <main>
-      <header className="site-header">
-        <a className="qualitymax-brand" href="https://qualitymax.io" aria-label="QualityMax home">
-          <Image src="https://qualitymax.io/static/img/qualitymax-logo-white.png" alt="QualityMax" width={200} height={30} unoptimized />
-        </a>
-        <nav aria-label="Primary navigation">
-          <a href="#page-checks">Page checks</a>
-          <a href="#how-it-works">How it works</a>
-          <a href={runnerSite}>Documentation</a>
-          <a href="#ecosystem">Ecosystem</a>
-          <a className="nav-github" href="https://github.com/Quality-Max/9lives-runner">
-            GitHub <span aria-hidden="true">↗</span>
-          </a>
-        </nav>
-      </header>
-
-      <section className="hero" aria-labelledby="hero-title">
-        <div className="hero-glow" aria-hidden="true" />
-        <p className="product-mark"><span aria-hidden="true">🐾</span> 9LIVES</p>
-        <p className="eyebrow"><span /> Go runner · Playwright · Local execution <span /></p>
-        <h1 id="hero-title">Your tests have<br /><em>nine lives.</em></h1>
-        <p className="hero-copy">
-          Ordinary Playwright tests. Bounded AI help. Evidence for every attempt.
-          Run locally with the Go runner, keep your assertions, and inspect the result.
-        </p>
-
-        <p className="demo-cta"><a href="/demo.html">Try the interactive demo <span aria-hidden="true">→</span></a><span>No install needed · real Codex logs · verified fixes</span></p>
-
-        <div className="command-stack" aria-label="Quick start commands">
-          <div className="command-card primary-command">
-            <span className="command-label">Install on macOS or Linux</span>
-            <code>{installCommand}</code>
-            <CopyButton value={installCommand} />
-          </div>
-          <div className="command-card">
-            <span className="command-label">Add the Go binary to PATH</span>
-            <code>{pathCommand}</code>
-            <CopyButton value={pathCommand} />
-          </div>
-          <div className="command-card">
-            <span className="command-label">Run your existing Playwright suite</span>
-            <code>{runCommand}</code>
-            <CopyButton value={runCommand} />
-          </div>
-          <div className="command-card">
-            <span className="command-label">Check the page you changed</span>
-            <code>{scanCommand}</code>
-            <CopyButton value={scanCommand} />
-          </div>
+  return <>
+    <a className="skip-link" href="#main">Skip to content</a>
+    <header className="site-header wrap">
+      <div className="brand-lockup"><Brand /><a className="product-logo" href="#main" aria-label="9lives home">9<span>lives</span></a></div>
+      <nav aria-label="Primary navigation"><a href="#demo">Demo</a><a href="#workflow">Workflow</a><a href="#start">Get started</a><a href={documentation}>Documentation</a><a href={repository}>GitHub <span aria-hidden="true">↗</span></a></nav>
+      <ThemeToggle />
+    </header>
+    <main id="main">
+      <section className="hero wrap" aria-labelledby="hero-title">
+        <div className="hero-content">
+          <p className="eyebrow">9lives / Open-source Playwright tools</p>
+          <h1 id="hero-title">Codex fixes.<br /><span>9l checks the change.</span></h1>
+          <p className="hero-copy">Your agent proposes a fix. Run the test, compare the results, and check what its assertions catch. Keep your Playwright suite and inspect the evidence locally.</p>
+          <div className="actions"><a className="button primary" href="/demo.html#proof">Explore the real experiment <span aria-hidden="true">↗</span></a><a className="button secondary" href="#start">Run it yourself <span aria-hidden="true">↓</span></a></div>
+          <p className="small-note">No account needed · Apache-2.0 · macOS, Linux &amp; Windows</p>
         </div>
-
-        <p className="trust-line">Apache-2.0 <span>•</span> No QualityMax account <span>•</span> Linux · macOS · Windows <span>•</span> x64 & ARM64</p>
-        <p className="hero-note">One local Playwright workflow across your team’s machines. The Go runner v0.4.5 has native binaries for all three platforms.</p>
-        <p className="hero-note">Built by QualityMax without any external funding. Our ambition: become a leading name in modern test automation, with practical AI and proof you can inspect.</p>
-        <p className="hero-note">
-          The macOS/Linux shell installer downloads a checksum-verified binary; Go and Python are not required.
-          Windows users: follow the <a href="https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md#windows">ZIP install guide</a>.
-          Windows provider CLI shell integrations remain unqualified.
-          Your project needs its own Playwright dependencies and browsers.{' '}
-          <a href={runnerSite}>Explore the runner</a> ·{' '}
-          <a href="https://github.com/Quality-Max/9lives-runner/releases">Download a release</a> ·{' '}
-          <a href={migrationGuide}>Migrate from Python</a>
-        </p>
-        <div className="featured-links">
-          <a
-            className="featured-link"
-            href="https://aiinqa.com/ai-in-qa-issue-18/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            As featured in <strong>AI in QA</strong> — Issue #18 <span aria-hidden="true">↗</span>
-          </a>
-          <a
-            className="featured-link"
-            href="https://github.com/cleder/awesome-python-testing"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Python package listed on <strong>awesome-python-testing</strong> <span aria-hidden="true">↗</span>
-          </a>
+        <div className="evidence-card" aria-label="Recorded fix confirmation">
+          <div className="panel-heading"><span className="live-dot" aria-hidden="true" /> Recorded experiment <span>13 Oct 2026</span></div>
+          <div className="evidence-title"><span className="badge">Same test. Two app revisions.</span><h2>The test tells the<br />revisions apart.</h2></div>
+          <div className="revision-pair"><div className="verdict failed"><span>Before the fix</span><strong>Assertion failed</strong><code>0636853e13</code></div><div className="verdict passed"><span>After the fix</span><strong>Test passed</strong><code>6e5f24ccd2</code></div></div>
+          <div className="terminal-summary"><p><span>9l MCP</span><code>confirm_finding</code><strong>confirmed</strong></p><p><span>9l prove</span><code>500 · 401 · malformed JSON</code><strong>3 faults caught</strong></p></div>
+          <p className="evidence-footnote">Seven Chromium executions on a synthetic profile app. Saved results; opening the demo does not run Codex.</p>
+          <a className="text-link" href="/demo.html#proof">Inspect the patch, logs, and receipts <span aria-hidden="true">→</span></a>
         </div>
       </section>
+      <div className="principles wrap"><span>Ordinary Playwright specs</span><span>Explicit assertions</span><span>Bounded local execution</span><span>Attributable receipts</span></div>
 
-      <section className="section feature-tour" id="features" aria-labelledby="feature-tour-heading">
-        <div className="section-heading">
-          <p>THE 9LIVES FEATURE LOOP</p>
-          <h2 id="feature-tour-heading">Create. Assess. Run. Heal. Challenge.</h2>
-          <span>Explore the 9lives workflow in an interactive demo, then try the runner on your own Playwright tests. Native healing is experimental; a demo is not a comparative benchmark.</span>
-        </div>
-        <div className="interactive-demo">
-          <iframe
-            src="https://app.supademo.com/embed/cmv43czgb0031wi0jzgno1y8r?embed_v=2&utm_source=embed"
-            loading="lazy"
-            title="9lives: repair a broken Playwright locator"
-            allow="clipboard-write"
-            allowFullScreen
-          />
-        </div>
-        <p className="hero-note"><a href={interactiveDemo} target="_blank" rel="noreferrer">Open the demo in a new tab ↗</a></p>
-        <div className="feature-grid">
-          <article key="Agent-assisted test generation"><h3>Agent-assisted test generation</h3><p>Your coding agent drafts Playwright specs from reviewed requirements. Capture creation provenance before assessing and executing them.</p></article>
-          <article key="Test assessment"><h3>Test assessment</h3><p>9l assess flags fixed waits, skips, missing or unawaited assertions, and requirement-mapping gaps. Static findings are advisory.</p></article>
-          <article key="Local execution"><h3>Local execution</h3><p>Plan and run your existing Playwright suite with bounded concurrency, deadlines, cancellation, and attributable terminal receipts.</p></article>
-          <article key="Locator healing"><h3>Locator healing</h3><p>Experimental native healing preserves assertions and verifies supported locator-only candidates in isolation before review and acceptance.</p></article>
-          <article key="Fault testing & confirmation"><h3>Fault testing &amp; confirmation</h3><p>Experimental prove injects fetch/XHR faults; confirm compares a reproduction on unfixed and fixed Git revisions. Inspect what each result establishes.</p></article>
-          <article key="Page checks"><h3>Page checks</h3><p>9l scan reports console, link, accessibility, vitals, SEO, header, cookie, mixed-content, and weight findings from one page load; 9l inspect ranks locators. Observations, not test results.</p></article>
-          <article key="Agent tools & SDK"><h3>Agent tools &amp; SDK</h3><p>Native MCP exposes run, heal, assess, confirm, page scan, page inspection, and repro tools. The optional SDK adds named steps and bounded goals; goal completion remains unverified.</p></article>
-        </div>
-        <p className="hero-note"><a href="https://github.com/Quality-Max/9lives-runner/blob/main/docs/README.md">Read all features and limits →</a></p>
+      <section className="section wrap" id="demo" aria-labelledby="demo-heading">
+        <div className="section-heading"><p className="eyebrow">Start with the evidence</p><h2 id="demo-heading">Five ways to look past a green test.</h2><p>Follow a locator repair, find a missing assertion, or inspect a real Codex run and checked application fix. Choose where to begin.</p></div>
+        <div className="story-grid">{stories.map(story => <a className="story-card" key={story.id} href={`/demo.html#${story.id}`}><span className="story-number">{story.number} <span aria-hidden="true">↗</span></span><h3>{story.title}</h3><p>{story.copy}</p><span className="story-label">{story.label}</span></a>)}</div>
+        <p className="section-note">The first three tabs explain the workflow. The last two show recorded execution. Full traces scroll, highlights stay easy to find, and evidence extracts are downloadable.</p>
       </section>
 
-      <section className="section" id="page-checks" aria-labelledby="page-checks-heading">
-        <div className="section-heading">
-          <p>THE VERIFICATION LOOP</p>
-          <h2 id="page-checks-heading">From “looks done” to evidence it works.</h2>
-          <span>Give your coding agent independent evidence from the page before it declares a web change done. Local, no account, and the same checks from the CLI or MCP.</span>
-        </div>
-        <div className="step-grid">
-          {verificationSteps.map((step) => (
-            <article className="step-card" key={step.number}>
-              <span className="step-number">{step.number}</span>
-              <h3>{step.title}</h3>
-              <p>{step.copy}</p>
-            </article>
-          ))}
-        </div>
-        <div className="feature-grid">
-          {pageChecks.map(([name, copy]) => (
-            <article key={name}><h3><code>{name}</code></h3><p>{copy}</p></article>
-          ))}
-        </div>
-        <div className="inline-command">
-          <code>{mcpCommand}</code>
-          <CopyButton value={mcpCommand} />
-        </div>
-        <p className="compatibility-copy">
-          <code>--baseline</code> with <code>--fail-on-new</code> gates a pipeline on new findings only.
-          Pages behind a login use a Playwright storage-state file with explicit consent; loopback targets
-          need <code>--allow-private-network</code>. One cold page load is not field data, and INP is not measured.
-          These checks were previously the separate qmax-mcp npm server.{' '}
-          <a href="https://github.com/Quality-Max/9lives-runner#check-the-page-you-changed">Read the page-check guide</a>
-        </p>
+      <section className="section wrap" id="workflow" aria-labelledby="workflow-heading">
+        <div className="section-heading"><p className="eyebrow">From a failure to a checked fix</p><h2 id="workflow-heading">Make each step earn its result.</h2><p>9lives gives a coding agent execution tools. Your reviewed tests decide which behavior matters.</p></div>
+        <div className="workflow-grid">{workflow.map(step => <article key={step.number}><span className="step-number">{step.number}</span><h3>{step.title}</h3><p>{step.copy}</p><code>{step.tool}</code></article>)}</div>
+        <div className="boundary"><strong>A pass has a precise meaning.</strong><p>A passing receipt means the test’s assertions passed and the execution report was validated. Confirmation shows the test distinguishes two revisions. A caught fault means an assertion failed under that fault. None establishes full requirement coverage.</p><a href={`${repository}/blob/main/docs/README.md`}>Read the contracts and limits →</a></div>
       </section>
 
-      <section className="section meme-section" id="memes" aria-labelledby="meme-heading">
-        <div className="section-heading">
-          <p>SMALL UI CHANGE. BIG TEST DRAMA.</p>
-          <h2 id="meme-heading">Nine lives. Same test drama.</h2>
-          <span>The launch kitten has been through it too. Open a meme and send it to the teammate who knows the feeling.</span>
-        </div>
-        <div className="meme-grid">
-          {memes.map((meme) => (
-            <figure className="meme-card" key={meme.file}>
-              <a href={`/memes/${meme.file}.webp`} aria-label={`Open meme: ${meme.title}`}>
-                <Image src={`/memes/${meme.file}.webp`} alt={meme.alt} width={1024} height={1024} unoptimized />
-              </a>
-              <figcaption><strong>{meme.title}</strong><p>{meme.copy}</p></figcaption>
-            </figure>
-          ))}
-        </div>
-        <p className="meme-note">Illustrated developer jokes. Native healing is experimental; these images are not benchmarks. <a href="https://qualitymax.io/blog/9lives-playwright-field-report">Read the field report →</a></p>
+      <section className="section wrap start-section" id="start" aria-labelledby="start-heading">
+        <div className="section-heading"><p className="eyebrow">Use your own project</p><h2 id="start-heading">Keep your tests.<br />Add execution evidence.</h2><p>The Go runner uses your project’s installed Playwright and configuration. The SDK is optional. You can run ordinary specs without an AI model or QualityMax account.</p><p className="small-note">Native CLI v0.4.5 · x64 &amp; ARM64 · Chromium qualified</p></div>
+        <div className="command-stack"><Command label="01 / Install the CLI on macOS or Linux" value={installCommand} /><Command label="02 / Add the binary to PATH" value={pathCommand} /><Command label="03 / Run your existing Playwright suite" value={runCommand} /><p className="small-note">Your project needs Playwright dependencies and browsers. <a href={`${repository}/blob/main/docs/install.md#windows`}>Windows ZIP installation</a> · <a href={`${repository}/blob/main/docs/run-existing-project.md`}>Project setup</a></p></div>
+        <div className="agent-card"><div><p className="eyebrow">Inside your coding agent</p><h3>Connect the tools through MCP.</h3><p>Native MCP exposes run, assess, heal, confirm, page inspection, and reproduction tools. Start a page check with <code>scan_url</code>. Use the QA skill for requirements and source provenance. Codex and Claude setup live in the agent guide.</p><a className="text-link" href={`${repository}/blob/main/docs/agent-setup.md`}>Set up your agent →</a></div><div><Command label="Example / Claude Code" value={mcpCommand} /><p className="small-note">Optional SDK: named steps and bounded goals. Goals still need explicit assertions; goal completion is unverified.</p><a className="text-link" href={`${repository}/blob/main/docs/goals.md`}>Read goal contracts →</a></div></div>
       </section>
 
-      <section className="section" id="how-it-works" aria-labelledby="how-heading">
-        <div className="section-heading">
-          <p>THE EXECUTION LOOP</p>
-          <h2 id="how-heading">Keep your assertions. Get the evidence.</h2>
-          <span>Go runs your existing tests. Add SDK steps and bounded goals when you need them; explicit assertions remain the test oracle.</span>
-        </div>
-        <div className="step-grid">
-          {healingSteps.map((step) => (
-            <article className="step-card" key={step.number}>
-              <span className="step-number">{step.number}</span>
-              <h3>{step.title}</h3>
-              <p>{step.copy}</p>
-            </article>
-          ))}
-        </div>
-
-        <div className="safety-banner">
-          <span className="safety-icon" aria-hidden="true">!</span>
-          <div>
-            <strong>A pass has a precise meaning.</strong>
-            <p>A passing receipt means assertions passed and execution evidence was validated. It does not prove full requirement coverage. Native selector healing is experimental and preserves assertions.</p>
-          </div>
-        </div>
+      <section className="section wrap" id="page-checks" aria-labelledby="page-checks-heading">
+        <div className="section-heading"><p className="eyebrow">Before the reproduction</p><h2 id="page-checks-heading">Inspect the page. Find the next test.</h2><p>One Chromium load gives nine categories of observations. <code>inspect_page</code> ranks controls and locators; <code>generate_playwright_repro</code> writes a reviewable spec for a finding.</p></div>
+        <div className="check-grid">{pageChecks.map(([name, copy]) => <article key={name}><h3>{name}</h3><p>{copy}</p></article>)}</div>
+        <Command label="Scan a public page" value={scanCommand} />
+        <p className="section-note">Scans are observations, not test results. Load timings are from one cold visit; INP is not measured. Authenticated pages need explicit consent, and loopback targets need <code>--allow-private-network</code>. <a href={`${repository}#check-the-page-you-changed`}>Page-check guide →</a></p>
       </section>
 
-      <section className="framework-strip" aria-label="Supported test frameworks">
-        <span>GO RUNNER</span><i>+</i><span>PLAYWRIGHT</span><i>+</i><span>OPTIONAL SDK</span>
+      <section className="section wrap" id="status" aria-labelledby="status-heading">
+        <div className="section-heading"><p className="eyebrow">What you can rely on</p><h2 id="status-heading">Working tools. Stated boundaries.</h2></div>
+        <div className="status-grid"><article><span className="badge">Available</span><h3>Local execution &amp; assessment</h3><p>Plans, bounded runs, cancellation, terminal receipts, advisory static assessment, page checks, and native MCP. Existing Playwright specs stay usable.</p></article><article><span className="badge">Experimental</span><h3>Healing, confirmation &amp; fault testing</h3><p>Supported locator repairs are verified in isolation. Confirmation compares revisions. Fault testing challenges fetch/XHR paths. The demo qualifies one synthetic app in Chromium.</p></article><article><span className="badge">Planned</span><h3>Broader behavioral verification</h3><p>Independent behavioral verification, verified replay, and native mobile qualification remain subsequent milestones. Other browser engines are unqualified.</p></article></div>
+        <details className="legacy-note"><summary>Using the original Python package?</summary><p>Python remains in maintenance mode for existing workflows, with no removal date set. Use Go for new Playwright projects. Check <code>9l --version</code> when both distributions are installed.</p><code>uv tool install 9lives</code><p><a href={migrationGuide}>Read the migration guide</a> · <a href="https://github.com/Quality-Max/9lives">Python source</a></p></details>
       </section>
 
-      <section className="section" id="python" aria-labelledby="python-heading">
-        <div className="section-heading">
-          <p>EXISTING PYTHON WORKFLOWS</p>
-          <h2 id="python-heading">Python is in maintenance mode.</h2>
-          <span>Use Go for new Playwright projects. Python continues to receive security, correctness, and compatibility fixes; no removal date has been set.</span>
-        </div>
-        <p className="compatibility-copy">
-          Keep Python for its existing MCP contracts, watch and history reports, Cypress/Selenium,
-          standalone-spec scaffolding, and existing Action or pre-commit integrations.
-          Go v0.4 has native <code>9l heal</code>, <code>9l mcp</code>, <code>9l scan</code>, and <code>9l inspect</code>;
-          native healing is experimental. The website shell installer installs Go v0.4.5.
-        </p>
-        <div className="inline-command">
-          <code>{pythonCommand}</code>
-          <CopyButton value={pythonCommand} />
-        </div>
-        <p className="compatibility-copy">
-          Select Python explicitly with <code>9lives</code> or <code>python -m ninelives.cli</code>.
-          Both distributions provide <code>9l</code>, so check <code>9l --version</code> before migrating scripts.{' '}
-          <a href={migrationGuide}>Read the migration guide</a> ·{' '}
-          <a href="https://github.com/Quality-Max/9lives">Python source and compatibility docs</a>
-        </p>
-      </section>
-
-      <section className="section ecosystem-section" id="ecosystem" aria-labelledby="ecosystem-heading">
-        <div className="section-heading">
-          <p>THE QUALITYMAX ECOSYSTEM</p>
-          <h2 id="ecosystem-heading">From first defect to lasting test.</h2>
-          <span>Open local tools when you want them. Hosted QualityMax when your team needs scale.</span>
-        </div>
-        <div className="ecosystem-grid">
-          {ecosystem.map((item) => (
-            <a className="ecosystem-card" href={item.href} key={item.title}>
-              <span>{item.eyebrow}</span>
-              <h3>{item.title}</h3>
-              <p>{item.copy}</p>
-              <b aria-hidden="true">↗</b>
-            </a>
-          ))}
-        </div>
-      </section>
-
-      <section className="final-cta">
-        <p aria-hidden="true">🐾</p>
-        <h2>Give your tests another life.</h2>
-        <div className="inline-command">
-          <code>{installCommand}</code>
-          <CopyButton value={installCommand} />
-        </div>
-        <a href={runnerSite}>See the Go runner in action <span aria-hidden="true">↗</span></a>
-      </section>
-
-      <footer id="legal">
-        <a className="qualitymax-brand" href="https://qualitymax.io" aria-label="QualityMax home">
-          <Image src="https://qualitymax.io/static/img/qualitymax-logo-white.png" alt="QualityMax" width={200} height={30} unoptimized />
-        </a>
-        <p>Local Playwright execution with attributable evidence.</p>
-        <span>© 2026 QualityMax</span>
-        <nav className="legal-links" aria-label="Legal information">
-          <a href="https://qualitymax.io/legal">Imprint / Impressum</a>
-          <a href="https://qualitymax.io/privacy">Privacy / Datenschutz</a>
-          <button type="button" data-qm-cookie-settings hidden style={{ background: 'none', border: 0, padding: 0, color: 'inherit', font: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}>Cookie settings</button>
-          <a href="https://qualitymax.io/terms">Terms / Nutzungsbedingungen</a>
-        </nav>
-        <div className="service-legal">
-          <p>For QualityMax service contracts:</p>
-          <nav className="legal-links" aria-label="QualityMax contract information">
-            <a href="https://qualitymax.io/legal/widerruf">Withdrawal / Widerruf</a>
-            <a href="https://qualitymax.io/cancel-contract">Cancel contract / Vertrag kündigen</a>
-          </nav>
-        </div>
-        <p className="legal-note">Legal information is maintained on qualitymax.io.</p>
-      </footer>
+      <section className="section wrap" id="ecosystem" aria-labelledby="ecosystem-heading"><div className="section-heading"><p className="eyebrow">Built by QualityMax</p><h2 id="ecosystem-heading">Local tools, connected to a wider workflow.</h2><p>9lives is the open-source execution tool. Choose the other QualityMax tools when you need hosted management, a coding agent, or a separate quality review.</p></div><div className="ecosystem-grid">{ecosystem.map(item => <a href={item.href} key={item.title}><h3>{item.title}<span aria-hidden="true">↗</span></h3><p>{item.copy}</p></a>)}</div><p className="section-note">Featured in <a href="https://aiinqa.com/ai-in-qa-issue-18/" target="_blank" rel="noreferrer">AI in QA — Issue #18</a>. The original Python package is listed in <a href="https://github.com/cleder/awesome-python-testing" target="_blank" rel="noreferrer">awesome-python-testing</a>.</p></section>
+      <section className="closing wrap"><p className="eyebrow">See what the test actually caught</p><h2>Follow the failure.<br />Inspect the fix.</h2><div className="actions"><a className="button primary" href="/demo.html#proof">Open the demo ↗</a><a className="button secondary" href={repository}>Explore the repository ↗</a></div></section>
     </main>
-  );
+    <footer className="wrap"><div className="footer-top"><Brand /><p>9lives · Open-source Playwright tools<br /><span>Built by QualityMax. Apache-2.0.</span></p><a href={`${repository}/issues`}>Questions &amp; feedback ↗</a></div><nav aria-label="Legal information"><a href="https://qualitymax.io/legal">Imprint / Impressum</a><a href="https://qualitymax.io/privacy">Privacy / Datenschutz</a><a href="https://qualitymax.io/terms">Terms / Nutzungsbedingungen</a><button type="button" data-qm-cookie-settings hidden>Cookie Settings</button></nav><details><summary>QualityMax service contract information</summary><p><a href="https://qualitymax.io/legal/widerruf">Withdrawal / Widerruf</a> · <a href="https://qualitymax.io/cancel-contract">Cancel contract / Vertrag kündigen</a></p></details><p className="small-note">© 2026 QualityMax · Legal information is maintained on qualitymax.io.</p></footer>
+  </>;
 }

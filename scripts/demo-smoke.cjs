@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   mkdirSync(resolve(root, '.context'), { recursive: true });
   const canonical = readFileSync(resolve(root, 'docs/explainer/demo.html'));
   assert.deepEqual(readFileSync(resolve(root, 'website/public/demo.html')), canonical, 'Run node scripts/sync-demo.cjs');
-  const policy = require('../website/vercel.json').headers[0].headers.find(h => h.key === 'Content-Security-Policy').value;
+  const policy = require('../website/vercel.json').headers.find(rule => rule.source === '/demo.html').headers.find(h => h.key === 'Content-Security-Policy').value;
   const server = createServer((req, res) => {
     if (req.url === '/favicon.ico') return res.writeHead(204).end();
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': policy });
