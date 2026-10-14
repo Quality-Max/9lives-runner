@@ -191,7 +191,7 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: windows
           GOARCH: ${{ matrix.arch }}
-          RELEASE_VERSION: '0.4.5+ci'
+          RELEASE_VERSION: '0.4.6+ci'
         run: python scripts/package-cli.py
       - uses: actions/upload-artifact@v4
         with:

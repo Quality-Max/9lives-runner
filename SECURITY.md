@@ -10,7 +10,7 @@ and a proposed fix when available. Use synthetic data and redact secret values.
 ## Supported versions
 
 This early project focuses fixes on current `main` and the latest release,
-currently 0.4.5 (CLI v0.4.5 and `@9l/playwright` 0.4.5, which share one
+currently 0.4.6 (CLI v0.4.6 and `@9l/playwright` 0.4.6, which share one
 version). Older releases and development snapshots have no
 separate security maintenance commitment.
 

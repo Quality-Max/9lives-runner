@@ -6,6 +6,32 @@ SDK versions.
 
 ## Unreleased
 
+## 0.4.6 — 2026-10-14
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.6 is released with CLI 0.4.6.
+
+### Qualification
+
+- Add a deterministic duplicate-target fixture with two records sharing an
+  Edit button label. Through ordinary Playwright and `9l run`, verify that a
+  visibility-only assertion misses a wrong-record defect, while a visible
+  editor plus exact record-ID assertion catches it. Reordered rows preserve
+  the stable-ID target, and a deliberately wrong expected-ID canary must fail
+  at its assertion. CI checks six attributable receipts; this qualifies the
+  fixture and assertions, not automatic locator healing.
+- Stabilize the heartbeat deadline test on loaded runners by synchronizing
+  executor termination and observing heartbeat updates before release.
+
+### Website and documentation
+
+- Align the homepage and GitHub overview with the recorded agent experiment,
+  before/after confirmation and controlled-fault evidence; add original
+  QualityMax branding, light/dark themes and a Memes gallery.
+- Restore the npm downloads badge and SDK link. Add consent-gated analytics
+  and document the demo's permitted QualityMax embedding.
+
 ## 0.4.5 — 2026-10-13
 
 ### SDK
