@@ -37,7 +37,7 @@ const pageChecks = [
 ];
 const ecosystem = [
   { title: 'QualityMax Cloud', copy: 'Hosted test management, execution, and quality intelligence.', href: 'https://qualitymax.io' },
-  { title: 'qmax-code', copy: 'A coding and QA agent for broader repository workflows.', href: 'https://github.com/Quality-Max/qmax-code' },
+  { title: 'qmax-code', copy: 'A QA terminal that can run standalone or connect to QualityMax.', href: 'https://github.com/Quality-Max/qmax-code' },
   { title: 'QualityMax Grader', copy: 'An offline A–F quality grade for Playwright specs.', href: 'https://github.com/Quality-Max/qualitymax-grader' },
   { title: 'Free QA Skills', copy: 'Open skills for test quality, accessibility, security, and more.', href: 'https://github.com/Quality-Max/free-qa-skills' },
 ];

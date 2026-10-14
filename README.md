@@ -72,8 +72,8 @@ claude mcp add 9lives -- 9l mcp
 The [agent setup guide](docs/agent-setup.md) covers Codex, Claude, and the optional
 [QA skill](skills/9lives-qa/SKILL.md). Native tools expose execution, assessment,
 healing, page inspection, reproduction generation, and fix confirmation.
-[qmax-code](https://github.com/Quality-Max/qmax-code) is the separate terminal
-coding and QA agent for broader repository workflows.
+[qmax-code](https://github.com/Quality-Max/qmax-code) is the separate QA terminal
+that can run standalone or connect to QualityMax.
 
 ## What is available
 
