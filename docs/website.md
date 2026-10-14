@@ -37,3 +37,30 @@ installer as soon as the change merges. Update `install/9l.run.sh`, copy it to
 
 Search-engine submission after deploys is described in [IndexNow](indexnow.md).
 Campaign images are listed in [meme assets](marketing/meme-assets.md).
+
+## Branding, demo, and GitHub overview
+
+The homepage and offline overview use original QualityMax wordmarks, DM Sans /
+Space Grotesk fonts, and Zinc/Indigo tokens from branding revision
+`d295da3755e06c679445ebfd43cd88bfb6a4ec15`. Assets are local in `public/brand/`.
+Both themes use the demo's `9lives-demo-theme` preference. With no saved choice,
+they follow the OS theme; blocked storage still allows a choice for the page.
+
+Edit the homepage, run a local preview, then export its framework-free GitHub
+Pages version with `node scripts/export-overview.cjs` from the repository root.
+See [the overview workflow](explainer/README.md). The README banner and homepage
+social image describe the same recorded experiment.
+
+`docs/explainer/demo.html` is canonical; run `node scripts/sync-demo.cjs` to
+refresh the Vercel mirror without losing its consent-gated analytics. All five
+chapter hashes (`locator`, `coverage`, `flow`, `live`, `proof`) are direct links.
+
+Only `/demo.html` allows QualityMax (`https://qualitymax.io` and
+`https://www.qualitymax.io`) to embed it, through a separate non-overlapping CSP
+rule. Other pages retain `frame-ancestors 'none'`. The QualityMax landing page
+loads the iframe only on request and keeps a full-page fallback link. Opening
+or embedding the demo displays saved results; it never launches Codex or tests.
+
+`node scripts/site-smoke.cjs` verifies theme behavior, responsive overflow,
+loaded assets, chapter links, portable overview controls, and allowed/blocked
+cross-origin embedding. `node scripts/demo-smoke.cjs` verifies the demo itself.

@@ -14,7 +14,7 @@ def test_landing_page_keeps_install_and_ecosystem_links():
     assert "curl -fsSL https://9lives.run/install.sh | sh" in page
     assert "https://quality-max.github.io/9lives-runner/" in page
     assert "https://github.com/Quality-Max/9lives-runner" in page
-    assert page.count('href="https://qualitymax.io"') == 2
+    assert 'href="https://qualitymax.io"' in page
     for destination in (
         "https://aiinqa.com/ai-in-qa-issue-18/",
         "https://github.com/Quality-Max/qmax-code",

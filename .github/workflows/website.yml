@@ -5,12 +5,18 @@ on:
     paths:
       - 'website/**'
       - 'install/**'
+      - 'docs/explainer/**'
+      - 'scripts/site-smoke.cjs'
+      - 'scripts/export-overview.cjs'
       - '.github/workflows/website.yml'
   push:
     branches: [main]
     paths:
       - 'website/**'
       - 'install/**'
+      - 'docs/explainer/**'
+      - 'scripts/site-smoke.cjs'
+      - 'scripts/export-overview.cjs'
       - '.github/workflows/website.yml'
   workflow_dispatch:
 
@@ -41,6 +47,31 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run build:vercel
+      - name: Install browser qualification tools
+        working-directory: .
+        run: |
+          npm ci
+          npm exec playwright install --with-deps chromium
+      - name: Qualify the production homepage and portable overview
+        working-directory: .
+        run: |
+          mkdir -p .context
+          (cd website && npm exec next start -- --port 3000) > .context/site-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://localhost:3000/; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            echo "Production homepage did not start within 30 seconds" >&2
+            exit 1
+          fi
+          node scripts/site-smoke.cjs
 
   installer:
     runs-on: ubuntu-latest

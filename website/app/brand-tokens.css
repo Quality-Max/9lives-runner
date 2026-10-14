@@ -1,0 +1,298 @@
+/**
+ * QualityMax Design System — Design Tokens
+ * Palette: Zinc surfaces + Indigo / Violet accents. Dark-first.
+ *   :root                 → dark mode (default)
+ *   [data-theme="light"]  → light mode
+ *
+ * Source of truth: static/css/theme.css in the QualityMax app.
+ * Keep this file and the app in sync when tokens change.
+ */
+
+/* ---------- Brand fonts ---------- */
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/brand/space-grotesk-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DM Sans";
+  src: url("/brand/dm-sans-latin.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+/* =============================================================
+   DARK THEME (default)
+   ============================================================= */
+:root {
+  /* Surfaces */
+  --bg-primary: #09090b;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
+  --bg-elevated: #1c1c22;
+  --bg-hover: #27272a;
+  --bg-active: #3f3f46;
+  --bg-page: #09090b;
+
+  /* Text */
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --text-muted: #52525b;
+  --text-inverse: #09090b;
+  --text-link: #818cf8;
+  --text-link-hover: #a5b4fc;
+
+  /* Borders */
+  --border-default: #27272a;
+  --border-light: #18181b;
+  --border-strong: #3f3f46;
+  --border-focus: #6366f1;
+
+  /* Accent */
+  --accent-primary: #6366f1;
+  --accent-primary-hover: #818cf8;
+  --accent-primary-light: rgba(99, 102, 241, 0.15);
+  --accent-secondary: #a78bfa;
+  --accent-gradient: linear-gradient(135deg, #6366f1, #8b5cf6);
+
+  /* Semantic */
+  --success-bg: rgba(34, 197, 94, 0.1);
+  --success-text: #4ade80;
+  --success-border: #22c55e;
+  --success-solid: #22c55e;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-text: #f87171;
+  --error-border: #ef4444;
+  --error-solid: #ef4444;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --warning-text: #fbbf24;
+  --warning-border: #f59e0b;
+  --warning-solid: #f59e0b;
+  --info-bg: rgba(99, 102, 241, 0.1);
+  --info-text: #818cf8;
+  --info-border: #6366f1;
+  --info-solid: #6366f1;
+
+  /* Buttons */
+  --btn-primary-bg: #6366f1;
+  --btn-primary-hover: #818cf8;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-hover: #27272a;
+  --btn-secondary-text: #a1a1aa;
+  --btn-danger-bg: #ef4444;
+  --btn-danger-hover: #f87171;
+  --btn-danger-text: #ffffff;
+  --btn-success-bg: #22c55e;
+  --btn-success-hover: #4ade80;
+  --btn-success-text: #ffffff;
+
+  /* Inputs */
+  --input-bg: #09090b;
+  --input-border: #27272a;
+  --input-border-hover: #3f3f46;
+  --input-border-focus: #6366f1;
+  --input-text: #fafafa;
+  --input-placeholder: #52525b;
+
+  /* Cards */
+  --card-bg: #18181b;
+  --card-border: #27272a;
+  --card-shadow: none;
+  --card-hover-shadow: var(--shadow-sm);
+
+  /* Tables */
+  --table-header-bg: transparent;
+  --table-header-text: #71717a;
+  --table-row-bg: #18181b;
+  --table-row-alt-bg: #1c1c20;
+  --table-row-hover: #27272a;
+  --table-border: #27272a;
+
+  /* Badges */
+  --badge-default-bg: #27272a;
+  --badge-default-text: #a1a1aa;
+  --badge-blue-bg: rgba(99, 102, 241, 0.1);
+  --badge-blue-text: #818cf8;
+  --badge-green-bg: rgba(34, 197, 94, 0.1);
+  --badge-green-text: #4ade80;
+  --badge-red-bg: rgba(239, 68, 68, 0.1);
+  --badge-red-text: #f87171;
+  --badge-yellow-bg: rgba(245, 158, 11, 0.1);
+  --badge-yellow-text: #fbbf24;
+  --badge-purple-bg: rgba(139, 92, 246, 0.1);
+  --badge-purple-text: #a78bfa;
+
+  /* Code */
+  --code-bg: #27272a;
+  --code-text: #f87171;
+  --code-block-bg: #09090b;
+  --code-block-text: #e4e4e7;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+
+  /* ---------- Theme-independent primitives ---------- */
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px;  --space-6: 24px;  --space-7: 28px;  --space-8: 32px;
+  --space-10: 40px; --space-12: 48px; --space-16: 64px; --space-20: 80px;
+  --space-24: 96px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* Typography */
+  --font-heading: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-code: 'Fira Code', 'SF Mono', 'Monaco', 'Menlo', monospace;
+
+  /* Type scale */
+  --text-xs: 0.75rem;    --text-sm: 0.875rem;  --text-base: 1rem;
+  --text-lg: 1.125rem;   --text-xl: 1.25rem;   --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;  --text-4xl: 2.25rem;  --text-5xl: 3rem;
+
+  /* Font weights */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Line heights */
+  --line-height-tight: 1.25;
+  --line-height-snug: 1.375;
+  --line-height-base: 1.5;
+  --line-height-relaxed: 1.625;
+  --line-height-loose: 1.75;
+
+  /* Letter spacing */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+
+  /* Motion */
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: var(--duration-fast) var(--ease-default);
+  --transition-base: var(--duration-base) var(--ease-default);
+  --transition-slow: var(--duration-slow) var(--ease-default);
+
+  /* Z-index scale */
+  --z-base: 1;        --z-raised: 10;     --z-dropdown: 100;
+  --z-sticky: 200;    --z-header: 300;    --z-sidebar: 400;
+  --z-overlay: 800;   --z-modal: 900;     --z-toast: 1000;
+  --z-tooltip: 1100;
+
+  /* Breakpoints (documentation tokens — CSS vars are invalid inside @media) */
+  --breakpoint-sm: 480px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  /* Layout */
+  --header-height: 48px;
+  --sidebar-width: 240px;
+  --sidebar-width-collapsed: 64px;
+}
+
+/* =============================================================
+   LIGHT THEME
+   ============================================================= */
+[data-theme="light"] {
+  --bg-primary: #fafafa;
+  --bg-secondary: #f4f4f5;
+  --bg-tertiary: #e4e4e7;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e4e4e7;
+  --bg-active: #d4d4d8;
+  --bg-page: #fafafa;
+
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-tertiary: #71717a;
+  --text-muted: #a1a1aa;
+  --text-inverse: #fafafa;
+  --text-link: #4f46e5;
+  --text-link-hover: #6366f1;
+
+  --border-default: #e4e4e7;
+  --border-light: #f4f4f5;
+  --border-strong: #d4d4d8;
+  --border-focus: #4f46e5;
+
+  --accent-primary: #4f46e5;
+  --accent-primary-hover: #6366f1;
+  --accent-primary-light: rgba(79, 70, 229, 0.1);
+  --accent-secondary: #7c3aed;
+  --accent-gradient: linear-gradient(135deg, #4f46e5, #7c3aed);
+
+  --success-bg: #dcfce7; --success-text: #166534; --success-border: #86efac; --success-solid: #22c55e;
+  --error-bg: #fee2e2;   --error-text: #991b1b;   --error-border: #fca5a5;   --error-solid: #ef4444;
+  --warning-bg: #fef3c7; --warning-text: #92400e; --warning-border: #fcd34d; --warning-solid: #f59e0b;
+  --info-bg: #eef2ff;    --info-text: #3730a3;    --info-border: #a5b4fc;    --info-solid: #4f46e5;
+
+  --btn-primary-bg: #4f46e5;
+  --btn-primary-hover: #4338ca;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-hover: #e4e4e7;
+  --btn-secondary-text: #52525b;
+  --btn-danger-bg: #ef4444;
+  --btn-danger-hover: #dc2626;
+  --btn-danger-text: #ffffff;
+  --btn-success-bg: #22c55e;
+  --btn-success-hover: #16a34a;
+  --btn-success-text: #ffffff;
+
+  --input-bg: #ffffff;
+  --input-border: #d4d4d8;
+  --input-border-hover: #a1a1aa;
+  --input-border-focus: #4f46e5;
+  --input-text: #09090b;
+  --input-placeholder: #a1a1aa;
+
+  --card-bg: #ffffff;
+  --card-border: #e4e4e7;
+  --card-shadow: var(--shadow-sm);
+  --card-hover-shadow: var(--shadow-md);
+
+  --table-header-bg: #fafafa;
+  --table-header-text: #71717a;
+  --table-row-bg: #ffffff;
+  --table-row-alt-bg: #fafafa;
+  --table-row-hover: #f4f4f5;
+  --table-border: #e4e4e7;
+
+  --badge-default-bg: #f4f4f5; --badge-default-text: #52525b;
+  --badge-blue-bg: #eef2ff;    --badge-blue-text: #4338ca;
+  --badge-green-bg: #dcfce7;   --badge-green-text: #166534;
+  --badge-red-bg: #fee2e2;     --badge-red-text: #991b1b;
+  --badge-yellow-bg: #fef3c7;  --badge-yellow-text: #92400e;
+  --badge-purple-bg: #f3e8ff;  --badge-purple-text: #6b21a8;
+
+  --code-bg: #f4f4f5;
+  --code-text: #dc2626;
+  --code-block-bg: #18181b;
+  --code-block-text: #fafafa;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
