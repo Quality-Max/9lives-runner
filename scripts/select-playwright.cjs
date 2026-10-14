@@ -10,9 +10,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const manifests = ['package.json', 'testdata/sdk/package.json', 'testdata/assessment/package.json', 'testdata/playwright/package.json'];
+const manifests = ['package.json', 'testdata/sdk/package.json', 'testdata/assessment/package.json', 'testdata/healing-targets/package.json', 'testdata/playwright/package.json'];
 // Directories whose own resolution of @playwright/test must match.
-const consumers = ['.', 'packages/playwright', 'testdata/sdk', 'testdata/playwright'];
+const consumers = ['.', 'packages/playwright', 'testdata/sdk', 'testdata/healing-targets', 'testdata/playwright'];
 
 function usage() {
   console.error('usage: select-playwright.cjs [--check] <major.minor.patch>');
