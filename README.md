@@ -5,14 +5,14 @@
 [![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[![9lives by QualityMax: Codex fixes. 9l checks the change.](docs/assets/9lives-overview.svg)](https://9lives.run/demo.html#proof)
+[![9lives by QualityMax: Agent fixes. 9l checks the change.](docs/assets/9lives-overview.svg)](https://9lives.run/demo.html#proof)
 
 Your coding agent proposes a fix. **9lives runs the test, compares the results,
 and records what its assertions caught.** Keep your Playwright suite and inspect
 the evidence locally. No QualityMax account or hosted service required.
 
 [Interactive demo](https://9lives.run/demo.html#proof) ·
-[Website](https://9lives.run) · [Documentation](docs/README.md) ·
+[Website](https://9lives.run) · [Memes](https://9lives.run/memes) · [Documentation](docs/README.md) ·
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
 
@@ -28,12 +28,12 @@ Inspect the patch, scroll the console, and download the evidence extracts.
 | [A renamed button](https://9lives.run/demo.html#locator) | A broken locator and a verified repair with assertions preserved | Illustrated walkthrough |
 | [A missing check](https://9lives.run/demo.html#coverage) | A green test that misses a required outcome | Illustrated walkthrough |
 | [Behind the agent](https://9lives.run/demo.html#flow) | Observed controls, bounded actions, and execution receipts | Algorithm walkthrough |
-| [A real Codex run](https://9lives.run/demo.html#live) | Saved provider decisions and browser execution logs | Recorded execution |
+| [A real agent run](https://9lives.run/demo.html#live) | Saved provider decisions and browser execution logs | Recorded execution |
 | [Prove the fix](https://9lives.run/demo.html#proof) | Before/after receipts and three caught faults | Recorded execution |
 
 The last experiment records **seven Chromium executions on one synthetic profile
 app**, captured on 13 October 2026. Opening the demo does not execute tests or call
-Codex. It works in light and dark themes and as a [single offline HTML file](docs/explainer/demo.html).
+an agent. It works in light and dark themes and as a [single offline HTML file](docs/explainer/demo.html).
 To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
 The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
 

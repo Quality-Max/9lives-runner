@@ -13,12 +13,12 @@ it('uses locally served official branding in both header and footer', () => {
 });
 it('leads with the recorded experiment and links every chapter', () => {
   render(<Home />);
-  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Codex fixes.9l checks the change.');
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Agent fixes.9l checks the change.');
   expect(screen.getByRole('link', { name: /explore the real experiment/i }).getAttribute('href')).toBe('/demo.html#proof');
   for (const chapter of ['locator', 'coverage', 'flow', 'live', 'proof']) {
     expect(screen.getAllByRole('link').some(link => link.getAttribute('href') === `/demo.html#${chapter}`)).toBe(true);
   }
-  expect(screen.getByText(/Seven Chromium executions on a synthetic profile app/).textContent).toContain('does not run Codex');
+  expect(screen.getByText(/Seven Chromium executions on a synthetic profile app/).textContent).toContain('does not run an agent');
   expect(screen.getByText(/None establishes full requirement coverage/)).toBeTruthy();
   expect(screen.getByText('Experimental')).toBeTruthy();
   expect(screen.getByText('Planned')).toBeTruthy();

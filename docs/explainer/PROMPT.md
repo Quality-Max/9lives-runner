@@ -4,7 +4,7 @@ This overview is exported from the 9lives homepage with
 `scripts/export-overview.cjs`; see [README](README.md). Its source of truth is
 `website/app/page.tsx`, not a generated design-app export.
 
-Lead with “Codex fixes. 9l checks the change.” Show the recorded before/after
+Lead with “Agent fixes. 9l checks the change.” Show the recorded before/after
 experiment and three caught request faults. Link all five standalone demo
 chapters, marking illustrated versus recorded evidence. Explain reproduce,
 review, confirm, and challenge in that order. Start installation with ordinary

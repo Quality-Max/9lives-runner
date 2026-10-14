@@ -4,7 +4,7 @@ Created with the built-in image generation tool, using the approved Product Hunt
 
 Production assets are 1024 × 1024 WebP at quality 84. The gallery uses explicit dimensions, lazy loading, descriptive alt text, and links to the full images.
 
-Hosted on **9lives.run only**. QualityMax's homepage has no meme gallery. The GitHub README links to the gallery.
+Hosted at **[9lives.run/memes](https://9lives.run/memes)**. QualityMax's homepage has no meme gallery. The GitHub README links to the gallery.
 
 | Asset | Production path |
 | --- | --- |

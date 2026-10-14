@@ -412,7 +412,7 @@ h1,h2,h3,.logo{font-family:var(--font-heading)}
 <main data-journey="locator">
 <section class="intro" aria-labelledby="headline"><div><p class="eyebrow" id="hero-eyebrow">Find the break. Check the repair.</p><h1 id="headline">Your button changed.<br><em>Your test didn’t.</em></h1></div><p>See what failed, inspect the page, and check the repair.<br><strong>Try it with or without an agent.</strong></p></section>
 <noscript><style>.actions,.journey-picker,.mode-bar,.profile-demo,.locator-panel,.devtools{display:none!important}main[data-journey] #coverage-panel,main[data-journey] #checkout-order,main[data-journey] #shop-recommendations{display:block!important}</style><p>This demo needs JavaScript for its three clicks. The story: a renamed button breaks the old locator. 9l proposes the observed button name and verifies the candidate with the original assertion. A second story shows how a checkout test misses broken recommendations. 9l injects nine network failures and reveals three the test misses. Adding a recommendation check catches all nine. This is an illustration of recorded results; it does not run tests in your browser.</p></noscript>
-<div class="journey-picker" role="tablist" aria-label="Choose a demo"><button type="button" role="tab" id="journey-locator" aria-controls="example-panel" aria-selected="true">01 / A renamed button</button><button type="button" role="tab" id="journey-coverage" aria-controls="example-panel" aria-selected="false" tabindex="-1">02 / A missing check</button><button type="button" role="tab" id="journey-flow" aria-controls="flow-panel" aria-selected="false" tabindex="-1">03 / Behind the agent</button><button type="button" role="tab" id="journey-live" aria-controls="live-panel" aria-selected="false" tabindex="-1">04 / Real Codex run</button><button type="button" role="tab" id="journey-proof" aria-controls="proof-panel" aria-selected="false" tabindex="-1">05 / Prove the fix</button></div>
+<div class="journey-picker" role="tablist" aria-label="Choose a demo"><button type="button" role="tab" id="journey-locator" aria-controls="example-panel" aria-selected="true">01 / A renamed button</button><button type="button" role="tab" id="journey-coverage" aria-controls="example-panel" aria-selected="false" tabindex="-1">02 / A missing check</button><button type="button" role="tab" id="journey-flow" aria-controls="flow-panel" aria-selected="false" tabindex="-1">03 / Behind the agent</button><button type="button" role="tab" id="journey-live" aria-controls="live-panel" aria-selected="false" tabindex="-1">04 / Real agent run</button><button type="button" role="tab" id="journey-proof" aria-controls="proof-panel" aria-selected="false" tabindex="-1">05 / Prove the fix</button></div>
 <div id="example-panel" role="tabpanel" aria-labelledby="journey-locator">
 <div class="mode-bar" id="mode-bar"><div class="mode-picker" role="group" aria-label="Who investigates"><button type="button" id="mode-solo" aria-pressed="true">You + 9l</button><button type="button" id="mode-agent" aria-pressed="false">AI agent + 9l</button></div><div class="workflow"><p id="workflow-copy"></p><p id="mode-note">Recorded offline repair · zero model calls</p></div></div>
 <ol class="steps" aria-label="Demo progress"><li class="current" aria-current="step"><span class="step-number">01</span> Looks good</li><li><span class="step-number">02</span> Something breaks</li><li><span class="step-number">03</span> 9l finds the gap</li><li><span class="step-number">04</span> A better test</li></ol>
@@ -570,7 +570,7 @@ await expect(page.getByRole('status', { name: 'Profile' }))
   <div class="live-intro"><p><strong>Recorded experiment · 13 October 2026 UTC.</strong> A deliberately seeded app bug, a real Codex edit, and seven Chromium test executions. Explore the saved results below.</p><span class="proof-badge">Same test. Before and after.</span></div>
   <div class="proof-steps" role="group" aria-label="Explore the recorded fix">
     <button type="button" data-proof-step="0"><span>01</span> Reproduce the bug</button>
-    <button type="button" data-proof-step="1"><span>02</span> See Codex’s patch</button>
+    <button type="button" data-proof-step="1"><span>02</span> See the agent’s patch</button>
     <button type="button" data-proof-step="2"><span>03</span> Confirm with 9l</button>
     <button type="button" data-proof-step="3"><span>04</span> Challenge the test</button>
   </div>
@@ -830,14 +830,14 @@ function render(){
   byId('flow-panel').hidden = journey !== 'flow';
   if(journey === 'proof'){
     byId('hero-eyebrow').textContent = 'From a failing test to a checked fix.';
-    byId('headline').textContent = 'Codex fixes. 9l checks the change.';
+    byId('headline').textContent = 'Agent fixes. 9l checks the change.';
     document.querySelector('.intro > p').textContent = 'Follow an application fix from a reproduced bug to before-and-after evidence. Then test whether the green test notices failures.';
     renderProof();
     return;
   }
   if(journey === 'live'){
     byId('hero-eyebrow').textContent = 'From illustration to execution.';
-    byId('headline').textContent = 'Codex acts. The test decides.';
+    byId('headline').textContent = 'Agent acts. The test decides.';
     document.querySelector('.intro > p').textContent = 'One real test. Two app states. Watch why an agent finishing its task doesn’t mean the test passes.';
     renderLive();
     return;
@@ -891,8 +891,8 @@ const proofEvidence = {"version":1,"scope":"Synthetic loopback profile fixture; 
 let proofStep = 0;
 let proofFault = 0;
 const proofScenes = [
-  {status:'REPRODUCED · ASSERTION FAILED',failed:true,title:'Ada is a valid name. The app says no.',copy:'The demo contract accepts every non-empty name. A length check accidentally rejects short names. Codex writes a regression test, and 9l records its failure.',next:'See Codex’s patch →'},
-  {status:'CODEX EDIT · TEST UNCHANGED',title:'One application line changes.',copy:'Codex identifies the wrong threshold and changes it from three characters to zero. Blank or whitespace-only names still fail the guard.',next:'Check both revisions →'},
+  {status:'REPRODUCED · ASSERTION FAILED',failed:true,title:'Ada is a valid name. The app says no.',copy:'The demo contract accepts every non-empty name. A length check accidentally rejects short names. Codex writes a regression test, and 9l records its failure.',next:'See the agent’s patch →'},
+  {status:'AGENT EDIT · TEST UNCHANGED',title:'One application line changes.',copy:'Codex identifies the wrong threshold and changes it from three characters to zero. Blank or whitespace-only names still fail the guard.',next:'Check both revisions →'},
   {status:'9l MCP · FIX CONFIRMED',title:'The same test tells the revisions apart.',copy:'An agent’s patch is a proposal. 9l runs the regression against each app revision in isolation and compares the executed results.',next:'Challenge the green test →'},
   {status:'9l PROVE · THREE FAULTS CAUGHT',title:'Now make the dependency fail.',copy:'The fixed app passes normally. 9l then reruns the same test three times, breaking the profile response differently each time. Select a fault to inspect its evidence.',next:'Replay the recorded story ↺'}
 ];

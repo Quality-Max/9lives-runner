@@ -4,20 +4,20 @@ import { themeBootstrap } from './theme-bootstrap';
 import './globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL('https://9lives.run'),
-  title: '9lives — Codex fixes. 9l checks the change.',
-  description: 'Run Playwright tests locally, confirm a fix against the same test, and challenge assertions with controlled faults. Explore real Codex and 9l execution evidence.',
+  title: '9lives — Agent fixes. 9l checks the change.',
+  description: 'Run Playwright tests locally, confirm a fix against the same test, and challenge assertions with controlled faults. Explore real agent and 9l execution evidence.',
   alternates: { canonical: '/' },
   openGraph: {
-    title: '9lives — Codex fixes. 9l checks the change.',
-    description: 'From a reproduced failure to a checked fix. Inspect real Codex runs, before/after receipts, and caught faults with the open-source 9lives runner.',
+    title: '9lives — Agent fixes. 9l checks the change.',
+    description: 'From a reproduced failure to a checked fix. Inspect real agent runs, before/after receipts, and caught faults with the open-source 9lives runner.',
     url: 'https://9lives.run',
     siteName: '9Lives',
     type: 'website',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: '9lives by QualityMax — Codex fixes. 9l checks the change.' }],
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: '9lives by QualityMax — Agent fixes. 9l checks the change.' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '9lives — Codex fixes. 9l checks the change.',
+    title: '9lives — Agent fixes. 9l checks the change.',
     description: 'Your agent proposes a fix. 9l runs the tests, compares revisions, and records what the assertions caught.',
     images: ['/og.png'],
   },

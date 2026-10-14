@@ -119,6 +119,24 @@ footer { padding-block: 32px; border-top: 1px solid var(--border-default); }
 .footer-top { display: flex; align-items: center; justify-content: space-between; gap: 24px; font-size: 12px; }
 .footer-top p span { color: var(--text-secondary); font-size: 11px; }
 .footer-top > a:last-child { color: var(--text-link); }
+.memes-intro { padding-block: 64px 40px; max-width: 760px; }
+.memes-intro h1 { margin-block: 16px 24px; }
+.memes-intro h1 span { color: var(--text-link); }
+.memes-intro .small-note { margin-top: 20px; }
+.meme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+.meme-card { min-width: 0; background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 16px; overflow: hidden; }
+.meme-image { display: block; }
+.meme-image img { display: block; width: 100%; height: auto; }
+.meme-caption { padding: 24px; }
+.meme-caption h2 { font-size: 26px; }
+.meme-caption p { margin-block: 12px 18px; color: var(--text-secondary); }
+.meme-outro { padding-block: 64px; }
+.meme-outro p { margin-block: 16px 24px; color: var(--text-secondary); }
+@media (max-width: 700px) {
+  .memes-intro { padding-block: 40px 28px; }
+  .meme-grid { grid-template-columns: 1fr; gap: 24px; }
+  .meme-caption { padding: 20px; }
+}
 footer nav { display: flex; flex-wrap: wrap; gap: 18px; font-size: 11px; color: var(--text-secondary); margin-block: 25px 15px; }
 footer nav button { border: 0; background: none; color: inherit; padding: 0; font-size: inherit; }
 footer nav button[hidden] { display: none; }
