@@ -186,7 +186,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
 	}
-	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles})
+	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles, Path: fs.Arg(0)})
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2

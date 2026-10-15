@@ -75,9 +75,35 @@ function createAnalyzer(ts) {
     });
   };
 
+  // A JavaScript spec is parsed as Playwright loads it: JSX is allowed in any
+  // file, TypeScript-only syntax is not. TypeScript reports that syntax only
+  // through a program, so one is built over the single in-memory file. The
+  // host serves nothing else: no lib, no module resolution, no type roots.
+  const javaScriptOnly = file => {
+    const host = {
+      getSourceFile: name => (name === file.fileName ? file : void 0),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => {},
+      getCurrentDirectory: () => '/',
+      getCanonicalFileName: name => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: name => name === file.fileName,
+      readFile: () => void 0,
+      directoryExists: () => false,
+      getDirectories: () => [],
+    };
+    const options = { noLib: true, noResolve: true, allowJs: true, jsx: ts.JsxEmit.Preserve, types: [], typeRoots: [] };
+    return ts.createProgram([file.fileName], options, host).getSyntacticDiagnostics(file).length === 0;
+  };
+
   function analyze(source, options = {}) {
-    const file = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const javascript = options.javascript === true;
+    const file = javascript
+      ? ts.createSourceFile('input.jsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX)
+      : ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     if (file.parseDiagnostics.length) throw new AnalysisError('syntax');
+    if (javascript && !javaScriptOnly(file)) throw new AnalysisError('typescript-in-javascript');
     const tests = new Set(), expects = new Set(), foreignTests = new Set();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
@@ -577,7 +603,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 9, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 10, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -596,11 +622,11 @@ async function main(parserPath = process.argv[1]) {
       chunks.push(chunk);
     }
     const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true })));
+    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true, javascript: request.javascript === true })));
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 9, error: code }));
+    process.stdout.write(JSON.stringify({ version: 10, error: code }));
     process.exitCode = 2;
   }
 }

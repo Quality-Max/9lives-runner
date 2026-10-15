@@ -44,7 +44,7 @@ try {
     assert(!result.error && result.status === 0 && result.stderr === '');
     const report = JSON.parse(result.stdout);
     assert.equal(report.version, 3);
-    assert.equal(report.policy, 'assessment-source-v12');
+    assert.equal(report.policy, 'assessment-source-v13');
     assert.equal(report.compiler, '5.9.3');
     assert.equal(report.execution, 'not_run');
     assert.equal(report.completeness, 'partial');
@@ -58,6 +58,13 @@ try {
     const invalid = invoke(engine, ['assess', 'fixture.spec.ts', '--requirements', 'requirements.json', '--format', 'json'], project);
     assert(!invalid.error && invalid.status === 2 && invalid.stdout === '');
     assert.equal(invalid.stderr, '9l: assessment [syntax]: source is not valid syntax for the bundled TypeScript parser\n');
+    // A JavaScript spec is read as Playwright loads it: no TypeScript transform.
+    fs.writeFileSync(path.join(project, 'typed.spec.js'), "import {test} from '@playwright/test';\nconst n: string = 'x';\ntest('t', () => {});\n");
+    const typed = invoke(engine, ['assess', 'typed.spec.js', '--format', 'json'], project,
+      { NODE_OPTIONS: '--require=' + path.join(project, 'hook.cjs'), NODE_PATH: path.join(project, 'node_modules') });
+    assert(!typed.error && typed.status === 2 && typed.stdout === '');
+    assert(typed.stderr.startsWith('9l: assessment [typescript-in-javascript]: '));
+    assert(!fs.existsSync(path.join(project, 'executed')));
   }
   console.log('Go artifact assessed without consumer TypeScript; incompatible package and Node hooks ignored; syntax failure stayed private.');
 } catch {

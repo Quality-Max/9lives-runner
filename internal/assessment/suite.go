@@ -267,6 +267,7 @@ func assessSuiteFile(ctx context.Context, input SuiteInput, contract []byte, c C
 		file.Error = stopped(ctx)
 		return file
 	}
+	opts.Path = input.Path
 	report, err := assessWithHelper(ctx, input.Source, contract, c, opts, parser, suiteFileTimeout)
 	var failure *Error
 	switch {

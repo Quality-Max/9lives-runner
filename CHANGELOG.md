@@ -6,6 +6,20 @@ SDK versions.
 
 ## Unreleased
 
+### Assess
+
+Policy `assessment-source-v13`; the analyzer helper version is 10 and report
+version 3 is unchanged.
+
+- Parse `.js`, `.mjs`, `.cjs` and `.jsx` specs as Playwright loads them:
+  JavaScript with JSX and no TypeScript transform. Type annotations, `as`,
+  `interface`, `enum`, `import type`, non-null `!` and other TypeScript-only
+  syntax in such a file now fail with the new `typescript-in-javascript`
+  diagnostic (exit 2, or the file's `error` in a suite) instead of a clean
+  report for a spec Playwright refuses to load. TypeScript specs and sources
+  with no known extension still parse as TSX. The check builds a program over
+  the single in-memory file; no library, module or type root is resolved.
+
 ## 0.4.6 — 2026-10-14
 
 ### SDK
