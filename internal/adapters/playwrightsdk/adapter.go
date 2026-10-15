@@ -64,7 +64,7 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 		project = filepath.Dir(config)
 	}
 	if project == "" || binary == "" || reporter == "" {
-		return runner.Job{}, fmt.Errorf("SDK engine unavailable: install @playwright/test and build @9l/playwright before using --sdk")
+		return runner.Job{}, fmt.Errorf("the @9l/playwright engine is unavailable: install @playwright/test and @9l/playwright in the project; run --sdk, prove and confirm need both")
 	}
 	relative, err := filepath.Rel(project, path)
 	if err != nil {

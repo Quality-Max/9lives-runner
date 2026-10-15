@@ -730,10 +730,16 @@
           },
           "type": "array"
         },
+        "expectedStatus": {
+          "type": "string"
+        },
         "location": {
           "type": "string"
         },
         "message": {
+          "type": "string"
+        },
+        "status": {
           "type": "string"
         },
         "title": {

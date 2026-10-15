@@ -108,6 +108,10 @@ inconclusive.
 
 The spec must import `test` from `@9l/playwright` and use the built-in `page`
 or `context` fixture. Tests that never use a browser context are untouched.
+An API-level spec that calls the application with Node's `fetch`, Playwright's
+`request` fixture or a database client gives `prove` nothing to inject: those
+requests never pass through a browser context. When `@9l/playwright` is not
+installed in the project, `prove` stops before running anything and says so.
 
 - **Stable origin.** A fault targets the baseline's exact origin. An
   application started on a random port in each run is never matched, and every
