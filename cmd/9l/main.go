@@ -104,8 +104,10 @@ Usage:
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
+          # needs @9l/playwright installed and a spec importing test from it; faults reach only fetch/XHR
+          # made through its page or context fixtures, not Node-side fetch or database clients
   9l confirm <spec> --unfixed REV [--fixed REV] [--finding-id ID] [--format text|json]
-          # experimental: does a reproduction spec fail before a fix and pass after it?
+          # experimental: does a reproduction spec fail before a fix and pass after it? needs @9l/playwright
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
@@ -976,7 +978,13 @@ func printAnnotations(w io.Writer, annotations []runner.TestAnnotation) {
 // printFailure shows which test failed, where and why, and the files that
 // explain it, below its receipt line.
 func printFailure(w io.Writer, failure runner.TestFailure) {
-	fmt.Fprintf(w, "           ✗ %s", receiptReason(failure.Title))
+	// A test.fail() pin that passed is reported as a failure, but it means
+	// the expected failure is gone, so it gets its own marker.
+	marker := "✗"
+	if failure.UnexpectedPass() {
+		marker = "⚠"
+	}
+	fmt.Fprintf(w, "           %s %s", marker, receiptReason(failure.Title))
 	if failure.Location != "" {
 		fmt.Fprintf(w, "  %s", receiptReason(failure.Location))
 	}

@@ -291,3 +291,17 @@ func TestConfirmDoesNotCountARunWhoseGoalFailed(t *testing.T) {
 		t.Fatalf("code=%d report=%+v stderr=%s", code, report, stderr)
 	}
 }
+
+// A reproduction spec the plan cannot run is reported with the plan's reason,
+// such as a missing @9l/playwright build.
+func TestConfirmNamesWhyTheSpecCannotRun(t *testing.T) {
+	root, spec, _ := confirmRepository(t)
+	if err := os.Remove(filepath.Join(root, "node_modules", "@9l", "playwright", "dist", "reporter.js")); err != nil {
+		t.Fatal(err)
+	}
+	worker := &fakeConfirmWorker{outcome: shopOutcome}
+	code, _, stderr := runConfirm(t, worker, spec, "--unfixed", "HEAD~1", "--receipt-dir", t.TempDir())
+	if code != exitUsage || len(worker.workDirs) != 0 || !strings.Contains(stderr, "cannot run: the @9l/playwright engine is unavailable") {
+		t.Fatalf("code=%d runs=%d stderr=%s", code, len(worker.workDirs), stderr)
+	}
+}

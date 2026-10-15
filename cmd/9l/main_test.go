@@ -307,3 +307,17 @@ func TestPrintResultShowsTestAnnotationsButNotBuiltinPins(t *testing.T) {
 		t.Fatalf("text summary:\n%s", out.String())
 	}
 }
+
+func TestPrintResultMarksAnExpectedFailureThatPassed(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/pins.spec.ts", FailureCount: 1,
+		Failures: []runner.TestFailure{{Title: "pin: fix landed", Location: "tests/pins.spec.ts:15", Message: "Expected to fail, but passed.", ExpectedStatus: "failed", Status: "passed"}},
+	}}})
+	want := "  FAILED   tests/pins.spec.ts\n" +
+		"           ⚠ pin: fix landed  tests/pins.spec.ts:15\n" +
+		"             Expected to fail, but passed.\n"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
