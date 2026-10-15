@@ -441,12 +441,14 @@ quality gate. They require no platform account; agent/model usage may cost money
 
 The skill can also run the
 [QualityMax grader](https://github.com/Quality-Max/qualitymax-grader)
-(`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) as a
-hygiene pass before a spec is committed. It grades source A–F from text
-patterns. Assessment now reports its pause, debugger, XPath, positional selector
-and unnamed role checks itself; the grader adds style checks such as
-`test.step()` use, file length, a minimum assertion count and markdown fences
-left in generated code. Its grade stays separate from this report. It is not a
+(`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) when
+a project already uses it or wants its hygiene score. It grades source A–F
+from text patterns. Assessment reports the grader's defect checks itself: pause
+and debugger leftovers, XPath and positional selectors, broken syntax and
+markdown fences, missing assertions, `.only`/`.skip`, fixed waits and
+TypeScript-only syntax in a JavaScript spec; the grader adds only style checks
+such as `test.step()` use, file length, a minimum assertion count and a
+`page.goto()` call. Its grade stays separate from this report. It is not a
 dimension, a gate or evidence of coverage: it gave
 `testdata/assessment/tests/checkout.spec.ts` a B (89/100), while assessment with
 the fixture's requirements reports a test that maps none of its requirement's
