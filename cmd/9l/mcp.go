@@ -58,7 +58,7 @@ var mcpTools = []map[string]any{
 	{
 		"name":        "run_test",
 		"title":       "Run a Playwright spec",
-		"description": "Run one Playwright spec through the installed project with a bounded timeout. Returns status passed, failed or incomplete, test counts, each failed test with its failing line and error, Playwright's error context for the first failure (error, ARIA snapshot of the page, marked source) and the receipt path. incomplete is never a pass.",
+		"description": "Run one Playwright spec through the installed project with a bounded timeout. Returns status passed, failed or incomplete, test counts, each failed test with its failing line and error, Playwright's error context for the first failure (error, ARIA snapshot of the page, marked source) and the receipt path. A test.fail() test that passed is listed as failed with expectedStatus failed, status passed and the message 'Expected to fail, but passed.'; it has no error context. incomplete is never a pass.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -6,6 +6,25 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- `9l run`, `9l result` and the MCP `run_test` tool tell an unexpected pass
+  apart from a broken test. A `test.fail()` test that passed is still a
+  failure, but it is listed with `⚠`, the message `Expected to fail, but
+  passed.` and, in the receipt's `failures`, Playwright's `expectedStatus`
+  and the last attempt's `status`; the receipt's `validation` text counts
+  such tests. Previously it was a bare `✗` with no error text.
+- The failure context passed to healing and returned by `run_test` comes only
+  from tests with an unexpected outcome, so an expected failure's error is no
+  longer attributed to the run when a sibling test passed unexpectedly.
+- `9l prove` and `9l confirm` report why a spec cannot run, such as a missing
+  `@9l/playwright` build, instead of `prove requires exactly one spec file`
+  or `not a Playwright spec this runner can execute`. The help text states
+  that both need `@9l/playwright` and that `prove` reaches only fetch and XHR
+  requests made through its `page` or `context` fixtures.
+- Receipt, run-result and run-status contracts gain the optional
+  `expectedStatus` and `status` fields on each failure (additive).
+
 ## 0.4.6 — 2026-10-14
 
 ### SDK

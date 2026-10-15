@@ -239,7 +239,10 @@ func runRevision(ctx context.Context, repo confirm.Repository, commit string, op
 	if err != nil {
 		return facts, confirm.SetupError{Message: "plan: " + err.Error()}
 	}
-	if len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
+	if len(plan.Skipped) != 0 {
+		return facts, confirm.SetupError{Message: "the reproduction spec cannot run: " + plan.Skipped[0].Reason}
+	}
+	if len(plan.Jobs) != 1 {
 		return facts, confirm.SetupError{Message: "the reproduction spec is not a Playwright spec this runner can execute"}
 	}
 	// A retry would hide whether the first attempt failed.

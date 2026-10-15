@@ -27,12 +27,23 @@ func FailureContext(raw []byte) string {
 	if json.Unmarshal(raw, &payload) != nil {
 		return ""
 	}
+	// When the report marks test outcomes, only unexpected tests explain the
+	// failure. A test.fail() pin that failed as expected is not the failure,
+	// and its error must not be attributed to a sibling that passed.
+	onlyUnexpected := hasOutcome(payload, "unexpected")
 	var values []string
 	seen := map[string]bool{}
 	var visit func(any)
 	visit = func(value any) {
 		switch node := value.(type) {
 		case map[string]any:
+			if onlyUnexpected {
+				if _, isTest := node["results"]; isTest {
+					if status, ok := node["status"].(string); ok && status != "unexpected" {
+						return
+					}
+				}
+			}
 			if message, ok := node["message"].(string); ok && message != "" {
 				// Playwright reports each error as result.error and in
 				// result.errors; keep one copy, without terminal escapes.
@@ -78,6 +89,31 @@ func FailureContext(raw []byte) string {
 		return summary + boundText(context, 3000-len(summary))
 	}
 	return context
+}
+
+// hasOutcome reports whether any test node (a map with results) in the
+// report carries the given per-test status.
+func hasOutcome(payload any, outcome string) bool {
+	switch node := payload.(type) {
+	case map[string]any:
+		if _, isTest := node["results"]; isTest {
+			if status, ok := node["status"].(string); ok && status == outcome {
+				return true
+			}
+		}
+		for _, child := range node {
+			if hasOutcome(child, outcome) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range node {
+			if hasOutcome(child, outcome) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // boundText cuts text at limit bytes on a rune boundary, so bounded evidence
@@ -234,8 +270,10 @@ type suite struct {
 		Tests []struct {
 			// Status is Playwright's per-test outcome after retries and
 			// test.fail() expectations: expected, unexpected, flaky, skipped.
-			Status  string `json:"status"`
-			Results []struct {
+			Status string `json:"status"`
+			// ExpectedStatus is "failed" for a test.fail() test.
+			ExpectedStatus string `json:"expectedStatus"`
+			Results        []struct {
 				Status string `json:"status"`
 			} `json:"results"`
 		} `json:"tests"`
@@ -251,7 +289,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		return runner.Validation{}, fmt.Errorf("invalid Playwright JSON report: required stats or suites field is missing")
 	}
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "Playwright JSON report; assertion count unavailable"}
-	unsupported, incomplete, flaky, found := "", "", 0, 0
+	unsupported, incomplete, flaky, found, unexpectedPasses := "", "", 0, 0, 0
 	var walk func(suite)
 	walk = func(current suite) {
 		for _, spec := range current.Specs {
@@ -284,6 +322,9 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 					}
 					validation.ExecutedTests++
 					validation.FailureCount++
+					if lastCompletedStatus(test.Results) == "passed" && test.ExpectedStatus != "" && test.ExpectedStatus != "passed" {
+						unexpectedPasses++
+					}
 				case "skipped":
 					validation.SkippedTests++
 				default:
@@ -322,7 +363,25 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	if flaky > 0 {
 		validation.Description += fmt.Sprintf("; %d flaky test(s) passed on retry", flaky)
 	}
+	if unexpectedPasses > 0 {
+		validation.Description += fmt.Sprintf("; %d test(s) expected to fail passed", unexpectedPasses)
+	}
 	return validation, nil
+}
+
+// lastCompletedStatus is the status of the last attempt that ran to an end:
+// passed, failed or timedOut. Skipped and interrupted attempts are not
+// outcomes.
+func lastCompletedStatus(results []struct {
+	Status string `json:"status"`
+}) string {
+	for index := len(results) - 1; index >= 0; index-- {
+		switch results[index].Status {
+		case "passed", "failed", "timedOut":
+			return results[index].Status
+		}
+	}
+	return ""
 }
 
 // configSummary names the config file and its projects' test directories,
@@ -436,10 +495,11 @@ type failureSuite struct {
 		File  string `json:"file"`
 		Line  int    `json:"line"`
 		Tests []struct {
-			Status      string             `json:"status"`
-			ProjectName string             `json:"projectName"`
-			Annotations []reportAnnotation `json:"annotations"`
-			Results     []struct {
+			Status         string             `json:"status"`
+			ExpectedStatus string             `json:"expectedStatus"`
+			ProjectName    string             `json:"projectName"`
+			Annotations    []reportAnnotation `json:"annotations"`
+			Results        []struct {
 				Status      string             `json:"status"`
 				Annotations []reportAnnotation `json:"annotations"`
 				Errors      []struct {
@@ -528,7 +588,9 @@ func boundedText(text string, limit int) string {
 // Failures lists each unexpected test of a validated report with its failing
 // line, the start of its error and the files Playwright attached, such as
 // error-context.md with the page's ARIA snapshot. It reads the last failed
-// attempt, so retries report the final failure.
+// attempt, so retries report the final failure. A test.fail() test that
+// passed is unexpected too; it has no error, so its message says that the
+// expected failure did not happen.
 func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 	var parsed failureReport
 	if json.Unmarshal(raw, &parsed) != nil {
@@ -550,6 +612,19 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 				failure.Title = boundText(failure.Title, 512)
 				if spec.File != "" && spec.Line > 0 {
 					failure.Location = fmt.Sprintf("%s:%d", filepath.ToSlash(spec.File), spec.Line)
+				}
+				failure.ExpectedStatus = boundedText(test.ExpectedStatus, 16)
+				for index := len(test.Results) - 1; index >= 0; index-- {
+					switch test.Results[index].Status {
+					case "passed", "failed", "timedOut":
+						failure.Status = test.Results[index].Status
+					default:
+						continue
+					}
+					break
+				}
+				if failure.UnexpectedPass() {
+					failure.Message = unexpectedPassMessage(failure.ExpectedStatus)
 				}
 				for index := len(test.Results) - 1; index >= 0; index-- {
 					result := test.Results[index]
@@ -596,6 +671,19 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 		walk(file, nil)
 	}
 	return failures
+}
+
+// unexpectedPassMessage explains a failure that has no error: the test
+// passed although Playwright expected the given status, as its own reporters
+// put it.
+func unexpectedPassMessage(expected string) string {
+	switch expected {
+	case "failed":
+		return "Expected to fail, but passed."
+	case "timedOut":
+		return "Expected to time out, but passed."
+	}
+	return "Expected status " + expected + ", but passed."
 }
 
 // failureMessage is the start of an error without terminal escapes or source

@@ -214,3 +214,62 @@ func TestSanitizeAttachmentTextDropsTypedValuesInWholeFiles(t *testing.T) {
 		t.Fatalf("labels lost: %q", got)
 	}
 }
+
+// A test.fail() pin that passes is unexpected, but it has no error. The
+// failure carries the expected and actual statuses and says what happened, so
+// "the fix landed" is distinguishable from "a test broke" without the report.
+func TestFailuresExplainAnExpectedFailureThatPassed(t *testing.T) {
+	report := map[string]any{"suites": []any{map[string]any{"title": "tests/pins.spec.ts", "specs": []any{
+		map[string]any{"title": "fix landed", "file": "tests/pins.spec.ts", "line": 15, "tests": []any{map[string]any{
+			"status": "unexpected", "expectedStatus": "failed",
+			"annotations": []any{map[string]any{"type": "fail"}},
+			"results":     []any{map[string]any{"status": "passed"}},
+		}}},
+		map[string]any{"title": "defect present", "file": "tests/pins.spec.ts", "line": 5, "tests": []any{map[string]any{
+			"status": "expected", "expectedStatus": "failed",
+			"results": []any{map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "expect(received).toEqual(expected)"}}}},
+		}}},
+		map[string]any{"title": "broken", "file": "tests/pins.spec.ts", "line": 25, "tests": []any{map[string]any{
+			"status": "unexpected", "expectedStatus": "passed",
+			"results": []any{map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "boom"}}}},
+		}}},
+	}}}}
+	raw, _ := json.Marshal(report)
+	failures := New().Failures(raw, t.TempDir())
+	if len(failures) != 2 {
+		t.Fatalf("failures=%+v", failures)
+	}
+	pin, broken := failures[0], failures[1]
+	if pin.Title != "fix landed" || pin.Location != "tests/pins.spec.ts:15" || pin.ExpectedStatus != "failed" || pin.Status != "passed" || !pin.UnexpectedPass() || pin.Message != "Expected to fail, but passed." || len(pin.Attachments) != 0 {
+		t.Fatalf("unexpected pass=%+v", pin)
+	}
+	if broken.ExpectedStatus != "passed" || broken.Status != "failed" || broken.UnexpectedPass() || broken.Message != "boom" {
+		t.Fatalf("ordinary failure=%+v", broken)
+	}
+	// The expected failure's error is not the run's failure.
+	if got := FailureContext(raw); got != "boom" {
+		t.Fatalf("context=%q", got)
+	}
+	validation, err := New().Validate([]byte(`{"stats":{"duration":1},"suites":` + string(mustJSON(t, report["suites"])) + `}`))
+	if err != nil || validation.ExecutedTests != 3 || validation.FailureCount != 2 || !strings.HasSuffix(validation.Description, "; 1 test(s) expected to fail passed") {
+		t.Fatalf("validation=%#v err=%v", validation, err)
+	}
+}
+
+// A report without per-test outcomes, such as the fixtures above, keeps
+// every error in the failure context.
+func TestFailureContextKeepsEveryErrorWithoutOutcomes(t *testing.T) {
+	raw := []byte(`{"suites":[{"specs":[{"tests":[{"results":[{"errors":[{"message":"first"}]}]},{"results":[{"errors":[{"message":"second"}]}]}]}]}]}`)
+	if got := FailureContext(raw); got != "first\nsecond" {
+		t.Fatalf("context=%q", got)
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}

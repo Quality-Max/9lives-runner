@@ -64,6 +64,13 @@ type proveRun struct {
 func proveCommand(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("prove", flag.ContinueOnError)
 	fs.SetOutput(errOut)
+	fs.Usage = func() {
+		fmt.Fprintln(errOut, "Usage: 9l prove <spec> [flags]")
+		fmt.Fprintln(errOut, "  Needs @9l/playwright installed in the project and a spec that imports test from it.")
+		fmt.Fprintln(errOut, "  Faults reach only fetch and XHR requests made through its page or context fixtures;")
+		fmt.Fprintln(errOut, "  Node-side fetch, APIRequestContext and database clients cannot be faulted.")
+		fs.PrintDefaults()
+	}
 	format := fs.String("format", "text", "text or json")
 	workers := fs.Int("workers", 1, "maximum concurrent jobs per run")
 	timeout := fs.Duration("timeout", 2*time.Minute, "per-run timeout")
@@ -226,7 +233,12 @@ func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (prov
 	if err != nil {
 		return result, proveUsageError{fmt.Errorf("plan: %w", err)}
 	}
-	if len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
+	// The plan says why a spec cannot run, such as a missing @9l/playwright
+	// build; that reason, not the argument count, is the error.
+	if len(plan.Skipped) != 0 {
+		return result, proveUsageError{fmt.Errorf("%s cannot run: %s", plan.Skipped[0].Input, plan.Skipped[0].Reason)}
+	}
+	if len(plan.Jobs) != 1 {
 		return result, proveUsageError{errors.New("prove requires exactly one spec file")}
 	}
 	dir, err := os.MkdirTemp("", "9lives-prove-")
