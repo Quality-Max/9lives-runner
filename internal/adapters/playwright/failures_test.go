@@ -273,3 +273,70 @@ func mustJSON(t *testing.T, value any) []byte {
 	}
 	return raw
 }
+
+// A test.fail() pin that timed out and then passed on retry is an unexpected
+// pass. Its failure must not inherit the earlier attempt's timeout, failing
+// line or attachments, and the failure context must not contain the timeout.
+func TestUnexpectedPassDoesNotInheritAnEarlierAttemptsFailure(t *testing.T) {
+	project := t.TempDir()
+	context := filepath.Join(project, "test-results", "pins", "error-context.md")
+	write(t, context, "# Page snapshot\n", 0o600)
+	spec := filepath.Join(project, "tests", "pins.spec.ts")
+	report := map[string]any{"suites": []any{map[string]any{"title": "tests/pins.spec.ts", "specs": []any{
+		map[string]any{"title": "fix landed", "file": "tests/pins.spec.ts", "line": 15, "tests": []any{map[string]any{
+			"status": "unexpected", "expectedStatus": "failed",
+			"results": []any{
+				map[string]any{"status": "timedOut", "errors": []any{map[string]any{"message": "Test timeout of 30000ms exceeded.", "location": map[string]any{"file": spec, "line": 19}}},
+					"attachments": []any{map[string]any{"name": "error-context", "contentType": "text/markdown", "path": context}}},
+				map[string]any{"status": "passed"},
+			},
+		}}},
+	}}}}
+	raw, _ := json.Marshal(report)
+	failures := New().Failures(raw, project)
+	if len(failures) != 1 {
+		t.Fatalf("failures=%+v", failures)
+	}
+	got := failures[0]
+	if got.Status != "passed" || got.Location != "tests/pins.spec.ts:15" || got.Message != "Expected to fail, but passed." || len(got.Attachments) != 0 {
+		t.Fatalf("unexpected pass inherited an earlier attempt: %+v", got)
+	}
+	if context := FailureContext(raw); context != "" {
+		t.Fatalf("context=%q", context)
+	}
+}
+
+// An ordinary failure after a retry reports its final attempt, not the first.
+func TestFailuresReadTheFinalCompletedAttempt(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"specs": []any{map[string]any{"title": "t", "file": "a.spec.ts", "line": 1, "tests": []any{map[string]any{
+		"status": "unexpected", "expectedStatus": "passed",
+		"results": []any{
+			map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "first"}}},
+			map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "final"}}},
+			map[string]any{"status": "interrupted"},
+		},
+	}}}}}}})
+	failures := New().Failures(raw, t.TempDir())
+	if len(failures) != 1 || failures[0].Message != "final" || failures[0].Status != "failed" {
+		t.Fatalf("failures=%+v", failures)
+	}
+	if context := FailureContext(raw); context != "final" {
+		t.Fatalf("context=%q", context)
+	}
+}
+
+// An expected failure's error is never the run's failure, even when no test
+// is unexpected; a top-level error, such as a global teardown failure, is.
+func TestFailureContextDropsExpectedFailuresAndKeepsTopLevelErrors(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{
+		"suites": []any{map[string]any{"specs": []any{
+			map[string]any{"tests": []any{map[string]any{"status": "expected", "expectedStatus": "failed", "results": []any{map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "expect(received).toEqual(expected)"}}}}}}},
+			map[string]any{"tests": []any{map[string]any{"status": "flaky", "results": []any{map[string]any{"status": "failed", "errors": []any{map[string]any{"message": "flaky first attempt"}}}, map[string]any{"status": "passed"}}}}},
+			map[string]any{"tests": []any{map[string]any{"status": "skipped", "results": []any{map[string]any{"status": "skipped", "errors": []any{map[string]any{"message": "skipped"}}}}}}},
+		}}},
+		"errors": []any{map[string]any{"message": "Error: global teardown failed"}},
+	})
+	if got := FailureContext(raw); got != "Error: global teardown failed" {
+		t.Fatalf("context=%q", got)
+	}
+}

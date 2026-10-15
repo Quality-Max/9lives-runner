@@ -27,21 +27,24 @@ func FailureContext(raw []byte) string {
 	if json.Unmarshal(raw, &payload) != nil {
 		return ""
 	}
-	// When the report marks test outcomes, only unexpected tests explain the
-	// failure. A test.fail() pin that failed as expected is not the failure,
-	// and its error must not be attributed to a sibling that passed.
-	onlyUnexpected := hasOutcome(payload, "unexpected")
+	// Only unexpected tests explain the failure. A test.fail() pin that
+	// failed as expected, a skipped test or a flaky one that passed on retry
+	// is not the failure, whatever its siblings did; top-level errors, such
+	// as a global teardown failure, are not tests and stay. Within a test,
+	// only its final completed attempt counts: an earlier timeout that a
+	// retry recovered from is not the failure either.
 	var values []string
 	seen := map[string]bool{}
 	var visit func(any)
 	visit = func(value any) {
 		switch node := value.(type) {
 		case map[string]any:
-			if onlyUnexpected {
-				if _, isTest := node["results"]; isTest {
-					if status, ok := node["status"].(string); ok && status != "unexpected" {
-						return
-					}
+			if results, isTest := node["results"].([]any); isTest {
+				if status, ok := node["status"].(string); ok && status != "unexpected" {
+					return
+				}
+				if final, ok := finalCompletedResult(results); ok {
+					node = withResults(node, final)
 				}
 			}
 			if message, ok := node["message"].(string); ok && message != "" {
@@ -91,29 +94,31 @@ func FailureContext(raw []byte) string {
 	return context
 }
 
-// hasOutcome reports whether any test node (a map with results) in the
-// report carries the given per-test status.
-func hasOutcome(payload any, outcome string) bool {
-	switch node := payload.(type) {
-	case map[string]any:
-		if _, isTest := node["results"]; isTest {
-			if status, ok := node["status"].(string); ok && status == outcome {
-				return true
-			}
+// finalCompletedResult is the last attempt that ran to an end (passed,
+// failed or timedOut) in a test node's results, when any attempt did.
+func finalCompletedResult(results []any) (any, bool) {
+	for index := len(results) - 1; index >= 0; index-- {
+		result, ok := results[index].(map[string]any)
+		if !ok {
+			continue
 		}
-		for _, child := range node {
-			if hasOutcome(child, outcome) {
-				return true
-			}
-		}
-	case []any:
-		for _, child := range node {
-			if hasOutcome(child, outcome) {
-				return true
-			}
+		switch result["status"] {
+		case "passed", "failed", "timedOut":
+			return result, true
 		}
 	}
-	return false
+	return nil, false
+}
+
+// withResults is a copy of a test node whose results hold only the given
+// attempt, so a walk over the node sees one attempt's diagnostics.
+func withResults(test map[string]any, result any) map[string]any {
+	copied := make(map[string]any, len(test))
+	for key, value := range test {
+		copied[key] = value
+	}
+	copied["results"] = []any{result}
+	return copied
 }
 
 // boundText cuts text at limit bytes on a rune boundary, so bounded evidence
@@ -614,23 +619,22 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 					failure.Location = fmt.Sprintf("%s:%d", filepath.ToSlash(spec.File), spec.Line)
 				}
 				failure.ExpectedStatus = boundedText(test.ExpectedStatus, 16)
-				for index := len(test.Results) - 1; index >= 0; index-- {
+				// Diagnostics come from the final completed attempt only. An
+				// earlier attempt's timeout and attachments do not describe a
+				// test that then passed, or a later attempt's own failure.
+				final := -1
+				for index := len(test.Results) - 1; index >= 0 && final < 0; index-- {
 					switch test.Results[index].Status {
 					case "passed", "failed", "timedOut":
+						final = index
 						failure.Status = test.Results[index].Status
-					default:
-						continue
 					}
-					break
 				}
 				if failure.UnexpectedPass() {
 					failure.Message = unexpectedPassMessage(failure.ExpectedStatus)
 				}
-				for index := len(test.Results) - 1; index >= 0; index-- {
-					result := test.Results[index]
-					if result.Status != "failed" && result.Status != "timedOut" {
-						continue
-					}
+				if final >= 0 && failure.Status != "passed" {
+					result := test.Results[final]
 					if len(result.Errors) > 0 {
 						first := result.Errors[0]
 						failure.Message = failureMessage(first.Message)
@@ -657,7 +661,6 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 						}
 						failure.Attachments = append(failure.Attachments, reference)
 					}
-					break
 				}
 				failures = append(failures, failure)
 			}

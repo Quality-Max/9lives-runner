@@ -14,9 +14,13 @@ SDK versions.
   passed.` and, in the receipt's `failures`, Playwright's `expectedStatus`
   and the last attempt's `status`; the receipt's `validation` text counts
   such tests. Previously it was a bare `✗` with no error text.
-- The failure context passed to healing and returned by `run_test` comes only
-  from tests with an unexpected outcome, so an expected failure's error is no
-  longer attributed to the run when a sibling test passed unexpectedly.
+- Failure diagnostics come from each test's final completed attempt only. A
+  `test.fail()` test that timed out and then passed on retry no longer
+  inherits the earlier attempt's error, failing line or attachments. The
+  failure context passed to healing and returned by `run_test` drops tests
+  with an expected, skipped or flaky outcome and keeps top-level errors such
+  as a failed global teardown, so an expected failure's error is no longer
+  attributed to the run.
 - `9l prove` and `9l confirm` report why a spec cannot run, such as a missing
   `@9l/playwright` build, instead of `prove requires exactly one spec file`
   or `not a Playwright spec this runner can execute`. The help text states
