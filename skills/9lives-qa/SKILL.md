@@ -22,11 +22,12 @@ If unavailable, review the same evidence directly and disclose the missing
 specialist check.
 
 Assessment reports debugging leftovers (`page.pause()`, `debugger`), fragile
-XPath and positional selectors, and `getByRole` without a name. For a further
-style pass on a new or generated spec before it is committed, the QualityMax
-grader adds style checks such as `test.step()` use, file length, assertion
-counts and leftover markdown fences. Run a pinned version when the user allows
-npm downloads; it reads source only and makes no model or network calls itself:
+XPath and positional selectors, and TypeScript-only syntax in a JavaScript spec
+that Playwright would refuse to load. The QualityMax grader is optional: it
+adds only style checks such as `test.step()` use, file length, assertion counts
+and a `page.goto()` call, so run it when the project already uses it or the
+user wants its hygiene score. Use a pinned version when the user allows npm
+downloads; it reads source only and makes no model or network calls itself:
 
 ```sh
 npx --yes qualitymax-grader@0.2.0 path/to/checkout.spec.ts --format json --min-grade F
