@@ -6,6 +6,12 @@ SDK versions.
 
 ## Unreleased
 
+## 0.4.7 — 2026-10-15
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.7 is released with CLI 0.4.7.
+
 ### Assess
 
 Policy `assessment-source-v13`; the analyzer helper version is 10 and report
@@ -42,6 +48,10 @@ version 3 is unchanged.
   requests made through its `page` or `context` fixtures.
 - Receipt, run-result and run-status contracts gain the optional
   `expectedStatus` and `status` fields on each failure (additive).
+
+### Website and documentation
+
+- Link the 60-second launch film from the homepage and GitHub overview.
 
 ## 0.4.6 — 2026-10-14
 
