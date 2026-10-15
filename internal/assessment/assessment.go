@@ -25,7 +25,7 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v12"
+const Policy = "assessment-source-v13"
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -218,10 +218,26 @@ func ParseContract(data []byte) (Contract, error) {
 
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
-// Options adjust what a report contains, not how source is analyzed.
+// Options adjust what a report contains and which syntax the source is read as.
 type Options struct {
 	// Titles includes literal test titles, which are source text, for local use.
 	Titles bool
+	// Path is the spec's file name; only its extension is read. A JavaScript
+	// extension (.js, .mjs, .cjs, .jsx) parses the source as Playwright loads
+	// it, where TypeScript-only syntax is a typescript-in-javascript failure.
+	// Any other extension, or no path, parses as TSX. Suites use each file's
+	// own path.
+	Path string
+}
+
+// JavaScript reports whether Playwright loads a file at path as JavaScript,
+// without the TypeScript transform.
+func JavaScript(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".js", ".mjs", ".cjs", ".jsx":
+		return true
+	}
+	return false
 }
 
 // Assess uses a bounded owned helper, forwarding only PATH. Source and contract
@@ -253,9 +269,10 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	input, _ := json.Marshal(struct {
-		Source string `json:"source"`
-		Titles bool   `json:"titles"`
-	}{string(source), opts.Titles})
+		Source     string `json:"source"`
+		Titles     bool   `json:"titles"`
+		JavaScript bool   `json:"javascript"`
+	}{string(source), opts.Titles, JavaScript(opts.Path)})
 	// Windows command lines are limited to 32,767 UTF-16 code units. Keep
 	// the embedded analyzer in an owned file instead of passing its source as
 	// a large -e argument; only trusted code is materialized or executed.
@@ -298,9 +315,9 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 9 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == 10 {
 			switch failure.Error {
-			case "parser-unavailable", "syntax", "annotation", "limit", "helper-failed":
+			case "parser-unavailable", "syntax", "typescript-in-javascript", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
 			}
 		}
@@ -333,7 +350,7 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 9 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != 10 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {

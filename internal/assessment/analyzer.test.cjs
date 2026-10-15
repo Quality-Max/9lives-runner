@@ -201,6 +201,22 @@ test('dynamic callbacks remain unknown and invalid syntax is rejected', () => {
   assert.throws(() => analyze('test('));
 });
 
+test('javascript specs are parsed as Playwright loads them: JSX allowed, TypeScript-only syntax rejected', () => {
+  const spec = body => `import {test,expect} from '@playwright/test';\n${body}\ntest('x', async ({page}) => { await expect(page.getByRole('status')).toBeVisible(); });`;
+  const typed = ["const n: string = 'x';", "interface A { x: number }", "const a = b as string;", "function f(a?) {}", "function g<T>(a) { return a; }", "const c = d!.e;", "import type { A } from './a';", "enum E { A }"];
+  for (const body of typed) {
+    assert.equal(analyze(spec(body)).tests.length, 1, body);
+    assert.throws(() => analyze(spec(body), { javascript: true }), { code: 'typescript-in-javascript' }, body);
+  }
+  for (const body of ["const n = 'x';", "const El = () => <div>hi</div>;", "@dec class A {}"]) {
+    const facts = analyze(spec(body), { javascript: true });
+    assert.equal(facts.tests.length, 1, body);
+    assert.equal(facts.tests[0].assertions.length, 1, body);
+  }
+  assert.throws(() => analyze("test(", { javascript: true }), { code: 'syntax' });
+  assert.throws(() => analyze(spec("```ts"), { javascript: true }), { code: 'syntax' });
+});
+
 test('source and imports are parsed without execution, shadowed aliases stay unsupported', () => {
   const facts = analyze(`import {test, expect as $check} from '@playwright/test';
   import './does-not-exist';
@@ -681,7 +697,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 9);
+  assert.equal(facts.version, 10);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {

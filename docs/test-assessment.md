@@ -22,7 +22,7 @@ go build -o .context/9l ./cmd/9l
 
 `--requirements` is optional. Without it, the code-level checks still run
 (fixed waits, exclusive, disabled and conditionally skipped tests, missing and
-unawaited assertions, debugging leftovers, fragile selectors, unnamed roles,
+unawaited assertions, debugging leftovers, fragile selectors,
 analysis limits). Requirement references are not
 checked, `purpose` and `intentAlignment` stay unknown, `requirementsSHA256` is
 omitted and the report lists the missing contract as a limit. An empty
@@ -82,15 +82,21 @@ private temporary directory per assessment and removed after the owned helper
 stops. Consumer `node_modules`, `NODE_PATH` and `NODE_OPTIONS` do not choose or
 preload code. This also works when the consuming TypeScript package has no
 JavaScript parser API. It parses source without importing the spec,
-configuration or application. Go owns the
+configuration or application. A spec is read as Playwright loads it: `.ts`,
+`.tsx`, `.mts` and `.cts` files, and a source with no known extension, parse as
+TSX, while `.js`, `.mjs`, `.cjs` and `.jsx` files parse as JavaScript with JSX,
+where type annotations, `as`, `interface`, `enum`, `import type`, non-null `!`
+and other TypeScript-only syntax fail as `typescript-in-javascript` because
+Playwright applies no TypeScript transform to them and refuses to load the
+file. Go owns the
 helper's ten-second budget, cancellation, output limits and report validation.
 Source is limited to 1 MiB, requirements to 256 KiB, recognized tests to 256
 and combined assertions/waits/limit reasons plus distinct conditional suite
 modifiers to 2,048, with at most 16 conditional modifiers applying to one test. Malformed, unavailable or over-limit
 analysis exits 2; advisory findings exit 0. This is not a gate. Failures write
 fixed diagnostics on stderr and no partial report on stdout: `node-unavailable`,
-`parser-unavailable`, `syntax`, `annotation`, `limit`, `output-limit`, `timeout`,
-`cancelled`, `helper-failed` or `invalid-evidence`. Raw helper errors and source
+`parser-unavailable`, `syntax`, `typescript-in-javascript`, `annotation`, `limit`,
+`output-limit`, `timeout`, `cancelled`, `helper-failed` or `invalid-evidence`. Raw helper errors and source
 are suppressed. Newer syntax unsupported by the pinned parser remains a syntax
 failure; independence from consumer TypeScript is not support for every future
 language feature.
@@ -295,9 +301,13 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v12` removes
+inputs invalidate prior assessments. Policy `assessment-source-v13` parses
+`.js`, `.mjs`, `.cjs` and `.jsx` specs as JavaScript, so TypeScript-only syntax
+in them is a `typescript-in-javascript` failure instead of a clean report; the
+helper version is 10 and report version 3 is unchanged. Policy
+`assessment-source-v12` removes
 the noisy `unnamed-role` advisory introduced in v11. The `debugging-leftover` and `fragile-selector` rules and
-`hazardsTruncated` limit remain; the helper version is 9 and report version 3
+`hazardsTruncated` limit remain; the helper version was 9 and report version 3
 is unchanged. Policy `assessment-source-v10` excludes
 pre-execution conditional skips from outcome coverage lenders while retaining
 after-hook tests whose bodies ran. Policy `assessment-source-v9` counts
@@ -431,12 +441,14 @@ quality gate. They require no platform account; agent/model usage may cost money
 
 The skill can also run the
 [QualityMax grader](https://github.com/Quality-Max/qualitymax-grader)
-(`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) as a
-hygiene pass before a spec is committed. It grades source A–F from text
-patterns. Assessment now reports its pause, debugger, XPath, positional selector
-and unnamed role checks itself; the grader adds style checks such as
-`test.step()` use, file length, a minimum assertion count and markdown fences
-left in generated code. Its grade stays separate from this report. It is not a
+(`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) when
+a project already uses it or wants its hygiene score. It grades source A–F
+from text patterns. Assessment reports the grader's defect checks itself: pause
+and debugger leftovers, XPath and positional selectors, broken syntax and
+markdown fences, missing assertions, `.only`/`.skip`, fixed waits and
+TypeScript-only syntax in a JavaScript spec; the grader adds only style checks
+such as `test.step()` use, file length, a minimum assertion count and a
+`page.goto()` call. Its grade stays separate from this report. It is not a
 dimension, a gate or evidence of coverage: it gave
 `testdata/assessment/tests/checkout.spec.ts` a B (89/100), while assessment with
 the fixture's requirements reports a test that maps none of its requirement's
