@@ -17,7 +17,7 @@ const summary = {version: 1, complete: false, revision: '', platform: `${process
 const save = (name, data) => fs.writeFileSync(path.join(work, name), JSON.stringify(data, null, 2) + '\n');
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const env = {};
-for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PLAYWRIGHT_BROWSERS_PATH']) {
+for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'XDG_CACHE_HOME', 'PLAYWRIGHT_BROWSERS_PATH']) {
   if (process.env[key] !== undefined) env[key] = process.env[key];
 }
 const cancellation = new AbortController();
