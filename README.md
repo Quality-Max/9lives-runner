@@ -11,6 +11,8 @@ Your coding agent proposes a fix. **9lives runs the test, compares the results,
 and records what its assertions caught.** Keep your Playwright suite and inspect
 the evidence locally. No QualityMax account or hosted service required.
 
+[Quickstart](docs/run-existing-project.md) ·
+[Runnable first example](demo/first-run/README.md) ·
 [Interactive demo](https://9lives.run/demo.html#proof) ·
 [Website](https://9lives.run) · [Memes](https://9lives.run/memes) · [Documentation](docs/README.md) ·
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
@@ -56,8 +58,13 @@ Install the native CLI on macOS or Linux:
 ```sh
 curl -fsSL https://9lives.run/install.sh | sh
 export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
-9l run tests/ --timeout 5m --format json
+9l plan tests/checkout.spec.ts --format json
+9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json
 ```
+
+Run from your project root and replace the path with an existing spec. Follow the
+[quickstart](docs/run-existing-project.md) for prerequisites, expected results and
+troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
 
 Your project supplies its Playwright dependencies, browsers, configuration, and
 assertions. The SDK is optional. Native v0.4.7 binaries support macOS, Linux and

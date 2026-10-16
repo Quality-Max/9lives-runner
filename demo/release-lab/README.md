@@ -1,5 +1,8 @@
 # Release lab: a green checkout with a blind spot
 
+For a shorter executable introduction, use the [first-run example](../first-run/README.md).
+For your own suite, start with the [quickstart](../../docs/run-existing-project.md).
+
 **Just want to understand the idea?** Open the
 [three-click demo](../../docs/explainer/demo.html) in a browser. It is a single,
 offline HTML file with a locator inspector and a missing-check story, based
