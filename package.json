@@ -20,6 +20,7 @@
     "demo": "npm run build && go run ./cmd/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json",
     "demo:bank": "node demo/bank/run-demo.cjs",
     "demo:lab": "node demo/release-lab/run-demo.cjs",
+    "demo:first-run": "npm run build && node demo/first-run/run-demo.cjs",
     "smoke:demo": "node scripts/demo-smoke.cjs",
     "demo:shop": "node demo/release-lab/app/server.cjs"
   },

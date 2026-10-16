@@ -2,12 +2,14 @@
 
 | Guide | Start here when |
 | --- | --- |
+| [Quickstart](run-existing-project.md) | You want to run one existing Playwright spec without adding the SDK |
+| [Runnable first example](../demo/first-run/README.md) | You want a passing local checkout, a missed fault, and the assertion that catches it |
 | [Interactive demo](https://9lives.run/demo.html#proof) | You want to inspect recorded agent runs, before/after receipts, and caught faults |
 | [Release lab](../demo/release-lab/README.md) | You want to execute the eight-chapter local walkthrough |
 | [Install](install.md) | You need the npm SDK and Go CLI |
 | [Explainer](https://quality-max.github.io/9lives-runner/) ([source](explainer/README.md)) | You want the evidence-first overview, ordinary Playwright setup, and capability boundaries |
 | [Local checkout demo](../demo/README.md) | You want an executed result without an application server |
-| [Existing application](run-existing-project.md) | You are adding an isolated harness to a project |
+| [Login goal example](login-goal-example.md) | You want an optional isolated SDK harness for bounded login-modal actions |
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |
 | [CLI contract](contracts.md) | You are integrating `9l` into another tool through its JSON output and exit codes |
 | [Agent setup](agent-setup.md) | You want the optional QA skill workflow |

@@ -4,11 +4,11 @@ import { ThemeToggle } from './theme-toggle';
 
 const installCommand = 'curl -fsSL https://9lives.run/install.sh | sh';
 const pathCommand = 'export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"';
-const runCommand = '9l run tests/ --timeout 5m --format json';
+const runCommand = '9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json';
 const scanCommand = '9l scan https://your-app.dev --format markdown';
 const mcpCommand = 'claude mcp add 9lives -- 9l mcp';
 const repository = 'https://github.com/Quality-Max/9lives-runner';
-const documentation = 'https://quality-max.github.io/9lives-runner/';
+const documentation = 'https://github.com/Quality-Max/9lives-runner/blob/main/docs/run-existing-project.md';
 const migrationGuide = 'https://github.com/Quality-Max/9lives/blob/main/docs/MIGRATING_TO_GO.md';
 
 const stories = [
@@ -51,7 +51,7 @@ export default function Home() {
     <a className="skip-link" href="#main">Skip to content</a>
     <header className="site-header wrap">
       <div className="brand-lockup"><Brand /><a className="product-logo" href="#main" aria-label="9lives home">9<span>lives</span></a></div>
-      <nav aria-label="Primary navigation"><a href="#demo">Demo</a><a href="#workflow">Workflow</a><a href="/memes">Memes</a><a href="#start">Get started</a><a href={documentation}>Documentation</a><a href={repository}>GitHub <span aria-hidden="true">↗</span></a></nav>
+      <nav aria-label="Primary navigation"><a href="#demo">Demo</a><a href="#workflow">Workflow</a><a href="/memes">Memes</a><a href="#start">Get started</a><a href={documentation}>Quickstart</a><a href={repository}>GitHub <span aria-hidden="true">↗</span></a></nav>
       <ThemeToggle />
     </header>
     <main id="main">
@@ -89,7 +89,7 @@ export default function Home() {
 
       <section className="section wrap start-section" id="start" aria-labelledby="start-heading">
         <div className="section-heading"><p className="eyebrow">Use your own project</p><h2 id="start-heading">Keep your tests.<br />Add execution evidence.</h2><p>The Go runner uses your project’s installed Playwright and configuration. The SDK is optional. You can run ordinary specs without an AI model or QualityMax account.</p><p className="small-note">Native CLI v0.4.7 · x64 &amp; ARM64 · Chromium qualified</p></div>
-        <div className="command-stack"><Command label="01 / Install the CLI on macOS or Linux" value={installCommand} /><Command label="02 / Add the binary to PATH" value={pathCommand} /><Command label="03 / Run your existing Playwright suite" value={runCommand} /><p className="small-note">Your project needs Playwright dependencies and browsers. <a href={`${repository}/blob/main/docs/install.md#windows`}>Windows ZIP installation</a> · <a href={`${repository}/blob/main/docs/run-existing-project.md`}>Project setup</a></p></div>
+        <div className="command-stack"><Command label="01 / Install the CLI on macOS or Linux" value={installCommand} /><Command label="02 / Add the binary to PATH" value={pathCommand} /><Command label="03 / Run one existing Playwright spec" value={runCommand} /><p className="small-note">Replace the spec path with your own. Your project needs Playwright dependencies and browsers. <a href={`${repository}/blob/main/docs/install.md#windows`}>Windows ZIP installation</a> · <a href={`${repository}/blob/main/docs/run-existing-project.md`}>Quickstart</a> · <a href={`${repository}/blob/main/demo/first-run/README.md`}>Runnable example</a></p></div>
         <div className="agent-card"><div><p className="eyebrow">Inside your coding agent</p><h3>Connect the tools through MCP.</h3><p>Native MCP exposes run, assess, heal, confirm, page inspection, and reproduction tools. Start a page check with <code>scan_url</code>. Use the QA skill for requirements and source provenance. Codex and Claude setup live in the agent guide.</p><a className="text-link" href={`${repository}/blob/main/docs/agent-setup.md`}>Set up your agent →</a></div><div><Command label="Example / Claude Code" value={mcpCommand} /><p className="small-note">Optional SDK: named steps and bounded goals. Goals still need explicit assertions; goal completion is unverified.</p><a className="text-link" href={`${repository}/blob/main/docs/goals.md`}>Read goal contracts →</a></div></div>
       </section>
 

@@ -12,7 +12,7 @@ def test_landing_page_keeps_install_and_ecosystem_links():
     page = (WEBSITE / "app" / "page.tsx").read_text()
 
     assert "curl -fsSL https://9lives.run/install.sh | sh" in page
-    assert "https://quality-max.github.io/9lives-runner/" in page
+    assert "https://github.com/Quality-Max/9lives-runner/blob/main/docs/run-existing-project.md" in page
     assert "https://github.com/Quality-Max/9lives-runner" in page
     brand = (WEBSITE / "app" / "brand.tsx").read_text()
     assert 'href="https://qualitymax.io"' in brand

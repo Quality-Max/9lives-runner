@@ -25,12 +25,13 @@ it('leads with the recorded experiment and links every chapter', () => {
 });
 it('starts with ordinary Playwright execution and keeps optional paths clear', () => {
   render(<Home />);
-  for (const command of ['curl -fsSL https://9lives.run/install.sh | sh', 'export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"', '9l run tests/ --timeout 5m --format json', 'claude mcp add 9lives -- 9l mcp', 'uv tool install 9lives']) {
+  for (const command of ['curl -fsSL https://9lives.run/install.sh | sh', 'export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"', '9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json', 'claude mcp add 9lives -- 9l mcp', 'uv tool install 9lives']) {
     expect(screen.getByText(command)).toBeTruthy();
   }
   expect(screen.getByText(/The SDK is optional/)).toBeTruthy();
   expect(screen.getByText(/goal completion is unverified/)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Documentation' }).getAttribute('href')).toBe('https://quality-max.github.io/9lives-runner/');
+  expect(screen.getAllByRole('link', { name: 'Quickstart' }).every(link => link.getAttribute('href') === 'https://github.com/Quality-Max/9lives-runner/blob/main/docs/run-existing-project.md')).toBe(true);
+  expect(screen.getByRole('link', { name: 'Runnable example' }).getAttribute('href')).toBe('https://github.com/Quality-Max/9lives-runner/blob/main/demo/first-run/README.md');
   expect(screen.getByRole('link', { name: 'Read the migration guide' }).getAttribute('href')).toContain('MIGRATING_TO_GO.md');
 });
 it('retains nine page checks, legal information, and ecosystem references', () => {
