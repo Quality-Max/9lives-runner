@@ -10,6 +10,10 @@ Copy the repository's `skills/9lives-qa/` directory into your project's
 Code, following your client's project-skill conventions. The skill includes
 its supporting files; copy the directory rather than only `SKILL.md`.
 Keep your existing agent instructions and Playwright configuration.
+Run `9l doctor` from the application project before connecting the agent;
+use `--sdk` when tests import `@9l/playwright`. Diagnostics do not verify
+which executable the MCP host launches or whether a provider is logged in.
+See [setup diagnostics](setup-diagnostics.md) for the remaining explicit checks.
 
 Ask the agent to map the requested behavior to explicit assertions, record
 source provenance before creation or repair, review assessment findings, and

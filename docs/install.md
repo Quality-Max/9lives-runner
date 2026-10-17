@@ -110,6 +110,13 @@ explicit path such as `$HOME/.local/bin/9l` to select this Go runner.
 
 ## First run
 
+From the application project, run `9l doctor` (or `9l doctor --sdk` for
+SDK specs). Follow only the repairs you intend to apply, then rerun it.
+The [setup diagnostics guide](setup-diagnostics.md) explains what it checks,
+what remains unverified, and the no-account first scan. This command is
+available from the current source; published v0.4.7 predates it.
+
+
 Use the [local demo](../demo/README.md) without an application or model account,
 or follow the [existing-project guide](run-existing-project.md) against your
 approved application. Run selected SDK specs with `9l run <spec> --sdk`.
