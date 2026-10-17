@@ -19,31 +19,59 @@ test('browser is available', async ({page}) => {
 func TestMissingBrowserCLIAndMCPOutcomes(t *testing.T) {
 	root := browserProject(t)
 	writeTestFile(t, filepath.Join(root, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`)
-	writeTestFile(t, filepath.Join(root, "playwright.config.cjs"), `module.exports = {retries: 0, workers: 1, use: {browserName: 'chromium'}};`)
 	writeTestFile(t, filepath.Join(root, "browser.spec.ts"), missingBrowserSpec)
+	writeTestFile(t, filepath.Join(root, "persistent.spec.ts"), `import {test, expect, chromium} from '@playwright/test';
+test('persistent browser is available', async () => {
+  const context = await chromium.launchPersistentContext('');
+  try {
+    const page = await context.newPage();
+    await page.setContent('<button>Pay</button>');
+    await expect(page.getByRole('button', {name: 'Pay'})).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+`)
+	writeTestFile(t, filepath.Join(root, "global-setup.cjs"), `const {chromium} = require('@playwright/test'); module.exports = async () => {const browser = await chromium.launch(); await browser.close();};`)
 	writeTestFile(t, filepath.Join(root, "assertion.spec.ts"), `import {test, expect} from '@playwright/test'; test('assertion', () => {expect(1).toBe(2)});`)
 	t.Setenv("PLAYWRIGHT_BROWSERS_PATH", t.TempDir())
 	t.Chdir(root)
+	h := startMCP(t, root, func(s *mcpServer) { s.provider = scriptedProvider{"must not be called"} })
 	for _, tc := range []struct {
 		spec, outcome string
 		code          int
+		globalSetup   bool
 	}{
-		{"browser.spec.ts", "incomplete", exitIncomplete},
-		{"assertion.spec.ts", "failed", exitFailed},
+		{"browser.spec.ts", "incomplete", exitIncomplete, false},
+		{"persistent.spec.ts", "incomplete", exitIncomplete, false},
+		{"browser.spec.ts", "incomplete", exitIncomplete, true},
+		{"assertion.spec.ts", "failed", exitFailed, false},
 	} {
+		setup := ""
+		if tc.globalSetup {
+			setup = "globalSetup: './global-setup.cjs',"
+		}
+		writeTestFile(t, filepath.Join(root, "playwright.config.cjs"), "module.exports = {"+setup+" retries: 0, workers: 1, use: {browserName: 'chromium'}};")
 		var out, errOut bytes.Buffer
 		code := run([]string{"run", tc.spec, "--format", "json", "--timeout", "20s", "--attempts", "1"}, &out, &errOut)
 		var result map[string]any
 		if err := json.Unmarshal(out.Bytes(), &result); err != nil || code != tc.code || result["outcome"] != tc.outcome {
 			t.Fatalf("%s: exit %d, outcome %v, decode %v", tc.spec, code, result["outcome"], err)
 		}
+		payload, isError := h.toolCall(t, 1, "run_test", map[string]any{"spec": tc.spec})
+		if isError || payload["status"] != tc.outcome {
+			t.Fatalf("run_test %s (global setup %v) returned %v", tc.spec, tc.globalSetup, payload)
+		}
+		if tc.outcome == "incomplete" {
+			reason, _ := payload["reason"].(string)
+			for _, diagnostic := range []string{out.String(), reason} {
+				if !strings.Contains(diagnostic, "npx playwright install chromium") || !strings.Contains(diagnostic, "is not installed") || strings.ContainsAny(diagnostic, "╔║") {
+					t.Fatalf("%s (global setup %v) lost safe repair guidance", tc.spec, tc.globalSetup)
+				}
+			}
+		}
 	}
-	h := startMCP(t, root, func(s *mcpServer) { s.provider = scriptedProvider{"must not be called"} })
-	payload, isError := h.toolCall(t, 1, "run_test", map[string]any{"spec": "browser.spec.ts"})
-	if isError || payload["status"] != "incomplete" || !strings.Contains(mustJSON(t, payload), "npx playwright install chromium") || strings.ContainsAny(mustJSON(t, payload), "╔║") {
-		t.Fatalf("run_test misclassified missing browser: %v", payload)
-	}
-	payload, _ = h.toolCall(t, 2, "heal_test", map[string]any{"spec": "browser.spec.ts"})
+	payload, _ := h.toolCall(t, 2, "heal_test", map[string]any{"spec": "browser.spec.ts"})
 	if payload["state"] != "unverified" || payload["providerCalls"] != float64(0) || payload["applied"] != false || payload["savedPath"] != nil {
 		t.Fatalf("heal_test attempted to repair setup: %v", payload)
 	}

@@ -258,7 +258,7 @@ type report struct {
 	} `json:"stats"`
 	Suites []suite `json:"suites"`
 	// Errors are reported outside any test, such as a spec that fails to load.
-	// Only whether they exist is used; their messages are not retained.
+	// Missing-browser errors produce sanitized guidance; raw messages are not retained.
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
@@ -305,11 +305,14 @@ var browserBuild = regexp.MustCompile(`[/\\]((chromium(?:_headless_shell)?|firef
 func missingBrowserMessage(message string) string {
 	line := strings.SplitN(runner.StripTerminalEscapes(message), "\n", 2)[0]
 	line = strings.TrimPrefix(line, "Error: ")
-	const prefix = "browserType.launch: Executable doesn't exist at "
-	if !strings.HasPrefix(line, prefix) {
+	path, ok := strings.CutPrefix(line, "browserType.launch: Executable doesn't exist at ")
+	if !ok {
+		path, ok = strings.CutPrefix(line, "browserType.launchPersistentContext: Executable doesn't exist at ")
+	}
+	if !ok {
 		return ""
 	}
-	match := browserBuild.FindStringSubmatch(strings.TrimPrefix(line, prefix))
+	match := browserBuild.FindStringSubmatch(path)
 	if match == nil {
 		return ""
 	}
@@ -327,6 +330,11 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	}
 	if parsed.Stats == nil || parsed.Suites == nil {
 		return runner.Validation{}, fmt.Errorf("invalid Playwright JSON report: required stats or suites field is missing")
+	}
+	for _, reported := range parsed.Errors {
+		if reason := missingBrowserMessage(reported.Message); reason != "" {
+			return runner.Validation{}, fmt.Errorf("%s", reason)
+		}
 	}
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "Playwright JSON report; assertion count unavailable"}
 	unsupported, incomplete, flaky, found, unexpectedPasses := "", "", 0, 0, 0

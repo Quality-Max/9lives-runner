@@ -15,13 +15,16 @@ func TestMissingBrowserIsNotAValidatedTestFailure(t *testing.T) {
 		failures      int
 	}{
 		{"launch error", "unexpected", []testResult{{Status: "failed", Error: reportError{launch}}}, true, 0},
+		{"persistent context", "unexpected", []testResult{{Status: "failed", Error: reportError{strings.Replace(launch, "browserType.launch:", "browserType.launchPersistentContext:", 1)}}}, true, 0},
 		{"errors array", "unexpected", []testResult{{Status: "failed", Errors: []reportError{{launch}}}}, true, 0},
 		{"expected failure cannot hide setup", "expected", []testResult{{Status: "failed", Error: reportError{launch}}}, true, 0},
 		{"interrupted retry cannot hide setup", "unexpected", []testResult{{Status: "failed", Error: reportError{launch}}, {Status: "interrupted"}}, true, 0},
 		{"recovered retry", "flaky", []testResult{{Status: "failed", Error: reportError{launch}}, {Status: "passed"}}, false, 0},
 		{"later assertion supersedes setup", "unexpected", []testResult{{Status: "failed", Error: reportError{launch}}, {Status: "failed", Error: reportError{"Error: expect(received).toBe(expected)"}}}, false, 1},
 		{"assertion quoting launch error", "unexpected", []testResult{{Status: "failed", Error: reportError{"Error: expect(received).toBe(expected)\nReceived: " + launch}}}, false, 1},
+		{"assertion quoting persistent launch error", "unexpected", []testResult{{Status: "failed", Error: reportError{"Error: expect(received).toBe(expected)\nReceived: " + strings.Replace(launch, "browserType.launch:", "browserType.launchPersistentContext:", 1)}}}, false, 1},
 		{"custom executable", "unexpected", []testResult{{Status: "failed", Error: reportError{"Error: browserType.launch: Executable doesn't exist at /my/custom-browser"}}}, false, 1},
+		{"custom persistent executable", "unexpected", []testResult{{Status: "failed", Error: reportError{"Error: browserType.launchPersistentContext: Executable doesn't exist at /my/custom-browser"}}}, false, 1},
 		{"ordinary timeout", "unexpected", []testResult{{Status: "timedOut", Error: reportError{"Test timeout exceeded"}}}, false, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -44,6 +47,29 @@ func TestMissingBrowserIsNotAValidatedTestFailure(t *testing.T) {
 				}
 			} else if err != nil || validation.ExecutedTests != 1 || validation.FailureCount != tc.failures {
 				t.Fatalf("ordinary outcome changed: %+v, %v", validation, err)
+			}
+		})
+	}
+}
+
+func TestMissingBrowserGlobalSetupIncludesRepair(t *testing.T) {
+	for _, method := range []string{"launch", "launchPersistentContext"} {
+		t.Run(method, func(t *testing.T) {
+			message := "Error: browserType." + method + ": Executable doesn't exist at /private/cache/chromium-1248/chrome\n╔══╗\n║ install browsers ║"
+			raw, err := json.Marshal(map[string]any{
+				"stats":  map[string]any{"duration": 1},
+				"suites": []any{},
+				"errors": []reportError{{message}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			validation, err := New().Validate(raw)
+			if err == nil || !strings.Contains(err.Error(), "chromium-1248") || !strings.Contains(err.Error(), "npx playwright install chromium") || strings.ContainsAny(err.Error(), "╔║") || strings.Contains(err.Error(), "private") {
+				t.Fatalf("global setup lost safe repair guidance: %v", err)
+			}
+			if validation.ExecutedTests != 0 || validation.FailureCount != 0 {
+				t.Fatalf("global setup claimed test execution: %+v", validation)
 			}
 		})
 	}
