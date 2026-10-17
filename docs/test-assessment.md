@@ -129,8 +129,11 @@ for each such test. Mapping in other files
 of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
 records the supplied contract hash; it does not retrieve or authenticate the
 referenced requirement. Outcome IDs must be unique across the entire contract,
-because outcome annotations have no requirement namespace. Annotate each mapped
-test and assertion:
+because outcome annotations have no requirement namespace. Requirement IDs must
+also be unique. Both kinds of ID contain 1–80 ASCII letters, digits, `_`, `.` or
+`-`, starting with a letter or digit. Place the requirement comment immediately
+before the test statement and the outcome comment immediately before the
+assertion statement:
 
 ```ts
 import {test, expect} from '@playwright/test';

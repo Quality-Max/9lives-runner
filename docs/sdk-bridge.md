@@ -20,6 +20,14 @@ cannot corrupt it. The fixture requires a supported engine identity when
 
 ## Contract
 
+Matching CLI and SDK release versions are the qualified pairing; see the
+[compatibility table](../README.md#compatibility). Runtime admission checks
+the protocol and capabilities below, not npm/CLI package versions or a
+same-minor constraint. Different `0.4.x` package versions alone do not reject
+a run, but mixed release pairs are unqualified. Align versions first when
+investigating a bridge failure. A successful handshake still needs complete,
+valid execution evidence before an attempt can pass.
+
 Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
 the protocol and capabilities in a `hello` frame. Go controls the worker through
