@@ -51,6 +51,9 @@ func FailureContext(raw []byte) string {
 				// Playwright reports each error as result.error and in
 				// result.errors; keep one copy, without terminal escapes.
 				message = withoutSourceFrames(runner.StripTerminalEscapes(message))
+				if reason := missingBrowserMessage(message); reason != "" {
+					message = reason
+				}
 				if !seen[message] {
 					seen[message] = true
 					values = append(values, message)
@@ -255,7 +258,7 @@ type report struct {
 	} `json:"stats"`
 	Suites []suite `json:"suites"`
 	// Errors are reported outside any test, such as a spec that fails to load.
-	// Only whether they exist is used; their messages are not retained.
+	// Missing-browser errors produce sanitized guidance; raw messages are not retained.
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
@@ -277,12 +280,47 @@ type suite struct {
 			// test.fail() expectations: expected, unexpected, flaky, skipped.
 			Status string `json:"status"`
 			// ExpectedStatus is "failed" for a test.fail() test.
-			ExpectedStatus string `json:"expectedStatus"`
-			Results        []struct {
-				Status string `json:"status"`
-			} `json:"results"`
+			ExpectedStatus string       `json:"expectedStatus"`
+			Results        []testResult `json:"results"`
 		} `json:"tests"`
 	} `json:"specs"`
+}
+
+type reportError struct {
+	Message string `json:"message"`
+}
+
+type testResult struct {
+	Status string        `json:"status"`
+	Error  reportError   `json:"error"`
+	Errors []reportError `json:"errors"`
+}
+
+var browserBuild = regexp.MustCompile(`[/\\]((chromium(?:_headless_shell)?|firefox|webkit)-[0-9]{1,10})[/\\]`)
+
+// Only Playwright's launch-error prefix at a structured error location counts.
+// An assertion quoting that text must remain a test failure. A known managed
+// browser build also distinguishes this from a user's custom executablePath,
+// which installing Playwright browsers would not repair.
+func missingBrowserMessage(message string) string {
+	line := strings.SplitN(runner.StripTerminalEscapes(message), "\n", 2)[0]
+	line = strings.TrimPrefix(line, "Error: ")
+	path, ok := strings.CutPrefix(line, "browserType.launch: Executable doesn't exist at ")
+	if !ok {
+		path, ok = strings.CutPrefix(line, "browserType.launchPersistentContext: Executable doesn't exist at ")
+	}
+	if !ok {
+		return ""
+	}
+	match := browserBuild.FindStringSubmatch(path)
+	if match == nil {
+		return ""
+	}
+	browser := match[2]
+	if browser == "chromium_headless_shell" {
+		browser = "chromium"
+	}
+	return fmt.Sprintf("Playwright browser %s is not installed; from the Playwright project directory run `npx playwright install %s` (Linux: `npx playwright install --with-deps %s`)", match[1], browser, browser)
 }
 
 func (Adapter) Validate(raw []byte) (runner.Validation, error) {
@@ -293,6 +331,11 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	if parsed.Stats == nil || parsed.Suites == nil {
 		return runner.Validation{}, fmt.Errorf("invalid Playwright JSON report: required stats or suites field is missing")
 	}
+	for _, reported := range parsed.Errors {
+		if reason := missingBrowserMessage(reported.Message); reason != "" {
+			return runner.Validation{}, fmt.Errorf("%s", reason)
+		}
+	}
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "Playwright JSON report; assertion count unavailable"}
 	unsupported, incomplete, flaky, found, unexpectedPasses := "", "", 0, 0, 0
 	var walk func(suite)
@@ -300,6 +343,24 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		for _, spec := range current.Specs {
 			for _, test := range spec.Tests {
 				found++
+				// A completed failed Playwright attempt can still be a browser
+				// fixture that never started. Ignore recovered retries, but do
+				// not let test.fail() turn missing infrastructure into a pass.
+				for index := len(test.Results) - 1; index >= 0; index-- {
+					result := test.Results[index]
+					if result.Status == "passed" {
+						break
+					}
+					if result.Status != "failed" && result.Status != "timedOut" {
+						continue
+					}
+					for _, reported := range append([]reportError{result.Error}, result.Errors...) {
+						if reason := missingBrowserMessage(reported.Message); reason != "" {
+							incomplete = reason
+						}
+					}
+					break
+				}
 				// Counts are per test, not per retry attempt. A test that failed
 				// and then passed on retry is flaky, not failed.
 				outcome := test.Status
@@ -377,9 +438,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 // lastCompletedStatus is the status of the last attempt that ran to an end:
 // passed, failed or timedOut. Skipped and interrupted attempts are not
 // outcomes.
-func lastCompletedStatus(results []struct {
-	Status string `json:"status"`
-}) string {
+func lastCompletedStatus(results []testResult) string {
 	for index := len(results) - 1; index >= 0; index-- {
 		switch results[index].Status {
 		case "passed", "failed", "timedOut":
@@ -416,9 +475,7 @@ func configSummary(parsed report) string {
 	return summary
 }
 
-func hasCompletedAttempt(results []struct {
-	Status string `json:"status"`
-}) bool {
+func hasCompletedAttempt(results []testResult) bool {
 	for _, result := range results {
 		switch result.Status {
 		case "passed", "failed", "timedOut":
@@ -435,9 +492,7 @@ func hasCompletedAttempt(results []struct {
 // flaky. The final attempt alone would let a skipped or interrupted retry
 // hide an earlier failure. It cannot see test.fail() expectations, so passed
 // is taken as the expected status.
-func legacyOutcome(results []struct {
-	Status string `json:"status"`
-}) string {
+func legacyOutcome(results []testResult) string {
 	passed, failed := 0, 0
 	for _, result := range results {
 		switch result.Status {
