@@ -39,6 +39,12 @@ an agent. It works in light and dark themes and as a [single offline HTML file](
 To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
 The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
 
+In current source builds, run `9l doctor` from the application project before
+the first scan (published v0.4.7 predates this command). It checks
+local prerequisites and gives repair commands without downloading browsers or
+loading project config. Use `9l doctor --sdk` for SDK runs. See the
+[setup diagnostics guide](docs/setup-diagnostics.md) for limits and first-run steps.
+
 ## From a failure to a checked fix
 
 1. **Reproduce:** run a reviewed Playwright spec with an assertion that fails on the broken app.

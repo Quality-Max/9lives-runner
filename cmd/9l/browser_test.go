@@ -275,7 +275,7 @@ func TestScanNamesTheInstallCommandForAMissingBrowser(t *testing.T) {
 	t.Chdir(root)
 	var out, errOut bytes.Buffer
 	code := run([]string{"inspect", browserServer(t), "--allow-private-network"}, &out, &errOut)
-	if code != exitIncomplete || !strings.Contains(errOut.String(), "npx playwright install chromium") || strings.Contains(errOut.String(), "╔") {
+	if code != exitIncomplete || (!strings.Contains(errOut.String(), "npx --yes playwright@") || !strings.Contains(errOut.String(), " install chromium")) || strings.Contains(errOut.String(), "╔") {
 		t.Fatalf("exit %d: %q", code, errOut.String())
 	}
 }

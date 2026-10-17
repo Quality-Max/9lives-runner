@@ -47,6 +47,8 @@ func run(args []string, out, errOut io.Writer) int {
 	}
 
 	switch args[0] {
+	case "doctor":
+		return doctorCommand(args[1:], out, errOut)
 	case "plan", "run":
 		return runCommand(args[0], args[1:], out, errOut)
 	case "status", "result", "cancel":
@@ -109,6 +111,7 @@ Usage:
   9l confirm <spec> --unfixed REV [--fixed REV] [--finding-id ID] [--format text|json]
           # experimental: does a reproduction spec fail before a fix and pass after it? needs @9l/playwright
   9l provenance <spec> --agent <id>  # creation snapshot JSON
+  9l doctor [--sdk] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
