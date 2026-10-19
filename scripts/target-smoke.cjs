@@ -14,7 +14,19 @@ function sync(command, args, options = {}) {
   return result;
 }
 assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
-const spec = 'testdata/sdk/targets/shared.spec.ts';
+// A throwaway repository supports provenance even on detached CI checkouts.
+const project = path.join(work, 'project');
+fs.cpSync(path.join(root, 'testdata/sdk/targets'), path.join(project, 'targets'), {recursive: true});
+fs.copyFileSync(path.join(root, 'testdata/sdk/targets.config.ts'), path.join(project, 'targets.config.ts'));
+const playwrightVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).devDependencies['@playwright/test'];
+fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({private: true, devDependencies: {'@playwright/test': playwrightVersion}}));
+const git = (...args) => assert.equal(sync('git', args, {cwd: project}).status, 0, `git ${args[0]}`);
+git('init', '--quiet', '-b', 'target-qualification');
+git('add', 'targets', 'targets.config.ts', 'package.json');
+git('-c', 'user.name=9lives', '-c', 'user.email=fixture@9lives.invalid', 'commit', '--quiet', '-m', 'Pin target fixture');
+fs.symlinkSync(path.join(root, 'node_modules'), path.join(project, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+const spec = path.join(project, 'targets/shared.spec.ts');
+const config = path.join(project, 'targets.config.ts');
 const provenance = path.join(work, 'creation.json');
 const creation = sync(engine, ['provenance', spec, '--agent', 'codex']);
 assert.equal(creation.status, 0);
@@ -23,7 +35,7 @@ const cases = [];
 function invoke(mode, {targets = ['android-fake:finance'], grep = 'one deterministic scenario', file = spec, extra = []} = {}) {
   const effects = path.join(work, `${mode}.effects`);
   const result = sync(engine, ['run', file, '--sdk', ...targets.flatMap(target => ['--target', target]), ...extra,
-    '--config', 'testdata/sdk/targets.config.ts', '--grep', grep, '--attempts', '3', '--timeout', mode === 'deadline' ? '6s' : '20s',
+    '--config', config, '--grep', grep, '--attempts', '3', '--timeout', mode === 'deadline' ? '6s' : '20s',
     '--format', 'json', '--receipt-dir', path.join(work, mode),
     '--pass-env', 'NINELIVES_TARGET_CASE', '--pass-env', 'NINELIVES_TARGET_EFFECTS',
     ...(targets.length === 1 && file === spec ? ['--agent-provenance', provenance] : [])], {
@@ -93,7 +105,7 @@ assert.equal(pinned.code, 0);
 assert.equal(pinned.summary.receipts[0].executedTests, 1);
 assert.equal(pinned.summary.receipts[0].skippedTests, 1);
 // Web actions follow a node replaced by re-rendering instead of a stale handle.
-const rerender = invoke('rerender', {targets: ['web:finance'], grep: 're-rendered control', file: 'testdata/sdk/targets/rerender.spec.ts'});
+const rerender = invoke('rerender', {targets: ['web:finance'], grep: 're-rendered control', file: path.join(project, 'targets/rerender.spec.ts')});
 assert.equal(rerender.code, 0, 'rerender');
 assert.equal(rerender.summary.receipts[0].targetAssertions, 1);
 // Specs remain listable by plain Playwright and editors without 9l.
