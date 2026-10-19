@@ -3,6 +3,12 @@ name: 9lives-qa
 description: Assess, create or repair Playwright tests with 9lives, combining requirement mapping, local execution receipts, branch provenance and available QA skills. Use for test intent or quality work in a 9lives project, not unrelated website audits.
 ---
 
+For QualityMax-managed projects or cloud-run links, use the
+[`qualitymax-connected-qa` skill](../qualitymax-connected-qa/SKILL.md) instead
+when available. It coordinates optional local inspection with hosted discovery,
+Jev-assisted decisions and cloud verification. The local workflow below does
+not require a platform account.
+
 Protect the user's reviewed requirement and distinguish a passing run from an
 adequate test. Work from the project root. Read `docs/test-assessment.md` in this
 repository for command limits and the contract; in another project use the

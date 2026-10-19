@@ -274,6 +274,9 @@ range; upgrading is not required. To check a release locally, see the
 The optional [9lives QA skill](skills/9lives-qa/SKILL.md) guides Codex and Claude
 through requirements, source provenance, assessment and executed results.
 Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
+For QualityMax-managed tests, the optional
+[connected QA skill](skills/qualitymax-connected-qa/SKILL.md) combines local
+inspection with hosted crawling, Jev-assisted decisions and cloud verification.
 
 ## Adjacent QualityMax tools
 
