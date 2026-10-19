@@ -311,6 +311,10 @@ same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
 versions, but is not a qualified pairing; align both versions before diagnosing
 a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
+An experimental [shared target contract](docs/targets.md) dispatches one
+deterministic scenario to web and an in-memory native fixture. Real Android
+execution remains a subsequent milestone.
+
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
 [development guide](docs/development.md).

@@ -107,6 +107,7 @@ jobs:
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke:demo
       - run: npm run smoke
+      - run: npm run smoke:targets
       - name: Verify embedded browser checks and run them in real Chromium
         run: npm run smoke:browser
       - name: Qualify 9l scan, 9l inspect and the MCP browser tools in real Chromium

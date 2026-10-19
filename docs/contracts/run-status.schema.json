@@ -243,6 +243,9 @@
         "spec": {
           "type": "string"
         },
+        "target": {
+          "type": "string"
+        },
         "workDir": {
           "type": "string"
         }
@@ -504,6 +507,12 @@
             "error"
           ],
           "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "targetAssertions": {
+          "type": "integer"
         },
         "termination": {
           "$ref": "#/$defs/Termination"

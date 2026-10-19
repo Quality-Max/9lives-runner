@@ -328,7 +328,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 		receipt = executeAttempt(parent, runID, job, attempt, opts, store, executor)
 		// An interrupted goal may already have changed the application. Never
 		// replay the entire worker automatically after an uncertain effect.
-		if receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") {
+		if job.Target != "" || receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") {
 			break
 		}
 	}
@@ -338,6 +338,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 func executeAttempt(parent context.Context, runID string, job Job, attempt int, opts ExecuteOptions, store Store, executor ProcessExecutor) Receipt {
 	started := time.Now().UTC()
 	receipt := Receipt{
+		Target:  job.Target,
 		Version: ReceiptVersion, RunID: runID, JobID: job.ID, Spec: job.Spec,
 		Attempt: attempt, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, attempt),
 		Adapter: job.Adapter, StartedAt: started, ExitCode: -1,
@@ -378,10 +379,14 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		}
 	}
 	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_JOB_ID": job.ID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
+	if job.Target != "" {
+		deadline, _ := ctx.Deadline()
+		job.Env["NINELIVES_TARGET_DEADLINE_MS"] = fmt.Sprint(deadline.UnixMilli())
+	}
 	var service AttemptService
 	if opts.Services != nil {
 		var err error
-		service, err = opts.Services.Start(ctx, AttemptIdentity{runID, job.ID, receipt.AttemptID})
+		service, err = opts.Services.Start(ctx, AttemptIdentity{RunID: runID, JobID: job.ID, AttemptID: receipt.AttemptID, Target: job.Target})
 		if err != nil {
 			return infrastructureError("goal engine could not start")
 		}
@@ -435,7 +440,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			var validation Validation
 			var validationErr error
 			if bound, ok := adapter.(AttemptValidator); ok {
-				validation, validationErr = bound.ValidateAttempt(output.Stdout, AttemptIdentity{runID, job.ID, receipt.AttemptID})
+				validation, validationErr = bound.ValidateAttempt(output.Stdout, AttemptIdentity{RunID: runID, JobID: job.ID, AttemptID: receipt.AttemptID, Target: job.Target})
 				if output.StdoutTruncated {
 					validationErr = fmt.Errorf("engine protocol output exceeded capture limit")
 				}
@@ -469,6 +474,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.ExecutedTests = validation.ExecutedTests
 				receipt.SkippedTests = validation.SkippedTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
+				receipt.TargetAssertions = validation.TargetAssertions
 				receipt.AssertionCoverage = validation.AssertionCoverage
 				receipt.Validation = validation.Description
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
@@ -607,6 +613,9 @@ func validateValidation(validation Validation) error {
 	}
 	if validation.VerifiedAssertions < 0 {
 		return errors.New("structured report has negative verified assertions")
+	}
+	if validation.TargetAssertions < 0 {
+		return errors.New("structured report has negative target assertions")
 	}
 	return nil
 }
