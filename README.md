@@ -254,6 +254,44 @@ use that CLI's own subscription login without an API key. Offline `--goal-script
 the browser/engine contract without paid API calls. Purchase, deletion and
 outreach controls stop by default. See [goal contracts](docs/goals.md).
 
+## Requirement contracts
+
+Give `9l assess` a shared `requirements.json` with reviewed intent:
+
+```json
+{
+  "version": 1,
+  "requirements": [{
+    "id": "checkout-order",
+    "reference": "requirements/checkout",
+    "revision": "1",
+    "expectedOutcomes": [{"id": "order-count", "description": "Checkout displays exactly one order."}]
+  }]
+}
+```
+
+Put a requirement comment immediately before the test statement and an outcome
+comment immediately before the assertion statement:
+
+```ts
+import {test, expect} from '@playwright/test';
+
+// @9l-requirement checkout-order
+test('checkout displays an order', async ({page}) => {
+  await page.goto('/checkout'); // uses your project's baseURL
+  await page.getByRole('button', {name: 'Place order'}).click();
+  // @9l-outcome order-count
+  await expect(page.getByTestId('order')).toHaveCount(1);
+});
+```
+
+Run `9l assess tests/checkout.spec.ts --requirements requirements.json`.
+IDs contain 1–80 ASCII letters, digits, `_`, `.` or `-`, starting with a
+letter or digit. Requirement IDs are unique; outcome IDs are unique across
+the entire contract. This maps source to intent; assessment does not execute
+the spec or prove its assertions protect the requirement. See the
+[assessment guide](docs/test-assessment.md) for mapping rules and limits.
+
 ## Compatibility
 
 | Component | Qualified | Boundary |
@@ -264,6 +302,14 @@ outreach controls stop by default. See [goal contracts](docs/goals.md).
 | Node | 24 (22 minimum) | |
 | CLI | 0.4.7 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
 | SDK | `@9l/playwright` 0.4.7, released with the CLI | Installing the SDK does not install the CLI or browsers |
+
+Use the matching CLI and SDK release above for the qualified pairing. The
+runtime validates `9l.engine/1` and the exact capabilities `steps`,
+`artifact-metadata`, `terminal-outcomes` (in that order), then validates the
+execution evidence. It does not compare package versions or enforce a
+same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
+versions, but is not a qualified pairing; align both versions before diagnosing
+a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
@@ -289,6 +335,9 @@ inspection with hosted crawling, Jev-assisted decisions and cloud verification.
 These are separate distributions. Installing this runner or SDK does not
 install or configure them. The Python package also provides a `9l` command;
 use an explicit executable path when both CLIs are installed.
+The [installation checks](docs/install.md#verify-the-selected-cli) show how to
+find stale binaries; [MCP setup](docs/mcp.md#verify-the-server-your-host-launches)
+checks the version and tools exposed by the host's running server.
 
 ## Safety and honest limits
 

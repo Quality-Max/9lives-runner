@@ -108,6 +108,44 @@ your user account. POSIX mode bits do not set Windows ACLs.
 If Python `9lives` is also installed, it has its own `9l` command. Use an
 explicit path such as `$HOME/.local/bin/9l` to select this Go runner.
 
+## Verify the selected CLI
+
+After installing or upgrading, check which `9l` your shell selects. On macOS
+or Linux:
+
+```sh
+type -a 9l
+command -v 9l
+/absolute/path/to/9l --version
+/absolute/path/to/9l version --format json
+/absolute/path/to/9l --help
+```
+
+Replace the absolute path with the Go runner you installed. On Windows,
+use PowerShell:
+
+```powershell
+Get-Command 9l -All | Select-Object CommandType, Source
+& 'C:\path\to\9l.exe' --version
+& 'C:\path\to\9l.exe' version --format json
+& 'C:\path\to\9l.exe' --help
+```
+
+The JSON identifies this CLI with `implementation: "go-runner"`, `cliVersion`
+and `contracts.engine: "9l.engine/1"`. An older release may not offer the JSON
+command; check `--version` and `--help` before upgrading it. A successful
+install does not replace another executable earlier on PATH, an alias or a
+shell function. Update that selection, reopen the shell if necessary, then
+repeat these checks. The Python `9lives` distribution also installs `9l`.
+
+For SDK execution, use the [qualified CLI/SDK pair](../README.md#compatibility).
+The engine checks protocol and capabilities rather than package semver; a
+mixed pair that can handshake still has no release-pair qualification.
+
+An MCP host can inherit a different PATH from your terminal. Configure the
+verified absolute binary path, restart its MCP server after an upgrade, and
+[verify its server identity and tools](mcp.md#verify-the-server-your-host-launches).
+
 ## First run
 
 From the application project, run `9l doctor` (or `9l doctor --sdk` for
