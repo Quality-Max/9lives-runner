@@ -241,9 +241,10 @@ async function readBrowserAccessibility(page) {
         }
         const interactiveNames = nodeIds.slice(0, MAX_INTERACTIVE).map((nodeId) => {
             const backend = backendIds.get(nodeId);
-            const tag = backend === undefined ? undefined : tags.get(backend);
-            const name = backend === undefined ? undefined : names.get(backend);
-            return tag === undefined || name === undefined ? undefined : { tag, name };
+            if (backend === undefined)
+                return undefined;
+            const tag = tags.get(backend);
+            return tag === undefined ? undefined : { tag, name: names.get(backend) };
         });
         const tree = flattenAccessibilityTree(nodes, (id) => {
             const tag = tags.get(id);
@@ -263,6 +264,13 @@ function mergeBrowserAccessibleNames(interactive, browserNames) {
             usedDomEstimate = true;
             return item;
         }
+        // Chromium leaves an element it does not render (an <input type="hidden">,
+        // display:none, the hidden attribute) out of the tree, so there is no
+        // browser name to read. The element was matched, so nothing is in doubt:
+        // its DOM estimate is the name it would have once shown, and a hidden
+        // CSRF field or a closed menu does not cast doubt on every other name.
+        if (computed.name === undefined)
+            return item;
         return { ...item, accessibleName: computed.name };
     });
     return {

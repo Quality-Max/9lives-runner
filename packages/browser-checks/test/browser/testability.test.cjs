@@ -213,3 +213,26 @@ test('an unnamed progressbar is identified as requiring an accessible name', asy
   assert.match(progressbar.locatorNote, /no accessible name/);
   assert.equal(treeNode.unnamed, true);
 });
+
+test('controls the page does not render do not mark every name as estimated', async () => {
+  // Chromium leaves unrendered elements out of the accessibility tree. A CSRF
+  // field or a closed menu is on most pages, and must not turn into a warning
+  // that the names of the rendered controls were guessed.
+  const result = await inspectFixture(`
+    <form>
+      <input type="hidden" name="csrf" value="token">
+      <button data-testid="close-menu" style="display:none">Close menu</button>
+      <button data-testid="later" hidden>Later</button>
+      <label>Email <input id="email"></label>
+      <button>Go</button>
+    </form>
+  `);
+
+  assert.ok(
+    !(result.warnings ?? []).some((warning) => /estimated from the DOM/.test(warning)),
+    `unexpected estimate warning: ${JSON.stringify(result.warnings)}`
+  );
+  assert.equal(control(result, (item) => item.selector === '#email').accessibleName, 'Email');
+  assert.equal(control(result, (item) => item.testId === 'close-menu').accessibleName, 'Close menu');
+  assert.equal(control(result, (item) => item.type === 'hidden').accessibleName, '');
+});

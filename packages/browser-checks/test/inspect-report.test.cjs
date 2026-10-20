@@ -259,6 +259,24 @@ test('unmatched browser names keep the DOM estimate and warn about it', () => {
   assert.match(mapped.warning, /estimated from the DOM/);
 });
 
+test('a matched element the browser does not render keeps its estimate without a warning', () => {
+  const { mergeBrowserAccessibleNames } = require('../dist/inspect-page.js');
+  const mapped = mergeBrowserAccessibleNames(
+    [
+      { tag: 'input', accessibleName: '' },
+      { tag: 'button', accessibleName: 'Close menu' },
+      { tag: 'button', accessibleName: 'DOM estimate' },
+    ],
+    [{ tag: 'input' }, { tag: 'button' }, { tag: 'button', name: 'Go' }]
+  );
+
+  assert.deepEqual(
+    mapped.interactive.map((item) => item.accessibleName),
+    ['', 'Close menu', 'Go']
+  );
+  assert.equal(mapped.warning, undefined);
+});
+
 test('the Markdown report does not mark hidden inputs as missing an accessible name', () => {
   const report = renderInspectReport(
     inspectResult({
