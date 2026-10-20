@@ -38,7 +38,7 @@ def test_landing_page_presents_the_page_checks_built_into_the_runner():
 def test_installer_defaults_to_the_release_with_page_checks():
     installer = (ROOT / "install" / "9l.run.sh").read_text()
 
-    assert 'VERSION="${NINELIVES_VERSION:-v0.4.7}"' in installer
+    assert 'VERSION="${NINELIVES_VERSION:-v0.4.8}"' in installer
     assert "9l scan" in installer
 
 
