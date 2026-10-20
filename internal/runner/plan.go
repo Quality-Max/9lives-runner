@@ -31,6 +31,7 @@ type PlanOptions struct {
 	// absolute path; Projects narrows the run to these configured projects.
 	Config   string
 	Projects []string
+	Targets  []string
 }
 
 // lineInput matches `<spec>:<line>`.
@@ -39,6 +40,16 @@ var lineInput = regexp.MustCompile(`^(.+):([1-9][0-9]{0,6})$`)
 // BuildPlan resolves every candidate before execution and reserves the
 // run-wide job budget up front.
 func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
+	if len(opts.Targets) > 0 && len(opts.Projects) > 0 {
+		return Plan{}, fmt.Errorf("explicit targets cannot be combined with projects")
+	}
+	targetSet := map[string]bool{}
+	for _, target := range opts.Targets {
+		if target == "" || targetSet[target] {
+			return Plan{}, fmt.Errorf("targets must be nonempty and distinct")
+		}
+		targetSet[target] = true
+	}
 	plan := Plan{
 		Version: PlanVersion, RunID: newRunID(), CreatedAt: time.Now().UTC(), Jobs: []Job{}, Skipped: []Skipped{},
 		Limits: Limits{MaxJobs: opts.MaxJobs, MaxParallel: opts.MaxParallel, MaxAttempts: opts.MaxAttempts, MaxOutputBytes: opts.MaxOutputBytes, DeadlineMS: opts.Deadline.Milliseconds()},
@@ -79,68 +90,89 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 				plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: "unsupported spec; currently supported: Playwright .spec/.test JS, JSX, TS, and TSX files"})
 				continue
 			}
-			if opts.MaxJobs > 0 && len(plan.Jobs) >= opts.MaxJobs {
-				plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: "run-wide job budget exhausted"})
-				continue
+			targets := opts.Targets
+			if len(targets) == 0 {
+				targets = []string{""}
 			}
-			job, err := candidate.Plan(absolute, input, len(plan.Jobs)+1)
-			if err != nil {
-				plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: err.Error()})
-				continue
-			}
-			var selections []string
-			if line > 0 {
-				selector, ok := candidate.(LineSelector)
-				if !ok {
-					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot select a test by line"})
+			for _, target := range targets {
+				// Name the omitted target; the input path alone is ambiguous.
+				forTarget := ""
+				if target != "" {
+					forTarget = " for target " + target
+				}
+				if opts.MaxJobs > 0 && len(plan.Jobs) >= opts.MaxJobs {
+					plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: "run-wide job budget exhausted" + forTarget})
 					continue
 				}
-				if job, err = selector.SelectLine(job, line); err != nil {
-					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: err.Error()})
+				var job Job
+				var err error
+				if target != "" {
+					planner, ok := candidate.(TargetPlanner)
+					if !ok {
+						return Plan{}, fmt.Errorf("adapter does not support explicit targets")
+					}
+					job, err = planner.PlanTarget(absolute, input, len(plan.Jobs)+1, target)
+				} else {
+					job, err = candidate.Plan(absolute, input, len(plan.Jobs)+1)
+				}
+				if err != nil {
+					plan.Skipped = append(plan.Skipped, Skipped{Input: path, Reason: err.Error() + forTarget})
 					continue
 				}
-				selections = append(selections, fmt.Sprintf("line %d", line))
-			}
-			if len(opts.Reporters) > 0 {
-				added := false
-				for i, argument := range job.Command {
-					if strings.HasPrefix(argument, "--reporter=") {
-						job.Command = append([]string{}, job.Command...)
-						job.Command[i] = argument + "," + strings.Join(opts.Reporters, ",")
-						added = true
-						break
+				var selections []string
+				if line > 0 {
+					selector, ok := candidate.(LineSelector)
+					if !ok {
+						plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot select a test by line"})
+						continue
+					}
+					if job, err = selector.SelectLine(job, line); err != nil {
+						plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: err.Error()})
+						continue
+					}
+					selections = append(selections, fmt.Sprintf("line %d", line))
+				}
+				if len(opts.Reporters) > 0 {
+					added := false
+					for i, argument := range job.Command {
+						if strings.HasPrefix(argument, "--reporter=") {
+							job.Command = append([]string{}, job.Command...)
+							job.Command[i] = argument + "," + strings.Join(opts.Reporters, ",")
+							added = true
+							break
+						}
+					}
+					if !added {
+						plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot add reporters"})
+						continue
 					}
 				}
-				if !added {
-					plan.Skipped = append(plan.Skipped, Skipped{Input: input, Reason: "this adapter cannot add reporters"})
-					continue
-				}
-			}
-			if opts.Config != "" || len(opts.Projects) > 0 {
-				var command []string
-				for _, argument := range job.Command {
-					if opts.Config == "" || !strings.HasPrefix(argument, "--config=") {
-						command = append(command, argument)
+				if opts.Config != "" || len(opts.Projects) > 0 {
+					var command []string
+					for _, argument := range job.Command {
+						if opts.Config == "" || !strings.HasPrefix(argument, "--config=") {
+							command = append(command, argument)
+						}
 					}
+					if opts.Config != "" {
+						command = append(command, "--config="+opts.Config)
+						selections = append(selections, "config "+filepath.Base(opts.Config))
+					}
+					for _, project := range opts.Projects {
+						command = append(command, "--project="+project)
+					}
+					if len(opts.Projects) > 0 {
+						selections = append(selections, "project "+strings.Join(opts.Projects, ", "))
+					}
+					job.Command = command
 				}
-				if opts.Config != "" {
-					command = append(command, "--config="+opts.Config)
-					selections = append(selections, "config "+filepath.Base(opts.Config))
+				if len(opts.ExtraArgs) > 0 {
+					job.Command = append(job.Command, opts.ExtraArgs...)
+					selections = append(selections, opts.Selection)
 				}
-				for _, project := range opts.Projects {
-					command = append(command, "--project="+project)
-				}
-				if len(opts.Projects) > 0 {
-					selections = append(selections, "project "+strings.Join(opts.Projects, ", "))
-				}
-				job.Command = command
+				job.Selection = strings.Join(selections, ", ")
+				plan.Jobs = append(plan.Jobs, job)
 			}
-			if len(opts.ExtraArgs) > 0 {
-				job.Command = append(job.Command, opts.ExtraArgs...)
-				selections = append(selections, opts.Selection)
-			}
-			job.Selection = strings.Join(selections, ", ")
-			plan.Jobs = append(plan.Jobs, job)
 		}
 	}
 	return plan, nil

@@ -263,6 +263,15 @@ func TestAttemptAndOutputBudgetsAreEnforced(t *testing.T) {
 	}
 }
 
+func TestNonRepeatableWorkerNeverRetriesIncompleteEvidence(t *testing.T) {
+	job := fakeJob("job-001", "infrastructure", 0)
+	job.Target = "android-fake:finance"
+	summary, _ := Execute(context.Background(), Plan{Version: 1, RunID: "run-no-retry", Jobs: []Job{job}}, ExecuteOptions{MaxAttempts: 3, Timeout: time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
+	if len(summary.Receipts) != 1 || summary.Receipts[0].Attempt != 1 || summary.Receipts[0].Status != StatusError {
+		t.Fatalf("unsafe retry: %+v", summary)
+	}
+}
+
 // prefixAdapter accepts any output that starts like a passing fake report, so
 // a truncated report would validate if the runner relied on parsing alone.
 type prefixAdapter struct{ fakeAdapter }

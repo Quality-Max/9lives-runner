@@ -107,6 +107,7 @@ jobs:
       - run: npm exec playwright install --with-deps chromium
       - run: npm run smoke:demo
       - run: npm run smoke
+      - run: npm run smoke:targets
       - name: Verify embedded browser checks and run them in real Chromium
         run: npm run smoke:browser
       - name: Qualify browser tools and missing-browser outcomes in real Chromium
@@ -195,7 +196,7 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: windows
           GOARCH: ${{ matrix.arch }}
-          RELEASE_VERSION: '0.4.7+ci'
+          RELEASE_VERSION: '0.4.8+ci'
         run: python scripts/package-cli.py
       - uses: actions/upload-artifact@v4
         with:

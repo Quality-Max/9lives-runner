@@ -39,8 +39,8 @@ an agent. It works in light and dark themes and as a [single offline HTML file](
 To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
 The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
 
-In current source builds, run `9l doctor` from the application project before
-the first scan (published v0.4.7 predates this command). It checks
+From CLI v0.4.8, run `9l doctor` from the application project before the
+first scan. It checks
 local prerequisites and gives repair commands without downloading browsers or
 loading project config. Use `9l doctor --sdk` for SDK runs. See the
 [setup diagnostics guide](docs/setup-diagnostics.md) for limits and first-run steps.
@@ -73,7 +73,7 @@ Run from your project root and replace the path with an existing spec. Follow th
 troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
 
 Your project supplies its Playwright dependencies, browsers, configuration, and
-assertions. The SDK is optional. Native v0.4.7 binaries support macOS, Linux and
+assertions. The SDK is optional. Native v0.4.8 binaries support macOS, Linux and
 Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
 and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
 other browser engines are unqualified.
@@ -104,7 +104,7 @@ that can run standalone or connect to QualityMax.
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.4.7 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.4.8 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -254,6 +254,44 @@ use that CLI's own subscription login without an API key. Offline `--goal-script
 the browser/engine contract without paid API calls. Purchase, deletion and
 outreach controls stop by default. See [goal contracts](docs/goals.md).
 
+## Requirement contracts
+
+Give `9l assess` a shared `requirements.json` with reviewed intent:
+
+```json
+{
+  "version": 1,
+  "requirements": [{
+    "id": "checkout-order",
+    "reference": "requirements/checkout",
+    "revision": "1",
+    "expectedOutcomes": [{"id": "order-count", "description": "Checkout displays exactly one order."}]
+  }]
+}
+```
+
+Put a requirement comment immediately before the test statement and an outcome
+comment immediately before the assertion statement:
+
+```ts
+import {test, expect} from '@playwright/test';
+
+// @9l-requirement checkout-order
+test('checkout displays an order', async ({page}) => {
+  await page.goto('/checkout'); // uses your project's baseURL
+  await page.getByRole('button', {name: 'Place order'}).click();
+  // @9l-outcome order-count
+  await expect(page.getByTestId('order')).toHaveCount(1);
+});
+```
+
+Run `9l assess tests/checkout.spec.ts --requirements requirements.json`.
+IDs contain 1–80 ASCII letters, digits, `_`, `.` or `-`, starting with a
+letter or digit. Requirement IDs are unique; outcome IDs are unique across
+the entire contract. This maps source to intent; assessment does not execute
+the spec or prove its assertions protect the requirement. See the
+[assessment guide](docs/test-assessment.md) for mapping rules and limits.
+
 ## Compatibility
 
 | Component | Qualified | Boundary |
@@ -262,8 +300,20 @@ outreach controls stop by default. See [goal contracts](docs/goals.md).
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.4.7 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.4.7, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.4.8 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.4.8, released with the CLI | Installing the SDK does not install the CLI or browsers |
+
+Use the matching CLI and SDK release above for the qualified pairing. The
+runtime validates `9l.engine/1` and the exact capabilities `steps`,
+`artifact-metadata`, `terminal-outcomes` (in that order), then validates the
+execution evidence. It does not compare package versions or enforce a
+same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
+versions, but is not a qualified pairing; align both versions before diagnosing
+a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
+
+An experimental [shared target contract](docs/targets.md) dispatches one
+deterministic scenario to web and an in-memory native fixture. Real Android
+execution remains a subsequent milestone.
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
@@ -274,6 +324,9 @@ range; upgrading is not required. To check a release locally, see the
 The optional [9lives QA skill](skills/9lives-qa/SKILL.md) guides Codex and Claude
 through requirements, source provenance, assessment and executed results.
 Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
+For QualityMax-managed tests, the optional
+[connected QA skill](skills/qualitymax-connected-qa/SKILL.md) combines local
+inspection with hosted crawling, Jev-assisted decisions and cloud verification.
 
 ## Adjacent QualityMax tools
 
@@ -286,6 +339,9 @@ Use the [agent setup guide](docs/agent-setup.md) to add it to a project.
 These are separate distributions. Installing this runner or SDK does not
 install or configure them. The Python package also provides a `9l` command;
 use an explicit executable path when both CLIs are installed.
+The [installation checks](docs/install.md#verify-the-selected-cli) show how to
+find stale binaries; [MCP setup](docs/mcp.md#verify-the-server-your-host-launches)
+checks the version and tools exposed by the host's running server.
 
 ## Safety and honest limits
 
@@ -337,7 +393,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.4.7](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.4.8](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions with one shared version: a single
 `v<version>` tag releases both. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)

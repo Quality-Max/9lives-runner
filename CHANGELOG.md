@@ -6,6 +6,55 @@ SDK versions.
 
 ## Unreleased
 
+## 0.4.8 — 2026-10-20
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.8 is released with CLI 0.4.8.
+
+### CLI
+
+- Add `9l doctor [--sdk] [--format text|json]`, a read-only first-run check
+  of Node, the workspace manifest, the locally resolved `@playwright/test`
+  and optional SDK versions, and the Chromium and headless-shell files of
+  both the test and scan runtimes. It prints repair commands without
+  downloading, launching a browser, loading project config or writing project
+  files. Exit 0 means no required prerequisite is missing; exit 2 means setup
+  is missing or diagnostics could not complete. `--sdk` makes the SDK
+  required. Browser files are checked only for the qualified Playwright
+  1.61.1 through 1.64.0 registries.
+- A missing-browser error from `9l scan`, `9l inspect` and the MCP browser
+  tools names the install command pinned to the project's resolved Playwright
+  version, with `--with-deps` guidance for Linux.
+- An unreachable scan or inspect target from the CLI or MCP reports shared
+  guidance about starting the application, its published port and
+  `--allow-private-network`, and no longer echoes the navigation URL, query
+  string or Playwright call log.
+- `9l version` lists the `scan`, `inspect` and `doctor` commands (additive).
+
+### Qualification
+
+- CI runs the doctor and unreachable-target checks in real Chromium on Linux
+  and Windows, and the doctor check on every qualified Playwright version.
+- Add `npm run demo:first-run`: an ordinary Playwright run on the release
+  lab's synthetic shop, then HTTP-500 faults that a weaker test partly misses
+  and a stronger test catches. It rejects incomplete or unexpected results and
+  makes no model calls.
+
+### Website and documentation
+
+- Make one ordinary Playwright spec the default first-run path in the
+  README, existing-project guide and homepage; the login harness moves to a
+  separate optional [login goal example](docs/login-goal-example.md).
+- Add the [setup diagnostics guide](docs/setup-diagnostics.md).
+- Document requirement contracts with an annotated-test example, explain
+  that SDK admission checks protocol and capabilities rather than package
+  versions, and describe selecting the right `9l` executable on POSIX and
+  PowerShell plus MCP server identity and tool discovery.
+- Add the `qualitymax-connected-qa` skill for coding agents using QualityMax
+  MCP, routed from the existing `9lives-qa` skill.
+- The default installer, homepage and overview install verified v0.4.7.
+
 ## 0.4.7 — 2026-10-15
 
 ### SDK
