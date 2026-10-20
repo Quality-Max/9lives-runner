@@ -21,6 +21,8 @@ type Limits struct {
 }
 
 type Job struct {
+	// Target is an explicitly selected SDK target (kind:app alias).
+	Target    string            `json:"target,omitempty"`
 	ID        string            `json:"id"`
 	Input     string            `json:"input"`
 	Spec      string            `json:"spec"`
@@ -52,6 +54,7 @@ const (
 // Receipt is one job's immutable execution record. Executed and Validated are
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
+	Target              string                `json:"target,omitempty"`
 	AgentProvenance     *ProvenanceAssessment `json:"agentProvenance,omitempty"`
 	Goals               []GoalReceipt         `json:"goals,omitempty"`
 	Version             int                   `json:"version"`
@@ -75,8 +78,11 @@ type Receipt struct {
 	ExecutedTests       int                   `json:"executedTests"`
 	SkippedTests        int                   `json:"skippedTests"`
 	VerifiedAssertions  int                   `json:"verifiedAssertions"`
-	AssertionCoverage   string                `json:"assertionCoverage"`
-	Error               string                `json:"error,omitempty"`
+	// TargetAssertions counts successful SDK-instrumented target checks the
+	// worker reported. It is not independent verification or coverage.
+	TargetAssertions  int    `json:"targetAssertions,omitempty"`
+	AssertionCoverage string `json:"assertionCoverage"`
+	Error             string `json:"error,omitempty"`
 	// Failures describes each failed test, from the validated structured
 	// report, when the adapter can attribute them. Messages are bounded and
 	// redacted; attachments are referenced and copied only on request.
@@ -100,9 +106,22 @@ type TestFailure struct {
 	// project directory, as file:line.
 	Location string `json:"location,omitempty"`
 	// Message is the start of the first error, without terminal escapes, at
-	// most MaxFailureMessageBytes and redacted.
-	Message     string           `json:"message,omitempty"`
-	Attachments []TestAttachment `json:"attachments,omitempty"`
+	// most MaxFailureMessageBytes and redacted. A test that was expected to
+	// fail and passed has no error; its message says so.
+	Message string `json:"message,omitempty"`
+	// ExpectedStatus and Status are the framework's expected status for the
+	// test and the status of its last completed attempt. A failure with
+	// expectedStatus "failed" and status "passed" is a test.fail() pin whose
+	// expectation no longer holds, not a broken test.
+	ExpectedStatus string           `json:"expectedStatus,omitempty"`
+	Status         string           `json:"status,omitempty"`
+	Attachments    []TestAttachment `json:"attachments,omitempty"`
+}
+
+// UnexpectedPass reports a test listed as failed because it passed while
+// the framework expected it to fail.
+func (failure TestFailure) UnexpectedPass() bool {
+	return failure.Status == "passed" && failure.ExpectedStatus != "" && failure.ExpectedStatus != "passed"
 }
 
 // TestAnnotation is one annotation of one test, as the test framework

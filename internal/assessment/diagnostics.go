@@ -11,16 +11,17 @@ func (e *Error) Error() string {
 func diagnostic(code string) error { return &Error{Code: code} }
 
 var diagnostics = map[string]string{
-	"node-unavailable":   "Node executable is unavailable; install Node 22 or newer",
-	"parser-unavailable": "bundled TypeScript parser could not be prepared or loaded",
-	"syntax":             "source is not valid syntax for the bundled TypeScript parser",
-	"annotation":         "requirement or outcome annotation has an invalid identifier",
-	"limit":              "source analysis exceeded its fact or input limit",
-	"output-limit":       "analyzer output exceeded 1 MiB",
-	"timeout":            "analyzer exceeded its time budget",
-	"cancelled":          "analyzer was cancelled",
-	"helper-failed":      "analyzer process failed; raw diagnostics were suppressed",
-	"invalid-evidence":   "analyzer returned malformed or incomplete evidence",
+	"node-unavailable":         "Node executable is unavailable; install Node 22 or newer",
+	"parser-unavailable":       "bundled TypeScript parser could not be prepared or loaded",
+	"syntax":                   "source is not valid syntax for the bundled TypeScript parser",
+	"typescript-in-javascript": "source uses TypeScript-only syntax in a JavaScript file; Playwright loads .js, .mjs, .cjs and .jsx without the TypeScript transform",
+	"annotation":               "requirement or outcome annotation has an invalid identifier",
+	"limit":                    "source analysis exceeded its fact or input limit",
+	"output-limit":             "analyzer output exceeded 1 MiB",
+	"timeout":                  "analyzer exceeded its time budget",
+	"cancelled":                "analyzer was cancelled",
+	"helper-failed":            "analyzer process failed; raw diagnostics were suppressed",
+	"invalid-evidence":         "analyzer returned malformed or incomplete evidence",
 }
 
 var analysisLimits = map[string]string{

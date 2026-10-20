@@ -1,51 +1,48 @@
-# 9lives explainer
+# 9lives overview and demo
 
-A single static page that explains what a 9lives test looks like, that tests
-run without an AI model, how 9lives compares with Vibium and hosted test
-vendors, and which capabilities are shipped versus planned.
+The [GitHub Pages overview](https://quality-max.github.io/9lives-runner/) mirrors
+the evidence-first [9lives.run homepage](https://9lives.run): the recorded fix,
+five demo chapters, the reproduction/confirmation/fault-testing workflow, local
+installation, and explicit available/experimental/planned boundaries.
 
-- `index.html` and `explainer.css`: the page. Plain HTML with inline styles,
-  design tokens from the QualityMax design system and one small script for
-  the hero copy button. No framework runtime and no CDN scripts. Webfonts are
-  loaded from Google Fonts and the page degrades to system fonts offline.
-- `assets/qualitymax-logo-white.png`: the header logo.
-- `PROMPT.md`: the Claude Design prompt that produced the page. Regenerate
-  from it with the Blank template, then export and flatten the rendered DOM
-  as described below.
+`index.html` is a framework-free export of the homepage. It uses local official
+QualityMax fonts, logos, tokens, and both themes. Inline scripts handle theme
+and clipboard controls only; no external runtime or analytics is loaded.
+`demo.html` is the canonical standalone interactive demo, with embedded assets.
+The recorded chapters show saved evidence, not live agent execution.
 
-The page is published with GitHub Pages at
-<https://quality-max.github.io/9lives-runner/>. The `Pages` workflow in
-`.github/workflows/pages.yml` deploys this directory on every push to `main`
-that touches it, and refuses to deploy if the page gains an external script.
+## Update the overview
 
-Open it locally with any static server, for example:
+Edit the homepage in `website/app/page.tsx` and its styles first. Start
+`npm run dev` in `website/`, then from the repository root run:
+
+```sh
+node scripts/export-overview.cjs
+node scripts/sync-demo.cjs
+node scripts/site-smoke.cjs
+```
+
+The exporter copies shared styles and brand assets alongside the rendered
+header, main content, and footer. It removes framework scripts and tracking
+controls, changes local demo/asset paths, and adds portable theme/copy controls.
+Review the generated page at mobile and desktop sizes before committing.
+Do not hand-edit the generated HTML or mirrored styles.
+
+Open it locally with:
 
 ```sh
 python3 -m http.server 8080 --directory docs/explainer
 ```
 
-## Keeping it honest
+The `Pages` workflow publishes this directory after changes merge to `main`
+and rejects external runtime scripts in the overview. The Vercel website is a
+separate deployment; see [website documentation](../website.md).
 
-The page must stay consistent with the README and `AGENTS.md`. The
-"Shipped today" list may only contain capabilities that exist on `main`.
-Independent behavioral verification, verified replay, native mobile execution
-and measured model correctness or cost are planned and must stay under
-"Planned, not shipped" until they land with evidence. Do not add accuracy,
-latency or cost numbers to the page; none are qualified.
+## Evidence boundaries
 
-## Versioning
-
-The status section names the release it describes. When a release changes
-what is shipped or planned, update the lists in `index.html` and `PROMPT.md`
-together and move the version line, so the page never describes an older
-release as current.
-
-## Regenerating
-
-Claude Design exports a `.dc.html` file that depends on a React runtime
-loaded from a CDN. The committed page is the rendered DOM of that export,
-captured with headless Chromium at desktop and narrow widths, with the
-runtime removed and the comparison matrix included in both table and card
-form, switched by a CSS media query. Capture at both widths, replace the
-matrix container, strip the `data-dc-*` attributes and interpolation spans,
-and keep the design tokens as a single stylesheet.
+Confirmation and fault testing are experimental. The fix chapter qualifies
+seven Chromium executions on one synthetic profile app. A passing test is not
+independent requirement coverage; a caught fault means an assertion failed.
+Goal completion is unverified. Independent behavioral verification, verified
+replay, and native mobile qualification remain planned. Keep those limits
+consistent with the README, demo, and `AGENTS.md`.

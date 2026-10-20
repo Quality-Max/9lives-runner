@@ -94,6 +94,7 @@ func TestAssessSuiteRecordsFileFailuresAndSummarizes(t *testing.T) {
 		{Path: "empty.spec.ts", Source: []byte{}},
 		{Path: "unreadable.spec.ts", Error: "source-limit"},
 		{Path: "c.spec.ts", Source: spec("test('c', async ({page}) => { await page.waitForTimeout(1); });\n")},
+		{Path: "tests/typed.spec.js", Source: spec("const n: string = 'x';\ntest('t', () => { expect(n).toBe('x'); });\n")},
 	}
 	suite, err := AssessSuite(context.Background(), inputs, []byte(contractJSON), Options{})
 	if err != nil {
@@ -107,12 +108,12 @@ func TestAssessSuiteRecordsFileFailuresAndSummarizes(t *testing.T) {
 			outcomes = append(outcomes, file.Path+"="+file.Error)
 		}
 	}
-	if strings.Join(outcomes, " ") != "a.spec.ts=ok broken.spec.ts=syntax empty.spec.ts=source-limit unreadable.spec.ts=source-limit c.spec.ts=ok" {
+	if strings.Join(outcomes, " ") != "a.spec.ts=ok broken.spec.ts=syntax empty.spec.ts=source-limit unreadable.spec.ts=source-limit c.spec.ts=ok tests/typed.spec.js=typescript-in-javascript" {
 		t.Fatalf("per-file outcomes %v", outcomes)
 	}
 	s := suite.Summary
 	// The shared conditional skip counts once; each wait has no assertion after it.
-	if s.Files != 5 || s.Assessed != 2 || s.Failed != 3 || s.Tests != 3 || s.Findings != 5 ||
+	if s.Files != 6 || s.Assessed != 2 || s.Failed != 4 || s.Tests != 3 || s.Findings != 5 ||
 		s.Rules["fixed-wait"] != 2 || s.Rules["conditional-skip"] != 1 || s.Rules["no-direct-assertion"] != 2 || s.Rules["analysis-limit/unresolved-helper"] != 0 {
 		t.Fatalf("summary %+v", s)
 	}

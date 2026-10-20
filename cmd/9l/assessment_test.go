@@ -160,7 +160,7 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("tests/a.spec.ts", "test('a', async ({page}) => { await page.waitForTimeout(1); await expect(page.getByRole('alert')).toBeHidden(); });\n")
+	write("tests/a.spec.ts", "test('a', async ({page}) => { await page.waitForTimeout(1); await expect(page.getByRole('alert', {name: 'Error'})).toBeHidden(); });\n")
 	write("tests/nested/b.test.ts", "test('b', () => { expect(1).toBe(1); });\n")
 	t.Chdir(root)
 
@@ -190,6 +190,24 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &suite); err != nil || len(suite.Files) != 3 || suite.Files[1].Path != "tests/broken.spec.ts" || suite.Files[1].Error != "syntax" || suite.Files[1].Report != nil || suite.Summary.Assessed != 2 || suite.Summary.Failed != 1 {
 		t.Fatalf("partial suite report %s (%v)", stdout.String(), err)
+	}
+
+	// A JavaScript spec is read as Playwright loads it, so TypeScript-only
+	// syntax fails it instead of passing as a clean file.
+	write("tests/typed.spec.js", "const n: string = 'x';\ntest('t', () => { expect(n).toBe('x'); });\n")
+	stdout.Reset()
+	stderr.Reset()
+	if code := assessCommand([]string{"tests/typed.spec.js"}, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.HasPrefix(stderr.String(), "9l: assessment [typescript-in-javascript]: ") {
+		t.Fatalf("typed javascript accepted: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := assessCommand([]string{"tests", "--format", "json"}, &stdout, &stderr); code != 2 || stderr.String() != "9l: 2 of 4 files could not be assessed\n" {
+		t.Fatalf("suite with typed javascript: code=%d stderr=%q report=%s", code, stderr.String(), stdout.String())
+	}
+	suite.Files = nil
+	if err := json.Unmarshal(stdout.Bytes(), &suite); err != nil || len(suite.Files) != 4 || suite.Files[3].Path != "tests/typed.spec.js" || suite.Files[3].Error != "typescript-in-javascript" || suite.Files[3].Report != nil || suite.Summary.Assessed != 2 || suite.Summary.Failed != 2 {
+		t.Fatalf("suite with typed javascript report %s (%v)", stdout.String(), err)
 	}
 
 	stdout.Reset()

@@ -64,7 +64,14 @@
   error and the files Playwright attached to it, such as `error-context.md`
   (the error, an ARIA snapshot of the page and the source with the failing
   line marked), screenshots and traces. The receipt's `failures` field holds
-  the same, with the error capped at 1 KiB and redacted. By default the
+  the same, with the error capped at 1 KiB and redacted, plus Playwright's
+  `expectedStatus` for the test and the `status` of its last attempt. A
+  `test.fail()` test that passes is a failure in Playwright's model and in
+  9l's counts, but it has no error: it is listed with `⚠` instead of `✗`, the
+  message `Expected to fail, but passed.`, `expectedStatus` `failed` and
+  `status` `passed`, and the receipt's `validation` text counts such tests.
+  A `test.fail()` test that fails is an expected outcome and counts as passed,
+  also for `heal` and `confirm`. By default the
   attachments are only referenced: they are Playwright's own files, which the
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
@@ -111,8 +118,8 @@
   `generate_playwright_repro` to coding agents over MCP stdio. See
   [MCP server](mcp.md).
 - `9l scan <url>`: load the page once in Chromium and report console errors
-  and failed requests, broken links, accessibility, Core Web Vitals (LCP,
-  CLS, TTFB, FCP; INP is not measured), SEO, security headers, cookies and
+  and failed requests, broken links, accessibility, the Core Web Vitals LCP
+  and CLS (INP is not measured) with TTFB and FCP, SEO, security headers, cookies and
   trackers, mixed content and page weight, with a 0–100 score. `--checks`
   selects checks by exact name (an unknown name is refused), `--format`
   is `markdown` (default), `json` or `issue` (one tracker-ready block per

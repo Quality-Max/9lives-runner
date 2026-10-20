@@ -31,7 +31,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.4.0"
+var version = "0.4.8"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -47,6 +47,8 @@ func run(args []string, out, errOut io.Writer) int {
 	}
 
 	switch args[0] {
+	case "doctor":
+		return doctorCommand(args[1:], out, errOut)
 	case "plan", "run":
 		return runCommand(args[0], args[1:], out, errOut)
 	case "status", "result", "cancel":
@@ -87,6 +89,7 @@ Usage:
           [--reporter html,...]  # also run project reporters beside the evidence reporter
           [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
           [--sdk]  # opt-in @9l/playwright engine protocol
+          [--target web:<app-alias>|android-fake:<app-alias>]...  # with --sdk; one attempt per target project
           [--failure-details]  # with --sdk, record failed test titles and errors
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
@@ -104,9 +107,12 @@ Usage:
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
   9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
+          # needs @9l/playwright installed and a spec importing test from it; faults reach only fetch/XHR
+          # made through its page or context fixtures, not Node-side fetch or database clients
   9l confirm <spec> --unfixed REV [--fixed REV] [--finding-id ID] [--format text|json]
-          # experimental: does a reproduction spec fail before a fix and pass after it?
+          # experimental: does a reproduction spec fail before a fix and pass after it? needs @9l/playwright
   9l provenance <spec> --agent <id>  # creation snapshot JSON
+  9l doctor [--sdk] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
@@ -186,7 +192,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
 	}
-	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles})
+	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles, Path: fs.Arg(0)})
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
@@ -559,6 +565,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	reporters := fs.String("reporter", "", "also run these Playwright reporters beside 9l's own, comma-separated (for example html); json is reserved for evidence")
 	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
+	var targets projectNames
+	fs.Var(&targets, "target", "with --sdk, schedule one job per target project: web:<app-alias> or android-fake:<app-alias> (repeatable; no automatic retries)")
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
@@ -584,6 +592,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-pin-skip": true, "--pin-skip": true,
 		"-reporter": true, "--reporter": true,
 		"-config": true, "--config": true, "-project": true, "--project": true,
+		"-target": true, "--target": true,
 		"-grep": true, "--grep": true, "-grep-invert": true, "--grep-invert": true,
 		"-format": true, "--format": true,
 		"-max-jobs": true, "--max-jobs": true,
@@ -689,6 +698,20 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "9l: --failure-details requires --sdk; plain runs always report failed tests")
 		return 2
 	}
+	if len(targets) > 0 {
+		if !*sdk || len(projects) > 0 {
+			fmt.Fprintln(errOut, "9l: --target requires --sdk and cannot be combined with --project")
+			return 2
+		}
+		seen := map[string]bool{}
+		for _, target := range targets {
+			if !playwrightsdk.ValidTarget(target) || seen[target] {
+				fmt.Fprintln(errOut, "9l: targets must be distinct web:<app-alias> or android-fake:<app-alias> projects")
+				return 2
+			}
+			seen[target] = true
+		}
+	}
 	if len(skipPins) > 0 && !*sdk {
 		fmt.Fprintln(errOut, "9l: --pin-skip requires --sdk")
 		return 2
@@ -724,7 +747,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if *grepInvert != "" {
 		extraArgs, selection = append(extraArgs, "--grep-invert="+*grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
 	}
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects})
+	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects, Targets: targets})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
@@ -976,7 +999,13 @@ func printAnnotations(w io.Writer, annotations []runner.TestAnnotation) {
 // printFailure shows which test failed, where and why, and the files that
 // explain it, below its receipt line.
 func printFailure(w io.Writer, failure runner.TestFailure) {
-	fmt.Fprintf(w, "           ✗ %s", receiptReason(failure.Title))
+	// A test.fail() pin that passed is reported as a failure, but it means
+	// the expected failure is gone, so it gets its own marker.
+	marker := "✗"
+	if failure.UnexpectedPass() {
+		marker = "⚠"
+	}
+	fmt.Fprintf(w, "           %s %s", marker, receiptReason(failure.Title))
 	if failure.Location != "" {
 		fmt.Fprintf(w, "  %s", receiptReason(failure.Location))
 	}

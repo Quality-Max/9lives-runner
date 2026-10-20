@@ -9,12 +9,15 @@ exports.handleRequest = handleRequest;
 const inspect_page_1 = require("./inspect-page");
 const report_1 = require("./report");
 const scan_url_1 = require("./scan-url");
+const doctor_1 = require("./doctor");
 exports.HELPER_PROTOCOL_VERSION = 1;
 async function handleRequest(request) {
     if (request?.version !== exports.HELPER_PROTOCOL_VERSION) {
         return { version: exports.HELPER_PROTOCOL_VERSION, error: 'unsupported browser-check request version' };
     }
     try {
+        if (request.tool === 'doctor')
+            return { version: exports.HELPER_PROTOCOL_VERSION, result: (0, doctor_1.diagnose)(request.args) };
         if (request.tool === 'scan_url') {
             const result = (await (0, scan_url_1.scanUrl)(request.args));
             if (request.format === 'issue')

@@ -470,3 +470,16 @@ func TestProveRefusesKindsAnOlderSDKCannotApply(t *testing.T) {
 		t.Fatalf("partly capable SDK: code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
 	}
 }
+
+// A spec the plan cannot run is reported with the plan's reason, such as a
+// missing @9l/playwright build, not as a wrong argument count.
+func TestProveNamesWhyASpecCannotRun(t *testing.T) {
+	project := proveProject(t)
+	if err := os.Remove(filepath.Join(project, "node_modules", "@9l", "playwright", "dist", "reporter.js")); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runProve(t, shopWorker(), filepath.Join(project, "tests/shop.spec.ts"), "--receipt-dir", t.TempDir())
+	if code != 2 || !strings.Contains(stderr, "cannot run: the @9l/playwright engine is unavailable") || strings.Contains(stderr, "exactly one spec file") {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+}

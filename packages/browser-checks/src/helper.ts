@@ -6,12 +6,13 @@ import { inspectPage, type InspectPageArgs } from './inspect-page';
 import { type InspectResult, renderInspectReport, renderIssues, renderReport, type ScanResult } from './report';
 import { scanUrl, type ScanUrlArgs } from './scan-url';
 import type { Severity } from './common';
+import { diagnose } from './doctor';
 
 export const HELPER_PROTOCOL_VERSION = 1;
 
 export type HelperRequest = {
   version: number;
-  tool: 'scan_url' | 'inspect_page';
+  tool: 'scan_url' | 'inspect_page' | 'doctor';
   args: Record<string, unknown>;
   format?: 'json' | 'markdown' | 'issue';
   minSeverity?: Severity;
@@ -24,6 +25,7 @@ export async function handleRequest(request: HelperRequest): Promise<HelperRespo
     return { version: HELPER_PROTOCOL_VERSION, error: 'unsupported browser-check request version' };
   }
   try {
+    if (request.tool === 'doctor') return { version: HELPER_PROTOCOL_VERSION, result: diagnose(request.args) };
     if (request.tool === 'scan_url') {
       const result = (await scanUrl(request.args as ScanUrlArgs)) as ScanResult;
       if (request.format === 'issue') return { version: HELPER_PROTOCOL_VERSION, result, text: renderIssues(result, { minSeverity: request.minSeverity }) };

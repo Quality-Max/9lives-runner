@@ -26,6 +26,7 @@ const promises_1 = require("node:fs/promises");
 const node_os_1 = require("node:os");
 const node_module_1 = require("node:module");
 const node_path_1 = __importDefault(require("node:path"));
+const doctor_1 = require("./doctor");
 const network_policy_1 = require("./network-policy");
 exports.SEVERITY_RANK = {
     critical: 0,
@@ -147,7 +148,8 @@ function missingBrowserError(error, browserName) {
     if (!/Executable doesn't exist/.test(message))
         return undefined;
     return new Error(`The ${browserName} build for this project's Playwright is not installed. ` +
-        `Install it in the project directory with: npx playwright install ${browserName}.`);
+        `Install the matching build with: ${(0, doctor_1.browserInstallCommand)(browserName)}. ` +
+        `On Linux, if system libraries are missing, rerun the same command with --with-deps.`);
 }
 function browserContextOptions(viewport) {
     return { viewport: viewport ?? exports.DEFAULT_VIEWPORT, serviceWorkers: 'block' };
@@ -188,7 +190,16 @@ async function withPage(options, fn) {
         });
         const page = await context.newPage();
         page.setDefaultTimeout(15_000);
-        await page.goto(validateHttpUrl(options.url), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        try {
+            await page.goto(validateHttpUrl(options.url), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        }
+        catch (error) {
+            // Do not echo target URLs, query parameters or Playwright call logs.
+            if (error instanceof Error && (error.name === 'TimeoutError' || /net::ERR_|NS_ERROR_|Navigation failed/.test(error.message))) {
+                throw new Error('Target could not be reached. Start the application and check its URL and published port. For an explicit loopback URL, opt in with --allow-private-network (MCP: allow_private_network:true).');
+            }
+            throw error;
+        }
         return await fn(page, browser);
     }
     finally {

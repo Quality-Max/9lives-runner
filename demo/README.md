@@ -1,5 +1,44 @@
 # 9lives demos
 
+## Start here: find the break, check the repair
+
+Open [the interactive demo](https://9lives.run/demo.html) in a browser.
+For an offline copy, download [the HTML file](../docs/explainer/demo.html). It works offline with
+no installation. Highlight a stale locator and its replacement in a built-in
+inspector, review the one-line change, then see the verified candidate. Compare
+9l on its own with an illustrated agent handoff. A second story shows how to
+find a missing check. Buttons illustrate recorded results; they do not run 9l
+or call an agent.
+
+The **Prove the fix** tab adds a recorded Codex application edit. 9l's MCP
+confirmation runs the unchanged regression test against the broken and fixed
+revisions; fault proof then catches HTTP 500, HTTP 401 and malformed JSON.
+Explore the real execution logs, switch from key evidence to the full trace,
+and download the seven-receipt extract. This qualifies one synthetic local
+fixture in Chromium, not complete application coverage.
+
+The single HTML file can be shared as-is. Original QualityMax wordmarks,
+Space Grotesk / DM Sans fonts and Zinc / Indigo design tokens come from
+[Quality-Max/branding](https://github.com/Quality-Max/branding/tree/d295da3755e06c679445ebfd43cd88bfb6a4ec15). The theme follows
+your system until you choose light or dark; your choice is saved locally.
+
+The canonical file is `docs/explainer/demo.html`. After edits, run
+`node scripts/sync-demo.cjs` to refresh `website/public/demo.html`; the website
+checks enforce identical copies for 9lives.run and GitHub Pages. More experiments and developer
+details are available on demand at the bottom of the page. It also ships with
+the static GitHub Pages explainer when that site is deployed from `main`.
+Run `npm run smoke:demo` for theme, responsive, evidence and production-CSP
+checks in Chromium. Pass a deployed URL to `node scripts/demo-smoke.cjs URL`
+to repeat the browser checks against the live site.
+
+## Release lab: the experimental feature tour
+
+Run `npm run demo:lab` for a local shop walkthrough covering scan/inspect,
+assessment and provenance, ordinary Playwright and SDK execution, bounded
+goals, verified locator healing, network fault proof, fix confirmation and MCP.
+The script checks every result and produces an HTML report with linked evidence.
+No model credentials are needed. [Setup, presenter guide and limits](release-lab/README.md).
+
 ## QualityMax Demo Bank
 
 The [README GIF](demo-bank.gif) follows one Playwright test against the public

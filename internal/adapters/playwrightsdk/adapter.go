@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"unicode/utf8"
@@ -27,6 +28,26 @@ const maxSkipPinBytes = 2048
 func New() Adapter                        { return Adapter{} }
 func (Adapter) Name() string              { return "playwright-sdk" }
 func (Adapter) Supports(path string) bool { return playwright.New().Supports(path) }
+
+// A target name is also its Playwright project name. App IDs are public local
+// aliases, never URLs, device serials, application data or credentials.
+var targetName = regexp.MustCompile(`^(web|android-fake):[a-zA-Z0-9_-]{1,64}$`)
+
+func ValidTarget(target string) bool { return targetName.MatchString(target) }
+
+func (adapter Adapter) PlanTarget(path, input string, index int, target string) (runner.Job, error) {
+	if !ValidTarget(target) {
+		return runner.Job{}, fmt.Errorf("target must be web:<app-alias> or android-fake:<app-alias>")
+	}
+	job, err := adapter.Plan(path, input, index)
+	if err != nil {
+		return job, err
+	}
+	job.Target = target
+	job.Command = append(job.Command, "--project="+target, "--retries=0")
+	job.Env["NINELIVES_TARGET"] = target
+	return job, nil
+}
 
 func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	// Resolve configuration separately from workspace-hoisted dependencies.
@@ -64,7 +85,7 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 		project = filepath.Dir(config)
 	}
 	if project == "" || binary == "" || reporter == "" {
-		return runner.Job{}, fmt.Errorf("SDK engine unavailable: install @playwright/test and build @9l/playwright before using --sdk")
+		return runner.Job{}, fmt.Errorf("the @9l/playwright engine is unavailable: install @playwright/test and @9l/playwright in the project; run --sdk, prove and confirm need both")
 	}
 	relative, err := filepath.Rel(project, path)
 	if err != nil {

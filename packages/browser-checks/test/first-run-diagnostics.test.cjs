@@ -67,7 +67,7 @@ test('the missing-browser error names the project install command', () => {
     "browserType.launch: Executable doesn't exist at /x/chromium_headless_shell-1248/chrome-headless-shell\n║     npx playwright install     ║"
   );
   const error = missingBrowserError(banner, 'chromium');
-  assert.match(error.message, /Install it in the project directory with: npx playwright install chromium\./);
+  assert.match(error.message, /Install the matching build with: npx --yes playwright@[0-9.]+ install chromium\./);
   assert.doesNotMatch(error.message, /╔|║/, "Playwright's banner is replaced, not appended");
   assert.equal(missingBrowserError(new Error('net::ERR_CONNECTION_REFUSED'), 'chromium'), undefined);
 });

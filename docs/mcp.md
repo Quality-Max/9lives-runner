@@ -15,11 +15,41 @@ Other hosts use the same command and arguments, for example
 Python `9lives` package is also installed, its `9l` command may come first on
 PATH; use the Go binary's absolute path in the host configuration.
 
+## Verify the server your host launches
+
+First follow the [CLI selection checks](install.md#verify-the-selected-cli)
+with the absolute Go binary path. Its `--help` should include `scan` and
+`inspect` on releases with the browser tools. Configure that same path in
+your host, for example (replace the placeholder):
+
+```json
+{
+  "mcpServers": {
+    "9lives": {"command": "/absolute/path/to/9l", "args": ["mcp"]}
+  }
+}
+```
+
+Restart the host's MCP server after changing the path or replacing the binary.
+In the host's MCP inspector, compare the `initialize` response's
+`serverInfo.version` with that binary's `--version`; `serverInfo.name` is
+`9lives` and `serverInfo.title` is `9lives Go runner`. Then refresh its tool
+list (`tools/list`). Go runner releases from 0.4.0 expose these seven tools:
+`run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`,
+`inspect_page`, `generate_playwright_repro`.
+
+If only four appear, the host may still be running a Go release from before
+0.4.0 or displaying cached discovery. Recheck the configured absolute path,
+restart the server and refresh discovery. If the identity differs, check for
+the separate Python CLI. A terminal's `9l --version` alone does not establish
+which executable an already running GUI host selected. `9l doctor` checks
+local prerequisites; it cannot inspect the host's selected binary or tool cache.
+
 ## Tools
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `run_test` | `spec`, optional `run_timeout` (seconds) | `status` `passed`, `failed` or `incomplete`; test counts; `reason`; bounded `failure` context; `failures` (each failed test's title, failing line, error start and attachments); `failureContext` (the first failure's Playwright `error-context.md`, redacted, at most 8 KiB); receipt path |
+| `run_test` | `spec`, optional `run_timeout` (seconds) | `status` `passed`, `failed` or `incomplete`; test counts; `reason`; bounded `failure` context; `failures` (each failed test's title, failing line, error start, `expectedStatus`, last `status` and attachments; a `test.fail()` test that passed has `status` `passed` and the message `Expected to fail, but passed.`); `failureContext` (the first failure's Playwright `error-context.md`, redacted, at most 8 KiB); receipt path |
 | `heal_test` | `spec`, optional `apply` (default false), `max_proposals` (1–5, default 1), `run_timeout` | Native healing session: `state`, run results, `savedPath` or `applied`, `diff`, and a `note` for `needs_human` |
 | `assess_test` | `path` (spec or directory), optional `requirements` | The [assessment](test-assessment.md) report under `report`; a suite with unassessed files also carries `error` |
 | `confirm_finding` | `spec`, `unfixed` (Git revision), optional `fixed` (default the working tree), `finding_id`, `finding`, `run_timeout` (seconds, per run) | The [confirmation](confirm.md) report under `report` and its `reportPath`; only `verdict` `confirmed` means the reproduction failed before and passed after |

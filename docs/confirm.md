@@ -96,6 +96,10 @@ passed),
 ## Use it
 
 The spec must import `test` from `@9l/playwright`, as for `9l run --sdk`.
+When the SDK is not installed in the project, `confirm` stops before running
+anything and says so. A `test.fail()` test that fails counts as passed on
+either side, as in Playwright; write the reproduction as an ordinary test
+that fails on the unfixed revision.
 
 - **Run the code under test from the checkout.** Only what the spec, its
   fixtures or the Playwright configuration start or import from the

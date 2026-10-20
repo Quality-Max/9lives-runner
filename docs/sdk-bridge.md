@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.4.0`, the same version as the CLI; releases use npm trusted publishing. The
+npm workspace at version `0.4.8`, the same version as the CLI; releases use npm trusted publishing. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.0. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.
@@ -19,6 +19,14 @@ cannot corrupt it. The fixture requires a supported engine identity when
 `n9l` is used.
 
 ## Contract
+
+Matching CLI and SDK release versions are the qualified pairing; see the
+[compatibility table](../README.md#compatibility). Runtime admission checks
+the protocol and capabilities below, not npm/CLI package versions or a
+same-minor constraint. Different `0.4.x` package versions alone do not reject
+a run, but mixed release pairs are unqualified. Align versions first when
+investigating a bridge failure. A successful handshake still needs complete,
+valid execution evidence before an attempt can pass.
 
 Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
@@ -128,3 +136,8 @@ Real-browser smoke validates checkout assertions, a defective outcome and owned
 worker/browser cleanup on timeout and explicit cancellation. Protocol regressions
 cover malformed, duplicate, foreign, late and incomplete evidence. Live provider accuracy,
 verified replay and independent behavioral verification have separate milestones.
+
+The opt-in [shared target contract](targets.md) extends this stream with
+`9l.target/1`, a target identity digest, a declared test list and typed
+deterministic operation outcomes. Ordinary SDK jobs retain the original
+handshake. The native implementation is a fake protocol fixture only.

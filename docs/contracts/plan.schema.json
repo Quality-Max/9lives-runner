@@ -43,6 +43,9 @@
         "spec": {
           "type": "string"
         },
+        "target": {
+          "type": "string"
+        },
         "workDir": {
           "type": "string"
         }

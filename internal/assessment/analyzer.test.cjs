@@ -201,6 +201,22 @@ test('dynamic callbacks remain unknown and invalid syntax is rejected', () => {
   assert.throws(() => analyze('test('));
 });
 
+test('javascript specs are parsed as Playwright loads them: JSX allowed, TypeScript-only syntax rejected', () => {
+  const spec = body => `import {test,expect} from '@playwright/test';\n${body}\ntest('x', async ({page}) => { await expect(page.getByRole('status')).toBeVisible(); });`;
+  const typed = ["const n: string = 'x';", "interface A { x: number }", "const a = b as string;", "function f(a?) {}", "function g<T>(a) { return a; }", "const c = d!.e;", "import type { A } from './a';", "enum E { A }"];
+  for (const body of typed) {
+    assert.equal(analyze(spec(body)).tests.length, 1, body);
+    assert.throws(() => analyze(spec(body), { javascript: true }), { code: 'typescript-in-javascript' }, body);
+  }
+  for (const body of ["const n = 'x';", "const El = () => <div>hi</div>;", "@dec class A {}"]) {
+    const facts = analyze(spec(body), { javascript: true });
+    assert.equal(facts.tests.length, 1, body);
+    assert.equal(facts.tests[0].assertions.length, 1, body);
+  }
+  assert.throws(() => analyze("test(", { javascript: true }), { code: 'syntax' });
+  assert.throws(() => analyze(spec("```ts"), { javascript: true }), { code: 'syntax' });
+});
+
 test('source and imports are parsed without execution, shadowed aliases stay unsupported', () => {
   const facts = analyze(`import {test, expect as $check} from '@playwright/test';
   import './does-not-exist';
@@ -656,4 +672,91 @@ test('a promise is followed into Promise.all and through the callback that carri
   assert.deepEqual(unawaited, [[false, false], [false], [true], [true], [true], [false]]);
   // Promise combinators are not unknown helpers; array callbacks stay limits.
   assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], [], [], ['unresolved-helper', 'nested-function'], ['unresolved-helper', 'nested-function'], ['unresolved-helper', 'nested-function']]);
+});
+
+const kinds = t => t.hazards.map(h => (h.site ? `${h.kind}@${h.line}<${h.site.line}` : `${h.kind}@${h.line}`));
+
+test('debugging leftovers and structural or positional selectors are hazards', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    const pause = (page) => page.pause();
+    test('t', async ({page: tab}) => {
+      debugger;
+      await pause(tab);
+      await tab.locator('xpath=//form').click();
+      await tab.locator('(//a)[2]').click();
+      await tab.$$('..');
+      await tab.locator('css=nav >> li:nth-of-type(2)').click();
+      await tab.locator('li >> nth=0').click();
+      await tab.locator('li:nth-match(:text("A"), 2)').click();
+      await tab.locator('li').last().click();
+      await tab.locator('li').nth(-1).click();
+      await tab.click('td:first-child');
+      await tab.fill('//input', 'x');
+      await tab.dragAndDrop('#a', '//div[@id="b"]');
+      await tab.getByRole('alert', {exact: true}).click();
+    });`);
+  assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
+    'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
+  assert.equal(facts.version, 10);
+});
+
+test('values, keys, role locators and non-page pauses are not hazards', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('t', async ({page}) => {
+      await page.getByLabel('URL').fill('//example.com');
+      await page.getByLabel('Path').type('../up', {delay: 1});
+      await page.getByRole('textbox', {name: 'Q'}).first;
+      await page.keyboard.press('..');
+      await page.getByRole('button', {name: 'Save'}).click();
+      await page.getByRole('button').click();
+      await expect(page.getByRole('status')).toBeVisible();
+      await expect(page.getByRole('alert', {exact: true})).toBeVisible();
+      await page.getByRole('button', { name }).click();
+      await page.getByRole('button', options).click();
+      await page.getByRole('button', {...options}).click();
+      await page.locator('li').nth(index).click();
+      await page.locator(\`//\${dynamic}\`).click();
+      await page.locator('.card:hover').click();
+      const player = {pause() {}};
+      player.pause();
+      await page.evaluate(() => { debugger; document.querySelector('li:nth-child(2)'); });
+      // page.locator('//commented')
+      const text = "await page.pause(); debugger; locator('//x')";
+    });`);
+  assert.deepEqual(kinds(facts.tests[0]), []);
+});
+
+test('hazards in nested functions are reported without making the function a limit', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('t', async ({page}) => {
+      const open = async () => { await page.locator('//nav').click(); };
+      await open();
+      await expect(page).toHaveURL('/');
+    });`);
+  assert.deepEqual(kinds(facts.tests[0]), ['xpath@3']);
+  assert.deepEqual(facts.tests[0].limits.map(l => l.code), ['unresolved-helper']);
+});
+
+test('an abandoned helper expansion drops its hazards with its other facts', () => {
+  // The helper's matchers exceed the inline fact budget, so its expansion is abandoned.
+  const big = 'debugger; ' + Array.from({ length: 2100 }, () => 'expect(1).toBe(1);').join(' ');
+  const facts = analyze(`import {test,expect} from '@playwright/test';\nfunction check() { ${big} }\ntest('t', async () => { check(); expect(1).toBe(1); });`);
+  assert.equal(facts.tests[0].hazards.length, 0);
+  assert.deepEqual(facts.tests[0].limits.map(l => l.code), ['unresolved-helper']);
+  assert.equal(facts.hazardsTruncated, undefined);
+});
+
+test('hazards have their own budget and never cut assertion analysis short', () => {
+  // The same helper hazard is reported once per test, however often it is called.
+  const once = analyze(`import {test,expect} from '@playwright/test';
+    async function open(page) { await page.locator('//nav').click(); }
+    test('t', async ({page}) => { await open(page); await open(page); await expect(page).toHaveURL('/'); });`);
+  assert.deepEqual(kinds(once.tests[0]), ['xpath@2<3']);
+  const checks = Array.from({ length: 10 }, () => 'await expect(page.locator("//a")).toBeVisible();').join(' ');
+  const tests = Array.from({ length: 60 }, (_, i) => `test('t${i}', async ({page}) => { await check(page); });`).join('\n');
+  const facts = analyze(`import {test,expect} from '@playwright/test';\nasync function check(page) { ${checks} }\n${tests}`);
+  assert.equal(facts.tests.reduce((n, t) => n + t.assertions.length, 0), 600);
+  assert(facts.tests.every(t => t.limits.length === 0));
+  assert.equal(facts.tests.reduce((n, t) => n + t.hazards.length, 0), 512);
+  assert.equal(facts.hazardsTruncated, true);
 });

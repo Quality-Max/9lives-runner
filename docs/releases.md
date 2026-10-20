@@ -21,11 +21,11 @@ and changelog. `npm test` fails if those declarations differ. Merge it to
 
 ```sh
 git fetch origin
-git tag v0.4.0 origin/main
-git push origin v0.4.0
+git tag v0.4.8 origin/main
+git push origin v0.4.8
 ```
 
-The commands above release CLI and SDK 0.4.0; choose the matching version for
+The commands above release CLI and SDK 0.4.8; choose the matching version for
 a later release. Never move a published tag to different source. The tag
 starts one workflow, `release.yml`, which runs in this order:
 
@@ -69,6 +69,10 @@ and execute the checkout demo with the downloaded binary. Cross-compilation
 alone is not native runtime qualification. If a release is defective, stop
 recommending it and publish a fixed version; do not silently replace its bytes
 or reuse a version number.
+
+Once the release is verified, bump the version that
+`curl -fsSL https://9lives.run/install.sh | sh` installs in a separate change;
+see [Website and installer](website.md#bumping-the-installed-release).
 
 ## Qualify the SDK
 

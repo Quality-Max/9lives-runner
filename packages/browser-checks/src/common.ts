@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { browserInstallCommand } from './doctor';
 import type { Browser, BrowserContext, BrowserType, Page } from 'playwright';
 import { assertSafeNetworkUrl, type NetworkPolicyOptions } from './network-policy';
 
@@ -153,7 +154,8 @@ export function missingBrowserError(error: unknown, browserName: string): Error 
   if (!/Executable doesn't exist/.test(message)) return undefined;
   return new Error(
     `The ${browserName} build for this project's Playwright is not installed. ` +
-      `Install it in the project directory with: npx playwright install ${browserName}.`
+      `Install the matching build with: ${browserInstallCommand(browserName)}. ` +
+      `On Linux, if system libraries are missing, rerun the same command with --with-deps.`
   );
 }
 
@@ -208,7 +210,15 @@ export async function withPage<T>(
     });
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
-    await page.goto(validateHttpUrl(options.url), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    try {
+      await page.goto(validateHttpUrl(options.url), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    } catch (error) {
+      // Do not echo target URLs, query parameters or Playwright call logs.
+      if (error instanceof Error && (error.name === 'TimeoutError' || /net::ERR_|NS_ERROR_|Navigation failed/.test(error.message))) {
+        throw new Error('Target could not be reached. Start the application and check its URL and published port. For an explicit loopback URL, opt in with --allow-private-network (MCP: allow_private_network:true).');
+      }
+      throw error;
+    }
     return await fn(page, browser);
   } finally {
     await browser.close();

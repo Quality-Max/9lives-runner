@@ -22,7 +22,8 @@ go build -o .context/9l ./cmd/9l
 
 `--requirements` is optional. Without it, the code-level checks still run
 (fixed waits, exclusive, disabled and conditionally skipped tests, missing and
-unawaited assertions, analysis limits). Requirement references are not
+unawaited assertions, debugging leftovers, fragile selectors,
+analysis limits). Requirement references are not
 checked, `purpose` and `intentAlignment` stay unknown, `requirementsSHA256` is
 omitted and the report lists the missing contract as a limit. An empty
 `--requirements` value is a usage error rather than a silent skip. The text
@@ -81,15 +82,21 @@ private temporary directory per assessment and removed after the owned helper
 stops. Consumer `node_modules`, `NODE_PATH` and `NODE_OPTIONS` do not choose or
 preload code. This also works when the consuming TypeScript package has no
 JavaScript parser API. It parses source without importing the spec,
-configuration or application. Go owns the
+configuration or application. A spec is read as Playwright loads it: `.ts`,
+`.tsx`, `.mts` and `.cts` files, and a source with no known extension, parse as
+TSX, while `.js`, `.mjs`, `.cjs` and `.jsx` files parse as JavaScript with JSX,
+where type annotations, `as`, `interface`, `enum`, `import type`, non-null `!`
+and other TypeScript-only syntax fail as `typescript-in-javascript` because
+Playwright applies no TypeScript transform to them and refuses to load the
+file. Go owns the
 helper's ten-second budget, cancellation, output limits and report validation.
 Source is limited to 1 MiB, requirements to 256 KiB, recognized tests to 256
 and combined assertions/waits/limit reasons plus distinct conditional suite
 modifiers to 2,048, with at most 16 conditional modifiers applying to one test. Malformed, unavailable or over-limit
 analysis exits 2; advisory findings exit 0. This is not a gate. Failures write
 fixed diagnostics on stderr and no partial report on stdout: `node-unavailable`,
-`parser-unavailable`, `syntax`, `annotation`, `limit`, `output-limit`, `timeout`,
-`cancelled`, `helper-failed` or `invalid-evidence`. Raw helper errors and source
+`parser-unavailable`, `syntax`, `typescript-in-javascript`, `annotation`, `limit`,
+`output-limit`, `timeout`, `cancelled`, `helper-failed` or `invalid-evidence`. Raw helper errors and source
 are suppressed. Newer syntax unsupported by the pinned parser remains a syntax
 failure; independence from consumer TypeScript is not support for every future
 language feature.
@@ -122,8 +129,11 @@ for each such test. Mapping in other files
 of a suite is not yet considered. Agent-inferred intent remains a proposal until reviewed. The command
 records the supplied contract hash; it does not retrieve or authenticate the
 referenced requirement. Outcome IDs must be unique across the entire contract,
-because outcome annotations have no requirement namespace. Annotate each mapped
-test and assertion:
+because outcome annotations have no requirement namespace. Requirement IDs must
+also be unique. Both kinds of ID contain 1–80 ASCII letters, digits, `_`, `.` or
+`-`, starting with a letter or digit. Place the requirement comment immediately
+before the test statement and the outcome comment immediately before the
+assertion statement:
 
 ```ts
 import {test, expect} from '@playwright/test';
@@ -267,9 +277,41 @@ cases. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
+Debugging leftovers and locators tied to page structure or element order are
+engineering-quality findings, reported once per test at their location, with
+`site` when they are in a helper the test calls. They are found wherever test
+bodies and resolved helpers are scanned, including nested functions, and add no
+`nested-function` limit; hooks, unresolved helpers and page functions are not
+scanned. `debugging-leftover` (demonstrated) has the codes `page-pause`, for a
+`pause()` call on a browser fixture chain, and `debugger-statement`.
+`fragile-selector` (suspected) has the codes `xpath`, `positional-css` and
+`position`. It checks literal selectors passed to `locator`, `frameLocator`,
+`$`, `$$`, `$eval`, `$$eval`, `waitForSelector` and the page actions that take
+a selector first. `fill`, `type`, `press`, `selectOption`, `setInputFiles`,
+`getAttribute`, `dispatchEvent` and `dragAndDrop` are checked only in their page
+form with a second argument that is not an options object, so a value typed
+into a locator, such as `fill('//example.com')`, is not a selector. A part of a
+`>>` chain is XPath when it starts with `xpath=`, `//` or `..`, optionally after
+opening parentheses. CSS order pseudo-classes such as `:nth-child`,
+`:first-child` and `:last-of-type` are `positional-css`; `nth=`,
+`:nth-match()`, `first()`, `last()` and `nth()` with a literal index are
+`position`. Template selectors with substitutions are not checked.
+Role locators without a `name` are not findings: the role can be unique by
+design. Debugging and selector findings have their own budget of 512 per file,
+separate from assertion and wait facts. Beyond it, the rest are dropped and the report
+lists a limit. A markdown fence outside a string or comment is a `syntax`
+failure, not a finding.
+
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v10` excludes
+inputs invalidate prior assessments. Policy `assessment-source-v13` parses
+`.js`, `.mjs`, `.cjs` and `.jsx` specs as JavaScript, so TypeScript-only syntax
+in them is a `typescript-in-javascript` failure instead of a clean report; the
+helper version is 10 and report version 3 is unchanged. Policy
+`assessment-source-v12` removes
+the noisy `unnamed-role` advisory introduced in v11. The `debugging-leftover` and `fragile-selector` rules and
+`hazardsTruncated` limit remain; the helper version was 9 and report version 3
+is unchanged. Policy `assessment-source-v10` excludes
 pre-execution conditional skips from outcome coverage lenders while retaining
 after-hook tests whose bodies ran. Policy `assessment-source-v9` counts
 outcome mapping only from enabled tests that reference the requirement and
@@ -285,7 +327,8 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `code`: the limit reason for `analysis-limit` findings, the case for
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
-`conditional-skip`, `environment-skip` and `absence-after-wait` rules, the `unknown-matcher` limit
+`conditional-skip`, `environment-skip`, `absence-after-wait`,
+`debugging-leftover` and `fragile-selector` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256`, an optional test `title` and an optional
 finding `site` before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
@@ -398,6 +441,22 @@ owns bounded execution, provenance and receipts. Missing specialist skills are
 disclosed; direct review still works. Broader website audits apply only when
 requested. These are optional instructions, not runner plugins or an automatic
 quality gate. They require no platform account; agent/model usage may cost money.
+
+The skill can also run the
+[QualityMax grader](https://github.com/Quality-Max/qualitymax-grader)
+(`npx --yes qualitymax-grader@0.2.0 <spec> --format json --min-grade F`) when
+a project already uses it or wants its hygiene score. It grades source A–F
+from text patterns. Assessment reports the grader's defect checks itself: pause
+and debugger leftovers, XPath and positional selectors, broken syntax and
+markdown fences, missing assertions, `.only`/`.skip`, fixed waits and
+TypeScript-only syntax in a JavaScript spec; the grader adds only style checks
+such as `test.step()` use, file length, a minimum assertion count and a
+`page.goto()` call. Its grade stays separate from this report. It is not a
+dimension, a gate or evidence of coverage: it gave
+`testdata/assessment/tests/checkout.spec.ts` a B (89/100), while assessment with
+the fixture's requirements reports a test that maps none of its requirement's
+outcomes. 9lives does not bundle or install the grader; `npx` downloads it from
+npm.
 
 One canonical skill is linked into `.agents/skills/9lives-qa` and
 `.claude/skills/9lives-qa`, the documented project discovery locations for

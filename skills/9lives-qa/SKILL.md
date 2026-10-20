@@ -3,6 +3,12 @@ name: 9lives-qa
 description: Assess, create or repair Playwright tests with 9lives, combining requirement mapping, local execution receipts, branch provenance and available QA skills. Use for test intent or quality work in a 9lives project, not unrelated website audits.
 ---
 
+For QualityMax-managed projects or cloud-run links, use the
+[`qualitymax-connected-qa` skill](../qualitymax-connected-qa/SKILL.md) instead
+when available. It coordinates optional local inspection with hosted discovery,
+Jev-assisted decisions and cloud verification. The local workflow below does
+not require a platform account.
+
 Protect the user's reviewed requirement and distinguish a passing run from an
 adequate test. Work from the project root. Read `docs/test-assessment.md` in this
 repository for command limits and the contract; in another project use the
@@ -19,7 +25,28 @@ Use the existing free QA skills when installed, reading only those relevant:
 
 These skills are optional agent instructions, not executable runner plugins.
 If unavailable, review the same evidence directly and disclose the missing
-specialist check. Website, accessibility, performance and security skills apply
+specialist check.
+
+Assessment reports debugging leftovers (`page.pause()`, `debugger`), fragile
+XPath and positional selectors, and TypeScript-only syntax in a JavaScript spec
+that Playwright would refuse to load. The QualityMax grader is optional: it
+adds only style checks such as `test.step()` use, file length, assertion counts
+and a `page.goto()` call, so run it when the project already uses it or the
+user wants its hygiene score. Use a pinned version when the user allows npm
+downloads; it reads source only and makes no model or network calls itself:
+
+```sh
+npx --yes qualitymax-grader@0.2.0 path/to/checkout.spec.ts --format json --min-grade F
+```
+
+`--min-grade F` keeps the exit code zero so the result stays advisory. Report
+its letter grade and score separately and label them as the grader's. They come
+from text patterns: a grade measures hygiene, not whether the test protects a
+requirement or passed. Never present it as a 9lives result, merge it into
+assessment dimensions or let it outweigh an assessment concern. Treat each
+grader issue as a suspected finding until you have checked it in the source;
+for example, `getByRole('status')` is usually unique even without a name.
+Website, accessibility, performance and security skills apply
 only when the requested scope includes those concerns; do not run every scan.
 Skill advice does not establish assertion coverage or satisfy a required gate.
 

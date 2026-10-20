@@ -20,6 +20,156 @@ SDK versions.
 - The Markdown report adds `(no accessible name)` only for roles that need
   a name; an unnamed `list` or `group` is no longer flagged.
 
+## 0.4.8 — 2026-10-20
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.8 is released with CLI 0.4.8.
+
+### CLI
+
+- Add `9l doctor [--sdk] [--format text|json]`, a read-only first-run check
+  of Node, the workspace manifest, the locally resolved `@playwright/test`
+  and optional SDK versions, and the Chromium and headless-shell files of
+  both the test and scan runtimes. It prints repair commands without
+  downloading, launching a browser, loading project config or writing project
+  files. Exit 0 means no required prerequisite is missing; exit 2 means setup
+  is missing or diagnostics could not complete. `--sdk` makes the SDK
+  required. Browser files are checked only for the qualified Playwright
+  1.61.1 through 1.64.0 registries.
+- A missing-browser error from `9l scan`, `9l inspect` and the MCP browser
+  tools names the install command pinned to the project's resolved Playwright
+  version, with `--with-deps` guidance for Linux.
+- An unreachable scan or inspect target from the CLI or MCP reports shared
+  guidance about starting the application, its published port and
+  `--allow-private-network`, and no longer echoes the navigation URL, query
+  string or Playwright call log.
+- `9l version` lists the `scan`, `inspect` and `doctor` commands (additive).
+
+### Qualification
+
+- CI runs the doctor and unreachable-target checks in real Chromium on Linux
+  and Windows, and the doctor check on every qualified Playwright version.
+- Add `npm run demo:first-run`: an ordinary Playwright run on the release
+  lab's synthetic shop, then HTTP-500 faults that a weaker test partly misses
+  and a stronger test catches. It rejects incomplete or unexpected results and
+  makes no model calls.
+
+### Website and documentation
+
+- Make one ordinary Playwright spec the default first-run path in the
+  README, existing-project guide and homepage; the login harness moves to a
+  separate optional [login goal example](docs/login-goal-example.md).
+- Add the [setup diagnostics guide](docs/setup-diagnostics.md).
+- Document requirement contracts with an annotated-test example, explain
+  that SDK admission checks protocol and capabilities rather than package
+  versions, and describe selecting the right `9l` executable on POSIX and
+  PowerShell plus MCP server identity and tool discovery.
+- Add the `qualitymax-connected-qa` skill for coding agents using QualityMax
+  MCP, routed from the existing `9lives-qa` skill.
+- The default installer, homepage and overview install verified v0.4.7.
+
+## 0.4.7 — 2026-10-15
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.7 is released with CLI 0.4.7.
+
+### Assess
+
+Policy `assessment-source-v13`; the analyzer helper version is 10 and report
+version 3 is unchanged.
+
+- Parse `.js`, `.mjs`, `.cjs` and `.jsx` specs as Playwright loads them:
+  JavaScript with JSX and no TypeScript transform. Type annotations, `as`,
+  `interface`, `enum`, `import type`, non-null `!` and other TypeScript-only
+  syntax in such a file now fail with the new `typescript-in-javascript`
+  diagnostic (exit 2, or the file's `error` in a suite) instead of a clean
+  report for a spec Playwright refuses to load. TypeScript specs and sources
+  with no known extension still parse as TSX. The check builds a program over
+  the single in-memory file; no library, module or type root is resolved.
+
+### CLI
+
+- `9l run`, `9l result` and the MCP `run_test` tool tell an unexpected pass
+  apart from a broken test. A `test.fail()` test that passed is still a
+  failure, but it is listed with `⚠`, the message `Expected to fail, but
+  passed.` and, in the receipt's `failures`, Playwright's `expectedStatus`
+  and the last attempt's `status`; the receipt's `validation` text counts
+  such tests. Previously it was a bare `✗` with no error text.
+- Failure diagnostics come from each test's final completed attempt only. A
+  `test.fail()` test that timed out and then passed on retry no longer
+  inherits the earlier attempt's error, failing line or attachments. The
+  failure context passed to healing and returned by `run_test` drops tests
+  with an expected, skipped or flaky outcome and keeps top-level errors such
+  as a failed global teardown, so an expected failure's error is no longer
+  attributed to the run.
+- `9l prove` and `9l confirm` report why a spec cannot run, such as a missing
+  `@9l/playwright` build, instead of `prove requires exactly one spec file`
+  or `not a Playwright spec this runner can execute`. The help text states
+  that both need `@9l/playwright` and that `prove` reaches only fetch and XHR
+  requests made through its `page` or `context` fixtures.
+- Receipt, run-result and run-status contracts gain the optional
+  `expectedStatus` and `status` fields on each failure (additive).
+
+### Website and documentation
+
+- Link the 60-second launch film from the homepage and GitHub overview.
+
+## 0.4.6 — 2026-10-14
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.6 is released with CLI 0.4.6.
+
+### Qualification
+
+- Add a deterministic duplicate-target fixture with two records sharing an
+  Edit button label. Through ordinary Playwright and `9l run`, verify that a
+  visibility-only assertion misses a wrong-record defect, while a visible
+  editor plus exact record-ID assertion catches it. Reordered rows preserve
+  the stable-ID target, and a deliberately wrong expected-ID canary must fail
+  at its assertion. CI checks six attributable receipts; this qualifies the
+  fixture and assertions, not automatic locator healing.
+- Stabilize the heartbeat deadline test on loaded runners by synchronizing
+  executor termination and observing heartbeat updates before release.
+
+### Website and documentation
+
+- Align the homepage and GitHub overview with the recorded agent experiment,
+  before/after confirmation and controlled-fault evidence; add original
+  QualityMax branding, light/dark themes and a Memes gallery.
+- Restore the npm downloads badge and SDK link. Add consent-gated analytics
+  and document the demo's permitted QualityMax embedding.
+
+## 0.4.5 — 2026-10-13
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.5 is released with CLI 0.4.5.
+
+### Assess
+
+Policy `assessment-source-v12`; the analyzer helper version is 9 and report
+version 3 is unchanged.
+
+- `debugging-leftover` reports `page.pause()` on a browser fixture and
+  `debugger` statements (codes `page-pause`, `debugger-statement`).
+- `fragile-selector` reports XPath selectors, positional CSS such as
+  `:nth-child`, and `first()`, `last()`, `nth(<literal>)`, `nth=` and
+  `:nth-match()` (codes `xpath`, `positional-css`, `position`). Values typed
+  into locators and key presses are not read as selectors.
+- Remove the noisy `unnamed-role` advisory introduced in unreleased policy
+  v11. A unique role such as `status`, `alert` or `button` needs no name.
+- These findings have their own budget of 512 per file, so they never cut
+  assertion analysis short; a report that reaches it says so in its limits.
+
+### Skill
+
+- The `9lives-qa` skill can run the pinned QualityMax grader
+  (`qualitymax-grader@0.2.0`) as an advisory hygiene pass. It reports the grade
+  separately and never as a 9lives result or as coverage evidence.
+
 ## 0.4.0 — 2026-10-13
 
 ### SDK

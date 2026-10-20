@@ -316,10 +316,16 @@
           },
           "type": "array"
         },
+        "expectedStatus": {
+          "type": "string"
+        },
         "location": {
           "type": "string"
         },
         "message": {
+          "type": "string"
+        },
+        "status": {
           "type": "string"
         },
         "title": {
@@ -428,6 +434,12 @@
         "error"
       ],
       "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "targetAssertions": {
+      "type": "integer"
     },
     "termination": {
       "$ref": "#/$defs/Termination"

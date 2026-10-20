@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>QualityMax pyramid pendant</title>
+  <defs>
+    <radialGradient id="enamel" cx="30%" cy="22%" r="95%">
+      <stop stop-color="#6D60E4"/>
+      <stop offset=".42" stop-color="#4338CA"/>
+      <stop offset="1" stop-color="#29215F"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="8" r="5" fill="none" stroke="#A78BFA" stroke-width="3"/>
+  <circle cx="32" cy="36" r="25" fill="url(#enamel)" stroke="#A78BFA" stroke-width="2"/>
+  <path fill="#F8F7FF" fill-rule="evenodd" transform="translate(14.3 20.424) scale(.236)" d="M150 103.237L75 132L0 103.237L75 0L150 103.237ZM23.7988 96.1783L75 115.814L126.201 96.1783L117.099 83.6503L75.2517 99.6991L33.0096 83.4993L23.7988 96.1783ZM42.2062 70.8399L75.2517 83.513L107.902 70.9914L98.2409 57.6924L75 66.6057L51.7576 57.6919L42.2062 70.8399ZM60.9542 45.0331L75 50.4196L89.0448 45.0331L75 25.7006L60.9542 45.0331Z"/>
+</svg>

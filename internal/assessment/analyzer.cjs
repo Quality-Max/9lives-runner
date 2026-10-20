@@ -33,10 +33,77 @@ function createAnalyzer(ts) {
   // Page, frame, locator, handle and context methods whose function arguments
   // Playwright serializes and runs in the browser.
   const browserMethods = new Set(['evaluate', 'evaluateHandle', 'evaluateAll', '$eval', '$$eval', 'waitForFunction', 'addInitScript']);
+  // The identifier a property/call chain starts from.
+  const root = expression => {
+    while (ts.isPropertyAccessExpression(expression) || ts.isCallExpression(expression)) expression = expression.expression;
+    return ts.isIdentifier(expression) ? expression.text : '';
+  };
+  // Methods whose first string argument is always a selector, and methods
+  // whose first argument is a selector only in the page form that also takes
+  // a value (page.fill(selector, value), but locator.fill(value, options)).
+  const selectorMethods = new Set(['locator', 'frameLocator', '$', '$$', '$eval', '$$eval', 'waitForSelector', 'click', 'dblclick',
+    'check', 'uncheck', 'setChecked', 'hover', 'tap', 'focus', 'textContent', 'innerText', 'innerHTML', 'inputValue', 'isVisible',
+    'isHidden', 'isEnabled', 'isDisabled', 'isChecked', 'isEditable']);
+  const valueSelectorMethods = new Set(['fill', 'type', 'press', 'selectOption', 'setInputFiles', 'getAttribute', 'dispatchEvent', 'dragAndDrop']);
+  const positionalCss = /:(?:nth-child|nth-last-child|nth-of-type|nth-last-of-type|first-child|last-child|first-of-type|last-of-type|only-child|only-of-type)\b/i;
+  // Playwright reads a selector part as XPath when it says so or starts with
+  // `//` or `..`, optionally after opening parentheses.
+  const selectorKind = text => {
+    const parts = text.split('>>').map(part => part.trim());
+    if (parts.some(part => /^xpath=/i.test(part) || /^\(*\/\//.test(part) || part.startsWith('..'))) return 'xpath';
+    if (parts.some(part => /^nth=|:nth-match\(/i.test(part))) return 'position';
+    if (parts.some(part => positionalCss.test(part))) return 'positional-css';
+    return null;
+  };
+  // Debugging leftovers and locators tied to document structure or element
+  // order, each with the node that locates it. A pause is recognized only on a
+  // browser fixture chain.
+  const hazards = (node, roots) => {
+    if (node.kind === ts.SyntaxKind.DebuggerStatement) return [{ node, kind: 'debugger-statement' }];
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return [];
+    const method = node.expression.name, args = node.arguments;
+    if (method.text === 'pause') return args.length === 0 && roots.has(root(node.expression)) ? [{ node: method, kind: 'page-pause' }] : [];
+    const index = args[0] && ts.isPrefixUnaryExpression(args[0]) && args[0].operator === ts.SyntaxKind.MinusToken ? args[0].operand : args[0];
+    if ((['first', 'last'].includes(method.text) && args.length === 0) || (method.text === 'nth' && args.length === 1 && ts.isNumericLiteral(index))) {
+      return [{ node: method, kind: 'position' }];
+    }
+    const valued = valueSelectorMethods.has(method.text);
+    if (!selectorMethods.has(method.text) && !(valued && args.length >= 2 && !ts.isObjectLiteralExpression(args[1]))) return [];
+    return args.slice(0, method.text === 'dragAndDrop' ? 2 : 1).flatMap(arg => {
+      const kind = ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg) ? selectorKind(arg.text) : null;
+      return kind ? [{ node: arg, kind }] : [];
+    });
+  };
+
+  // A JavaScript spec is parsed as Playwright loads it: JSX is allowed in any
+  // file, TypeScript-only syntax is not. TypeScript reports that syntax only
+  // through a program, so one is built over the single in-memory file. The
+  // host serves nothing else: no lib, no module resolution, no type roots.
+  const javaScriptOnly = file => {
+    const host = {
+      getSourceFile: name => (name === file.fileName ? file : void 0),
+      getDefaultLibFileName: () => 'lib.d.ts',
+      writeFile: () => {},
+      getCurrentDirectory: () => '/',
+      getCanonicalFileName: name => name,
+      useCaseSensitiveFileNames: () => true,
+      getNewLine: () => '\n',
+      fileExists: name => name === file.fileName,
+      readFile: () => void 0,
+      directoryExists: () => false,
+      getDirectories: () => [],
+    };
+    const options = { noLib: true, noResolve: true, allowJs: true, jsx: ts.JsxEmit.Preserve, types: [], typeRoots: [] };
+    return ts.createProgram([file.fileName], options, host).getSyntacticDiagnostics(file).length === 0;
+  };
 
   function analyze(source, options = {}) {
-    const file = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const javascript = options.javascript === true;
+    const file = javascript
+      ? ts.createSourceFile('input.jsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX)
+      : ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     if (file.parseDiagnostics.length) throw new AnalysisError('syntax');
+    if (javascript && !javaScriptOnly(file)) throw new AnalysisError('typescript-in-javascript');
     const tests = new Set(), expects = new Set(), foreignTests = new Set();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
@@ -71,10 +138,6 @@ function createAnalyzer(ts) {
         }
       }
       return [...new Set(values)];
-    };
-    const root = expression => {
-      while (ts.isPropertyAccessExpression(expression) || ts.isCallExpression(expression)) expression = expression.expression;
-      return ts.isIdentifier(expression) ? expression.text : '';
     };
     const isSuite = expression => {
       while (ts.isPropertyAccessExpression(expression)) {
@@ -253,6 +316,10 @@ function createAnalyzer(ts) {
       ts.forEachChild(node, count);
     })(file);
     const inlineFacts = 1984 - direct, inlineVisits = 200000;
+    // Hazards have their own file budget, so they never cut assertion analysis
+    // short; once it is spent, further hazards are dropped and reported as
+    // truncated.
+    const hazardBudget = { left: 512, truncated: false };
     function visit(node, inheritedDisabled = false, scopes = [file]) {
       if (ts.isFunctionLike(node) && ts.isCallExpression(node.parent) && isSuite(node.parent.expression)) scopes = [...scopes, node];
       // A call through a test binding redeclared in an enclosing scope is not a
@@ -277,7 +344,7 @@ function createAnalyzer(ts) {
           const callback = node.arguments[node.arguments.length - 1];
           const statement = ts.isExpressionStatement(node.parent) ? node.parent : node;
           const disabled = inheritedDisabled || (ts.isPropertyAccessExpression(expr) && ['skip', 'fixme'].includes(expr.name.text));
-          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], conditionalSkips: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
+          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
           // Titles are source text; include literal ones only when requested.
           if (options.titles && node.arguments[0] && (ts.isStringLiteral(node.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(node.arguments[0]))) fact.title = [...node.arguments[0].text].slice(0, 200).join('');
           factScopes.set(fact, scopes);
@@ -414,6 +481,16 @@ function createAnalyzer(ts) {
                 // Helpers, branches and shadowed identifiers prevent complete analysis.
                 if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
                   || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
+                // Hazards are present in source whether or not their code runs, so
+                // they do not make a nested function a limit. A location is
+                // reported once per test, at its first call site.
+                for (const hazard of hazards(child, roots)) {
+                  const here = location(hazard.node);
+                  if (fact.hazards.some(h => h.line === here.line && h.column === here.column)) continue;
+                  if (hazardBudget.left === 0) { hazardBudget.truncated = true; continue; }
+                  hazardBudget.left--;
+                  fact.hazards.push({ ...at(hazard.node), kind: hazard.kind });
+                }
                 if (ts.isCallExpression(child)) {
                   // Body-level skips can depend on runtime conditions or fixture
                   // values. Do not infer their disabled state from source alone.
@@ -454,7 +531,7 @@ function createAnalyzer(ts) {
                         if (ts.isIdentifier(parameter.name) && argument && roots.has(root(argument))) helperRoots.add(parameter.name.text);
                       });
                       const settled = consumed(child);
-                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
+                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
                           returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]) });
@@ -462,6 +539,8 @@ function createAnalyzer(ts) {
                         if (!(error instanceof Exhausted)) throw error;
                         fact.assertions.length = saved.assertions;
                         fact.sleeps.length = saved.sleeps;
+                        fact.hazards.length = saved.hazards;
+                        Object.assign(hazardBudget, saved.hazardBudget);
                         fact.limits = saved.limits;
                         fact.unsupported = saved.unsupported;
                         order.waited = saved.waited;
@@ -524,7 +603,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 7, compiler: ts.version, tests: results, ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 10, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -543,11 +622,11 @@ async function main(parserPath = process.argv[1]) {
       chunks.push(chunk);
     }
     const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true })));
+    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true, javascript: request.javascript === true })));
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 7, error: code }));
+    process.stdout.write(JSON.stringify({ version: 10, error: code }));
     process.exitCode = 2;
   }
 }

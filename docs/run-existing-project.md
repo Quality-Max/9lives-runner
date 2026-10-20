@@ -1,124 +1,115 @@
-# Run 9lives against an existing application
+# Quickstart: run one existing Playwright spec
 
-The supplied login example opens a **Login** modal and asserts **Welcome back**,
-**Email** and **Password**. Use it with an application that has those controls,
-or intentionally adapt the goal and assertions to your reviewed requirements.
-It does not sign in or change application data. The harness lives outside the
-application repository and preserves its existing Playwright setup.
+Start in your application's repository with a spec you already trust. Keep its
+imports, assertions, dependencies and Playwright configuration. The ordinary
+runner needs no SDK, model key or QualityMax account.
 
-Use Node 24 (Node 22 minimum), Playwright 1.61.1 through 1.64.0, and Chromium.
-The SDK is published as `@9l/playwright` 0.4.0.
+## 1. Check prerequisites
 
-## 1. Install the CLI and get the example
+- Use Node 24 (Node 22 minimum) and your project's installed Playwright.
+  The qualified range is Playwright 1.61.1–1.64.0 with Chromium.
+- Install your application's dependencies using its existing lockfile and setup
+  instructions. Start its local or approved staging server, or let its existing
+  Playwright `webServer` configuration start it.
+- Install the browser in that project: `npm exec playwright install chromium`.
+  On Linux, use `npm exec playwright install --with-deps chromium` if needed.
+- Select a spec with explicit assertions and controlled test data. Check that it
+  already works with your project's normal Playwright command.
 
-Install the executable using the [CLI installation guide](install.md). With
-Go 1.25.13 or newer, `go install github.com/Quality-Max/9lives-runner/cmd/9l@latest`
-installs it from public source. Clone the repository for the example harness:
+## 2. Install the native CLI
+
+On macOS or Linux:
 
 ```sh
-git clone https://github.com/Quality-Max/9lives-runner.git
-RUNNER_ROOT="$PWD/9lives-runner"
+curl -fsSL https://9lives.run/install.sh | sh
+export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
 9l --version
 ```
 
-The executable launches the project's installed Playwright worker; it does not
-bundle a browser. If Python `9lives` is installed too, use the explicit path to
-the Go executable to avoid their shared `9l` command name.
+Use the [Windows ZIP instructions](install.md#windows) on Windows. See
+[installation](install.md) for source builds and release verification. If you
+also have the Python `9lives` package, invoke the native executable by its full
+path: the two packages share the `9l` command name.
 
-## 2. Start your application
+## 3. Plan, then run one spec
 
-Start your application's development server using its own documented setup.
-Application dependencies and server credentials stay managed by the application.
-Open its login page and confirm that **Login** opens **Welcome back** with
-**Email** and **Password** fields. The example navigates to `/app`; adjust that
-path intentionally if your application uses another route.
-
-## 3. Install an isolated test harness
-
-In a separate terminal, set the same runner checkout path and your application's
-origin:
+From your application's project root, replace `tests/checkout.spec.ts` with an
+existing spec path. These commands use ordinary Playwright, without `--sdk`:
 
 ```sh
-RUNNER_ROOT=/path/to/9lives-runner
-mkdir -p "$HOME/9lives-login-smoke"
-cp -R "$RUNNER_ROOT/examples/playwright-login/." "$HOME/9lives-login-smoke/"
-cd "$HOME/9lives-login-smoke"
-npm init -y
-npm install --save-dev @playwright/test@1.64.0 @9l/playwright@0.4.0
-npm exec playwright install chromium
-export QA_BASE_URL=http://127.0.0.1:8000
+9l plan tests/checkout.spec.ts --format json
+9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json
 ```
 
-On Linux use `npm exec playwright install --with-deps chromium` if browser
-system dependencies are missing. Set `QA_BASE_URL` to your approved local or
-staging origin. Keep the normal Playwright assertions after the goal.
-
-## 4. First run without a model key
-
-From the harness directory:
+The plan lists the selected jobs and budgets; it does not execute assertions.
+The run uses your installed Playwright and detected configuration. For a custom
+config or a named project, pass the same selection explicitly:
 
 ```sh
-9l run tests/login-modal.spec.ts --sdk --goal-script login-script.json --pass-env QA_BASE_URL --timeout 2m --format json
+9l run tests/checkout.spec.ts --config playwright.config.ts --project chromium --timeout 2m --attempts 1 --format json
 ```
 
-The scripted provider chooses the observed **Login** control and finishes its
-bounded action sequence. Assertions wait for the actual modal. This verifies
-setup and browser behavior for the selected fixture; it does not measure LLM
-accuracy. A zero exit code, `complete: true` and a validated passing receipt
-mean the required test passed. A completed goal alone is unverified. Receipts
-are under `.9lives/receipts/`.
-
-## 5. Run a natural-language provider
-
-Configure `ANTHROPIC_API_KEY` securely in the calling terminal through your
-existing secret manager. Do not put its value in the spec, command line or
-shell history. From the same harness directory:
+Application environment settings are not inherited automatically. If your
+configuration reads `BASE_URL`, configure it in your terminal and name it:
 
 ```sh
-9l run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
+9l run tests/checkout.spec.ts --pass-env BASE_URL --timeout 2m --attempts 1 --format json
 ```
 
-Alternatively use `--goal-provider openai` with `OPENAI_API_KEY` configured,
-or run on a subscription with no API key: `--goal-provider claude`, `codex` or
-`opencode` uses that CLI's own login (check it with `claude auth status`,
-`codex login status` or `opencode auth list`). CLI decisions take a few seconds
-each; see [agent CLI providers](goals.md#agent-cli-providers) for their limits.
-Credentials remain in Go; never forward them with `--pass-env`. `--goal-model`
-overrides the transport's pinned default. This sends the goal and bounded,
-redacted control labels to the selected provider and can incur API charges.
-Named parameter values stay in the worker. Receipts omit page text and raw
-provider responses. Do not put secrets in goal text.
+Forward only the keys your test needs. Do not print credential values or forward
+model-provider credentials to browser workers. The CLI adds its JSON evidence
+reporter; configured reporters are replaced unless added with `--reporter`.
+Existing configuration settings for traces and screenshots still apply.
 
-Provider usage is marked unavailable when absent. Token reservations are
-conservative bounds, not measured usage. A monetary reservation cap needs all
-three flags: `--goal-max-cost-micros`, `--goal-input-micros-per-million` and
-`--goal-output-micros-per-million`. Supply conservative prices in micro-USD per
-million tokens from your provider/account. Estimated cost is not a billing
-receipt. Live model correctness and cost remain unqualified.
+## 4. Read the outcome
 
-## Use it in an existing Playwright suite
+A successful one-spec run exits zero and reports `outcome: "passed"`, `complete: true`, with a
+validated receipt whose `status` is `passed`. Check `executedTests` against what
+you expected to run. A spec can contain several tests; the ordinary adapter
+records test outcomes, not an inventory of individual assertions.
 
-Install the SDK beside the suite's pinned Playwright dependency (1.61.1 through 1.64.0). Change
-selected imports to `@9l/playwright` and add `n9l.goal(...)` where useful. Keep
-the existing configuration and explicit assertions. Run from the suite with
-`9l run ... --sdk` and one provider or script. Prepare authenticated state
-through the existing approved setup; password filling is unsupported by the
-goal executor. Forward only needed application settings with `--pass-env`.
+Receipts are saved under `.9lives/receipts/`. Inspect a saved run using the
+`runId` returned by the command:
 
-## Diagnose a failure
+```sh
+9l result <run-id>
+```
 
-- **SDK unavailable:** install the package and the pinned Playwright dependency.
-- **Browser missing:** install Chromium in the same user/runtime environment.
-- **Connection refused:** start the app and pass `QA_BASE_URL` explicitly.
-- **Provider error:** choose one provider or script and check credential presence
-  in your secret manager without printing its value.
-- **Budget exhausted:** review the goal and its limits against the intended task.
-- **Policy blocked:** purchase, deletion and outreach controls stop by default.
-  Use approved ordinary Playwright actions in controlled fixtures when needed.
-- **Interrupted or unknown effect:** inspect application state before rerunning;
-  goal mutations are not automatically retried.
-- **Goal completed but test failed:** inspect the business assertion; goal
-  completion cannot replace its expected outcome.
+A test assertion failure reports `failed` and a nonzero exit.
+Missing tests, interrupted workers, or invalid evidence cannot establish a pass.
+Review skipped tests and annotations too: a passing test may not exercise every
+required behavior. See the [JSON and exit-code contract](contracts.md).
 
-Historical qualification used an isolated local fixture with a login modal.
-That does not qualify every application, a complete backend or live providers.
+## 5. Check that a failure is detectable
+
+Run a known business failure in a disposable local fixture and check that the
+expected assertion fails. A setup error or timeout does not demonstrate that
+your test protects the requirement.
+
+The [runnable first-run example](../demo/first-run/README.md) provides a local
+shop, a passing ordinary test, and experimental HTTP-500 fault tests. It shows
+both a missing assertion and the stronger test that catches the same fault.
+It uses synthetic data and makes no model calls.
+
+## Troubleshooting
+
+| Symptom | Next check |
+| --- | --- |
+| `9l` is missing or shows the Python CLI | Add the installation directory to `PATH`, or invoke the native binary by its full path. |
+| Playwright or Node cannot be found | Install the project's locked dependencies and run from its project root with Node 22 or newer. |
+| Browser executable missing | Install Chromium in the same user/runtime environment that runs the test. |
+| Connection refused or wrong application | Start the app, check the existing `baseURL`/`webServer` settings, and forward required settings with `--pass-env`. |
+| No matching tests or wrong project | Inspect the plan, spec path, config `testDir`, and project name. Use `--config`/`--project` when needed. |
+| Test failed | Inspect the failing assertion and receipt; preserve the intended behavior when fixing it. |
+| Run timed out or was interrupted | Inspect application state before rerunning a test that mutates data. Review both Playwright's timeout and the CLI budget. |
+
+## Optional next steps
+
+Add the [SDK](sdk-bridge.md) only when you want step/assertion evidence or
+experimental fault testing. For bounded natural-language actions, use the
+separate [login goal example](login-goal-example.md), which requires a matching
+application fixture. Keep explicit assertions after every goal; completion of
+the goal itself is unverified.
+
+This guide qualifies a local Chromium workflow. It does not establish production
+coverage, live-provider correctness, or support for other browser engines.

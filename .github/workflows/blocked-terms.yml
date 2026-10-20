@@ -1,0 +1,34 @@
+name: Blocked terms
+
+# Runs from the base branch with the BLOCKED_TERMS secret, including for fork
+# pull requests. The pull request's code is fetched as data and never checked
+# out or executed.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blocked-terms-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fetch the pull request head without checking it out
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "+refs/pull/$PR_NUMBER/head:refs/remotes/pull/head"
+      - name: Check the pull request for blocked terms
+        env:
+          BLOCKED_TERMS: ${{ secrets.BLOCKED_TERMS }}
+          PR_HEAD: refs/remotes/pull/head
+        run: node scripts/check-blocked-terms.cjs
