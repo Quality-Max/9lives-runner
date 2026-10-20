@@ -52,6 +52,23 @@ func TestMissingBrowserIsNotAValidatedTestFailure(t *testing.T) {
 	}
 }
 
+func TestMissingBrowserReasonSurvivesALaterIncompleteTest(t *testing.T) {
+	launch := "Error: browserType.launch: Executable doesn't exist at /cache/chromium-1248/chrome"
+	raw, err := json.Marshal(map[string]any{
+		"stats": map[string]any{"duration": 1},
+		"suites": []any{map[string]any{"specs": []any{map[string]any{"tests": []any{
+			map[string]any{"status": "unexpected", "results": []testResult{{Status: "failed", Error: reportError{launch}}}},
+			map[string]any{"status": "unexpected", "results": []testResult{{Status: "interrupted"}}},
+		}}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New().Validate(raw); err == nil || !strings.Contains(err.Error(), "chromium-1248") || !strings.Contains(err.Error(), "npx playwright install chromium") {
+		t.Fatalf("a later incomplete test replaced the missing-browser guidance: %v", err)
+	}
+}
+
 func TestMissingBrowserGlobalSetupIncludesRepair(t *testing.T) {
 	for _, method := range []string{"launch", "launchPersistentContext"} {
 		t.Run(method, func(t *testing.T) {

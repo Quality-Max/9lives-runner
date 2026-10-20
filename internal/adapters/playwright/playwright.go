@@ -338,6 +338,9 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	}
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "Playwright JSON report; assertion count unavailable"}
 	unsupported, incomplete, flaky, found, unexpectedPasses := "", "", 0, 0, 0
+	// Kept apart from incomplete so a later test's generic reason cannot
+	// replace the build name and install command.
+	missingBrowser := ""
 	var walk func(suite)
 	walk = func(current suite) {
 		for _, spec := range current.Specs {
@@ -356,7 +359,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 					}
 					for _, reported := range append([]reportError{result.Error}, result.Errors...) {
 						if reason := missingBrowserMessage(reported.Message); reason != "" {
-							incomplete = reason
+							missingBrowser = reason
 						}
 					}
 					break
@@ -404,6 +407,9 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	}
 	for _, current := range parsed.Suites {
 		walk(current)
+	}
+	if missingBrowser != "" {
+		return runner.Validation{}, fmt.Errorf("%s", missingBrowser)
 	}
 	if incomplete != "" {
 		return runner.Validation{}, fmt.Errorf("%s", incomplete)

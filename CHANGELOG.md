@@ -6,6 +6,17 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- A missing Playwright browser in an ordinary `9l run` is reported as an
+  incomplete run (exit 3, `outcome: incomplete`) instead of a validated test
+  failure, whether it fails in a test, a persistent-context fixture or global
+  setup. The reason names the missing build and the install command to run
+  from the Playwright project directory, without the Playwright banner or the
+  cache path. Native healing proposes no repair for it and MCP confirmation is
+  inconclusive. A `test.fail()` expectation cannot turn it into a pass. SDK
+  runs are unchanged.
+
 ## 0.4.8 — 2026-10-20
 
 ### SDK
