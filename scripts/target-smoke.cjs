@@ -81,15 +81,15 @@ assert.deepEqual(defect.mutations, ['mutation']);
 const defectFrames = fs.readFileSync(defect.summary.receipts[0].evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
 assert(defectFrames.some(f => f.operation === 'assert-text' && f.status === 'failed'), 'wrong finance result must fail the exact assertion');
 const reasons = {ambiguous: 'ambiguous_test_id', missing: 'missing_test_id', version: 'unsupported_driver_contract', capabilities: 'unsupported_driver_contract'};
-for (const mode of ['ambiguous', 'missing', 'version', 'capabilities', 'cancel', 'deadline', 'timeout', 'caught', 'forged']) {
+for (const mode of ['ambiguous', 'missing', 'version', 'capabilities', 'cancel', 'deadline', 'timeout', 'late', 'caught', 'forged']) {
   const grep = {caught: 'caught failures', forged: 'named like a target assertion'}[mode];
   const result = invoke(mode, {grep, extra: reasons[mode] ? ['--failure-details'] : []});
   assert.notEqual(result.code, 0, mode);
   assert.notEqual(result.summary.outcome, 'passed', mode);
   assert(!result.mutations.includes('mutation'), `${mode}: no side effect`);
-  if (['cancel', 'deadline', 'timeout'].includes(mode)) assert(result.mutations.includes('started'), `${mode}: mutation was actually pending`);
+  if (['cancel', 'deadline', 'timeout', 'late'].includes(mode)) assert(result.mutations.includes('started'), `${mode}: mutation was actually pending`);
   // The worker's own operation bound settles a validated failure before Go's deadline.
-  if (mode === 'timeout') assert.equal(result.summary.receipts[0].status, 'failed', 'operation timeout is a worker-side failure');
+  if (mode === 'timeout' || mode === 'late') assert.equal(result.summary.receipts[0].status, 'failed', `${mode}: operation timeout is a worker-side failure`);
   if (mode === 'caught' || mode === 'forged') assert.equal(result.summary.receipts[0].validated, false, `${mode}: cannot green`);
   if (reasons[mode]) {
     const message = result.summary.receipts[0].failures?.[0]?.message ?? '';

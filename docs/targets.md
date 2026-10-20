@@ -73,8 +73,10 @@ receipt pass. Errors name the reason (`missing_test_id`, `ambiguous_test_id`,
 `assertion_failed`, `deadline`, `canceled`...) and keep the local cause. When
 an operation fails by itself, the driver stays open until fixture teardown, so
 Playwright can still capture failure screenshots, traces and error context.
-Cancellation, a concurrent call, or an operation still pending 250 ms after its
-deadline closes the driver immediately to cancel outstanding work. Driver
+An operation is aborted and fails at its deadline, so a late result never
+succeeds. Cancellation or a concurrent call closes the driver immediately; an
+operation still pending 250 ms after its deadline also closes it to cancel
+outstanding work. Driver
 `close()` must cancel outstanding transport work and release owned resources.
 Go also terminates its owned worker tree on timeout/cancel. Cleanup remains
 bounded by that outer process deadline if a driver fails to settle its own
@@ -110,8 +112,8 @@ and `--keep-attachments` retain their documented privacy implications.
 The smoke checks a shared passing scenario, a planted wrong finance result
 that fails the exact-text check, missing/ambiguous controls and their reason
 codes, incompatible drivers, a caught failure, a forged step title,
-cancellation, a worker-side operation timeout and Go's deadline during a
-pending mutation, unpinned and pinned skips, a re-rendered web control,
+cancellation, a worker-side operation timeout, a driver that ignores the
+deadline and Go's deadline during a pending mutation, unpinned and pinned skips, a re-rendered web control,
 one-attempt behavior, plain `--list` discovery and ordinary Playwright
 compatibility. Bounded receipts
 are saved under `.context/target-contract/`. Creation provenance currently

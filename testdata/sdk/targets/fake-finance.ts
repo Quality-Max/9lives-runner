@@ -19,6 +19,8 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
         tap: async (context: TargetContext) => {
           if (id !== 'send') throw new Error('unsupported');
           if (mode === 'cancel' || mode === 'deadline' || mode === 'timeout') { effect('started'); await delay(1000, undefined, {signal: context.signal}); }
+          // Honors the abort signal but not the deadline: finishes 50ms after a 100ms bound.
+          if (mode === 'late') { effect('started'); await delay(150, undefined, {signal: context.signal}); }
           context.signal.throwIfAborted();
           if (closed) throw new Error('closed');
           effect('mutation'); status = mode === 'defect' ? 'Sent $50' : `Sent $${amount}`;

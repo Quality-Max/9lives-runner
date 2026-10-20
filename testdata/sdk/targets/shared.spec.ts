@@ -30,7 +30,7 @@ test('one deterministic scenario dispatches to both targets', async ({app}) => {
     await new Promise(resolve => setTimeout(resolve, Math.max(0, Number(process.env.NINELIVES_TARGET_DEADLINE_MS) - Date.now() - 100)));
   }
   // A short operation bound must cancel the pending mutation inside the worker.
-  await app.getByTestId('send').tap(mode === 'timeout' ? {timeoutMs: 100} : {});
+  await app.getByTestId('send').tap(mode === 'timeout' || mode === 'late' ? {timeoutMs: 100} : {});
   await app.getByTestId('receipt').toBeVisible();
   // @9l-outcome exact-receipt
   await app.getByTestId('receipt').toHaveText('Sent $5');

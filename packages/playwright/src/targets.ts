@@ -33,8 +33,8 @@ const defaultOperationMs = 5_000;
 const defaultAssertionMs = 5_000;
 const maxOperationMs = 60_000;
 const maxObservations = 200;
-// Bounded operations settle by their deadline. After this grace the session
-// closes its driver to cancel one that does not.
+// An operation is aborted and rejected at its deadline. If it is still pending
+// after this grace, the session closes its driver to cancel it.
 const settleMs = 250;
 const stepLocation = {file: targetStepFile, line: 1, column: 1};
 
@@ -104,12 +104,20 @@ export class TargetApp {
       }
       this.busy = true;
       const deadlineMs = Math.min(this.options.deadlineMs, Date.now() + timeoutMs);
-      const timer = setTimeout(() => this.stop('deadline'), Math.max(0, deadlineMs - Date.now()) + settleMs);
       const signal = this.controller.signal;
+      const work = Promise.resolve().then(() => { signal.throwIfAborted(); return body({signal, deadlineMs}); });
+      let settled = false;
+      void work.then(() => { settled = true; }, () => { settled = true; });
+      // Abort and reject at the deadline: a late result never succeeds. The
+      // grace only decides whether to close the driver, if work is still pending.
+      const timer = setTimeout(() => {
+        this.stop('deadline', false);
+        setTimeout(() => { if (!settled) this.release(); }, settleMs);
+      }, Math.max(0, deadlineMs - Date.now()));
       let abort: () => void = () => {};
       try {
         return await Promise.race([
-          Promise.resolve().then(() => { signal.throwIfAborted(); return body({signal, deadlineMs}); }),
+          work,
           new Promise<never>((_, reject) => {
             abort = () => reject(stopped(this.reason));
             signal.addEventListener('abort', abort, {once: true});
