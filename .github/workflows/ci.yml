@@ -110,10 +110,10 @@ jobs:
       - run: npm run smoke:targets
       - name: Verify embedded browser checks and run them in real Chromium
         run: npm run smoke:browser
-      - name: Qualify 9l scan, 9l inspect and the MCP browser tools in real Chromium
+      - name: Qualify browser tools and missing-browser outcomes in real Chromium
         env:
           NINELIVES_REQUIRE_BROWSER: '1'
-        run: go test ./cmd/9l -run '^(TestBrowserToolsScanAndInspectALocalPage|TestScanFailsOnNewFindingsSinceItsBaseline|TestInspectLoadsAStorageStateForAnAuthenticatedPage|TestScanNamesTheInstallCommandForAMissingBrowser|TestDoctorFindsInstalledAndMissingChromium|TestUnreachableBrowserTargetHasSharedRemediation)$' -count=1
+        run: go test ./cmd/9l -run '^(TestBrowserToolsScanAndInspectALocalPage|TestScanFailsOnNewFindingsSinceItsBaseline|TestInspectLoadsAStorageStateForAnAuthenticatedPage|TestScanNamesTheInstallCommandForAMissingBrowser|TestMissingBrowserCLIAndMCPOutcomes|TestMCPMissingBrowserConfirmationIsInconclusive|TestDoctorFindsInstalledAndMissingChromium|TestUnreachableBrowserTargetHasSharedRemediation)$' -count=1
       - name: Validate emitted CLI documents against published schemas
         run: npm run smoke:contracts
       - run: npm run smoke:assessment
