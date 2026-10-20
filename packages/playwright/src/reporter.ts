@@ -1,12 +1,13 @@
 import {createHash} from 'node:crypto';
 import {closeSync, openSync, writeSync} from 'node:fs';
 import type {Reporter, FullConfig, Suite, TestCase, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
-import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey} from './protocol';
+import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
 
 // Worker logs, error messages, step titles, URLs and attachment bodies never enter
 // the protocol. IDs are hashes; Go persists only this bounded metadata stream.
 export default class EngineReporter implements Reporter {
   private identity = engineIdentity();
+  private target = process.env.NINELIVES_TARGET ? selectedTarget() : undefined;
   // Exclusive create: the file must be new for this attempt, never appended to.
   private events = openSync(engineEventsPath(), 'wx', 0o600);
   private seq = 0;
@@ -24,7 +25,7 @@ export default class EngineReporter implements Reporter {
       writeSync(this.events, JSON.stringify({...this.identity, seq: ++this.seq, type: 'engine_error'}) + '\n');
       return;
     }
-    const frame = JSON.stringify({...this.identity, seq: ++this.seq, type, ...fields}) + '\n';
+    const frame = JSON.stringify({...this.identity, ...(this.target ? {targetId: this.target.id} : {}), seq: ++this.seq, type, ...fields}) + '\n';
     if (Buffer.byteLength(frame) > maxFrameBytes) {
       this.overflow = true;
       writeSync(this.events, JSON.stringify({...this.identity, seq: this.seq, type: 'engine_error'}) + '\n');
@@ -34,16 +35,24 @@ export default class EngineReporter implements Reporter {
   }
   onBegin(_config: FullConfig, suite: Suite) {
     this.suite = suite;
-    this.emit('hello', {capabilities, totalTests: suite.allTests().length});
+    this.emit('hello', {capabilities: this.target ? [...capabilities, targetVersion] : capabilities, totalTests: suite.allTests().length, ...(this.target ? {targetVersion} : {})});
+    if (this.target) {
+      for (const test of suite.allTests()) {
+        if (test.parent.project()?.name !== this.target.name) { this.emit('engine_error'); return; }
+        this.emit('required_test', {testId: this.testId(test)});
+      }
+    }
   }
   onTestBegin(test: TestCase, result: TestResult) {
     this.emit('test_begin', {testId: this.testId(test), retry: result.retry});
   }
   onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
     const categories: Record<string, string> = {'test.step': 'action', expect: 'assertion', 'pw:api': 'browser', fixture: 'fixture'};
+    const operation = this.target && step.category === 'test.step' && step.location?.file === targetStepFile && step.title.startsWith('9l target ') ? step.title.slice('9l target '.length) : undefined;
     this.emit('step_end', {
       testId: this.testId(test), retry: result.retry, stepId: `step-${++this.stepSeq}`,
-      category: step.category === 'test.step' && step.title === '9l goal' ? 'goal' : categories[step.category] ?? 'other', status: step.error ? 'failed' : 'passed',
+      category: operation ? operation.startsWith('assert-') ? 'assertion' : 'action' : step.category === 'test.step' && step.title === '9l goal' ? 'goal' : categories[step.category] ?? 'other', status: step.error ? 'failed' : 'passed',
+      ...(operation ? {operation} : {}),
     });
   }
   onTestEnd(test: TestCase, result: TestResult) {

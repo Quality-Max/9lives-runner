@@ -136,3 +136,8 @@ Real-browser smoke validates checkout assertions, a defective outcome and owned
 worker/browser cleanup on timeout and explicit cancellation. Protocol regressions
 cover malformed, duplicate, foreign, late and incomplete evidence. Live provider accuracy,
 verified replay and independent behavioral verification have separate milestones.
+
+The opt-in [shared target contract](targets.md) extends this stream with
+`9l.target/1`, a target identity digest, a declared test list and typed
+deterministic operation outcomes. Ordinary SDK jobs retain the original
+handshake. The native implementation is a fake protocol fixture only.

@@ -21,6 +21,8 @@ type Limits struct {
 }
 
 type Job struct {
+	// Target is an explicitly selected SDK target (kind:app alias).
+	Target    string            `json:"target,omitempty"`
 	ID        string            `json:"id"`
 	Input     string            `json:"input"`
 	Spec      string            `json:"spec"`
@@ -52,6 +54,7 @@ const (
 // Receipt is one job's immutable execution record. Executed and Validated are
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
+	Target              string                `json:"target,omitempty"`
 	AgentProvenance     *ProvenanceAssessment `json:"agentProvenance,omitempty"`
 	Goals               []GoalReceipt         `json:"goals,omitempty"`
 	Version             int                   `json:"version"`
@@ -75,8 +78,11 @@ type Receipt struct {
 	ExecutedTests       int                   `json:"executedTests"`
 	SkippedTests        int                   `json:"skippedTests"`
 	VerifiedAssertions  int                   `json:"verifiedAssertions"`
-	AssertionCoverage   string                `json:"assertionCoverage"`
-	Error               string                `json:"error,omitempty"`
+	// TargetAssertions counts successful SDK-instrumented target checks the
+	// worker reported. It is not independent verification or coverage.
+	TargetAssertions  int    `json:"targetAssertions,omitempty"`
+	AssertionCoverage string `json:"assertionCoverage"`
+	Error             string `json:"error,omitempty"`
 	// Failures describes each failed test, from the validated structured
 	// report, when the adapter can attribute them. Messages are bounded and
 	// redacted; attachments are referenced and copied only on request.

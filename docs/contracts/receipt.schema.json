@@ -435,6 +435,12 @@
       ],
       "type": "string"
     },
+    "target": {
+      "type": "string"
+    },
+    "targetAssertions": {
+      "type": "integer"
+    },
     "termination": {
       "$ref": "#/$defs/Termination"
     },

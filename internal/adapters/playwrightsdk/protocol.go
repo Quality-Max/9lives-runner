@@ -2,6 +2,8 @@ package playwrightsdk
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 )
 
 const Version = "9l.engine/1"
+const TargetVersion = "9l.target/1"
 const maxFrameBytes = 16 * 1024
 const maxEvents = 10000
 const maxProtocolBytes = 4 << 20
@@ -43,15 +46,25 @@ type event struct {
 		Kind     string `json:"kind"`
 		Retained bool   `json:"retained"`
 	} `json:"artifacts"`
+	TargetID      string `json:"targetId"`
+	TargetVersion string `json:"targetVersion"`
+	Operation     string `json:"operation"`
 }
 
 type testState struct {
-	retry      int
-	active     bool
-	statuses   []string
-	expected   string
-	final      bool
-	goalFailed bool
+	retry        int
+	active       bool
+	statuses     []string
+	expected     string
+	final        bool
+	goalFailed   bool
+	targetFailed bool
+	assertions   int
+}
+
+func TargetID(target string) string {
+	sum := sha256.Sum256([]byte(target))
+	return hex.EncodeToString(sum[:])
 }
 
 func invalid(reason string) (runner.Validation, error) {
@@ -74,6 +87,11 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 	tests := make(map[string]*testState)
 	steps := make(map[string]bool)
 	total, unpinned := 0, 0
+	targeted := identity.Target != ""
+	if targeted && !ValidTarget(identity.Target) {
+		return invalid("unsupported owning target")
+	}
+	manifestClosed := false
 	ended, summarizing := false, false
 	validation := runner.Validation{AssertionCoverage: "unknown", Description: "9l.engine/1; attempt-bound step evidence; assertion count unavailable; artifact metadata only"}
 	for index, line := range lines {
@@ -93,8 +111,20 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		if frame.Seq != index+1 {
 			return invalid("duplicate or out-of-order sequence")
 		}
+		if (targeted && frame.TargetID != TargetID(identity.Target)) || (!targeted && frame.TargetID != "") {
+			return invalid("missing or foreign target identity")
+		}
 		if index == 0 {
-			if frame.Type != "hello" || frame.TotalTests < 1 || frame.TotalTests > maxEvents || !equalCapabilities(frame.Capabilities) {
+			caps := frame.Capabilities
+			if targeted {
+				if frame.TargetVersion != TargetVersion || len(caps) != 4 || caps[3] != TargetVersion {
+					return invalid("unsupported target contract")
+				}
+				caps = caps[:3]
+			} else if frame.TargetVersion != "" {
+				return invalid("unexpected target contract")
+			}
+			if frame.Type != "hello" || frame.TotalTests < 1 || frame.TotalTests > maxEvents || !equalCapabilities(caps) {
 				return invalid("missing handshake, unsupported capabilities or zero tests")
 			}
 			total = frame.TotalTests
@@ -102,7 +132,18 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		}
 		state := tests[frame.TestID]
 		switch frame.Type {
+		case "required_test":
+			if !targeted || manifestClosed || !testID.MatchString(frame.TestID) || state != nil || len(tests) >= total {
+				return invalid("invalid required target test")
+			}
+			tests[frame.TestID] = &testState{retry: -1}
 		case "test_begin":
+			if targeted {
+				manifestClosed = true
+				if len(tests) != total || state == nil || frame.Retry != 0 {
+					return invalid("incomplete target manifest or repeated target test")
+				}
+			}
 			if summarizing || !testID.MatchString(frame.TestID) || frame.Retry < 0 || frame.Retry > maxEvents {
 				return invalid("invalid test attempt")
 			}
@@ -127,6 +168,17 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				return invalid("unsupported step outcome")
 			}
 			steps[frame.StepID] = true
+			if frame.Operation != "" {
+				assertion := oneOf(frame.Operation, "assert-visible", "assert-text", "assert-state")
+				if !targeted || !oneOf(frame.Operation, "open", "reset", "tap", "fill", "assert-visible", "assert-text", "assert-state") || (assertion && frame.Category != "assertion") || (!assertion && frame.Category != "action") {
+					return invalid("unsupported target operation")
+				}
+				if frame.Status == "failed" {
+					state.targetFailed = true
+				} else if assertion {
+					state.assertions++
+				}
+			}
 			if frame.Category == "goal" && frame.Status == "failed" {
 				validation.GoalFailed, state.goalFailed = true, true
 			}
@@ -136,6 +188,18 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if !oneOf(frame.Status, "passed", "failed", "timedOut", "skipped") || !oneOf(frame.ExpectedStatus, "passed", "failed", "skipped") {
 				return invalid("unfinished or unsupported test status")
+			}
+			if targeted {
+				// Skips stay subject to --pin-skip. An expected failure would
+				// let a failed target operation report success.
+				switch {
+				case frame.ExpectedStatus == "failed":
+					return invalid("target tests cannot expect failure")
+				case frame.Status != "failed" && frame.Status != "timedOut" && state.targetFailed:
+					return invalid("target test hid a failed target operation")
+				case frame.Status == "passed" && state.assertions == 0:
+					return invalid("target test passed without a successful target assertion")
+				}
 			}
 			if state.expected != "" && state.expected != frame.ExpectedStatus {
 				return invalid("changed expected outcome")
@@ -169,6 +233,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				}
 			} else {
 				validation.ExecutedTests++
+				validation.TargetAssertions += state.assertions
 				if frame.Outcome == "unexpected" {
 					validation.FailureCount++
 					// Preserve failures in other tests even if a goal failed
@@ -206,6 +271,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 	}
 	if !ended {
 		return invalid("missing terminal outcome")
+	}
+	if targeted {
+		validation.Description += "; 9l.target/1; required target tests; worker-reported target assertion count only"
 	}
 	return validation, nil
 }
@@ -285,13 +353,24 @@ func decodeEvent(raw []byte) (event, error) {
 		return frame, fmt.Errorf("invalid fields")
 	}
 	fields := []string{"version", "runId", "jobId", "attemptId", "seq", "type"}
+	if frame.TargetID != "" {
+		fields = append(fields, "targetId")
+	}
 	switch frame.Type {
 	case "hello":
 		fields = append(fields, "capabilities", "totalTests")
+		if frame.TargetID != "" {
+			fields = append(fields, "targetVersion")
+		}
+	case "required_test":
+		fields = append(fields, "testId")
 	case "test_begin":
 		fields = append(fields, "testId", "retry")
 	case "step_end":
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
+		if frame.Operation != "" {
+			fields = append(fields, "operation")
+		}
 	case "test_end":
 		fields = append(fields, "testId", "retry", "status", "expectedStatus", "artifacts")
 	case "test_result":

@@ -48,6 +48,11 @@ type LineSelector interface {
 	SelectLine(job Job, line int) (Job, error)
 }
 
+// TargetPlanner schedules a distinct owned job for each explicit SDK target.
+type TargetPlanner interface {
+	PlanTarget(path, input string, index int, target string) (Job, error)
+}
+
 // FailureReporter adapters describe each failed test in a report that
 // already validated. workDir is the job's working directory; attachment
 // paths outside it are not reported.
@@ -80,6 +85,7 @@ type Validation struct {
 	ExecutedTests       int
 	SkippedTests        int
 	VerifiedAssertions  int
+	TargetAssertions    int
 	AssertionCoverage   string
 	Description         string
 }
@@ -88,6 +94,7 @@ type Validation struct {
 // Legacy report adapters remain source-compatible with Adapter.
 type AttemptIdentity struct {
 	RunID, JobID, AttemptID string
+	Target                  string
 }
 
 type AttemptValidator interface {
