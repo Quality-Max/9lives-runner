@@ -1,7 +1,7 @@
 # First-run diagnostics
 
-`9l doctor` is available in current source builds; published CLI v0.4.7
-predates this command. Run it from your application project:
+`9l doctor` is available from CLI v0.4.8. Run it from your application
+project:
 
 ```sh
 9l doctor
