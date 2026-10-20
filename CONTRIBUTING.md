@@ -19,6 +19,9 @@ missing local checks as skipped. Review the final diff for correctness,
 privacy, cleanup and completeness.
 
 Describe the concrete before/after behavior and actual validation in your PR.
-Keep private evidence in `.context/`. Do not publish npm packages as part of
+Keep private evidence in `.context/`. The `Blocked terms` check fails a PR whose
+branch name, title, description, commit messages or added lines contain a
+name on the maintainers' private list (the `BLOCKED_TERMS` secret); it reports
+only where the match is. Do not publish npm packages as part of
 routine contributions; releases follow the [release runbook](docs/releases.md).
 Contributions use this repository's [Apache-2.0 license](LICENSE).
