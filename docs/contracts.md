@@ -48,8 +48,16 @@ goal did not act. An unexpected failure in a sibling test with no failed goal
 still establishes `failed`, including when the first test caught the goal
 error and passed. Receipts carry `nonGoalFailureCount`, derived from the
 attempt-bound SDK test events; older goal-failure receipts without this field
-remain conservative and incomplete. Playwright test timeouts and hook errors
-are reported by Playwright as test failures, and 9l counts them as failures.
+remain conservative and incomplete.
+
+In ordinary Playwright execution, a missing managed browser is an
+infrastructure error: `9l run` exits 3 with `outcome: incomplete`, names the
+missing build and gives the install command to run from the Playwright project
+directory (for example, `npx playwright install chromium`; on Linux use
+`npx playwright install --with-deps chromium`). It does not establish a test
+failure, and native healing proposes no repair. Other Playwright test timeouts
+and hook errors are reported by Playwright as test failures, and 9l counts them
+as failures.
 
 Dependency plans are currently available only through the Go API. If a failed
 prerequisite blocks descendants, the plan remains `incomplete`: those jobs
