@@ -11,14 +11,21 @@ SDK versions.
 - `inspect` takes each control's `accessibleName` from Chromium's
   accessibility tree, the name its tree node carries, instead of estimating
   it from the DOM; the estimate remains only as a fallback, with a warning,
-  when the tree cannot be read. A `<select>`'s option text is no longer
-  taken as its name, so an unlabelled select found by an id gets the "easy
-  to locate, not accessible" caveat, and an `<input type="submit">` is
-  named by its value. Locator names follow the same rules: input buttons
-  are named by their value and image inputs by their alt text, and content
-  names a control only for roles that take their name from content.
+  when the tree cannot be read or a control cannot be matched to it. A
+  control the page does not render, such as a hidden input, has no tree
+  node and keeps its estimate without a warning. A `<select>`'s option text
+  is no longer taken as its name, so an unlabelled select found by an id
+  gets the "easy to locate, not accessible" caveat, and an
+  `<input type="submit">` is named by its value. Locator names follow the
+  same rules: input buttons are named by their value and image inputs by
+  their alt text, and content names a control only for roles that take
+  their name from content.
 - The Markdown report adds `(no accessible name)` only for roles that need
-  a name; an unnamed `list` or `group` is no longer flagged.
+  a name; an unnamed `list` or `group`, or a hidden input, is no longer
+  flagged. The report, the "easy to locate, not accessible" caveat and the
+  accessibility tree's `unnamed` flag share one list of roles that require
+  a name, which now also covers roles such as `progressbar`, `meter`,
+  `heading`, `table` and `region`.
 
 ## 0.4.8 — 2026-10-20
 
