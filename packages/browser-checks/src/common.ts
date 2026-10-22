@@ -92,6 +92,56 @@ export function browserType(name = 'chromium'): BrowserType {
   return playwright.chromium;
 }
 
+// Roles a user operates or must be able to identify. A nameless one of these is
+// exactly what an accessibility tree should surface, so it is flagged rather
+// than dropped.
+export const ROLES_REQUIRING_A_NAME: ReadonlySet<string> = new Set([
+  'alertdialog',
+  'application',
+  'button',
+  'checkbox',
+  'columnheader',
+  'combobox',
+  'dialog',
+  'doc-backlink',
+  'doc-biblioentry',
+  'doc-biblioref',
+  'doc-glossref',
+  'doc-noteref',
+  'doc-pagebreak',
+  'doc-part',
+  'graphics-document',
+  'graphics-symbol',
+  'grid',
+  'heading',
+  'img',
+  'link',
+  'listbox',
+  'marquee',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'meter',
+  'option',
+  'progressbar',
+  'radio',
+  'radiogroup',
+  'region',
+  'rowheader',
+  'searchbox',
+  'slider',
+  'spinbutton',
+  'switch',
+  'tab',
+  'table',
+  'tabpanel',
+  'textbox',
+  'tooltip',
+  'tree',
+  'treegrid',
+  'treeitem',
+]);
+
 /**
  * Replace Playwright's missing-browser banner with the command that fixes it.
  *
