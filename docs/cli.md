@@ -191,7 +191,7 @@ restart, durable leases and crash recovery remain planned.
 
 ## Build and use
 
-Go 1.25.13 or newer is required; CI pins 1.25.13. The Go runner and local SDK
+Go 1.27.3 or newer is required; CI pins 1.27.3. The Go runner and local SDK
 do not require a platform account. Python is needed only for the optional
 compatibility checks in the [development guide](development.md).
 

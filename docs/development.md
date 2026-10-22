@@ -1,7 +1,7 @@
 # Development and validation
 
-Use Go 1.25.13 or newer, Node 24, and Chromium. Node 22 is the SDK minimum;
-Node 24 is the CI-qualified runtime. CI pins Go 1.25.13, and the workspace pins
+Use Go 1.27.3 or newer, Node 24, and Chromium. Node 22 is the SDK minimum;
+Node 24 is the CI-qualified runtime. CI pins Go 1.27.3, and the workspace pins
 Playwright 1.61.1. The `playwright-compat` CI job repeats the unit, assessment,
 browser and packed-consumer checks on 1.62.0, 1.62.1, 1.63.0 and 1.64.0, after
 `scripts/select-playwright.cjs` repins every workspace and fixture and verifies

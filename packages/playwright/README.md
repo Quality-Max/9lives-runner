@@ -10,7 +10,7 @@ completing does not verify that behavior.
 Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
-npm install --save-dev @9l/playwright@0.4.8 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.4.9 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -23,7 +23,7 @@ unqualified.
 
 The Go `9l` executable is also required. Use the
 [CLI installation guide](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)
-for release availability or install from source with Go 1.25.13 or newer.
+for release availability or install from source with Go 1.27.3 or newer.
 This npm package does not install Go or
 bundle the runner, browsers or a hosted service. No platform account is needed.
 

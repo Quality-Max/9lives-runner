@@ -6,6 +6,17 @@ SDK versions.
 
 ## Unreleased
 
+## 0.4.9 — 2026-10-22
+
+### Security
+
+- Rebuild all native CLI archives with Go 1.27.3 so `crypto/x509` rejects the
+  compromised emSign root certificates covered by GO-2026-6809.
+
+### SDK
+
+- No runtime changes; `@9l/playwright` 0.4.9 is released with CLI 0.4.9.
+
 ### CLI
 
 - A missing Playwright browser in an ordinary `9l run` is reported as an

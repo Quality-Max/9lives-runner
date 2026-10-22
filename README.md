@@ -73,7 +73,7 @@ Run from your project root and replace the path with an existing spec. Follow th
 troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
 
 Your project supplies its Playwright dependencies, browsers, configuration, and
-assertions. The SDK is optional. Native v0.4.8 binaries support macOS, Linux and
+assertions. The SDK is optional. Native v0.4.9 binaries support macOS, Linux and
 Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
 and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
 other browser engines are unqualified.
@@ -104,7 +104,7 @@ that can run standalone or connect to QualityMax.
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.4.8 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.4.9 @playwright/test@1.64.0
 npm exec playwright install chromium
 ```
 
@@ -112,7 +112,7 @@ Use Node 24 for the qualified runtime (Node 22 minimum) and Playwright 1.61.1
 through 1.64.0; an existing project can keep its version in that range. On Linux, use
 `npm exec playwright install --with-deps chromium` for browser dependencies.
 
-Install the Go CLI separately. With Go 1.25.13 or newer:
+Install the Go CLI separately. With Go 1.27.3 or newer:
 
 ```sh
 go install github.com/Quality-Max/9lives-runner/cmd/9l@latest
@@ -300,8 +300,8 @@ the spec or prove its assertions protect the requirement. See the
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.4.8 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.4.8, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.4.9 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.4.9, released with the CLI | Installing the SDK does not install the CLI or browsers |
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
@@ -393,7 +393,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.4.8](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.4.9](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions with one shared version: a single
 `v<version>` tag releases both. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)
