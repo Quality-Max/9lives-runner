@@ -1,6 +1,6 @@
 module github.com/Quality-Max/9lives-runner
 
-go 1.25.13
+go 1.27.3
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
