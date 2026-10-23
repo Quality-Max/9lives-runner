@@ -87,7 +87,13 @@ type Validation struct {
 	VerifiedAssertions  int
 	TargetAssertions    int
 	AssertionCoverage   string
-	Description         string
+	// ReportedAssertions counts assertion steps the test worker reported as
+	// passed in each executed test's last completed attempt, and
+	// PassedWithoutAssertions the tests that passed while reporting none.
+	// Both are worker-reported signals, not verified coverage.
+	ReportedAssertions      int
+	PassedWithoutAssertions int
+	Description             string
 }
 
 // AttemptValidator binds structured worker evidence to the attempt that owns it.

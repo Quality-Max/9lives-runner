@@ -384,6 +384,9 @@
     "exitCode": {
       "type": "integer"
     },
+    "failureAttachments": {
+      "type": "integer"
+    },
     "failureCount": {
       "type": "integer"
     },
@@ -409,11 +412,23 @@
     "jobId": {
       "type": "string"
     },
+    "keepAttachments": {
+      "type": "boolean"
+    },
     "nonGoalFailureCount": {
+      "type": "integer"
+    },
+    "passedWithoutAssertions": {
       "type": "integer"
     },
     "receiptPath": {
       "type": "string"
+    },
+    "reportedAssertions": {
+      "type": "integer"
+    },
+    "retainedAttachments": {
+      "type": "integer"
     },
     "runId": {
       "type": "string"

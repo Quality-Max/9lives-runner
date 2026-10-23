@@ -15,6 +15,21 @@ SDK versions.
 
 ### CLI
 
+- With `--sdk`, receipts record `reportedAssertions`, the assertion steps the
+  worker reported as passed in each executed test's last completed attempt,
+  and `passedWithoutAssertions`, the tests that passed while reporting none.
+  `9l run` and `9l result` print `N passed test(s) reported no assertion
+  step` under such a job, so a green test that asserted nothing is visible.
+  These are the worker's report, not verified coverage; `assertionCoverage`
+  stays `unknown`. Without `--sdk` the counts are absent, because Playwright's
+  JSON reporter serializes only `test.step` steps. Receipt, run-result and
+  run-status contracts gain the two optional fields (additive).
+- Receipts record `keepAttachments` when `--keep-attachments` was given,
+  `failureAttachments` for the attachment files the listed failures
+  reference and `retainedAttachments` for those copied into the receipt
+  directory. A request that found nothing to copy prints `--keep-attachments:
+  the listed failures referenced no attachment files` under the job instead
+  of silently doing nothing (additive).
 - Each failed test in a receipt carries a `class`: `assertion`, `timeout`,
   `action-timeout`, `environment` (a connection, name-resolution or
   certificate error on navigation, by Chromium or Firefox error code),

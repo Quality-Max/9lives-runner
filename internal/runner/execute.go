@@ -342,7 +342,8 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		Version: ReceiptVersion, RunID: runID, JobID: job.ID, Spec: job.Spec,
 		Attempt: attempt, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, attempt),
 		Adapter: job.Adapter, StartedAt: started, ExitCode: -1,
-		Evidence: Evidence{Command: redactArguments(job.Command), Artifacts: []ArtifactReference{}},
+		Evidence:        Evidence{Command: redactArguments(job.Command), Artifacts: []ArtifactReference{}},
+		KeepAttachments: opts.KeepAttachments,
 	}
 	if runID == "" || job.ID == "" || len(job.Command) == 0 {
 		receipt.Status, receipt.Error = StatusError, "invalid planned job"
@@ -476,6 +477,8 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.TargetAssertions = validation.TargetAssertions
 				receipt.AssertionCoverage = validation.AssertionCoverage
+				receipt.ReportedAssertions = validation.ReportedAssertions
+				receipt.PassedWithoutAssertions = validation.PassedWithoutAssertions
 				receipt.Validation = validation.Description
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
@@ -538,6 +541,14 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		receipt.Failures = reporter.Failures(detailReport, job.WorkDir)
 		if opts.KeepAttachments {
 			retainAttachments(filepath.Join(opts.ReceiptDir, runID, job.ID, receipt.AttemptID, "attachments"), receipt.Failures)
+		}
+		for _, failure := range receipt.Failures {
+			receipt.FailureAttachments += len(failure.Attachments)
+			for _, attachment := range failure.Attachments {
+				if attachment.Retained {
+					receipt.RetainedAttachments++
+				}
+			}
 		}
 	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
@@ -616,6 +627,9 @@ func validateValidation(validation Validation) error {
 	}
 	if validation.TargetAssertions < 0 {
 		return errors.New("structured report has negative target assertions")
+	}
+	if validation.ReportedAssertions < 0 || validation.PassedWithoutAssertions < 0 || validation.PassedWithoutAssertions > validation.ExecutedTests {
+		return errors.New("structured report has inconsistent reported assertion counts")
 	}
 	return nil
 }

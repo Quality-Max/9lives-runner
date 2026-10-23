@@ -60,6 +60,12 @@ type testState struct {
 	goalFailed   bool
 	targetFailed bool
 	assertions   int
+	// reportedAttempt counts the assertion steps the worker reported as passed
+	// in the attempt in progress; reportedFinal and finalStatus keep the last
+	// completed attempt's count and status.
+	reportedAttempt int
+	reportedFinal   int
+	finalStatus     string
 }
 
 func TargetID(target string) string {
@@ -93,7 +99,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 	}
 	manifestClosed := false
 	ended, summarizing := false, false
-	validation := runner.Validation{AssertionCoverage: "unknown", Description: "9l.engine/1; attempt-bound step evidence; assertion count unavailable; artifact metadata only"}
+	validation := runner.Validation{AssertionCoverage: "unknown", Description: "9l.engine/1; attempt-bound step evidence; verified assertion count unavailable; artifact metadata only"}
 	for index, line := range lines {
 		frame, err := decodeEvent(line)
 		if err != nil {
@@ -159,7 +165,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if state.active || state.final || frame.Retry != state.retry+1 {
 				return invalid("duplicate or late test attempt")
 			}
-			state.retry, state.active = frame.Retry, true
+			state.retry, state.active, state.reportedAttempt = frame.Retry, true, 0
 		case "step_end":
 			if summarizing || state == nil || !state.active || frame.Retry != state.retry || !stepID.MatchString(frame.StepID) || steps[frame.StepID] {
 				return invalid("foreign, duplicate or late step")
@@ -168,6 +174,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				return invalid("unsupported step outcome")
 			}
 			steps[frame.StepID] = true
+			if frame.Category == "assertion" && frame.Status == "passed" {
+				state.reportedAttempt++
+			}
 			if frame.Operation != "" {
 				assertion := oneOf(frame.Operation, "assert-visible", "assert-text", "assert-state")
 				if !targeted || !oneOf(frame.Operation, "open", "reset", "tap", "fill", "assert-visible", "assert-text", "assert-state") || (assertion && frame.Category != "assertion") || (!assertion && frame.Category != "action") {
@@ -214,6 +223,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			state.active, state.expected = false, frame.ExpectedStatus
 			state.statuses = append(state.statuses, frame.Status)
+			if frame.Status != "skipped" {
+				state.reportedFinal, state.finalStatus = state.reportedAttempt, frame.Status
+			}
 		case "test_result":
 			summarizing = true
 			if state == nil || state.active || state.final || len(state.statuses) == 0 {
@@ -234,6 +246,12 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			} else {
 				validation.ExecutedTests++
 				validation.TargetAssertions += state.assertions
+				// Worker-reported, from the last completed attempt: a signal
+				// that a passed test asserted nothing, never verified coverage.
+				validation.ReportedAssertions += state.reportedFinal
+				if state.finalStatus == "passed" && state.reportedFinal == 0 {
+					validation.PassedWithoutAssertions++
+				}
 				if frame.Outcome == "unexpected" {
 					validation.FailureCount++
 					// Preserve failures in other tests even if a goal failed
@@ -260,6 +278,10 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if validation.SkippedTests != 0 {
 				validation.Description += fmt.Sprintf("; %d pinned skip(s)", validation.SkippedTests)
+			}
+			validation.Description += fmt.Sprintf("; %d worker-reported assertion step(s)", validation.ReportedAssertions)
+			if validation.PassedWithoutAssertions != 0 {
+				validation.Description += fmt.Sprintf("; %d passed test(s) reported none", validation.PassedWithoutAssertions)
 			}
 			if (frame.Status == "passed") != (validation.FailureCount == 0) {
 				return invalid("inconsistent terminal outcome")

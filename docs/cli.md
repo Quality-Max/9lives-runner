@@ -59,6 +59,14 @@
   which stay in the receipt only. A passed job with such a note may not have
   exercised everything its tests can check. With `--sdk`, annotations need
   `--failure-details`, because the engine protocol carries no titles.
+- Assertion steps: with `--sdk`, the receipt records `reportedAssertions`,
+  the assertion steps the worker reported as passed in each executed test's
+  last completed attempt, and `passedWithoutAssertions`, the tests that passed
+  while reporting none. `9l run` and `9l result` print `N passed test(s)
+  reported no assertion step` under such a job. These are the worker's
+  report, not verified coverage: `assertionCoverage` stays `unknown`. Without
+  `--sdk`, Playwright's JSON reporter carries only `test.step` steps, so the
+  counts are absent. See [sdk-bridge.md](sdk-bridge.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`
@@ -87,7 +95,13 @@
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
   directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
-  128 MiB per attempt; only regular files inside the project). With `--sdk`
+  128 MiB per attempt; only regular files inside the project). The receipt
+  records the request as `keepAttachments`, how many attachment files the
+  listed failures reference as `failureAttachments` (inline bodies and files
+  outside the project are never referenced) and how many were copied as
+  `retainedAttachments`; when retention was requested and the listed
+  failures reference none, such as a `test.fail()` pin that passed, `9l run`
+  and `9l result` say so under the job. With `--sdk`
   the engine protocol carries no titles or errors by design, so failures are
   reported only with `--failure-details`: Playwright's JSON reporter then
   writes a separate private report beside the evidence stream, which explains

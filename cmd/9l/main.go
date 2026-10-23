@@ -948,6 +948,17 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			}
 		}
 		printAnnotations(w, receipt.Annotations)
+		// Only when the failures are known: an engine run without
+		// --failure-details lists none, so nothing can be said about them.
+		// The count is of the files the receipt references; inline bodies and
+		// files outside the project are never referenced, so it says
+		// "referenced", not "produced".
+		if receipt.KeepAttachments && len(receipt.Failures) > 0 && receipt.FailureAttachments == 0 {
+			fmt.Fprintln(w, "           --keep-attachments: the listed failures referenced no attachment files")
+		}
+		if receipt.PassedWithoutAssertions > 0 {
+			fmt.Fprintf(w, "           %d passed test(s) reported no assertion step; a green test that asserts nothing proves nothing\n", receipt.PassedWithoutAssertions)
+		}
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}

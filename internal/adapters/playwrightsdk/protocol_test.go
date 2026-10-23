@@ -439,3 +439,36 @@ func TestAssertionsCountsFailedTestsWithAFailedAssertion(t *testing.T) {
 		t.Fatal("accepted unfinished evidence")
 	}
 }
+
+// The worker's passed assertion steps are counted from each test's last
+// completed attempt, as a report and never as verified coverage, so a green
+// test that asserted nothing is visible.
+func TestReportedAssertionStepsComeFromTheLastCompletedAttempt(t *testing.T) {
+	validation, err := New().ValidateAttempt(stream(passingFrames()), owner)
+	if err != nil || validation.ReportedAssertions != 1 || validation.PassedWithoutAssertions != 0 || validation.AssertionCoverage != "unknown" || !strings.Contains(validation.Description, "1 worker-reported assertion step(s)") {
+		t.Fatalf("one asserted pass: %+v, %v", validation, err)
+	}
+	other := strings.Repeat("b", 64)
+	frames := []map[string]any{
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 2},
+		// Two passed assertions in an attempt that failed, none in the retry that passed.
+		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "passed"},
+		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-2", "category": "assertion", "status": "passed"},
+		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-3", "category": "assertion", "status": "failed"},
+		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
+		{"type": "test_begin", "testId": testKey, "retry": 1},
+		{"type": "step_end", "testId": testKey, "retry": 1, "stepId": "step-4", "category": "browser", "status": "passed"},
+		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
+		// A failed test's missing assertions are not a vacuous pass.
+		{"type": "test_begin", "testId": other, "retry": 0},
+		{"type": "test_end", "testId": other, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
+		{"type": "test_result", "testId": testKey, "outcome": "flaky"},
+		{"type": "test_result", "testId": other, "outcome": "unexpected"},
+		{"type": "end", "status": "failed"},
+	}
+	validation, err = New().ValidateAttempt(stream(frames), owner)
+	if err != nil || validation.ReportedAssertions != 0 || validation.PassedWithoutAssertions != 1 || validation.ExecutedTests != 2 || !strings.Contains(validation.Description, "0 worker-reported assertion step(s); 1 passed test(s) reported none") {
+		t.Fatalf("flaky pass without assertions: %+v, %v", validation, err)
+	}
+}

@@ -89,6 +89,14 @@ executed. An attempt where every test was skipped, even if all were pinned,
 still fails, because skips don't prove anything ran. A pin for a test that runs
 normally has no effect. A step marked as an assertion records execution metadata,
 not independently verified assertion coverage; receipts retain `unknown` coverage.
+The receipt does count them: `reportedAssertions` is the number of assertion
+steps the worker reported as passed in each executed test's last completed
+attempt, and `passedWithoutAssertions` the tests that passed while reporting
+none. Both are the worker's report, so a green test that asserted nothing is
+visible without any claim that what it asserted was verified. The ordinary
+JSON reporter serializes only `test.step` steps, so without `--sdk` these
+counts are absent. The SDK reporter runs on any spec once `@9l/playwright` is
+installed; the spec does not have to import it for the counts.
 
 ## Privacy and artifacts
 

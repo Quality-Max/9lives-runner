@@ -82,11 +82,27 @@ type Receipt struct {
 	// worker reported. It is not independent verification or coverage.
 	TargetAssertions  int    `json:"targetAssertions,omitempty"`
 	AssertionCoverage string `json:"assertionCoverage"`
-	Error             string `json:"error,omitempty"`
+	// ReportedAssertions counts the assertion steps the test worker reported
+	// as passed in each executed test's last completed attempt, and
+	// PassedWithoutAssertions the tests that passed while reporting none.
+	// They say whether a green test asserted anything; they are the worker's
+	// report, not verified coverage, so assertionCoverage stays unknown.
+	ReportedAssertions      int    `json:"reportedAssertions,omitempty"`
+	PassedWithoutAssertions int    `json:"passedWithoutAssertions,omitempty"`
+	Error                   string `json:"error,omitempty"`
 	// Failures describes each failed test, from the validated structured
 	// report, when the adapter can attribute them. Messages are bounded and
 	// redacted; attachments are referenced and copied only on request.
 	Failures []TestFailure `json:"failures,omitempty"`
+	// KeepAttachments records that retention was requested. FailureAttachments
+	// counts the attachment files the listed failures reference (inline
+	// bodies and files outside the project are never referenced) and
+	// RetainedAttachments those copied into the receipt directory, so a
+	// request that found nothing to copy is distinguishable from one that
+	// was never made.
+	KeepAttachments     bool `json:"keepAttachments,omitempty"`
+	FailureAttachments  int  `json:"failureAttachments,omitempty"`
+	RetainedAttachments int  `json:"retainedAttachments,omitempty"`
 	// Annotations are the tests' own annotations from the validated report,
 	// such as a test recording why it returned early. A passed receipt with
 	// annotations may not have exercised everything its tests can check.
