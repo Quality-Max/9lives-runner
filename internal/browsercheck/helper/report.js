@@ -40,6 +40,25 @@ function meter(value, max, width) {
     const filled = Math.max(0, Math.min(width, Math.round((value / max) * width)));
     return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
+/** The score rule in one line, so the number above it can be checked by hand. */
+function scoringLine(scoring) {
+    const weights = ['critical', 'high', 'medium', 'low', 'info']
+        .map((severity) => `${scoring.weights[severity]} per ${severity}`)
+        .join(', ');
+    const grades = ['A', 'B', 'C', 'D'].map((grade) => `${grade} ≥ ${scoring.grades[grade]}`).join(', ');
+    return `Score: ${scoring.scale.max} minus ${weights} finding, floored at ${scoring.scale.min}. Grades: ${grades}, else F.`;
+}
+/** A finding's URL lines: the one URL it has, or the list a grouped finding carries. */
+function urlLines(finding) {
+    if (finding.url)
+        return [`\`${finding.url}\``];
+    if (!finding.urls?.length)
+        return [];
+    const lines = finding.urls.map((url) => `- \`${url}\``);
+    if (finding.omittedUrls)
+        lines.push(`- …and ${finding.omittedUrls} more`);
+    return lines;
+}
 function host(url) {
     try {
         return new URL(url).host;
@@ -139,7 +158,13 @@ function renderIssues(result, opts = {}) {
     const blocks = selected.map((finding, index) => {
         // Where the problem is: a selector when the finding has one, the URL when it
         // does not, and nothing rather than a guess when it has neither.
-        const locus = finding.selector ? `\`${finding.selector}\`` : finding.url ? finding.url : undefined;
+        const locus = finding.selector
+            ? `\`${finding.selector}\``
+            : finding.url
+                ? finding.url
+                : finding.urls?.length
+                    ? finding.urls.join(', ') + (finding.omittedUrls ? ` and ${finding.omittedUrls} more` : '')
+                    : undefined;
         const lines = [];
         lines.push(`<!-- issue ${index + 1} of ${selected.length} · ${finding.severity} · ${finding.category} -->`);
         lines.push('');
@@ -177,7 +202,8 @@ function renderIssues(result, opts = {}) {
 }
 /** Render a scan result as a shareable Markdown report. */
 function renderReport(result, opts = {}) {
-    const grade = (0, common_1.gradeFromScore)(result.score);
+    const scoring = result.scoring ?? (0, common_1.describeScoring)(result.score);
+    const grade = scoring.grade;
     const ranThese = new Set(result.checks);
     const date = (opts.now ?? new Date()).toISOString().slice(0, 10);
     const lines = [];
@@ -187,6 +213,8 @@ function renderReport(result, opts = {}) {
         `${result.findingCount} ${result.findingCount === 1 ? 'issue' : 'issues'} found   ·   scanned ${date}`);
     lines.push('');
     lines.push(`\`${meter(result.score, 100, 24)}\` ${result.score} / 100`);
+    lines.push('');
+    lines.push(`_${scoringLine(scoring)}_`);
     lines.push('');
     // The verdict goes above the tables: when a baseline was supplied, "did this
     // change introduce anything?" is the question the reader came with.
@@ -238,8 +266,7 @@ function renderReport(result, opts = {}) {
             lines.push('');
             const times = f.occurrences && f.occurrences > 1 ? ` (seen ${f.occurrences} times)` : '';
             lines.push(`## ${SEVERITY_EMOJI[f.severity]} ${f.severity} · ${f.message}${times}`);
-            if (f.url)
-                lines.push(`\`${f.url}\``);
+            lines.push(...urlLines(f));
             if (f.selector)
                 lines.push(`Selector: \`${f.selector}\``);
             lines.push('');

@@ -1,5 +1,6 @@
 import {
   dedupeFindings,
+  describeScoring,
   diffFindings,
   loadBaselineFindings,
   withFingerprints,
@@ -115,6 +116,23 @@ export function isBenignNavigationAbort(failed: RequestFailureObservation): bool
     return false;
   }
   return false;
+}
+
+/** The message every router-initiated abort shares; `isPageWideFinding` groups on it. */
+export const BENIGN_ABORT_MESSAGE =
+  'Request aborted by the page itself: a prefetch or RSC fetch superseded by navigation.';
+
+/**
+ * Is this finding about the page rather than about one URL on it?
+ *
+ * A router that aborts superseded prefetches does so for every link it
+ * prefetches, so one App Router page produced eleven identical info findings
+ * that differed only in URL. They are one observation about how the page
+ * navigates; `dedupeFindings` merges them and lists the URLs. A genuine
+ * failure stays one finding per URL, because each may need its own fix.
+ */
+export function isPageWideFinding(finding: Finding): boolean {
+  return finding.category === 'network' && finding.severity === 'info' && finding.message === BENIGN_ABORT_MESSAGE;
 }
 
 export type ScanUrlArgs = {
@@ -254,14 +272,16 @@ export async function scanUrl(args: ScanUrlArgs) {
           });
           continue;
         }
+        // A benign abort is grouped with the others across URLs, so its repro
+        // names the behaviour rather than this one request.
         findings.push({
           severity: benign ? 'info' : 'medium',
           category: 'network',
-          message: benign
-            ? 'Request aborted by the page itself: a prefetch or RSC fetch superseded by navigation.'
-            : `Request failed: ${failed.failure ?? 'unknown error'}`,
+          message: benign ? BENIGN_ABORT_MESSAGE : `Request failed: ${failed.failure ?? 'unknown error'}`,
           url: safeUrlForDisplay(failed.url),
-          repro: `1. Open ${displayUrl}\n2. Open DevTools → Network\n3. Observe request to ${safeUrlForDisplay(failed.url)} fails: ${failed.failure ?? 'unknown error'}`,
+          repro: benign
+            ? `1. Open ${displayUrl}\n2. Open DevTools → Network\n3. Observe prefetch and RSC requests end with net::ERR_ABORTED when a navigation supersedes them`
+            : `1. Open ${displayUrl}\n2. Open DevTools → Network\n3. Observe request to ${safeUrlForDisplay(failed.url)} fails: ${failed.failure ?? 'unknown error'}`,
           suggestion: benign
             ? 'No action needed: routers abort superseded prefetch and RSC requests by design.'
             : 'Verify the asset or API route is reachable in the tested environment.',
@@ -558,7 +578,7 @@ export async function scanUrl(args: ScanUrlArgs) {
 
   // Deduplicate before scoring so a problem observed N times is penalised once,
   // then fingerprint so the survivors can be compared against another run.
-  const deduped = withFingerprints(dedupeFindings(findings));
+  const deduped = withFingerprints(dedupeFindings(findings, { acrossUrls: isPageWideFinding }));
   const redacted = redactSensitiveData(deduped) as Finding[];
 
   // Diff the redacted findings, not the raw ones: the baseline was written from
@@ -569,9 +589,11 @@ export async function scanUrl(args: ScanUrlArgs) {
     delta = diffFindings(redacted, await loadBaselineFindings(args.baseline));
   }
 
+  const score = scoreFromFindings(deduped);
   return {
     url: displayUrl,
-    score: scoreFromFindings(deduped),
+    score,
+    scoring: describeScoring(score),
     checks: Array.from(checks),
     findingCount: deduped.length,
     findings: redacted,

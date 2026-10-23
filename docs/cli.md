@@ -120,7 +120,16 @@
 - `9l scan <url>`: load the page once in Chromium and report console errors
   and failed requests, broken links, accessibility, the Core Web Vitals LCP
   and CLS (INP is not measured) with TTFB and FCP, SEO, security headers, cookies and
-  trackers, mixed content and page weight, with a 0–100 score. `--checks`
+  trackers, mixed content and page weight, with a 0–100 score. The score is
+  100 minus 35 points per critical, 20 per high, 10 per medium, 4 per low and
+  0 per info finding after deduplication, floored at 0; the grade is A from
+  90, B from 75, C from 60, D from 40 and F below. Ten medium findings alone
+  reach 0. The JSON result states this in `scoring` (scale, weights, grade
+  thresholds and grade) and the Markdown report prints it under the score. A
+  finding seen more than once carries `occurrences`; the page's own aborted
+  prefetch and RSC requests are one `info` finding per page listing up to five
+  distinct `urls`, with `omittedUrls` counting the rest, rather than one
+  finding per URL. Other failed requests stay one finding per URL. `--checks`
   selects checks by exact name (an unknown name is refused), `--format`
   is `markdown` (default), `json` or `issue` (one tracker-ready block per
   finding, filtered by `--min-severity`), and `--out` writes the report to a

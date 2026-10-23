@@ -20,6 +20,14 @@ export type Finding = {
   message: string;
   evidence?: unknown;
   url?: string;
+  /**
+   * Distinct URLs a grouped finding was observed on, in order of first sight
+   * and capped at `MAX_GROUPED_URLS`. Replaces `url` when one page-wide
+   * behaviour was seen on several URLs; see `dedupeFindings`.
+   */
+  urls?: string[];
+  /** Distinct URLs the cap left out of `urls`. Absent means none. */
+  omittedUrls?: number;
   selector?: string;
   suggestion?: string;
   /** Copy-paste, verifiable reproduction step (curl one-liner or DevTools steps). */
@@ -40,12 +48,53 @@ export const SEVERITY_RANK: Record<Severity, number> = {
 
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
 
+/** Points each finding costs the score, by severity. Charged once per deduplicated finding. */
+export const SEVERITY_WEIGHTS: Readonly<Record<Severity, number>> = {
+  critical: 35,
+  high: 20,
+  medium: 10,
+  low: 4,
+  info: 0,
+};
+
+/** The lowest score each grade starts at. A score below D is an F. */
+export const GRADE_THRESHOLDS: Readonly<Record<Grade, number>> = { A: 90, B: 75, C: 60, D: 40, F: 0 };
+
 export function gradeFromScore(score: number): Grade {
-  if (score >= 90) return 'A';
-  if (score >= 75) return 'B';
-  if (score >= 60) return 'C';
-  if (score >= 40) return 'D';
+  for (const grade of ['A', 'B', 'C', 'D'] as const) {
+    if (score >= GRADE_THRESHOLDS[grade]) return grade;
+  }
   return 'F';
+}
+
+export type Scoring = {
+  /** The score is `scale.max` minus the summed weights of the findings, never below `scale.min`. */
+  scale: { min: number; max: number };
+  weights: Record<Severity, number>;
+  /** The lowest score each grade starts at. */
+  grades: Record<Grade, number>;
+  grade: Grade;
+  /** The same rule in one sentence, for a reader who has only the JSON. */
+  formula: string;
+};
+
+/**
+ * Say how a score was reached, next to the number.
+ *
+ * A bare `score: 0` on a page with no critical or high finding read as a
+ * broken scan in a field report; it was ten medium accessibility findings at
+ * ten points each. The scale, the weights and the grade cut-offs appeared
+ * nowhere in the output, so checking the number meant finding this file. They
+ * travel with the result instead, and the Markdown report prints them.
+ */
+export function describeScoring(score: number): Scoring {
+  return {
+    scale: { min: 0, max: 100 },
+    weights: { ...SEVERITY_WEIGHTS },
+    grades: { ...GRADE_THRESHOLDS },
+    grade: gradeFromScore(score),
+    formula: '100 minus the weight of every finding after deduplication, floored at 0',
+  };
 }
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1366, height: 900 };
@@ -327,6 +376,20 @@ export async function writeTempFile(prefix: string, extension: string, content: 
   return file;
 }
 
+/** How many distinct URLs a grouped finding lists before counting the rest in `omittedUrls`. */
+export const MAX_GROUPED_URLS = 5;
+
+export type DedupeOptions = {
+  /**
+   * Findings that describe one page-wide behaviour rather than one URL. They
+   * merge across URLs: one finding per severity, category and message, with
+   * the distinct URLs in `urls` (capped at `MAX_GROUPED_URLS`, the remainder
+   * counted in `omittedUrls`), no `url`, and `occurrences` for every
+   * observation. Every other finding keeps its URL as part of its identity.
+   */
+  acrossUrls?: (finding: Finding) => boolean;
+};
+
 /**
  * Collapse repeated observations of the same problem into one finding.
  *
@@ -337,17 +400,45 @@ export async function writeTempFile(prefix: string, extension: string, content: 
  * message, URL, and selector describe one problem, so they become one finding
  * whose `occurrences` says how often it was seen. The first observation keeps
  * its evidence and repro; the count is the only thing repetition adds.
+ *
+ * A finding the caller marks as page-wide (`acrossUrls`) is one problem
+ * whatever URL it was seen on: a router aborting superseded prefetches does so
+ * for every link it prefetches, and eleven findings that differ only in URL
+ * say the same thing eleven times. Those merge on message alone and list
+ * their URLs instead of carrying one each.
  */
-export function dedupeFindings(findings: Finding[]): Finding[] {
+export function dedupeFindings(findings: Finding[], options: DedupeOptions = {}): Finding[] {
   const byKey = new Map<string, Finding>();
+  const urlsByKey = new Map<string, Set<string>>();
   for (const finding of findings) {
-    const key = JSON.stringify([finding.severity, finding.category, finding.message, finding.url, finding.selector]);
+    const grouped = options.acrossUrls?.(finding) === true;
+    const key = JSON.stringify([
+      finding.severity,
+      finding.category,
+      finding.message,
+      grouped ? null : finding.url,
+      finding.selector,
+      grouped,
+    ]);
     const existing = byKey.get(key);
     if (existing) {
       existing.occurrences = (existing.occurrences ?? 1) + 1;
     } else {
-      byKey.set(key, { ...finding });
+      const copy = { ...finding };
+      if (grouped) delete copy.url;
+      byKey.set(key, copy);
     }
+    if (grouped && finding.url) {
+      const urls = urlsByKey.get(key) ?? new Set<string>();
+      urls.add(finding.url);
+      urlsByKey.set(key, urls);
+    }
+  }
+  for (const [key, urls] of urlsByKey) {
+    const finding = byKey.get(key) as Finding;
+    const distinct = Array.from(urls);
+    finding.urls = distinct.slice(0, MAX_GROUPED_URLS);
+    if (distinct.length > MAX_GROUPED_URLS) finding.omittedUrls = distinct.length - MAX_GROUPED_URLS;
   }
   return Array.from(byKey.values());
 }
@@ -368,6 +459,10 @@ export function dedupeFindings(findings: Finding[]): Finding[] {
  * identity when that count moves. That is the conservative direction: it shows
  * up as one fixed and one new rather than silently reporting "unchanged" for a
  * finding whose text no longer matches.
+ *
+ * A finding grouped across URLs by `dedupeFindings` has no `url`, so its
+ * identity is its category and message: the same whichever prefetch the page
+ * happened to abort first, and whether it aborted three or eleven.
  */
 export function findingFingerprint(finding: Pick<Finding, 'category' | 'message' | 'url' | 'selector'>): string {
   const normalize = (value: string | undefined) => (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -420,14 +515,7 @@ export function diffFindings(current: Finding[], baseline: Finding[]): FindingDe
 }
 
 export function scoreFromFindings(findings: Finding[]): number {
-  const weights: Record<Severity, number> = {
-    critical: 35,
-    high: 20,
-    medium: 10,
-    low: 4,
-    info: 0,
-  };
-  const penalty = findings.reduce((sum, finding) => sum + weights[finding.severity], 0);
+  const penalty = findings.reduce((sum, finding) => sum + SEVERITY_WEIGHTS[finding.severity], 0);
   return Math.max(0, Math.min(100, 100 - penalty));
 }
 

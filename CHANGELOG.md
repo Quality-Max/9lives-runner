@@ -15,6 +15,19 @@ SDK versions.
 
 ### CLI
 
+- `9l scan --format json` adds `scoring` to the result: the 0–100 scale, the
+  points each severity costs (35 critical, 20 high, 10 medium, 4 low, 0 info),
+  the grade thresholds (A 90, B 75, C 60, D 40) and the grade. The Markdown
+  report prints the same rule under the score, and `docs/cli.md` and the
+  `scan_url` description state it, so a `score` of 0 on a page with ten
+  medium findings can be checked rather than guessed at.
+- `9l scan` reports the page's own aborted prefetch and RSC requests as one
+  `info` finding per page, with `occurrences` and up to five distinct `urls`
+  (`omittedUrls` counts the rest), instead of one finding per URL. Other
+  failed requests stay one finding per URL. The grouped finding has no `url`,
+  so its `id` no longer depends on which prefetch was aborted first; against a
+  baseline from an earlier release the per-URL findings show as fixed and the
+  grouped one as new, once.
 - `9l doctor` judges the SDK pair by the protocol and capabilities the
   installed `@9l/playwright` declares, the contract `run --sdk` checks in the
   handshake, instead of by version string. A different release that this CLI
