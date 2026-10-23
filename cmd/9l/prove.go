@@ -33,6 +33,10 @@ type proveSettings struct {
 	maxOutputBytes int
 	passEnv        []string
 	receiptDir     string
+	// config and projects select the Playwright config and projects for
+	// every run, as --config and --project do for 9l run.
+	config   string
+	projects []string
 }
 
 // proveUsageError is a planning failure the caller can fix by changing the
@@ -80,6 +84,9 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for run receipts and the proof report")
 	paths := fs.Bool("paths", false, "print request URLs (origin and path) for local use; never persisted")
 	faultList := fs.String("faults", strings.Join(prove.DefaultKinds, ","), "comma-separated fault kinds: "+strings.Join(prove.Kinds, ", "))
+	configFile := fs.String("config", "", "Playwright config file to run the spec with, instead of the one Playwright finds")
+	var projects projectNames
+	fs.Var(&projects, "project", "run only this Playwright project (repeatable)")
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	var skipPins skipPinList
@@ -90,6 +97,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		"-max-faults": true, "--max-faults": true, "-max-output-bytes": true, "--max-output-bytes": true,
 		"-receipt-dir": true, "--receipt-dir": true, "-pass-env": true, "--pass-env": true,
 		"-pin-skip": true, "--pin-skip": true, "-faults": true, "--faults": true,
+		"-config": true, "--config": true, "-project": true, "--project": true,
 	})
 	if err := fs.Parse(normalized); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -115,7 +123,16 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(errOut, "9l: --pin-skip: %v\n", err)
 		return 2
 	}
-	settings := proveSettings{spec: fs.Arg(0), adapter: adapter, workers: *workers, timeout: *timeout, maxOutputBytes: *maxOutputBytes, passEnv: passEnv, receiptDir: *receiptDir}
+	config := ""
+	if *configFile != "" {
+		absolute, err := filepath.Abs(*configFile)
+		if info, statErr := os.Stat(absolute); err != nil || statErr != nil || !info.Mode().IsRegular() {
+			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
+			return 2
+		}
+		config = absolute
+	}
+	settings := proveSettings{spec: fs.Arg(0), adapter: adapter, workers: *workers, timeout: *timeout, maxOutputBytes: *maxOutputBytes, passEnv: passEnv, receiptDir: *receiptDir, config: config, projects: projects}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -229,7 +246,7 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 func (settings proveSettings) run(ctx context.Context, fault *prove.Fault) (proveRun, error) {
 	var result proveRun
 	adapters := []runner.Adapter{settings.adapter}
-	plan, err := runner.BuildPlan([]string{settings.spec}, runner.PlanOptions{MaxJobs: 1, MaxParallel: settings.workers, MaxAttempts: 1, MaxOutputBytes: settings.maxOutputBytes, Adapters: adapters})
+	plan, err := runner.BuildPlan([]string{settings.spec}, runner.PlanOptions{MaxJobs: 1, MaxParallel: settings.workers, MaxAttempts: 1, MaxOutputBytes: settings.maxOutputBytes, Adapters: adapters, Config: settings.config, Projects: settings.projects})
 	if err != nil {
 		return result, proveUsageError{fmt.Errorf("plan: %w", err)}
 	}
