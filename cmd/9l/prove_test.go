@@ -513,8 +513,11 @@ func TestProveAppliesConfigAndProjectToEveryRun(t *testing.T) {
 func TestProveNamesOnlyTheMissingPackage(t *testing.T) {
 	project := proveProject(t)
 	spec := filepath.Join(project, "tests/shop.spec.ts")
-	if err := os.Remove(filepath.Join(project, "node_modules", ".bin", "playwright")); err != nil {
-		t.Fatal(err)
+	// The adapter resolves playwright.cmd on Windows; remove whichever exists.
+	for _, name := range []string{"playwright", "playwright.cmd"} {
+		if err := os.Remove(filepath.Join(project, "node_modules", ".bin", name)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
 	}
 	code, _, stderr := runProve(t, shopWorker(), spec, "--receipt-dir", t.TempDir())
 	if code != 2 || !strings.Contains(stderr, "@playwright/test is not installed in the project") || strings.Contains(stderr, "@9l/playwright is not installed") {
