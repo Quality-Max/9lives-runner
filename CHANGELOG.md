@@ -6,6 +6,8 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-23
+
 ### SDK
 
 - `package.json` declares the engine protocol, capabilities and prove fault
