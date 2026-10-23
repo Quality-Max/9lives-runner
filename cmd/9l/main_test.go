@@ -350,8 +350,12 @@ func TestPlanPassesRetriesThroughAndRefusesThemWithTargets(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := run([]string{"plan", "--retries", "11", spec}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "retries must be between 0 and 10") {
-		t.Fatalf("retries bound: code=%d stderr=%s", code, stderr.String())
+	for _, value := range []string{"11", "-1", "-2"} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := run([]string{"plan", "--retries=" + value, spec}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "retries must be between 0 and 10") {
+			t.Fatalf("retries %s: code=%d stderr=%s", value, code, stderr.String())
+		}
 	}
 }
 

@@ -748,10 +748,14 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if *grepInvert != "" {
 		extraArgs, selection = append(extraArgs, "--grep-invert="+*grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
 	}
+	// Only an omitted --retries keeps the project's setting; an explicit
+	// value, negative included, goes to the planner, which bounds it.
 	var playwrightRetries *int
-	if *retries >= 0 {
-		playwrightRetries = retries
-	}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "retries" {
+			playwrightRetries = retries
+		}
+	})
 	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects, Targets: targets, Retries: playwrightRetries})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
