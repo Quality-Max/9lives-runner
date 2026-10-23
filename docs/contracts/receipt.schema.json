@@ -400,6 +400,9 @@
       "format": "date-time",
       "type": "string"
     },
+    "flakyTests": {
+      "type": "integer"
+    },
     "goalFailed": {
       "type": "boolean"
     },

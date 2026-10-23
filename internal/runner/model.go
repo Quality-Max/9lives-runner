@@ -77,7 +77,11 @@ type Receipt struct {
 	FailureCount        int                   `json:"failureCount"`
 	ExecutedTests       int                   `json:"executedTests"`
 	SkippedTests        int                   `json:"skippedTests"`
-	VerifiedAssertions  int                   `json:"verifiedAssertions"`
+	// FlakyTests counts executed tests that failed and then passed on a
+	// Playwright retry inside this attempt. They count as passed, so this is
+	// what tells a clean pass from one that needed a second try.
+	FlakyTests         int `json:"flakyTests,omitempty"`
+	VerifiedAssertions int `json:"verifiedAssertions"`
 	// TargetAssertions counts successful SDK-instrumented target checks the
 	// worker reported. It is not independent verification or coverage.
 	TargetAssertions  int    `json:"targetAssertions,omitempty"`

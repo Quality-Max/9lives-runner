@@ -15,6 +15,14 @@ SDK versions.
 
 ### CLI
 
+- `9l run --retries <n>` passes Playwright's own per-test retries to every
+  job, replacing the project's setting, so `--retries 0 --attempts N` lets 9l
+  own all retries and their evidence. The `--attempts` help says that
+  Playwright's configured retries still apply inside each attempt. Receipts
+  record `flakyTests`, the tests that failed and then passed on a Playwright
+  retry inside the attempt, with or without `--sdk`, and `9l run` / `9l
+  result` print `N test(s) passed only on a Playwright retry inside this
+  attempt` under the job (additive).
 - With `--sdk`, receipts record `reportedAssertions`, the assertion steps the
   worker reported as passed in each executed test's last completed attempt,
   and `passedWithoutAssertions`, the tests that passed while reporting none.

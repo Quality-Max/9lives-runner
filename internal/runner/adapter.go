@@ -87,6 +87,9 @@ type Validation struct {
 	VerifiedAssertions  int
 	TargetAssertions    int
 	AssertionCoverage   string
+	// FlakyTests counts executed tests that failed and then passed on a
+	// Playwright retry inside this attempt; they count as passed.
+	FlakyTests int
 	// ReportedAssertions counts assertion steps the test worker reported as
 	// passed in each executed test's last completed attempt, and
 	// PassedWithoutAssertions the tests that passed while reporting none.

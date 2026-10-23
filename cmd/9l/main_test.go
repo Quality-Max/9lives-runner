@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -349,5 +351,53 @@ func TestPrintResultMarksAnExpectedFailureThatPassed(t *testing.T) {
 		"             Expected to fail, but passed.\n"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
+// --retries reaches every planned job as Playwright's own flag, so 0 with
+// --attempts gives Go the whole retry policy; target jobs already run without
+// retries and refuse it.
+func TestPlanPassesRetriesThroughAndRefusesThemWithTargets(t *testing.T) {
+	project := proveProject(t)
+	spec := filepath.Join(project, "tests/shop.spec.ts")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"plan", "--retries", "0", "--format", "json", spec}, &stdout, &stderr); code != 0 {
+		t.Fatalf("plan: code=%d stderr=%s", code, stderr.String())
+	}
+	var plan runner.Plan
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil || len(plan.Jobs) != 1 || !slices.Contains(plan.Jobs[0].Command, "--retries=0") {
+		t.Fatalf("plan lacks --retries=0: %s %v", stdout.String(), err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"plan", "--format", "json", spec}, &stdout, &stderr); code != 0 || strings.Contains(stdout.String(), "--retries") {
+		t.Fatalf("unset --retries must leave the project's setting: code=%d %s", code, stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"plan", "--sdk", "--target", "web:shop", "--retries", "1", spec}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "cannot be combined with --retries") {
+		t.Fatalf("targets with retries: code=%d stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	for _, value := range []string{"11", "-1", "-2"} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := run([]string{"plan", "--retries=" + value, spec}, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "retries must be between 0 and 10") {
+			t.Fatalf("retries %s: code=%d stderr=%s", value, code, stderr.String())
+		}
+	}
+}
+
+// A job whose tests passed only on a Playwright retry says so, so a flaky
+// pass is not read as a clean one.
+func TestPrintResultFlagsFlakyPasses(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomePassed, Complete: true, Passed: 2, Receipts: []runner.Receipt{
+		{Status: runner.StatusPassed, Spec: "tests/flaky.spec.ts", ExecutedTests: 2, FlakyTests: 1},
+		{Status: runner.StatusPassed, Spec: "tests/clean.spec.ts", ExecutedTests: 2},
+	}})
+	if !strings.Contains(out.String(), "  PASSED   tests/flaky.spec.ts\n           1 test(s) passed only on a Playwright retry inside this attempt\n") || strings.Count(out.String(), "Playwright retry") != 1 {
+		t.Fatalf("unexpected output:\n%s", out.String())
 	}
 }

@@ -35,6 +35,16 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Retries: `--attempts <n>` is 9l's own retry of the whole job, with a receipt
+  per attempt. The project's Playwright `retries` still apply inside each
+  attempt, so a failing test can run several times within one receipt.
+  `--retries <n>` (0–10) replaces that setting for every job; `--retries 0
+  --attempts 2` gives Go the whole retry policy and its evidence. Either way
+  the receipt records `flakyTests`, the tests that failed and then passed on
+  a Playwright retry inside the attempt, and `9l run` / `9l result` print
+  `N test(s) passed only on a Playwright retry inside this attempt` under the
+  job, so a flaky pass is not read as a clean one. Target jobs (`--target`)
+  already run without retries and refuse `--retries`.
 - Config and projects: `--config <file>` runs the specs with that Playwright
   config instead of the one Playwright finds (with `--sdk` it replaces the
   detected config), and `--project <name>` (repeatable, up to 16) runs only

@@ -554,7 +554,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	workers := fs.Int("workers", min(runtime.GOMAXPROCS(0), 8), "maximum concurrent jobs")
 	timeout := fs.Duration("timeout", 5*time.Minute, "per-job timeout")
 	deadline := fs.Duration("deadline", 0, "shared run deadline (0 is unlimited)")
-	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job")
+	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job: 9l's own retry of the whole job; the project's Playwright retries still apply inside each attempt unless --retries overrides them")
+	retries := fs.Int("retries", -1, "Playwright retries per test inside each attempt, replacing the project's setting; 0 with --attempts lets 9l own all retries (default: the project's setting)")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
@@ -599,7 +600,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-workers": true, "--workers": true,
 		"-timeout": true, "--timeout": true,
 		"-deadline": true, "--deadline": true,
-		"-attempts": true, "--attempts": true,
+		"-attempts": true, "--attempts": true, "-retries": true, "--retries": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
 		"-receipt-dir": true, "--receipt-dir": true,
 		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
@@ -747,7 +748,15 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if *grepInvert != "" {
 		extraArgs, selection = append(extraArgs, "--grep-invert="+*grepInvert), append(selection, "--grep-invert "+strconv.Quote(*grepInvert))
 	}
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects, Targets: targets})
+	// Only an omitted --retries keeps the project's setting; an explicit
+	// value, negative included, goes to the planner, which bounds it.
+	var playwrightRetries *int
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "retries" {
+			playwrightRetries = retries
+		}
+	})
+	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects, Targets: targets, Retries: playwrightRetries})
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
@@ -948,6 +957,9 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			}
 		}
 		printAnnotations(w, receipt.Annotations)
+		if receipt.FlakyTests > 0 {
+			fmt.Fprintf(w, "           %d test(s) passed only on a Playwright retry inside this attempt\n", receipt.FlakyTests)
+		}
 		// Only when the failures are known: an engine run without
 		// --failure-details lists none, so nothing can be said about them.
 		// The count is of the files the receipt references; inline bodies and

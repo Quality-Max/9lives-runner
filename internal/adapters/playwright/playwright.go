@@ -433,6 +433,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		return runner.Validation{}, fmt.Errorf("%s", unsupported)
 	}
 	if flaky > 0 {
+		validation.FlakyTests = flaky
 		validation.Description += fmt.Sprintf("; %d flaky test(s) passed on retry", flaky)
 	}
 	if unexpectedPasses > 0 {

@@ -246,6 +246,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			} else {
 				validation.ExecutedTests++
 				validation.TargetAssertions += state.assertions
+				if frame.Outcome == "flaky" {
+					validation.FlakyTests++
+				}
 				// Worker-reported, from the last completed attempt: a signal
 				// that a passed test asserted nothing, never verified coverage.
 				validation.ReportedAssertions += state.reportedFinal
@@ -278,6 +281,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if validation.SkippedTests != 0 {
 				validation.Description += fmt.Sprintf("; %d pinned skip(s)", validation.SkippedTests)
+			}
+			if validation.FlakyTests != 0 {
+				validation.Description += fmt.Sprintf("; %d flaky test(s) passed on retry", validation.FlakyTests)
 			}
 			validation.Description += fmt.Sprintf("; %d worker-reported assertion step(s)", validation.ReportedAssertions)
 			if validation.PassedWithoutAssertions != 0 {
