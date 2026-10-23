@@ -85,18 +85,22 @@ function diagnose(args, root = process.cwd()) {
     }
     else {
         const pair = `@9l/playwright ${sdk.version}; CLI ${args.cliVersion}.`;
-        if (sdk.version === args.cliVersion) {
+        const declared = sdk.engine && args.engine ? { sdk: sdk.engine, cli: args.engine } : undefined;
+        const admitted = declared && declared.sdk.protocol === declared.cli.protocol && declared.sdk.capabilities.join(',') === declared.cli.capabilities.join(',');
+        if (declared && !admitted) {
+            // A declared mismatch is decisive whatever the versions say: a linked or
+            // locally rebuilt SDK can keep a release's version with another contract.
+            checks.push({ name: 'sdk', status: args.sdk ? 'missing' : 'warning', message: `${pair} Incompatible: the SDK declares protocol ${declared.sdk.protocol} with ${declared.sdk.capabilities.length} capabilities; this CLI admits ${declared.cli.protocol} with ${declared.cli.capabilities.length}. run --sdk, prove and confirm reject this pair.`, ...align });
+        }
+        else if (sdk.version === args.cliVersion) {
             checks.push({ name: 'sdk', status: 'ok', message: `${pair} Matching releases are qualified together.` });
         }
-        else if (!sdk.engine || !args.engine) {
+        else if (!declared) {
             checks.push({ name: 'sdk', status: 'warning', message: `${pair} The SDK does not declare its engine protocol, so admission is only known at run time; matching releases are qualified together.`, ...align });
         }
-        else if (sdk.engine.protocol === args.engine.protocol && sdk.engine.capabilities.join(',') === args.engine.capabilities.join(',')) {
-            // The same handshake run --sdk accepts, so the pair runs; it is not the qualified one.
-            checks.push({ name: 'sdk', status: 'warning', message: `${pair} Admitted: protocol ${sdk.engine.protocol} and capabilities match, so run --sdk, prove and confirm accept this SDK. Unqualified: matching releases are qualified together.`, ...align });
-        }
         else {
-            checks.push({ name: 'sdk', status: args.sdk ? 'missing' : 'warning', message: `${pair} Incompatible: the SDK declares protocol ${sdk.engine.protocol} with ${sdk.engine.capabilities.length} capabilities; this CLI admits ${args.engine.protocol} with ${args.engine.capabilities.length}. run --sdk, prove and confirm reject this pair.`, ...align });
+            // The same handshake run --sdk accepts, so the pair runs; it is not the qualified one.
+            checks.push({ name: 'sdk', status: 'warning', message: `${pair} Admitted: protocol ${declared.sdk.protocol} and capabilities match, so run --sdk, prove and confirm accept this SDK. Unqualified: matching releases are qualified together.`, ...align });
         }
         if (args.sdk && args.engine) {
             // prove refuses --faults kinds the SDK cannot apply; say which up front.

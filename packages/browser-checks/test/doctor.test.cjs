@@ -76,6 +76,12 @@ test('a Node release above the minimum is supported and never told to downgrade'
 test('the SDK pair is judged by its declared protocol and capabilities, not by version string', () => {
   // The same release: qualified.
   assert.equal(sdkChecks({ version: '0.4.9', '9l': engine }).sdk.status, 'ok');
+  // Unless it declares a contract this CLI rejects: a linked or rebuilt SDK keeps the version.
+  const rebuilt = { version: '0.4.9', '9l': { ...engine, protocol: '9l.engine/2' } };
+  assert.equal(sdkChecks(rebuilt, { sdk: true }).sdk.status, 'missing');
+  assert.match(sdkChecks(rebuilt, { sdk: true }).sdk.message, /Incompatible/);
+  assert.equal(sdkChecks(rebuilt).sdk.status, 'warning');
+  assert.equal(sdkChecks({ version: '0.4.9', '9l': { ...engine, capabilities: ['steps'] } }, { sdk: true }).sdk.status, 'missing');
   // An older release that declares the protocol this CLI admits runs, but is not the qualified pair.
   const admitted = sdkChecks({ version: '0.4.6', '9l': { ...engine, faults: ['abort', 'http-500', 'empty-json'] } }, { sdk: true });
   assert.equal(admitted.sdk.status, 'warning');
