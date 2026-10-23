@@ -475,6 +475,9 @@
           },
           "type": "array"
         },
+        "class": {
+          "type": "string"
+        },
         "expectedStatus": {
           "type": "string"
         },

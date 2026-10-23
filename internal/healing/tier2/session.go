@@ -63,12 +63,17 @@ type Session struct {
 	OriginalHash  string    `json:"originalHash"`
 	CandidateHash string    `json:"candidateHash,omitempty"`
 	Original      RunResult `json:"original"`
-	Tier1         RunResult `json:"tier1"`
-	Verified      RunResult `json:"verified"`
-	State         string    `json:"state"`
-	Applied       bool      `json:"applied"`
-	SavedPath     string    `json:"savedPath,omitempty"`
-	Reason        string    `json:"reason,omitempty"`
+	// Tier1 is the Tier 1 candidate's verification run and Verified the last
+	// Tier 2 candidate's, or the run that verified the candidate. Each is
+	// null when the session ended before that stage ran, so a session that
+	// stopped at the original run (it passed, ran zero tests or failed an
+	// assertion) does not read as a failed verification.
+	Tier1     *RunResult `json:"tier1"`
+	Verified  *RunResult `json:"verified"`
+	State     string     `json:"state"`
+	Applied   bool       `json:"applied"`
+	SavedPath string     `json:"savedPath,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
 	// Provider is the Tier 2 provider's name ("" when healing was offline) and
 	// ProviderCalls how many proposals it was asked for.
 	Provider      string `json:"provider,omitempty"`
@@ -131,10 +136,10 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 		if editable && SafeCandidate(string(original), preserveNewlines(string(original), proposal), selector, opts.Framework) == nil {
 			proposal = preserveNewlines(string(original), proposal)
 			if verified := verify(ctx, opts, original, proposal, "tier1"); verified.Passed && verified.ExecutedTests == result.Original.ExecutedTests {
-				result.Tier1 = verified
+				result.Tier1 = &verified
 				return finish(ctx, opts, original, proposal, verified, result)
 			} else {
-				result.Tier1 = verified
+				result.Tier1 = &verified
 				if ctx.Err() != nil {
 					result.State = "canceled"
 					return result, ctx.Err()
@@ -218,7 +223,7 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 		if verified.Passed && verified.ExecutedTests == result.Original.ExecutedTests {
 			return finish(ctx, opts, original, candidate, verified, result)
 		}
-		result.Verified = verified
+		result.Verified = &verified
 		latestSource, latestFailure, latestSnapshot = candidate, verified.Failure, verified.Snapshot
 		if ctx.Err() != nil {
 			result.State = "canceled"
@@ -306,7 +311,7 @@ func verify(ctx context.Context, opts SessionOptions, original []byte, candidate
 	return opts.Run(ctx, copyPath, label)
 }
 func finish(ctx context.Context, opts SessionOptions, original []byte, candidate string, verified RunResult, result Session) (Session, error) {
-	result.Verified = verified
+	result.Verified = &verified
 	result.CandidateHash = hash([]byte(candidate))
 	result.State = "verified"
 	if opts.Preview != nil && !opts.Apply {

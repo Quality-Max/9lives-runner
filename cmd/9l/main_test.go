@@ -164,17 +164,19 @@ func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
 		Status: runner.StatusFailed, Spec: "tests/login.spec.ts", FailureCount: 1,
 		Failures: []runner.TestFailure{{
-			Title: "login › renamed button", Location: "tests/login.spec.ts:9",
+			Title: "login › renamed button", Location: "tests/login.spec.ts:9", Class: runner.FailureActionTimeout,
 			Message:     "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Login' })\n  - second\n  - third",
 			Attachments: []runner.TestAttachment{{Name: "error-context", Path: errorContext}},
-		}},
+		}, {Title: "login › other", Class: runner.FailureOther, Message: "Error: boom"}},
 	}}})
 	want := "  FAILED   tests/login.spec.ts\n" +
-		"           ✗ login › renamed button  tests/login.spec.ts:9\n" +
+		"           ✗ login › renamed button  tests/login.spec.ts:9  [action-timeout]\n" +
 		"             TimeoutError: locator.click: Timeout 1500ms exceeded.\n" +
 		"             - waiting for getByRole('button', { name: 'Login' })\n" +
 		"             - second\n" +
 		"             context: " + displayPath(errorContext) + "\n" +
+		"           ✗ login › other\n" +
+		"             Error: boom\n" +
 		"  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.\n"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("text summary:\n%s", out.String())

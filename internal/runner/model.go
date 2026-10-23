@@ -117,10 +117,28 @@ type TestFailure struct {
 	// test and the status of its last completed attempt. A failure with
 	// expectedStatus "failed" and status "passed" is a test.fail() pin whose
 	// expectation no longer holds, not a broken test.
-	ExpectedStatus string           `json:"expectedStatus,omitempty"`
-	Status         string           `json:"status,omitempty"`
-	Attachments    []TestAttachment `json:"attachments,omitempty"`
+	ExpectedStatus string `json:"expectedStatus,omitempty"`
+	Status         string `json:"status,omitempty"`
+	// Class says what kind of failure the framework reported, from its
+	// structured status and its own error prefixes, never from message
+	// prose: "assertion" (an expect failed), "timeout" (the test's time
+	// budget ran out), "action-timeout" (one action or navigation timed
+	// out), "environment" (the browser could not reach the target: a
+	// connection, name-resolution or certificate error on navigation),
+	// "unexpected-pass", or "other" when the error carries no such mark.
+	Class       string           `json:"class,omitempty"`
+	Attachments []TestAttachment `json:"attachments,omitempty"`
 }
+
+// Failure classes; see TestFailure.Class.
+const (
+	FailureAssertion      = "assertion"
+	FailureTimeout        = "timeout"
+	FailureActionTimeout  = "action-timeout"
+	FailureEnvironment    = "environment"
+	FailureUnexpectedPass = "unexpected-pass"
+	FailureOther          = "other"
+)
 
 // UnexpectedPass reports a test listed as failed because it passed while
 // the framework expected it to fail.
