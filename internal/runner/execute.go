@@ -476,6 +476,8 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.TargetAssertions = validation.TargetAssertions
 				receipt.AssertionCoverage = validation.AssertionCoverage
+				receipt.ReportedAssertions = validation.ReportedAssertions
+				receipt.PassedWithoutAssertions = validation.PassedWithoutAssertions
 				receipt.Validation = validation.Description
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
@@ -616,6 +618,9 @@ func validateValidation(validation Validation) error {
 	}
 	if validation.TargetAssertions < 0 {
 		return errors.New("structured report has negative target assertions")
+	}
+	if validation.ReportedAssertions < 0 || validation.PassedWithoutAssertions < 0 || validation.PassedWithoutAssertions > validation.ExecutedTests {
+		return errors.New("structured report has inconsistent reported assertion counts")
 	}
 	return nil
 }

@@ -31,7 +31,7 @@ different release that declares the protocol and capabilities this CLI admits
 is *admitted but unqualified*: a warning, with the install command for the
 matching release as the next step. A different protocol or capability set is
 incompatible: `run --sdk`, `prove` and `confirm` reject it, so under `--sdk`
-it is a missing prerequisite. An SDK released before 0.4.10 declares nothing,
+it is a missing prerequisite. An SDK released before 0.5.0 declares nothing,
 and its admission is only known at run time. Under `--sdk`, `sdk/faults`
 lists the prove fault kinds the SDK applies and any this CLI can request that
 it does not.

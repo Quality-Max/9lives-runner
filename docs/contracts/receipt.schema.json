@@ -409,8 +409,14 @@
     "nonGoalFailureCount": {
       "type": "integer"
     },
+    "passedWithoutAssertions": {
+      "type": "integer"
+    },
     "receiptPath": {
       "type": "string"
+    },
+    "reportedAssertions": {
+      "type": "integer"
     },
     "runId": {
       "type": "string"

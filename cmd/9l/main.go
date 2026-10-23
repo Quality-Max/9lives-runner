@@ -948,6 +948,9 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			}
 		}
 		printAnnotations(w, receipt.Annotations)
+		if receipt.PassedWithoutAssertions > 0 {
+			fmt.Fprintf(w, "           %d passed test(s) reported no assertion step; a green test that asserts nothing proves nothing\n", receipt.PassedWithoutAssertions)
+		}
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}

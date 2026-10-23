@@ -82,7 +82,14 @@ type Receipt struct {
 	// worker reported. It is not independent verification or coverage.
 	TargetAssertions  int    `json:"targetAssertions,omitempty"`
 	AssertionCoverage string `json:"assertionCoverage"`
-	Error             string `json:"error,omitempty"`
+	// ReportedAssertions counts the assertion steps the test worker reported
+	// as passed in each executed test's last completed attempt, and
+	// PassedWithoutAssertions the tests that passed while reporting none.
+	// They say whether a green test asserted anything; they are the worker's
+	// report, not verified coverage, so assertionCoverage stays unknown.
+	ReportedAssertions      int    `json:"reportedAssertions,omitempty"`
+	PassedWithoutAssertions int    `json:"passedWithoutAssertions,omitempty"`
+	Error                   string `json:"error,omitempty"`
 	// Failures describes each failed test, from the validated structured
 	// report, when the adapter can attribute them. Messages are bounded and
 	// redacted; attachments are referenced and copied only on request.

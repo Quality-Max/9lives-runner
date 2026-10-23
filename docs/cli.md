@@ -59,6 +59,14 @@
   which stay in the receipt only. A passed job with such a note may not have
   exercised everything its tests can check. With `--sdk`, annotations need
   `--failure-details`, because the engine protocol carries no titles.
+- Assertion steps: with `--sdk`, the receipt records `reportedAssertions`,
+  the assertion steps the worker reported as passed in each executed test's
+  last completed attempt, and `passedWithoutAssertions`, the tests that passed
+  while reporting none. `9l run` and `9l result` print `N passed test(s)
+  reported no assertion step` under such a job. These are the worker's
+  report, not verified coverage: `assertionCoverage` stays `unknown`. Without
+  `--sdk`, Playwright's JSON reporter carries only `test.step` steps, so the
+  counts are absent. See [sdk-bridge.md](sdk-bridge.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`

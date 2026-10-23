@@ -308,6 +308,19 @@ func TestPrintResultShowsTestAnnotationsButNotBuiltinPins(t *testing.T) {
 	}
 }
 
+// A passed job whose tests reported no assertion step says so in the text
+// output; a job whose tests all asserted something adds nothing.
+func TestPrintResultFlagsPassedTestsWithoutAssertionSteps(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomePassed, Complete: true, Passed: 2, Receipts: []runner.Receipt{
+		{Status: runner.StatusPassed, Spec: "tests/api.spec.ts", ExecutedTests: 3, ReportedAssertions: 4, PassedWithoutAssertions: 1},
+		{Status: runner.StatusPassed, Spec: "tests/shop.spec.ts", ExecutedTests: 1, ReportedAssertions: 2},
+	}})
+	if !strings.Contains(out.String(), "  PASSED   tests/api.spec.ts\n           1 passed test(s) reported no assertion step") || strings.Count(out.String(), "reported no assertion step") != 1 {
+		t.Fatalf("unexpected output:\n%s", out.String())
+	}
+}
+
 func TestPrintResultMarksAnExpectedFailureThatPassed(t *testing.T) {
 	var out bytes.Buffer
 	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{

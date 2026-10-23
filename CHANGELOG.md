@@ -15,6 +15,15 @@ SDK versions.
 
 ### CLI
 
+- With `--sdk`, receipts record `reportedAssertions`, the assertion steps the
+  worker reported as passed in each executed test's last completed attempt,
+  and `passedWithoutAssertions`, the tests that passed while reporting none.
+  `9l run` and `9l result` print `N passed test(s) reported no assertion
+  step` under such a job, so a green test that asserted nothing is visible.
+  These are the worker's report, not verified coverage; `assertionCoverage`
+  stays `unknown`. Without `--sdk` the counts are absent, because Playwright's
+  JSON reporter serializes only `test.step` steps. Receipt, run-result and
+  run-status contracts gain the two optional fields (additive).
 - `9l doctor` judges the SDK pair by the protocol and capabilities the
   installed `@9l/playwright` declares, the contract `run --sdk` checks in the
   handshake, instead of by version string. A different release that this CLI
