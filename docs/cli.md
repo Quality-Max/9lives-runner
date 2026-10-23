@@ -84,7 +84,12 @@
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
   directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
-  128 MiB per attempt; only regular files inside the project). With `--sdk`
+  128 MiB per attempt; only regular files inside the project). The receipt
+  records the request as `keepAttachments`, how many attachments the listed
+  failures carried as `failureAttachments` and how many were copied as
+  `retainedAttachments`; when retention was requested and the failed tests
+  produced none, such as a `test.fail()` pin that passed, `9l run` and
+  `9l result` say so under the job. With `--sdk`
   the engine protocol carries no titles or errors by design, so failures are
   reported only with `--failure-details`: Playwright's JSON reporter then
   writes a separate private report beside the evidence stream, which explains

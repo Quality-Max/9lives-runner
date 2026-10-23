@@ -94,6 +94,14 @@ type Receipt struct {
 	// report, when the adapter can attribute them. Messages are bounded and
 	// redacted; attachments are referenced and copied only on request.
 	Failures []TestFailure `json:"failures,omitempty"`
+	// KeepAttachments records that retention was requested. FailureAttachments
+	// counts the attachments the reported failures carried and
+	// RetainedAttachments those copied into the receipt directory, so a
+	// request that found nothing to copy is distinguishable from one that
+	// was never made.
+	KeepAttachments     bool `json:"keepAttachments,omitempty"`
+	FailureAttachments  int  `json:"failureAttachments,omitempty"`
+	RetainedAttachments int  `json:"retainedAttachments,omitempty"`
 	// Annotations are the tests' own annotations from the validated report,
 	// such as a test recording why it returned early. A passed receipt with
 	// annotations may not have exercised everything its tests can check.

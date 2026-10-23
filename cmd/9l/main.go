@@ -948,6 +948,11 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			}
 		}
 		printAnnotations(w, receipt.Annotations)
+		// Only when the failures are known: an engine run without
+		// --failure-details lists none, so nothing can be said about them.
+		if receipt.KeepAttachments && len(receipt.Failures) > 0 && receipt.FailureAttachments == 0 {
+			fmt.Fprintln(w, "           --keep-attachments: the failed test(s) produced no attachments")
+		}
 		if receipt.PassedWithoutAssertions > 0 {
 			fmt.Fprintf(w, "           %d passed test(s) reported no assertion step; a green test that asserts nothing proves nothing\n", receipt.PassedWithoutAssertions)
 		}

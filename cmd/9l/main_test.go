@@ -308,6 +308,21 @@ func TestPrintResultShowsTestAnnotationsButNotBuiltinPins(t *testing.T) {
 	}
 }
 
+// --keep-attachments that found nothing to copy says so; without the flag,
+// or when the failures are not listed, nothing is claimed.
+func TestPrintResultSaysWhenKeepAttachmentsFoundNothing(t *testing.T) {
+	line := "           --keep-attachments: the failed test(s) produced no attachments\n"
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{
+		{Status: runner.StatusFailed, Spec: "tests/pin.spec.ts", FailureCount: 1, KeepAttachments: true, Failures: []runner.TestFailure{{Title: "pinned", ExpectedStatus: "failed", Status: "passed"}}},
+		{Status: runner.StatusFailed, Spec: "tests/engine.spec.ts", FailureCount: 1, KeepAttachments: true},
+		{Status: runner.StatusFailed, Spec: "tests/plain.spec.ts", FailureCount: 1, Failures: []runner.TestFailure{{Title: "plain"}}},
+	}})
+	if strings.Count(out.String(), line) != 1 || !strings.Contains(out.String(), "tests/pin.spec.ts\n           ⚠") {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
 // A passed job whose tests reported no assertion step says so in the text
 // output; a job whose tests all asserted something adds nothing.
 func TestPrintResultFlagsPassedTestsWithoutAssertionSteps(t *testing.T) {
