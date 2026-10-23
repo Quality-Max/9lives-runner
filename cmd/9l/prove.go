@@ -126,7 +126,11 @@ func proveCommand(args []string, out, errOut io.Writer) int {
 	config := ""
 	if *configFile != "" {
 		absolute, err := filepath.Abs(*configFile)
-		if info, statErr := os.Stat(absolute); err != nil || statErr != nil || !info.Mode().IsRegular() {
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
+			return 2
+		}
+		if info, err := os.Stat(absolute); err != nil || !info.Mode().IsRegular() {
 			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
 			return 2
 		}
