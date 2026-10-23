@@ -1,10 +1,20 @@
-import { type Finding, type FindingDelta, ROLES_REQUIRING_A_NAME, type Severity, SEVERITY_RANK, gradeFromScore } from './common';
+import {
+  type Finding,
+  type FindingDelta,
+  ROLES_REQUIRING_A_NAME,
+  type Scoring,
+  type Severity,
+  SEVERITY_RANK,
+  describeScoring,
+} from './common';
 import { formatBytes } from './checks/signals';
 import type { ScanMetrics } from './scan-url';
 
 export type ScanResult = {
   url: string;
   score: number;
+  /** How `score` was reached. Optional so a result written before it existed still renders. */
+  scoring?: Scoring;
   checks: string[];
   findingCount: number;
   findings: Finding[];
@@ -49,6 +59,24 @@ function meter(value: number, max: number, width: number): string {
   if (max <= 0) return '░'.repeat(width);
   const filled = Math.max(0, Math.min(width, Math.round((value / max) * width)));
   return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
+/** The score rule in one line, so the number above it can be checked by hand. */
+function scoringLine(scoring: Scoring): string {
+  const weights = (['critical', 'high', 'medium', 'low', 'info'] as const)
+    .map((severity) => `${scoring.weights[severity]} per ${severity}`)
+    .join(', ');
+  const grades = (['A', 'B', 'C', 'D'] as const).map((grade) => `${grade} ≥ ${scoring.grades[grade]}`).join(', ');
+  return `Score: ${scoring.scale.max} minus ${weights} finding, floored at ${scoring.scale.min}. Grades: ${grades}, else F.`;
+}
+
+/** A finding's URL lines: the one URL it has, or the list a grouped finding carries. */
+function urlLines(finding: Finding): string[] {
+  if (finding.url) return [`\`${finding.url}\``];
+  if (!finding.urls?.length) return [];
+  const lines = finding.urls.map((url) => `- \`${url}\``);
+  if (finding.omittedUrls) lines.push(`- …and ${finding.omittedUrls} more`);
+  return lines;
 }
 
 function host(url: string): string {
@@ -166,7 +194,13 @@ export function renderIssues(
   const blocks = selected.map((finding, index) => {
     // Where the problem is: a selector when the finding has one, the URL when it
     // does not, and nothing rather than a guess when it has neither.
-    const locus = finding.selector ? `\`${finding.selector}\`` : finding.url ? finding.url : undefined;
+    const locus = finding.selector
+      ? `\`${finding.selector}\``
+      : finding.url
+        ? finding.url
+        : finding.urls?.length
+          ? finding.urls.join(', ') + (finding.omittedUrls ? ` and ${finding.omittedUrls} more` : '')
+          : undefined;
     const lines: string[] = [];
 
     lines.push(`<!-- issue ${index + 1} of ${selected.length} · ${finding.severity} · ${finding.category} -->`);
@@ -209,7 +243,8 @@ export function renderIssues(
 
 /** Render a scan result as a shareable Markdown report. */
 export function renderReport(result: ScanResult, opts: { now?: Date } = {}): string {
-  const grade = gradeFromScore(result.score);
+  const scoring = result.scoring ?? describeScoring(result.score);
+  const grade = scoring.grade;
   const ranThese = new Set(result.checks);
   const date = (opts.now ?? new Date()).toISOString().slice(0, 10);
 
@@ -222,6 +257,8 @@ export function renderReport(result: ScanResult, opts: { now?: Date } = {}): str
   );
   lines.push('');
   lines.push(`\`${meter(result.score, 100, 24)}\` ${result.score} / 100`);
+  lines.push('');
+  lines.push(`_${scoringLine(scoring)}_`);
   lines.push('');
 
   // The verdict goes above the tables: when a baseline was supplied, "did this
@@ -276,7 +313,7 @@ export function renderReport(result: ScanResult, opts: { now?: Date } = {}): str
       lines.push('');
       const times = f.occurrences && f.occurrences > 1 ? ` (seen ${f.occurrences} times)` : '';
       lines.push(`## ${SEVERITY_EMOJI[f.severity]} ${f.severity} · ${f.message}${times}`);
-      if (f.url) lines.push(`\`${f.url}\``);
+      lines.push(...urlLines(f));
       if (f.selector) lines.push(`Selector: \`${f.selector}\``);
       lines.push('');
       if (f.repro) {

@@ -10,8 +10,20 @@ const { identifyTracker, isThirdParty, registrableDomain } = require('../dist/ch
 const { describeTelemetryFailure, identifyTelemetryRequest, isPlaceholderCredential } = require('../dist/checks/telemetry.js');
 const { renderIssues, renderReport } = require('../dist/report.js');
 const { emptySnapshotWarnings, summarizeTestability } = require('../dist/inspect-page.js');
-const { SUPPORTED_CHECKS, checkSecurityHeaders, isBenignNavigationAbort, resolveChecks } = require('../dist/scan-url.js');
-const { dedupeFindings, diffFindings, findingFingerprint, loadBaselineFindings, scoreFromFindings, withFingerprints } = require('../dist/common.js');
+const { BENIGN_ABORT_MESSAGE, SUPPORTED_CHECKS, checkSecurityHeaders, isBenignNavigationAbort, isPageWideFinding, resolveChecks } = require('../dist/scan-url.js');
+const {
+  GRADE_THRESHOLDS,
+  MAX_GROUPED_URLS,
+  SEVERITY_WEIGHTS,
+  dedupeFindings,
+  describeScoring,
+  diffFindings,
+  findingFingerprint,
+  gradeFromScore,
+  loadBaselineFindings,
+  scoreFromFindings,
+  withFingerprints,
+} = require('../dist/common.js');
 
 const messages = (findings) => findings.map((finding) => finding.message);
 const bySeverity = (findings, severity) => findings.filter((finding) => finding.severity === severity);
@@ -509,6 +521,140 @@ test('findings that differ in any identity field stay separate', () => {
   // A finding seen once carries no count, and the input is never mutated.
   assert.equal(deduped[0].occurrences, undefined);
   assert.equal(alt.occurrences, undefined);
+});
+
+test('the result explains its score with the weights and grade thresholds it used', () => {
+  // The field report: no critical or high finding, score 0. Ten medium
+  // findings at ten points each is exactly that, and the scoring object has
+  // to let a reader verify it from the JSON alone.
+  const tenMedium = Array.from({ length: 10 }, (_, i) => ({
+    severity: 'medium',
+    category: 'accessibility',
+    message: 'Image is missing alt text.',
+    selector: `img:nth-of-type(${i + 1})`,
+  }));
+  const score = scoreFromFindings(tenMedium);
+  assert.equal(score, 0);
+
+  const scoring = describeScoring(score);
+  assert.deepEqual(scoring.scale, { min: 0, max: 100 });
+  assert.deepEqual(scoring.weights, { critical: 35, high: 20, medium: 10, low: 4, info: 0 });
+  assert.deepEqual(scoring.grades, { A: 90, B: 75, C: 60, D: 40, F: 0 });
+  assert.equal(scoring.grade, 'F');
+  assert.match(scoring.formula, /100 minus/);
+
+  // The published weights are the ones the score is computed from.
+  const oneOfEach = ['critical', 'high', 'medium', 'low', 'info'].map((severity) => ({ severity, category: 'x', message: severity }));
+  const expected = 100 - Object.values(SEVERITY_WEIGHTS).reduce((sum, weight) => sum + weight, 0);
+  assert.equal(scoreFromFindings(oneOfEach), expected);
+  assert.equal(expected, 31);
+
+  // Grade boundaries are inclusive at the published thresholds.
+  for (const [grade, floor] of Object.entries(GRADE_THRESHOLDS)) {
+    assert.equal(gradeFromScore(floor), grade);
+    if (grade !== 'F') assert.notEqual(gradeFromScore(floor - 1), grade);
+  }
+  assert.equal(describeScoring(100).grade, 'A');
+  assert.equal(describeScoring(39).grade, 'F');
+});
+
+test('benign aborts on different URLs are one finding that lists them', () => {
+  // Eleven "Request aborted by the page itself" lines, each for another
+  // prefetched route, said one thing about the page eleven times.
+  const abort = (url) => ({ severity: 'info', category: 'network', message: BENIGN_ABORT_MESSAGE, url, repro: 'first' });
+  const findings = [abort('https://example.com/a'), abort('https://example.com/b'), abort('https://example.com/a')];
+
+  const grouped = dedupeFindings(findings, { acrossUrls: isPageWideFinding });
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].occurrences, 3);
+  assert.deepEqual(grouped[0].urls, ['https://example.com/a', 'https://example.com/b']);
+  assert.equal(grouped[0].url, undefined);
+  assert.equal(grouped[0].omittedUrls, undefined);
+  assert.equal(grouped[0].repro, 'first');
+  // The input is not mutated.
+  assert.equal(findings[0].url, 'https://example.com/a');
+
+  // Its identity no longer depends on which prefetch was aborted first.
+  const reversed = dedupeFindings([abort('https://example.com/b'), abort('https://example.com/a')], { acrossUrls: isPageWideFinding });
+  assert.equal(findingFingerprint(grouped[0]), findingFingerprint(reversed[0]));
+
+  // Without the option the previous per-URL behaviour is unchanged.
+  assert.equal(dedupeFindings(findings).length, 2);
+});
+
+test('genuine failures and other messages stay one finding per URL', () => {
+  const abort = (url) => ({ severity: 'info', category: 'network', message: BENIGN_ABORT_MESSAGE, url });
+  const failed = (url) => ({ severity: 'medium', category: 'network', message: 'Request failed: net::ERR_ABORTED', url });
+  const skipped = (url) => ({ severity: 'info', category: 'links', message: 'Link not requested with the session because it looks like it signs out or changes data.', url });
+
+  assert.equal(isPageWideFinding(abort('https://example.com/a')), true);
+  assert.equal(isPageWideFinding(failed('https://example.com/a')), false);
+  assert.equal(isPageWideFinding(skipped('https://example.com/logout')), false);
+  // The same message at another severity is not the benign finding.
+  assert.equal(isPageWideFinding({ ...abort('https://example.com/a'), severity: 'medium' }), false);
+
+  const deduped = dedupeFindings(
+    [abort('https://example.com/a'), failed('https://example.com/api/1'), failed('https://example.com/api/2'), abort('https://example.com/b'), skipped('https://example.com/logout'), skipped('https://example.com/delete')],
+    { acrossUrls: isPageWideFinding }
+  );
+  assert.equal(deduped.length, 5);
+  assert.deepEqual(
+    deduped.filter((finding) => finding.message.startsWith('Request failed')).map((finding) => finding.url),
+    ['https://example.com/api/1', 'https://example.com/api/2']
+  );
+  assert.deepEqual(
+    deduped.filter((finding) => finding.category === 'links').map((finding) => finding.url),
+    ['https://example.com/logout', 'https://example.com/delete']
+  );
+  assert.equal(deduped.filter((finding) => finding.urls).length, 1);
+});
+
+test('a grouped finding lists a bounded number of URLs and counts the rest', () => {
+  const abort = (url) => ({ severity: 'info', category: 'network', message: BENIGN_ABORT_MESSAGE, url });
+  const distinct = MAX_GROUPED_URLS + 3;
+  const findings = Array.from({ length: distinct }, (_, i) => abort(`https://example.com/route-${i}`));
+  // A repeat of an already-listed URL counts as an occurrence, not a new URL.
+  findings.push(abort('https://example.com/route-0'));
+
+  const [grouped] = dedupeFindings(findings, { acrossUrls: isPageWideFinding });
+  assert.equal(grouped.urls.length, MAX_GROUPED_URLS);
+  assert.deepEqual(grouped.urls, findings.slice(0, MAX_GROUPED_URLS).map((finding) => finding.url));
+  assert.equal(grouped.omittedUrls, 3);
+  assert.equal(grouped.occurrences, distinct + 1);
+  // The info finding costs nothing however many URLs it spans.
+  assert.equal(scoreFromFindings([grouped]), 100);
+});
+
+test('the report prints the score rule and the URLs of a grouped finding', () => {
+  const result = {
+    url: 'https://example.com/',
+    score: 100,
+    scoring: describeScoring(100),
+    checks: ['console'],
+    findingCount: 1,
+    findings: [
+      {
+        severity: 'info',
+        category: 'network',
+        message: BENIGN_ABORT_MESSAGE,
+        occurrences: 8,
+        urls: ['https://example.com/a', 'https://example.com/b'],
+        omittedUrls: 6,
+      },
+    ],
+  };
+  const report = renderReport(result);
+  assert.match(report, /Score: 100 minus 35 per critical, 20 per high, 10 per medium, 4 per low, 0 per info finding, floored at 0\. Grades: A ≥ 90, B ≥ 75, C ≥ 60, D ≥ 40, else F\./);
+  assert.match(report, /\(seen 8 times\)\n- `https:\/\/example\.com\/a`\n- `https:\/\/example\.com\/b`\n- …and 6 more\n/);
+
+  // A result written before `scoring` existed still renders the rule and grade.
+  const legacy = renderReport({ url: 'https://example.com/', score: 72, checks: ['seo'], findingCount: 0, findings: [] });
+  assert.match(legacy, /Grade: 🟡 C  \(72 \/ 100\)/);
+  assert.match(legacy, /Score: 100 minus/);
+
+  // The issue export names the grouped URLs as the locus.
+  const issues = renderIssues(result);
+  assert.match(issues, /## Summary\n.*\(https:\/\/example\.com\/a, https:\/\/example\.com\/b and 6 more\)/);
 });
 
 test('router-initiated aborts are recognised; genuine failures are not', () => {
