@@ -1009,6 +1009,11 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 	if failure.Location != "" {
 		fmt.Fprintf(w, "  %s", receiptReason(failure.Location))
 	}
+	// The class tells an assertion that failed from a target that never came
+	// up before anyone reads the error; "other" says nothing and is omitted.
+	if failure.Class != "" && failure.Class != runner.FailureOther && failure.Class != runner.FailureUnexpectedPass {
+		fmt.Fprintf(w, "  [%s]", failure.Class)
+	}
 	fmt.Fprintln(w)
 	shown := 0
 	for _, line := range strings.Split(failure.Message, "\n") {

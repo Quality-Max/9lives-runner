@@ -71,7 +71,18 @@
   message `Expected to fail, but passed.`, `expectedStatus` `failed` and
   `status` `passed`, and the receipt's `validation` text counts such tests.
   A `test.fail()` test that fails is an expected outcome and counts as passed,
-  also for `heal` and `confirm`. By default the
+  also for `heal` and `confirm`. Each failure carries a `class`, read from
+  Playwright's structured status and its own error prefixes, never from the
+  message text: `assertion` (an `expect` failed), `timeout` (the test's time
+  budget ran out), `action-timeout` (one action or navigation timed out),
+  `environment` (navigation failed with a Chromium `net::ERR_*` or Firefox
+  `NS_ERROR_*` code: connection refused, name not resolved, certificate
+  rejected), `unexpected-pass`, or `other` when the error has no such mark,
+  such as a test's own thrown error or a WebKit navigation failure. The text
+  output shows the class after the failing line, as `[environment]`, so a
+  target that never came up is not read as a broken test. An HTTP error
+  status on navigation is not an error to Playwright and is not classed.
+  By default the
   attachments are only referenced: they are Playwright's own files, which the
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt

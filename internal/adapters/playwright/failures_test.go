@@ -340,3 +340,42 @@ func TestFailureContextDropsExpectedFailuresAndKeepsTopLevelErrors(t *testing.T)
 		t.Fatalf("context=%q", got)
 	}
 }
+
+// A failure is classed by Playwright's structured status and its own error
+// prefixes, never by what a test's message says.
+func TestFailuresAreClassedFromStructuredErrors(t *testing.T) {
+	cases := []struct{ status, message, class string }{
+		{"failed", "Error: \x1b[2mexpect(\x1b[22m\x1b[31mreceived\x1b[39m\x1b[2m).\x1b[22mtoBe\x1b[2m(\x1b[22mexpected) // Object.is equality\n\nExpected: 2", runner.FailureAssertion},
+		{"failed", "Error: expect(locator).toBeVisible() failed\n\nLocator: locator('#nope')", runner.FailureAssertion},
+		{"failed", "Error: expect.soft(received).toBe(expected)", runner.FailureAssertion},
+		{"failed", "TimeoutError: locator.click: Timeout 500ms exceeded.\nCall log:\n  - waiting for locator('#nope')", runner.FailureActionTimeout},
+		{"failed", "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3000/\nCall log:", runner.FailureEnvironment},
+		{"failed", "Error: page.goto: net::ERR_NAME_NOT_RESOLVED at http://app.invalid/", runner.FailureEnvironment},
+		{"failed", "Error: page.goto: NS_ERROR_CONNECTION_REFUSED at http://127.0.0.1:3000/", runner.FailureEnvironment},
+		{"timedOut", "\x1b[31mTest timeout of 3000ms exceeded.\x1b[39m", runner.FailureTimeout},
+		{"failed", "Error: boom", runner.FailureOther},
+		// A test quoting Playwright's words is not Playwright reporting them.
+		{"failed", "Error: the page said expect(received).toBe(expected)", runner.FailureOther},
+		{"failed", "Error: fetch failed: net::ERR_CONNECTION_REFUSED", runner.FailureOther},
+	}
+	var specs []any
+	for i, c := range cases {
+		specs = append(specs, map[string]any{"title": fmt.Sprintf("case %d", i), "tests": []any{map[string]any{"status": "unexpected", "results": []any{
+			map[string]any{"status": c.status, "errors": []any{map[string]any{"message": c.message}}},
+		}}}})
+	}
+	specs = append(specs, map[string]any{"title": "pin", "tests": []any{map[string]any{"status": "unexpected", "expectedStatus": "failed", "results": []any{map[string]any{"status": "passed"}}}}})
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"title": "f.spec.ts", "specs": specs}}})
+	failures := New().Failures(raw, t.TempDir())
+	if len(failures) != len(cases)+1 {
+		t.Fatalf("len=%d", len(failures))
+	}
+	for i, c := range cases {
+		if failures[i].Class != c.class {
+			t.Errorf("case %d (%q): class %q, want %q", i, c.message, failures[i].Class, c.class)
+		}
+	}
+	if failures[len(cases)].Class != runner.FailureUnexpectedPass {
+		t.Errorf("unexpected pass: class %q", failures[len(cases)].Class)
+	}
+}
