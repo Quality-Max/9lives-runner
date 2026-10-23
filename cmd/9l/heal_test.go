@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,9 @@ func TestHealTextFormatShowsTheCandidateDiff(t *testing.T) {
 	failed := tier2.RunResult{ExecutedTests: 1, Failure: "TimeoutError: locator.click: Timeout 1000ms exceeded.\nCall log:\n  - waiting for locator('#old')"}
 	session := tier2.Session{State: "verified", Original: failed, Tier1: &failed, Verified: &tier2.RunResult{Passed: true, ExecutedTests: 1}, SavedPath: spec + ".healed", Provider: "scripted", ProviderCalls: 1}
 	var out bytes.Buffer
-	printHealText(&out, spec, []byte(original), session)
+	if err := printHealText(&out, spec, []byte(original), session); err != nil {
+		t.Fatal(err)
+	}
 	text := out.String()
 	for _, want := range []string{
 		"state: verified\n", "provider: scripted\n", "provider calls: 1\n",
@@ -122,5 +125,19 @@ func TestHealOptionErrors(t *testing.T) {
 		if !strings.Contains(errOut.String(), tc.want) || strings.Contains(errOut.String(), tc.without) {
 			t.Errorf("%s: stderr %q, want %q and not %q", name, errOut.String(), tc.want, tc.without)
 		}
+	}
+}
+
+// failingWriter rejects every write, as a full disk behind a redirected
+// stdout would.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// A text report that cannot be delivered is an error, as an unwritable JSON
+// report already was; a session must not exit 0 with nothing shown.
+func TestHealTextReportReportsAnUndeliveredWrite(t *testing.T) {
+	if err := printHealText(failingWriter{}, "tests/a.spec.ts", nil, tier2.Session{State: "needs_human", Reason: "no candidate"}); err == nil {
+		t.Fatal("undelivered text report was not reported")
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -211,7 +212,9 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	}
 	result, err := healSpec(ctx, healOptions{Spec: spec, Provider: provider, Model: *model, MaxProposals: *maxProposals, RunTimeout: runTimeout, ReceiptDir: *receipts, PassEnv: passEnv, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut)})
 	if *format == "text" {
-		printHealText(out, spec, original, result)
+		if writeErr := printHealText(out, spec, original, result); writeErr != nil {
+			return 1
+		}
 	} else if encodeErr := json.NewEncoder(out).Encode(result); encodeErr != nil {
 		return 1
 	}
@@ -256,32 +259,35 @@ func readSource(spec string) ([]byte, error) {
 
 // printHealText reports the session as lines: its state and reason, what
 // each run did, where a verified candidate went and that candidate's diff
-// against the healed source. No JSON.
-func printHealText(out io.Writer, spec string, original []byte, result tier2.Session) {
-	fmt.Fprintln(out, "state:", result.State)
+// against the healed source. No JSON. The report is written once, so an
+// undelivered report is an error like an unwritable JSON one.
+func printHealText(w io.Writer, spec string, original []byte, result tier2.Session) error {
+	var out bytes.Buffer
+	fmt.Fprintln(&out, "state:", result.State)
 	if result.Reason != "" {
-		fmt.Fprintln(out, "reason:", result.Reason)
+		fmt.Fprintln(&out, "reason:", result.Reason)
 	}
 	if result.Provider != "" {
-		fmt.Fprintln(out, "provider:", result.Provider)
-		fmt.Fprintln(out, "provider calls:", result.ProviderCalls)
+		fmt.Fprintln(&out, "provider:", result.Provider)
+		fmt.Fprintln(&out, "provider calls:", result.ProviderCalls)
 	}
-	fmt.Fprintln(out, "original:", describeRun(&result.Original))
-	fmt.Fprintln(out, "tier1:", describeRun(result.Tier1))
-	fmt.Fprintln(out, "verified:", describeRun(result.Verified))
+	fmt.Fprintln(&out, "original:", describeRun(&result.Original))
+	fmt.Fprintln(&out, "tier1:", describeRun(result.Tier1))
+	fmt.Fprintln(&out, "verified:", describeRun(result.Verified))
 	candidatePath := result.SavedPath
 	if result.Applied {
 		candidatePath = spec
-		fmt.Fprintln(out, "applied:", spec)
+		fmt.Fprintln(&out, "applied:", spec)
 	} else if result.SavedPath != "" {
-		fmt.Fprintln(out, "saved:", result.SavedPath)
+		fmt.Fprintln(&out, "saved:", result.SavedPath)
 	}
-	if candidatePath == "" || original == nil {
-		return
+	if candidatePath != "" && original != nil {
+		if candidate, err := os.ReadFile(candidatePath); err == nil {
+			fmt.Fprint(&out, unifiedLines(string(original), string(candidate)))
+		}
 	}
-	if candidate, err := os.ReadFile(candidatePath); err == nil {
-		fmt.Fprint(out, unifiedLines(string(original), string(candidate)))
-	}
+	_, err := w.Write(out.Bytes())
+	return err
 }
 
 // describeRun is one line for a run: not attempted, passed with its test
