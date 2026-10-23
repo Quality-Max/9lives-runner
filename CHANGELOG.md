@@ -26,6 +26,13 @@ SDK versions.
 - `9l doctor` no longer tells a Node release above the qualified 24 to
   install Node 24. Below 22 stays missing with the install step; any other
   supported release is a warning without one.
+- `9l prove` accepts `--config <file>` and `--project <name>` (repeatable),
+  applied to the baseline and every fault run as `9l run` applies them. A spec
+  outside the nearest config's `testDir` no longer has to move to be proved.
+- When `9l run --sdk`, `9l prove` or `9l confirm` cannot run a spec, the
+  reason names only the missing package: `@9l/playwright`, `@playwright/test`
+  or a `package.json` that declares it. Previously it asked for both packages
+  even when one was installed.
 
 ## 0.4.9 — 2026-10-22
 

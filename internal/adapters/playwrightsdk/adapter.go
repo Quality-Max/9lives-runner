@@ -84,8 +84,15 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	if config != "" {
 		project = filepath.Dir(config)
 	}
-	if project == "" || binary == "" || reporter == "" {
-		return runner.Job{}, fmt.Errorf("the @9l/playwright engine is unavailable: install @playwright/test and @9l/playwright in the project; run --sdk, prove and confirm need both")
+	// Name only what is missing: a project with @playwright/test installed
+	// and qualified should not be told to install it again.
+	switch {
+	case project == "":
+		return runner.Job{}, fmt.Errorf("the @9l/playwright engine is unavailable: no package.json above the spec declares @playwright/test; run --sdk, prove and confirm need it beside @9l/playwright")
+	case binary == "":
+		return runner.Job{}, fmt.Errorf("the @9l/playwright engine is unavailable: @playwright/test is not installed in the project; run --sdk, prove and confirm need it beside @9l/playwright")
+	case reporter == "":
+		return runner.Job{}, fmt.Errorf("the @9l/playwright engine is unavailable: @9l/playwright is not installed in the project; run --sdk, prove and confirm need it beside @playwright/test")
 	}
 	relative, err := filepath.Rel(project, path)
 	if err != nil {
