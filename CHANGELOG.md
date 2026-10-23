@@ -15,6 +15,14 @@ SDK versions.
 
 ### CLI
 
+- Each failed test in a receipt carries a `class`: `assertion`, `timeout`,
+  `action-timeout`, `environment` (a connection, name-resolution or
+  certificate error on navigation, by Chromium or Firefox error code),
+  `unexpected-pass` or `other`. It comes from Playwright's structured status
+  and its own error prefixes, never from message text, so a test quoting
+  those words is still `other`. `9l run` and `9l result` show it after the
+  failing line, so a target that never came up is not read as a broken test
+  (additive).
 - `9l doctor` judges the SDK pair by the protocol and capabilities the
   installed `@9l/playwright` declares, the contract `run --sdk` checks in the
   handshake, instead of by version string. A different release that this CLI
