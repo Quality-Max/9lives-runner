@@ -741,7 +741,8 @@ func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, propo
 		return nil, toolError{"healing did not start: " + bounded(err.Error())}
 	}
 	result := mcpHealResult{Version: MCPToolResultVersion, Spec: spec, Session: session}
-	result.Original.Failure, result.Tier1.Failure, result.Verified.Failure = bounded(session.Original.Failure), bounded(session.Tier1.Failure), bounded(session.Verified.Failure)
+	result.Original.Failure = bounded(session.Original.Failure)
+	result.Tier1, result.Verified = boundedRun(session.Tier1), boundedRun(session.Verified)
 	candidatePath := session.SavedPath
 	if session.Applied {
 		candidatePath = spec
@@ -761,6 +762,17 @@ func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, propo
 		return nil, failedResult{result}
 	}
 	return result, nil
+}
+
+// boundedRun is run with its failure text bounded; a stage that was not
+// attempted stays null.
+func boundedRun(run *tier2.RunResult) *tier2.RunResult {
+	if run == nil {
+		return nil
+	}
+	copied := *run
+	copied.Failure = bounded(run.Failure)
+	return &copied
 }
 
 func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (any, error) {

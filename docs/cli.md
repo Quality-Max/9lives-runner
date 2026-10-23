@@ -243,11 +243,17 @@ printed before healing starts, and the session JSON records `provider` and
 CLI's own login, so a Claude, ChatGPT or OpenCode subscription works without
 an API key; see
 [native Tier 2](native-tier2.md#healing-on-a-claude-chatgpt-or-opencode-subscription). `--run-timeout` takes a duration or, like the Python CLI,
-whole seconds. The Python CLI's other healing options, its Cypress and
-Selenium adapters and its watch/report commands remain in the Python package:
-run them with `9lives`.
+whole seconds. `--format json` (the default) prints the session result on
+stdout; `--format text` prints its state and reason, one line per run
+(`original`, `tier1`, `verified`; a run the session never reached is
+`not attempted`), where a verified candidate was saved or applied, and the
+candidate's diff. In the JSON, `tier1` and `verified` are `null` when that
+stage was not attempted. The Python CLI's other healing options, its Cypress
+and Selenium adapters and its watch/report commands remain in the Python
+package: run them with `9lives`.
 
 ```bash
 ./9l heal tests/login.spec.ts --run-timeout 900 --pass-env BASE_URL
 ./9l heal tests/login.spec.ts --provider claude --yes
+./9l heal tests/login.spec.ts --provider none --format text
 ```
