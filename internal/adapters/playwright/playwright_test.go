@@ -287,3 +287,13 @@ func TestNoTestsReasonNamesTheConfigAndTestDir(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+// A test that failed and passed on retry is counted as passed and as flaky,
+// so the receipt can tell a clean pass from one that needed a second try.
+func TestValidateCountsFlakyTests(t *testing.T) {
+	raw := []byte(`{"stats":{"duration":10.5},"suites":[{"specs":[{"tests":[{"status":"flaky","results":[{"status":"failed"},{"status":"passed"}]}]},{"tests":[{"status":"expected","results":[{"status":"passed"}]}]}]}]}`)
+	validation, err := New().Validate(raw)
+	if err != nil || validation.ExecutedTests != 2 || validation.FailureCount != 0 || validation.FlakyTests != 1 {
+		t.Fatalf("validation=%+v err=%v", validation, err)
+	}
+}

@@ -234,6 +234,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			} else {
 				validation.ExecutedTests++
 				validation.TargetAssertions += state.assertions
+				if frame.Outcome == "flaky" {
+					validation.FlakyTests++
+				}
 				if frame.Outcome == "unexpected" {
 					validation.FailureCount++
 					// Preserve failures in other tests even if a goal failed
@@ -260,6 +263,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if validation.SkippedTests != 0 {
 				validation.Description += fmt.Sprintf("; %d pinned skip(s)", validation.SkippedTests)
+			}
+			if validation.FlakyTests != 0 {
+				validation.Description += fmt.Sprintf("; %d flaky test(s) passed on retry", validation.FlakyTests)
 			}
 			if (frame.Status == "passed") != (validation.FailureCount == 0) {
 				return invalid("inconsistent terminal outcome")

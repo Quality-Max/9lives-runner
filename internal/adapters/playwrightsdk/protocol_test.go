@@ -439,3 +439,21 @@ func TestAssertionsCountsFailedTestsWithAFailedAssertion(t *testing.T) {
 		t.Fatal("accepted unfinished evidence")
 	}
 }
+
+// A flaky outcome counts as executed and passed, and is reported as flaky.
+func TestFlakyOutcomeIsCountedAsSuch(t *testing.T) {
+	frames := []map[string]any{
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
+		{"type": "test_begin", "testId": testKey, "retry": 1},
+		{"type": "step_end", "testId": testKey, "retry": 1, "stepId": "step-1", "category": "assertion", "status": "passed"},
+		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
+		{"type": "test_result", "testId": testKey, "outcome": "flaky"},
+		{"type": "end", "status": "passed"},
+	}
+	validation, err := New().ValidateAttempt(stream(frames), owner)
+	if err != nil || validation.ExecutedTests != 1 || validation.FailureCount != 0 || validation.FlakyTests != 1 || !strings.Contains(validation.Description, "1 flaky test(s) passed on retry") {
+		t.Fatalf("validation=%+v err=%v", validation, err)
+	}
+}

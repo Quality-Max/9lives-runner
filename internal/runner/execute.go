@@ -473,6 +473,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.NonGoalFailureCount = validation.NonGoalFailureCount
 				receipt.ExecutedTests = validation.ExecutedTests
 				receipt.SkippedTests = validation.SkippedTests
+				receipt.FlakyTests = validation.FlakyTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.TargetAssertions = validation.TargetAssertions
 				receipt.AssertionCoverage = validation.AssertionCoverage
@@ -605,7 +606,7 @@ func validateValidation(validation Validation) error {
 	if validation.ExecutedTests <= 0 {
 		return errors.New("structured report contains no executed tests")
 	}
-	if validation.FailureCount < 0 || validation.SkippedTests < 0 || validation.FailureCount > validation.ExecutedTests || validation.NonGoalFailureCount < 0 || validation.NonGoalFailureCount > validation.FailureCount {
+	if validation.FailureCount < 0 || validation.SkippedTests < 0 || validation.FailureCount > validation.ExecutedTests || validation.NonGoalFailureCount < 0 || validation.NonGoalFailureCount > validation.FailureCount || validation.FlakyTests < 0 || validation.FlakyTests > validation.ExecutedTests-validation.FailureCount {
 		return errors.New("structured report has inconsistent test counts")
 	}
 	if validation.ExecutedTests > int(^uint(0)>>1)-validation.SkippedTests {

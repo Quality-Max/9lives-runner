@@ -32,6 +32,9 @@ type PlanOptions struct {
 	Config   string
 	Projects []string
 	Targets  []string
+	// Retries, when set, replaces the project's Playwright retries for every
+	// job, so a caller can give Go the whole retry policy with 0.
+	Retries *int
 }
 
 // lineInput matches `<spec>:<line>`.
@@ -42,6 +45,12 @@ var lineInput = regexp.MustCompile(`^(.+):([1-9][0-9]{0,6})$`)
 func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 	if len(opts.Targets) > 0 && len(opts.Projects) > 0 {
 		return Plan{}, fmt.Errorf("explicit targets cannot be combined with projects")
+	}
+	if len(opts.Targets) > 0 && opts.Retries != nil {
+		return Plan{}, fmt.Errorf("explicit targets run without retries and cannot be combined with --retries")
+	}
+	if opts.Retries != nil && (*opts.Retries < 0 || *opts.Retries > 10) {
+		return Plan{}, fmt.Errorf("retries must be between 0 and 10")
 	}
 	targetSet := map[string]bool{}
 	for _, target := range opts.Targets {
@@ -147,12 +156,15 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 						continue
 					}
 				}
-				if opts.Config != "" || len(opts.Projects) > 0 {
+				if opts.Config != "" || len(opts.Projects) > 0 || opts.Retries != nil {
 					var command []string
 					for _, argument := range job.Command {
 						if opts.Config == "" || !strings.HasPrefix(argument, "--config=") {
 							command = append(command, argument)
 						}
+					}
+					if opts.Retries != nil {
+						command = append(command, fmt.Sprintf("--retries=%d", *opts.Retries))
 					}
 					if opts.Config != "" {
 						command = append(command, "--config="+opts.Config)
