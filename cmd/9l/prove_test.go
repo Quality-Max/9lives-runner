@@ -479,7 +479,55 @@ func TestProveNamesWhyASpecCannotRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, stderr := runProve(t, shopWorker(), filepath.Join(project, "tests/shop.spec.ts"), "--receipt-dir", t.TempDir())
-	if code != 2 || !strings.Contains(stderr, "cannot run: the @9l/playwright engine is unavailable") || strings.Contains(stderr, "exactly one spec file") {
+	if code != 2 || !strings.Contains(stderr, "cannot run: the @9l/playwright engine is unavailable: @9l/playwright is not installed in the project") || strings.Contains(stderr, "install @playwright/test and") || strings.Contains(stderr, "exactly one spec file") {
 		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+}
+
+// --config and --project reach the baseline and every fault run, as they do
+// for 9l run, so a spec outside the nearest config's testDir can be proved.
+func TestProveAppliesConfigAndProjectToEveryRun(t *testing.T) {
+	project := proveProject(t)
+	config := filepath.Join(project, "playwright.e2e.config.ts")
+	if err := os.WriteFile(config, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	worker := shopWorker()
+	code, _, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--config", config, "--project", "chromium", "--receipt-dir", t.TempDir())
+	if code != 0 || len(worker.commands) != 7 {
+		t.Fatalf("code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
+	}
+	for _, command := range worker.commands {
+		if !slices.Contains(command, "--config="+config) || !slices.Contains(command, "--project=chromium") {
+			t.Fatalf("run lacks the config or project: %q", command)
+		}
+	}
+	code, _, stderr = runProve(t, shopWorker(), filepath.Join(project, "tests/shop.spec.ts"), "--config", filepath.Join(project, "absent.config.ts"), "--receipt-dir", t.TempDir())
+	if code != 2 || !strings.Contains(stderr, "--config must name an existing Playwright config file") {
+		t.Fatalf("missing config: code=%d stderr=%s", code, stderr)
+	}
+}
+
+// The reason names only the missing package, so a project with a qualified
+// @playwright/test is not told to install it again.
+func TestProveNamesOnlyTheMissingPackage(t *testing.T) {
+	project := proveProject(t)
+	spec := filepath.Join(project, "tests/shop.spec.ts")
+	// The adapter resolves playwright.cmd on Windows; remove whichever exists.
+	for _, name := range []string{"playwright", "playwright.cmd"} {
+		if err := os.Remove(filepath.Join(project, "node_modules", ".bin", name)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	code, _, stderr := runProve(t, shopWorker(), spec, "--receipt-dir", t.TempDir())
+	if code != 2 || !strings.Contains(stderr, "@playwright/test is not installed in the project") || strings.Contains(stderr, "@9l/playwright is not installed") {
+		t.Fatalf("missing runner: code=%d stderr=%s", code, stderr)
+	}
+	if err := os.WriteFile(filepath.Join(project, "package.json"), []byte(`{"name":"app"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr = runProve(t, shopWorker(), spec, "--receipt-dir", t.TempDir())
+	if code != 2 || !strings.Contains(stderr, "no package.json above the spec declares @playwright/test") {
+		t.Fatalf("undeclared runner: code=%d stderr=%s", code, stderr)
 	}
 }

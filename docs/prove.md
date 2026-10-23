@@ -110,8 +110,9 @@ The spec must import `test` from `@9l/playwright` and use the built-in `page`
 or `context` fixture. Tests that never use a browser context are untouched.
 An API-level spec that calls the application with Node's `fetch`, Playwright's
 `request` fixture or a database client gives `prove` nothing to inject: those
-requests never pass through a browser context. When `@9l/playwright` is not
-installed in the project, `prove` stops before running anything and says so.
+requests never pass through a browser context. When `@9l/playwright` or
+`@playwright/test` is not installed in the project, `prove` stops before
+running anything and names the missing package.
 
 - **Stable origin.** A fault targets the baseline's exact origin. An
   application started on a random port in each run is never matched, and every
@@ -121,6 +122,10 @@ installed in the project, `prove` stops before running anything and says so.
 - **Kinds.** `--faults` selects the [fault kinds](#fault-kinds); each kind
   adds up to one run per request, so a long list needs a larger
   `--max-faults`.
+- **Config and projects.** `--config <file>` and `--project <name>` select
+  the Playwright config and projects for the baseline and every fault run, as
+  in `9l run`. Without them, `prove` uses the nearest `playwright.config.*`
+  above the spec, so a spec outside that config's `testDir` runs nothing.
 - **Limits.** `--timeout` bounds each run, `--deadline` the whole session,
   `--workers` each run's concurrency. `--pass-env` and `--pin-skip` behave as
   in `9l run`. `--max-faults` bounds the fault runs; the proof is then
