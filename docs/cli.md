@@ -79,7 +79,18 @@
   message `Expected to fail, but passed.`, `expectedStatus` `failed` and
   `status` `passed`, and the receipt's `validation` text counts such tests.
   A `test.fail()` test that fails is an expected outcome and counts as passed,
-  also for `heal` and `confirm`. By default the
+  also for `heal` and `confirm`. Each failure carries a `class`, read from
+  Playwright's structured status and its own error prefixes, never from the
+  message text: `assertion` (an `expect` failed), `timeout` (the test's time
+  budget ran out), `action-timeout` (one action or navigation timed out),
+  `environment` (navigation failed with a Chromium `net::ERR_*` or Firefox
+  `NS_ERROR_*` code: connection refused, name not resolved, certificate
+  rejected), `unexpected-pass`, or `other` when the error has no such mark,
+  such as a test's own thrown error or a WebKit navigation failure. The text
+  output shows the class after the failing line, as `[environment]`, so a
+  target that never came up is not read as a broken test. An HTTP error
+  status on navigation is not an error to Playwright and is not classed.
+  By default the
   attachments are only referenced: they are Playwright's own files, which the
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
@@ -134,7 +145,16 @@
 - `9l scan <url>`: load the page once in Chromium and report console errors
   and failed requests, broken links, accessibility, the Core Web Vitals LCP
   and CLS (INP is not measured) with TTFB and FCP, SEO, security headers, cookies and
-  trackers, mixed content and page weight, with a 0–100 score. `--checks`
+  trackers, mixed content and page weight, with a 0–100 score. The score is
+  100 minus 35 points per critical, 20 per high, 10 per medium, 4 per low and
+  0 per info finding after deduplication, floored at 0; the grade is A from
+  90, B from 75, C from 60, D from 40 and F below. Ten medium findings alone
+  reach 0. The JSON result states this in `scoring` (scale, weights, grade
+  thresholds and grade) and the Markdown report prints it under the score. A
+  finding seen more than once carries `occurrences`; the page's own aborted
+  prefetch and RSC requests are one `info` finding per page listing up to five
+  distinct `urls`, with `omittedUrls` counting the rest, rather than one
+  finding per URL. Other failed requests stay one finding per URL. `--checks`
   selects checks by exact name (an unknown name is refused), `--format`
   is `markdown` (default), `json` or `issue` (one tracker-ready block per
   finding, filtered by `--min-severity`), and `--out` writes the report to a
@@ -237,11 +257,17 @@ printed before healing starts, and the session JSON records `provider` and
 CLI's own login, so a Claude, ChatGPT or OpenCode subscription works without
 an API key; see
 [native Tier 2](native-tier2.md#healing-on-a-claude-chatgpt-or-opencode-subscription). `--run-timeout` takes a duration or, like the Python CLI,
-whole seconds. The Python CLI's other healing options, its Cypress and
-Selenium adapters and its watch/report commands remain in the Python package:
-run them with `9lives`.
+whole seconds. `--format json` (the default) prints the session result on
+stdout; `--format text` prints its state and reason, one line per run
+(`original`, `tier1`, `verified`; a run the session never reached is
+`not attempted`), where a verified candidate was saved or applied, and the
+candidate's diff. In the JSON, `tier1` and `verified` are `null` when that
+stage was not attempted. The Python CLI's other healing options, its Cypress
+and Selenium adapters and its watch/report commands remain in the Python
+package: run them with `9lives`.
 
 ```bash
 ./9l heal tests/login.spec.ts --run-timeout 900 --pass-env BASE_URL
 ./9l heal tests/login.spec.ts --provider claude --yes
+./9l heal tests/login.spec.ts --provider none --format text
 ```
