@@ -9,7 +9,7 @@ project:
 ```
 
 The command checks Node (22 minimum, 24 qualified), `package.json` presence,
-locally resolved `@playwright/test`, the optional SDK version, and the exact
+locally resolved `@playwright/test`, the optional SDK, and the exact
 Chromium and headless-shell files needed by each installed Playwright runtime.
 Scan/inspect and test runs can resolve different runtimes; both are checked.
 It prints package versions and fixed diagnostic messages, never environment
@@ -17,8 +17,24 @@ values, config contents, browser-cache paths or authentication state.
 
 Exit 0 means no required prerequisite is missing; warnings and unverified
 checks still apply. Exit 2 means setup is missing or diagnostics could not
-complete. `--sdk` makes the otherwise optional SDK required. A version
-mismatch is a qualification warning, not proof of protocol incompatibility.
+complete. `--sdk` makes the otherwise optional SDK required.
+
+Node below 22 is missing and gets the install step. Node 24 is qualified. Any
+other release from 22 up is supported but outside the qualified matrix: a
+warning with no install step, since it is not a reason to downgrade.
+
+The SDK pair is judged by what the installed `@9l/playwright` declares under
+`"9l"` in its `package.json`: engine protocol, capabilities and prove fault
+kinds. That is the same contract `run --sdk` checks in the worker's handshake,
+read here without loading the package. A matching release is `ok`. A
+different release that declares the protocol and capabilities this CLI admits
+is *admitted but unqualified*: a warning, with the install command for the
+matching release as the next step. A different protocol or capability set is
+incompatible: `run --sdk`, `prove` and `confirm` reject it, so under `--sdk`
+it is a missing prerequisite. An SDK released before 0.4.10 declares nothing,
+and its admission is only known at run time. Under `--sdk`, `sdk/faults`
+lists the prove fault kinds the SDK applies and any this CLI can request that
+it does not.
 Browser-file checks use Playwright's registry only for qualified versions
 1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0. An unknown registry cannot report ready.
 
@@ -32,7 +48,7 @@ are installed, or that a target is reachable. A real scan verifies those paths.
 
 ## Apply a repair explicitly
 
-Missing Node: install Node 24 LTS and restart the terminal and MCP host.
+Node below 22: install Node 24 LTS and restart the terminal and MCP host.
 Missing test runner: `npm install --save-dev @playwright/test@1.64.0`.
 Missing browser: use the version-pinned command doctor prints, for example:
 

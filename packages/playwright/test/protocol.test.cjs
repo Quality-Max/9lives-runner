@@ -19,3 +19,12 @@ test('skip pin key drops root and project suites and normalizes separators', () 
   assert.match(pin, /^[a-f0-9]{64}$/);
   assert.equal(pin, key);
 });
+
+test('package metadata declares the protocol, capabilities and fault kinds the build implements', () => {
+  // 9l doctor reads this field instead of loading the SDK, so it must not drift
+  // from the constants the engine bridge and prove channel actually send.
+  const {capabilities} = require('../dist/protocol.js');
+  const {faultKinds} = require('../dist/prove.js');
+  const manifest = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.deepEqual(manifest['9l'], {protocol: protocolVersion, capabilities: [...capabilities], faults: [...faultKinds]});
+});

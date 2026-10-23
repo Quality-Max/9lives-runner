@@ -304,9 +304,12 @@ func outcome(state *testState) string {
 	return "expected"
 }
 
-func equalCapabilities(values []string) bool {
-	return len(values) == 3 && values[0] == "steps" && values[1] == "artifact-metadata" && values[2] == "terminal-outcomes"
-}
+// Capabilities is the exact capability list a hello frame must carry. The
+// SDK declares the same list in its package metadata so doctor can compare
+// an installed SDK with this engine without running it.
+var Capabilities = []string{"steps", "artifact-metadata", "terminal-outcomes"}
+
+func equalCapabilities(values []string) bool     { return slices.Equal(values, Capabilities) }
 func oneOf(value string, allowed ...string) bool { return slices.Contains(allowed, value) }
 
 // Reject unknown/missing/duplicate fields rather than accepting a best-effort

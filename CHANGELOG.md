@@ -6,8 +6,26 @@ SDK versions.
 
 ## Unreleased
 
+### SDK
+
+- `package.json` declares the engine protocol, capabilities and prove fault
+  kinds the build implements under `"9l"`, so `9l doctor` can compare an
+  installed SDK with the CLI without loading it. A test keeps the field equal
+  to the constants the bridge and prove channel send.
+
 ### CLI
 
+- `9l doctor` judges the SDK pair by the protocol and capabilities the
+  installed `@9l/playwright` declares, the contract `run --sdk` checks in the
+  handshake, instead of by version string. A different release that this CLI
+  admits is reported as admitted but unqualified, with the install command
+  for the matching release; a different protocol or capability set is
+  incompatible and, under `--sdk`, a missing prerequisite. Under `--sdk`, a
+  new `sdk/faults` check lists the prove fault kinds the SDK applies. An SDK
+  that predates the declaration is reported as such.
+- `9l doctor` no longer tells a Node release above the qualified 24 to
+  install Node 24. Below 22 stays missing with the install step; any other
+  supported release is a warning without one.
 - `9l prove` accepts `--config <file>` and `--project <name>` (repeatable),
   applied to the baseline and every fault run as `9l run` applies them. A spec
   outside the nearest config's `testDir` no longer has to move to be proved.
