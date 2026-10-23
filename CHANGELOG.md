@@ -23,6 +23,42 @@ SDK versions.
   retry inside the attempt, with or without `--sdk`, and `9l run` / `9l
   result` print `N test(s) passed only on a Playwright retry inside this
   attempt` under the job (additive).
+- With `--sdk`, receipts record `reportedAssertions`, the assertion steps the
+  worker reported as passed in each executed test's last completed attempt,
+  and `passedWithoutAssertions`, the tests that passed while reporting none.
+  `9l run` and `9l result` print `N passed test(s) reported no assertion
+  step` under such a job, so a green test that asserted nothing is visible.
+  These are the worker's report, not verified coverage; `assertionCoverage`
+  stays `unknown`. Without `--sdk` the counts are absent, because Playwright's
+  JSON reporter serializes only `test.step` steps. Receipt, run-result and
+  run-status contracts gain the two optional fields (additive).
+- Receipts record `keepAttachments` when `--keep-attachments` was given,
+  `failureAttachments` for the attachment files the listed failures
+  reference and `retainedAttachments` for those copied into the receipt
+  directory. A request that found nothing to copy prints `--keep-attachments:
+  the listed failures referenced no attachment files` under the job instead
+  of silently doing nothing (additive).
+- Each failed test in a receipt carries a `class`: `assertion`, `timeout`,
+  `action-timeout`, `environment` (a connection, name-resolution or
+  certificate error on navigation, by Chromium or Firefox error code),
+  `unexpected-pass` or `other`. It comes from Playwright's structured status
+  and its own error prefixes, never from message text, so a test quoting
+  those words is still `other`. `9l run` and `9l result` show it after the
+  failing line, so a target that never came up is not read as a broken test
+  (additive).
+- `9l scan --format json` adds `scoring` to the result: the 0–100 scale, the
+  points each severity costs (35 critical, 20 high, 10 medium, 4 low, 0 info),
+  the grade thresholds (A 90, B 75, C 60, D 40) and the grade. The Markdown
+  report prints the same rule under the score, and `docs/cli.md` and the
+  `scan_url` description state it, so a `score` of 0 on a page with ten
+  medium findings can be checked rather than guessed at.
+- `9l scan` reports the page's own aborted prefetch and RSC requests as one
+  `info` finding per page, with `occurrences` and up to five distinct `urls`
+  (`omittedUrls` counts the rest), instead of one finding per URL. Other
+  failed requests stay one finding per URL. The grouped finding has no `url`,
+  so its `id` no longer depends on which prefetch was aborted first; against a
+  baseline from an earlier release the per-URL findings show as fixed and the
+  grouped one as new, once.
 - `9l doctor` judges the SDK pair by the protocol and capabilities the
   installed `@9l/playwright` declares, the contract `run --sdk` checks in the
   handshake, instead of by version string. A different release that this CLI
@@ -41,6 +77,15 @@ SDK versions.
   reason names only the missing package: `@9l/playwright`, `@playwright/test`
   or a `package.json` that declares it. Previously it asked for both packages
   even when one was installed.
+- `9l heal` says when Tier 1 and verification were not attempted. In the
+  session JSON, and in the MCP `heal_test` result, `tier1` and `verified` are
+  `null` when the session ended before that stage ran (the original passed,
+  ran zero tests or failed an assertion, or no candidate was proposed);
+  previously both read as a failed zero-test run. `9l heal` accepts
+  `--format json` (the default, the session JSON) and `--format text` (the
+  state and reason, one line per run with `not attempted`, and the verified
+  candidate's diff; no JSON). An unknown option is reported as such; only a
+  Python-only option such as `--framework` is referred to `9lives heal`.
 
 ## 0.4.9 — 2026-10-22
 

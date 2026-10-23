@@ -96,7 +96,7 @@ Usage:
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
+  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
   9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding,
           # scan_url, inspect_page, generate_playwright_repro
@@ -960,6 +960,17 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		if receipt.FlakyTests > 0 {
 			fmt.Fprintf(w, "           %d test(s) passed only on a Playwright retry inside this attempt\n", receipt.FlakyTests)
 		}
+		// Only when the failures are known: an engine run without
+		// --failure-details lists none, so nothing can be said about them.
+		// The count is of the files the receipt references; inline bodies and
+		// files outside the project are never referenced, so it says
+		// "referenced", not "produced".
+		if receipt.KeepAttachments && len(receipt.Failures) > 0 && receipt.FailureAttachments == 0 {
+			fmt.Fprintln(w, "           --keep-attachments: the listed failures referenced no attachment files")
+		}
+		if receipt.PassedWithoutAssertions > 0 {
+			fmt.Fprintf(w, "           %d passed test(s) reported no assertion step; a green test that asserts nothing proves nothing\n", receipt.PassedWithoutAssertions)
+		}
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}
@@ -1020,6 +1031,11 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 	fmt.Fprintf(w, "           %s %s", marker, receiptReason(failure.Title))
 	if failure.Location != "" {
 		fmt.Fprintf(w, "  %s", receiptReason(failure.Location))
+	}
+	// The class tells an assertion that failed from a target that never came
+	// up before anyone reads the error; "other" says nothing and is omitted.
+	if failure.Class != "" && failure.Class != runner.FailureOther && failure.Class != runner.FailureUnexpectedPass {
+		fmt.Fprintf(w, "  [%s]", failure.Class)
 	}
 	fmt.Fprintln(w)
 	shown := 0

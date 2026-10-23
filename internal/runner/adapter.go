@@ -89,8 +89,14 @@ type Validation struct {
 	AssertionCoverage   string
 	// FlakyTests counts executed tests that failed and then passed on a
 	// Playwright retry inside this attempt; they count as passed.
-	FlakyTests  int
-	Description string
+	FlakyTests int
+	// ReportedAssertions counts assertion steps the test worker reported as
+	// passed in each executed test's last completed attempt, and
+	// PassedWithoutAssertions the tests that passed while reporting none.
+	// Both are worker-reported signals, not verified coverage.
+	ReportedAssertions      int
+	PassedWithoutAssertions int
+	Description             string
 }
 
 // AttemptValidator binds structured worker evidence to the attempt that owns it.

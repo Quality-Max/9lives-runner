@@ -48,6 +48,10 @@ func TestFailedAttemptReferencesOrRetainsAttachments(t *testing.T) {
 			t.Fatalf("keep=%v summary=%+v err=%v", keep, summary, err)
 		}
 		attachments := summary.Receipts[0].Failures[0].Attachments
+		receipt := summary.Receipts[0]
+		if receipt.KeepAttachments != keep || receipt.FailureAttachments != len(adapter.attachments) || receipt.RetainedAttachments != map[bool]int{false: 0, true: 2}[keep] {
+			t.Fatalf("keep=%v receipt does not account for its attachments: keep=%v produced=%d retained=%d", keep, receipt.KeepAttachments, receipt.FailureAttachments, receipt.RetainedAttachments)
+		}
 		if !keep {
 			for _, attachment := range attachments {
 				if attachment.Retained || attachment.SHA256 != "" || !strings.HasPrefix(attachment.Path, source) {
@@ -76,6 +80,18 @@ func TestFailedAttemptReferencesOrRetainsAttachments(t *testing.T) {
 		if !strings.Contains(string(persisted), `"retained": true`) && !strings.Contains(string(persisted), `"retained":true`) {
 			t.Fatalf("receipt lacks retained attachments: %s", persisted)
 		}
+	}
+}
+
+// A retention request that found nothing to copy is recorded as such.
+func TestKeepAttachmentsWithoutAttachmentsIsRecorded(t *testing.T) {
+	plan := Plan{Version: 1, RunID: "run-no-attachments", Jobs: []Job{fakeJob("job-001", "test-failure", 0)}}
+	summary, err := Execute(context.Background(), plan, ExecuteOptions{ReceiptDir: t.TempDir(), KeepAttachments: true, Adapters: []Adapter{reportingAdapter{}}})
+	if err != nil || len(summary.Receipts) != 1 || len(summary.Receipts[0].Failures) != 1 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+	if receipt := summary.Receipts[0]; !receipt.KeepAttachments || receipt.FailureAttachments != 0 || receipt.RetainedAttachments != 0 {
+		t.Fatalf("receipt: keep=%v produced=%d retained=%d", receipt.KeepAttachments, receipt.FailureAttachments, receipt.RetainedAttachments)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -156,12 +157,23 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	receipts := fs.String("receipt-dir", ".9lives/healing-receipts", "isolated verification receipts")
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable only to test processes (repeatable or comma-separated)")
-	normalized := flagsFirst(args, map[string]bool{"--provider": true, "--model": true, "--provider-url": true, "--max-proposals": true, "--run-timeout": true, "--deadline": true, "--receipt-dir": true, "--pass-env": true})
+	format := fs.String("format", "json", "json (the session result) or text (state, reason and the candidate diff)")
+	normalized := flagsFirst(args, map[string]bool{
+		"-provider": true, "--provider": true, "-model": true, "--model": true, "-provider-url": true, "--provider-url": true,
+		"-max-proposals": true, "--max-proposals": true, "-run-timeout": true, "--run-timeout": true, "-deadline": true, "--deadline": true,
+		"-receipt-dir": true, "--receipt-dir": true, "-pass-env": true, "--pass-env": true, "-format": true, "--format": true,
+	})
 	if err := fs.Parse(normalized); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		fmt.Fprintln(errOut, "9l: unknown heal option; Python-only options such as --framework need the Python CLI: `9lives heal`")
+		if name, unknown := strings.CutPrefix(err.Error(), "flag provided but not defined: -"); unknown {
+			fmt.Fprintln(errOut, "9l: "+unknownHealOption(name))
+		}
+		return 2
+	}
+	if *format != "json" && *format != "text" {
+		fmt.Fprintln(errOut, "9l: --format must be text or json")
 		return 2
 	}
 	if fs.NArg() != 1 || *maxProposals < 1 || runTimeout <= 0 || *deadline < 0 {
@@ -191,19 +203,107 @@ func healCommand(args []string, out, errOut io.Writer) int {
 		ctx, cancel = context.WithTimeout(ctx, *deadline)
 		defer cancel()
 	}
-	result, err := healSpec(ctx, healOptions{Spec: fs.Arg(0), Provider: provider, Model: *model, MaxProposals: *maxProposals, RunTimeout: runTimeout, ReceiptDir: *receipts, PassEnv: passEnv, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut)})
-	if encodeErr := json.NewEncoder(out).Encode(result); encodeErr != nil {
+	spec := fs.Arg(0)
+	// The text report diffs the candidate against the bytes that were healed,
+	// so read them before an approved apply replaces them.
+	var original []byte
+	if *format == "text" {
+		original, _ = readSource(spec)
+	}
+	result, err := healSpec(ctx, healOptions{Spec: spec, Provider: provider, Model: *model, MaxProposals: *maxProposals, RunTimeout: runTimeout, ReceiptDir: *receipts, PassEnv: passEnv, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut)})
+	if *format == "text" {
+		if writeErr := printHealText(out, spec, original, result); writeErr != nil {
+			return 1
+		}
+	} else if encodeErr := json.NewEncoder(out).Encode(result); encodeErr != nil {
 		return 1
 	}
 	if err != nil && ctx.Err() == nil {
 		fmt.Fprintln(errOut, "9l: heal:", healFailure(result, *yes))
-	} else if err == nil && (result.State == "unverified" || result.State == "needs_human") && result.Reason != "" {
+	} else if err == nil && *format == "json" && (result.State == "unverified" || result.State == "needs_human") && result.Reason != "" {
+		// The text report already carries the state and reason on stdout.
 		fmt.Fprintf(errOut, "9l: heal: %s: %s\n", result.State, result.Reason)
 	}
 	if err != nil || (!result.Applied && result.SavedPath == "" && result.State != "passed") {
 		return 1
 	}
 	return 0
+}
+
+// pythonOnlyHealOptions are `9lives heal` options the native command does
+// not take, so an unknown option is blamed on the Python CLI only when it is
+// one of them.
+var pythonOnlyHealOptions = map[string]bool{"framework": true, "cypress": true, "selenium": true, "watch": true, "report": true}
+
+// unknownHealOption explains an option the parser does not define.
+func unknownHealOption(name string) string {
+	if pythonOnlyHealOptions[name] {
+		return "--" + name + " is a Python-only heal option; it needs the Python CLI: `9lives heal`"
+	}
+	return "unknown heal option --" + name + "; see `9l heal --help`"
+}
+
+// readSource is the spec's bytes when it is within native healing's input
+// limit. A larger or unreadable spec has no text diff; the session reports
+// why it could not be healed.
+func readSource(spec string) ([]byte, error) {
+	info, err := os.Stat(spec)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > tier2.MaxSourceBytes {
+		return nil, errors.New("source file exceeds native healing input limit")
+	}
+	return os.ReadFile(spec)
+}
+
+// printHealText reports the session as lines: its state and reason, what
+// each run did, where a verified candidate went and that candidate's diff
+// against the healed source. No JSON. The report is written once, so an
+// undelivered report is an error like an unwritable JSON one.
+func printHealText(w io.Writer, spec string, original []byte, result tier2.Session) error {
+	var out bytes.Buffer
+	fmt.Fprintln(&out, "state:", result.State)
+	if result.Reason != "" {
+		fmt.Fprintln(&out, "reason:", result.Reason)
+	}
+	if result.Provider != "" {
+		fmt.Fprintln(&out, "provider:", result.Provider)
+		fmt.Fprintln(&out, "provider calls:", result.ProviderCalls)
+	}
+	fmt.Fprintln(&out, "original:", describeRun(&result.Original))
+	fmt.Fprintln(&out, "tier1:", describeRun(result.Tier1))
+	fmt.Fprintln(&out, "verified:", describeRun(result.Verified))
+	candidatePath := result.SavedPath
+	if result.Applied {
+		candidatePath = spec
+		fmt.Fprintln(&out, "applied:", spec)
+	} else if result.SavedPath != "" {
+		fmt.Fprintln(&out, "saved:", result.SavedPath)
+	}
+	if candidatePath != "" && original != nil {
+		if candidate, err := os.ReadFile(candidatePath); err == nil {
+			fmt.Fprint(&out, unifiedLines(string(original), string(candidate)))
+		}
+	}
+	_, err := w.Write(out.Bytes())
+	return err
+}
+
+// describeRun is one line for a run: not attempted, passed with its test
+// count, or failed with the first line of its failure.
+func describeRun(run *tier2.RunResult) string {
+	switch {
+	case run == nil:
+		return "not attempted"
+	case run.Passed:
+		return fmt.Sprintf("passed (%d tests)", run.ExecutedTests)
+	}
+	failure, _, _ := strings.Cut(strings.TrimSpace(runner.StripTerminalEscapes(run.Failure)), "\n")
+	if failure == "" {
+		return fmt.Sprintf("failed (%d tests)", run.ExecutedTests)
+	}
+	return fmt.Sprintf("failed (%d tests): %s", run.ExecutedTests, failure)
 }
 
 // healFailure describes a session that ended with an error, without the

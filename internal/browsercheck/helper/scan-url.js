@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SUPPORTED_CHECKS = void 0;
+exports.BENIGN_ABORT_MESSAGE = exports.SUPPORTED_CHECKS = void 0;
 exports.resolveChecks = resolveChecks;
 exports.isBenignNavigationAbort = isBenignNavigationAbort;
+exports.isPageWideFinding = isPageWideFinding;
 exports.scanUrl = scanUrl;
 exports.looksStateChanging = looksStateChanging;
 exports.checkSecurityHeaders = checkSecurityHeaders;
@@ -93,6 +94,20 @@ function isBenignNavigationAbort(failed) {
         return false;
     }
     return false;
+}
+/** The message every router-initiated abort shares; `isPageWideFinding` groups on it. */
+exports.BENIGN_ABORT_MESSAGE = 'Request aborted by the page itself: a prefetch or RSC fetch superseded by navigation.';
+/**
+ * Is this finding about the page rather than about one URL on it?
+ *
+ * A router that aborts superseded prefetches does so for every link it
+ * prefetches, so one App Router page produced eleven identical info findings
+ * that differed only in URL. They are one observation about how the page
+ * navigates; `dedupeFindings` merges them and lists the URLs. A genuine
+ * failure stays one finding per URL, because each may need its own fix.
+ */
+function isPageWideFinding(finding) {
+    return finding.category === 'network' && finding.severity === 'info' && finding.message === exports.BENIGN_ABORT_MESSAGE;
 }
 async function scanUrl(args) {
     const url = (0, common_1.validateHttpUrl)(args.url);
@@ -195,14 +210,16 @@ async function scanUrl(args) {
                     });
                     continue;
                 }
+                // A benign abort is grouped with the others across URLs, so its repro
+                // names the behaviour rather than this one request.
                 findings.push({
                     severity: benign ? 'info' : 'medium',
                     category: 'network',
-                    message: benign
-                        ? 'Request aborted by the page itself: a prefetch or RSC fetch superseded by navigation.'
-                        : `Request failed: ${failed.failure ?? 'unknown error'}`,
+                    message: benign ? exports.BENIGN_ABORT_MESSAGE : `Request failed: ${failed.failure ?? 'unknown error'}`,
                     url: (0, network_policy_1.safeUrlForDisplay)(failed.url),
-                    repro: `1. Open ${displayUrl}\n2. Open DevTools → Network\n3. Observe request to ${(0, network_policy_1.safeUrlForDisplay)(failed.url)} fails: ${failed.failure ?? 'unknown error'}`,
+                    repro: benign
+                        ? `1. Open ${displayUrl}\n2. Open DevTools → Network\n3. Observe prefetch and RSC requests end with net::ERR_ABORTED when a navigation supersedes them`
+                        : `1. Open ${displayUrl}\n2. Open DevTools → Network\n3. Observe request to ${(0, network_policy_1.safeUrlForDisplay)(failed.url)} fails: ${failed.failure ?? 'unknown error'}`,
                     suggestion: benign
                         ? 'No action needed: routers abort superseded prefetch and RSC requests by design.'
                         : 'Verify the asset or API route is reachable in the tested environment.',
@@ -474,7 +491,7 @@ async function scanUrl(args) {
     });
     // Deduplicate before scoring so a problem observed N times is penalised once,
     // then fingerprint so the survivors can be compared against another run.
-    const deduped = (0, common_1.withFingerprints)((0, common_1.dedupeFindings)(findings));
+    const deduped = (0, common_1.withFingerprints)((0, common_1.dedupeFindings)(findings, { acrossUrls: isPageWideFinding }));
     const redacted = (0, redact_1.redactSensitiveData)(deduped);
     // Diff the redacted findings, not the raw ones: the baseline was written from
     // a previous response and so is already redacted. Comparing across the
@@ -483,9 +500,11 @@ async function scanUrl(args) {
     if (args.baseline !== undefined) {
         delta = (0, common_1.diffFindings)(redacted, await (0, common_1.loadBaselineFindings)(args.baseline));
     }
+    const score = (0, common_1.scoreFromFindings)(deduped);
     return {
         url: displayUrl,
-        score: (0, common_1.scoreFromFindings)(deduped),
+        score,
+        scoring: (0, common_1.describeScoring)(score),
         checks: Array.from(checks),
         findingCount: deduped.length,
         findings: redacted,

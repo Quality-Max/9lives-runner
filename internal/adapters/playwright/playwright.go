@@ -694,11 +694,19 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 				}
 				if failure.UnexpectedPass() {
 					failure.Message = unexpectedPassMessage(failure.ExpectedStatus)
+					failure.Class = runner.FailureUnexpectedPass
 				}
 				if final >= 0 && failure.Status != "passed" {
 					result := test.Results[final]
+					failure.Class = runner.FailureOther
+					if failure.Status == "timedOut" {
+						failure.Class = runner.FailureTimeout
+					}
 					if len(result.Errors) > 0 {
 						first := result.Errors[0]
+						if failure.Class == runner.FailureOther {
+							failure.Class = classifyError(first.Message)
+						}
 						failure.Message = failureMessage(first.Message)
 						if first.Location != nil && first.Location.Line > 0 {
 							if relative, ok := withinDirectory(workDir, first.Location.File); ok {
@@ -736,6 +744,31 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 		walk(file, nil)
 	}
 	return failures
+}
+
+// Playwright formats its own errors as "<Class>: <api.call>: <detail>".
+// These match that structure, so a test's own thrown message, which has no
+// such prefix, stays "other". Chromium and Firefox name a failed connection
+// by code (net::ERR_*, NS_ERROR_*); WebKit does not, so its navigation
+// failures also stay "other".
+var (
+	assertionError  = regexp.MustCompile(`^Error: expect(\.soft|\.poll)?\(`)
+	actionTimeout   = regexp.MustCompile(`^TimeoutError: [a-zA-Z]+\.[a-zA-Z]+: Timeout [0-9]+ms exceeded`)
+	navigationError = regexp.MustCompile(`^Error: (page|frame)\.(goto|reload|goBack|goForward): (net::ERR_[A-Z_0-9]+|NS_ERROR_[A-Z_0-9]+)`)
+)
+
+// classifyError reads the framework's structured prefix of an error.
+func classifyError(message string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(runner.StripTerminalEscapes(message)), "\n")
+	switch {
+	case assertionError.MatchString(line):
+		return runner.FailureAssertion
+	case actionTimeout.MatchString(line):
+		return runner.FailureActionTimeout
+	case navigationError.MatchString(line):
+		return runner.FailureEnvironment
+	}
+	return runner.FailureOther
 }
 
 // unexpectedPassMessage explains a failure that has no error: the test

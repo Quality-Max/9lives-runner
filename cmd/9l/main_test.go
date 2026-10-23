@@ -164,17 +164,19 @@ func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
 		Status: runner.StatusFailed, Spec: "tests/login.spec.ts", FailureCount: 1,
 		Failures: []runner.TestFailure{{
-			Title: "login › renamed button", Location: "tests/login.spec.ts:9",
+			Title: "login › renamed button", Location: "tests/login.spec.ts:9", Class: runner.FailureActionTimeout,
 			Message:     "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Login' })\n  - second\n  - third",
 			Attachments: []runner.TestAttachment{{Name: "error-context", Path: errorContext}},
-		}},
+		}, {Title: "login › other", Class: runner.FailureOther, Message: "Error: boom"}},
 	}}})
 	want := "  FAILED   tests/login.spec.ts\n" +
-		"           ✗ login › renamed button  tests/login.spec.ts:9\n" +
+		"           ✗ login › renamed button  tests/login.spec.ts:9  [action-timeout]\n" +
 		"             TimeoutError: locator.click: Timeout 1500ms exceeded.\n" +
 		"             - waiting for getByRole('button', { name: 'Login' })\n" +
 		"             - second\n" +
 		"             context: " + displayPath(errorContext) + "\n" +
+		"           ✗ login › other\n" +
+		"             Error: boom\n" +
 		"  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.\n"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("text summary:\n%s", out.String())
@@ -307,6 +309,34 @@ func TestPrintResultShowsTestAnnotationsButNotBuiltinPins(t *testing.T) {
 	}}})
 	if !strings.Contains(out.String(), "  PASSED   tests/icons.spec.ts\n           note  returns early — icon-font: 0 visible icon(s)\n") || strings.Contains(out.String(), "known bug") {
 		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
+// --keep-attachments that found nothing to copy says so; without the flag,
+// or when the failures are not listed, nothing is claimed.
+func TestPrintResultSaysWhenKeepAttachmentsFoundNothing(t *testing.T) {
+	line := "           --keep-attachments: the listed failures referenced no attachment files\n"
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{
+		{Status: runner.StatusFailed, Spec: "tests/pin.spec.ts", FailureCount: 1, KeepAttachments: true, Failures: []runner.TestFailure{{Title: "pinned", ExpectedStatus: "failed", Status: "passed"}}},
+		{Status: runner.StatusFailed, Spec: "tests/engine.spec.ts", FailureCount: 1, KeepAttachments: true},
+		{Status: runner.StatusFailed, Spec: "tests/plain.spec.ts", FailureCount: 1, Failures: []runner.TestFailure{{Title: "plain"}}},
+	}})
+	if strings.Count(out.String(), line) != 1 || !strings.Contains(out.String(), "tests/pin.spec.ts\n           ⚠") {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+}
+
+// A passed job whose tests reported no assertion step says so in the text
+// output; a job whose tests all asserted something adds nothing.
+func TestPrintResultFlagsPassedTestsWithoutAssertionSteps(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomePassed, Complete: true, Passed: 2, Receipts: []runner.Receipt{
+		{Status: runner.StatusPassed, Spec: "tests/api.spec.ts", ExecutedTests: 3, ReportedAssertions: 4, PassedWithoutAssertions: 1},
+		{Status: runner.StatusPassed, Spec: "tests/shop.spec.ts", ExecutedTests: 1, ReportedAssertions: 2},
+	}})
+	if !strings.Contains(out.String(), "  PASSED   tests/api.spec.ts\n           1 passed test(s) reported no assertion step") || strings.Count(out.String(), "reported no assertion step") != 1 {
+		t.Fatalf("unexpected output:\n%s", out.String())
 	}
 }
 

@@ -120,7 +120,7 @@ var mcpTools = []map[string]any{
 	{
 		"name":        "scan_url",
 		"title":       "Scan a URL",
-		"description": "Load a URL once in Chromium and report console errors, failed requests, broken links, accessibility, Core Web Vitals (INP is not measured), SEO, security headers, cookies and trackers, mixed content and page weight, with a 0-100 score, graded findings, reproduction steps and suggested fixes. Makes outbound requests. baseline (a previous JSON result or a path to one) adds a delta of new, fixed and unchanged findings. format markdown returns a graded report; issue returns one tracker-ready block per finding. storage_state_path loads a Playwright storage-state file for an authenticated page and requires acknowledge_private_content true; its credentials are never returned. screenshot writes a temporary file.",
+		"description": "Load a URL once in Chromium and report console errors, failed requests, broken links, accessibility, Core Web Vitals (INP is not measured), SEO, security headers, cookies and trackers, mixed content and page weight, with a 0-100 score (100 minus 35, 20, 10, 4 and 0 points per critical, high, medium, low and info finding after deduplication, floored at 0; A from 90, B from 75, C from 60, D from 40, else F; the result's scoring object states these with the grade), graded findings, reproduction steps and suggested fixes. Repeated prefetch and RSC aborts by the page's own router are one info finding with occurrences and a capped urls list. Makes outbound requests. baseline (a previous JSON result or a path to one) adds a delta of new, fixed and unchanged findings. format markdown returns a graded report; issue returns one tracker-ready block per finding. storage_state_path loads a Playwright storage-state file for an authenticated page and requires acknowledge_private_content true; its credentials are never returned. screenshot writes a temporary file.",
 		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
 		"inputSchema": map[string]any{
 			"type": "object",
@@ -741,7 +741,8 @@ func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, propo
 		return nil, toolError{"healing did not start: " + bounded(err.Error())}
 	}
 	result := mcpHealResult{Version: MCPToolResultVersion, Spec: spec, Session: session}
-	result.Original.Failure, result.Tier1.Failure, result.Verified.Failure = bounded(session.Original.Failure), bounded(session.Tier1.Failure), bounded(session.Verified.Failure)
+	result.Original.Failure = bounded(session.Original.Failure)
+	result.Tier1, result.Verified = boundedRun(session.Tier1), boundedRun(session.Verified)
 	candidatePath := session.SavedPath
 	if session.Applied {
 		candidatePath = spec
@@ -761,6 +762,17 @@ func (s *mcpServer) healTest(ctx context.Context, spec string, apply bool, propo
 		return nil, failedResult{result}
 	}
 	return result, nil
+}
+
+// boundedRun is run with its failure text bounded; a stage that was not
+// attempted stays null.
+func boundedRun(run *tier2.RunResult) *tier2.RunResult {
+	if run == nil {
+		return nil
+	}
+	copied := *run
+	copied.Failure = bounded(run.Failure)
+	return &copied
 }
 
 func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (any, error) {
