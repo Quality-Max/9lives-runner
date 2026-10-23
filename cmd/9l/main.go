@@ -96,7 +96,7 @@ Usage:
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]...
+  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
   9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding,
           # scan_url, inspect_page, generate_playwright_repro

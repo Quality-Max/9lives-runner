@@ -33,6 +33,15 @@ SDK versions.
   reason names only the missing package: `@9l/playwright`, `@playwright/test`
   or a `package.json` that declares it. Previously it asked for both packages
   even when one was installed.
+- `9l heal` says when Tier 1 and verification were not attempted. In the
+  session JSON, and in the MCP `heal_test` result, `tier1` and `verified` are
+  `null` when the session ended before that stage ran (the original passed,
+  ran zero tests or failed an assertion, or no candidate was proposed);
+  previously both read as a failed zero-test run. `9l heal` accepts
+  `--format json` (the default, the session JSON) and `--format text` (the
+  state and reason, one line per run with `not attempted`, and the verified
+  candidate's diff; no JSON). An unknown option is reported as such; only a
+  Python-only option such as `--framework` is referred to `9lives heal`.
 
 ## 0.4.9 — 2026-10-22
 

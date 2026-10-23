@@ -34,7 +34,7 @@ session checks that the spec holds exactly one direct
 `await page.<failed locator>.<action>(...)` statement outside an assertion; otherwise no proposal could be admitted, so it ends `unverified`
 with a `Tier 2 was not asked: …` reason and makes no provider call.
 
-The command prints only a JSON session result on stdout; the terminal diff and prompt use stderr. With `--yes`, it applies only after
+By default (`--format json`) the command prints only a JSON session result on stdout; the terminal diff and prompt use stderr. Its `original`, `tier1` and `verified` fields are the runs that happened: `tier1` and `verified` are `null` when the session ended before that stage ran (the original passed, ran zero tests or failed an assertion, or no candidate was proposed), so an unattempted stage is never reported as a failed run. `--format text` prints the state and reason, one line per run with `not attempted` for a stage the session never reached, where a verified candidate was saved or applied, and its diff, with no JSON. With `--yes`, it applies only after
 the original file SHA-256 still matches the bytes that were tested. On a
 terminal, it first prints a candidate diff and accepts only `y` or `yes`.
 Declining, or running without a terminal, saves the verified candidate as

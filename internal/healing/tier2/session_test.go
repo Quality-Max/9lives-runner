@@ -201,7 +201,7 @@ func TestHealRefusesUnsafeTier1BeforeVerification(t *testing.T) {
 		labels = append(labels, label)
 		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('[data-testid=\\\"old\\\"]')"}
 	}}, func(string, string, string) (string, bool) { return unsafe, true })
-	if err != nil || len(labels) != 1 || labels[0] != "original" || result.Tier1.ExecutedTests != 0 || result.Applied || result.SavedPath != "" {
+	if err != nil || len(labels) != 1 || labels[0] != "original" || result.Tier1 != nil || result.Applied || result.SavedPath != "" {
 		t.Fatalf("unsafe Tier1 executed or persisted: result=%+v labels=%v err=%v", result, labels, err)
 	}
 }
@@ -718,6 +718,50 @@ func TestHealExplainsWhyAProviderCandidateWasRefused(t *testing.T) {
 		if err != nil || result.State != "unverified" || !strings.Contains(result.Reason, tc.reason) || !strings.HasPrefix(result.ProviderDiagnostic, tc.diagnostic) {
 			t.Fatalf("%s: result=%+v err=%v", name, result, err)
 		}
+	}
+}
+
+// A session that ends before a stage runs reports that stage as null, not as
+// a run that executed zero tests and failed.
+func TestSessionReportsUnattemptedStagesAsNull(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "login.spec.ts")
+	if err := os.WriteFile(spec, []byte("test('x', async ({ page }) => {\n  await page.locator('#old').click();\n  await expect(page.locator('#done')).toBeVisible();\n});\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	noProposal := func(string, string, string) (string, bool) { return "", false }
+	for name, tc := range map[string]struct {
+		original RunResult
+		state    string
+	}{
+		"original passed":    {RunResult{Passed: true, ExecutedTests: 1}, "passed"},
+		"zero tests":         {RunResult{Failure: "no tests found"}, "unverified"},
+		"assertion failure":  {RunResult{ExecutedTests: 1, Failure: "Error: expect(locator).toBeVisible() failed\nLocator: locator('#done')"}, "needs_human"},
+		"no tier 1 proposal": {RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}, "unverified"},
+	} {
+		result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: func(context.Context, string, string) RunResult { return tc.original }}, noProposal)
+		if err != nil || result.State != tc.state {
+			t.Fatalf("%s: result=%+v err=%v", name, result, err)
+		}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		for _, stage := range []string{"tier1", "verified"} {
+			if raw, ok := decoded[stage]; !ok || string(raw) != "null" {
+				t.Errorf("%s: %s = %s, want null", name, stage, raw)
+			}
+		}
+	}
+	// A Tier 1 candidate that ran and failed is reported as that run.
+	result, err := Heal(context.Background(), SessionOptions{Spec: spec, Framework: "playwright", Run: func(context.Context, string, string) RunResult {
+		return RunResult{ExecutedTests: 1, Failure: "waiting for locator('#old')"}
+	}}, func(source, _, _ string) (string, bool) { return strings.Replace(source, "#old", "#new", 1), true })
+	if err != nil || result.State != "unverified" || result.Tier1 == nil || result.Tier1.Passed || result.Tier1.ExecutedTests != 1 || result.Verified != nil {
+		t.Fatalf("failed Tier 1 run not reported: result=%+v err=%v", result, err)
 	}
 }
 
