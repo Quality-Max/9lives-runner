@@ -21,5 +21,10 @@
   "scripts": {"build": "tsc -p tsconfig.json"},
   "peerDependencies": {"@playwright/test": ">=1.61.1 <2"},
   "engines": {"node": ">=22"},
+  "9l": {
+    "protocol": "9l.engine/1",
+    "capabilities": ["steps", "artifact-metadata", "terminal-outcomes"],
+    "faults": ["abort", "http-500", "empty-json", "http-401", "http-403", "http-429", "malformed-json"]
+  },
   "publishConfig": {"access": "public"}
 }

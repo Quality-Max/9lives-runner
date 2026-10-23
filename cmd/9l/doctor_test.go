@@ -8,8 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Quality-Max/9lives-runner/internal/adapters/playwrightsdk"
+	"github.com/Quality-Max/9lives-runner/internal/prove"
 )
 
 func TestDoctorEmptyProjectAndMissingNode(t *testing.T) {
@@ -108,5 +112,90 @@ func TestVersionAdvertisesSetupAndBrowserCommands(t *testing.T) {
 		if !found {
 			t.Fatalf("version omits %s", name)
 		}
+	}
+}
+
+// The CLI tells the helper what it admits, so an installed SDK is judged by
+// the protocol it declares; a different protocol is a missing prerequisite.
+func TestDoctorJudgesTheSDKPairByDeclaredProtocol(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node not installed")
+	}
+	root := t.TempDir()
+	pkg := filepath.Join(root, "node_modules", "@9l", "playwright")
+	if err := os.MkdirAll(pkg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"package.json": "{}", "node_modules/@9l/playwright/index.js": `throw new Error("fixture-sdk-entry-must-not-run")`} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(root)
+	report := func(protocol string) (int, string, struct {
+		Ready  bool
+		Checks []struct{ Name, Status, Message, Fix string }
+	}) {
+		t.Helper()
+		manifest, _ := json.Marshal(map[string]any{"name": "@9l/playwright", "version": "0.0.1", "main": "index.js",
+			"9l": map[string]any{"protocol": protocol, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}})
+		if err := os.WriteFile(filepath.Join(pkg, "package.json"), manifest, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out, stderr bytes.Buffer
+		code := run([]string{"doctor", "--sdk", "--format", "json"}, &out, &stderr)
+		var parsed struct {
+			Ready  bool
+			Checks []struct{ Name, Status, Message, Fix string }
+		}
+		if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+			t.Fatalf("exit %d: %s %s", code, out.String(), stderr.String())
+		}
+		return code, out.String(), parsed
+	}
+	find := func(checks []struct{ Name, Status, Message, Fix string }, name string) struct{ Name, Status, Message, Fix string } {
+		for _, check := range checks {
+			if check.Name == name {
+				return check
+			}
+		}
+		t.Fatalf("no %s check", name)
+		return struct{ Name, Status, Message, Fix string }{}
+	}
+	_, raw, admitted := report(playwrightsdk.Version)
+	if sdk := find(admitted.Checks, "sdk"); sdk.Status != "warning" || !strings.Contains(sdk.Message, "Admitted: protocol "+playwrightsdk.Version) || !strings.Contains(sdk.Fix, "@9l/playwright@"+version) {
+		t.Fatalf("admitted pair: %+v", sdk)
+	}
+	if faults := find(admitted.Checks, "sdk/faults"); faults.Status != "ok" || !strings.Contains(faults.Message, strings.Join(prove.Kinds, ", ")) {
+		t.Fatalf("fault kinds: %+v", faults)
+	}
+	if strings.Contains(raw, "fixture-") || strings.Contains(raw, "node_modules") {
+		t.Fatal("doctor disclosed fixture paths or ran the SDK entry")
+	}
+	code, _, foreign := report("9l.engine/0")
+	if sdk := find(foreign.Checks, "sdk"); code != 2 || foreign.Ready || sdk.Status != "missing" || !strings.Contains(sdk.Message, "Incompatible") {
+		t.Fatalf("foreign protocol: exit %d %+v", code, sdk)
+	}
+}
+
+// The SDK's package metadata is what doctor compares against this engine,
+// so it must declare exactly what the Go side admits and can request.
+func TestSDKPackageDeclaresTheEngineContract(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "packages", "playwright", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Engine struct {
+			Protocol     string   `json:"protocol"`
+			Capabilities []string `json:"capabilities"`
+			Faults       []string `json:"faults"`
+		} `json:"9l"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Engine.Protocol != playwrightsdk.Version || !slices.Equal(manifest.Engine.Capabilities, playwrightsdk.Capabilities) || !slices.Equal(manifest.Engine.Faults, prove.Kinds) {
+		t.Fatalf("packages/playwright/package.json declares %+v; engine admits %s %v and requests %v", manifest.Engine, playwrightsdk.Version, playwrightsdk.Capabilities, prove.Kinds)
 	}
 }

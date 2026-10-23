@@ -12,7 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Quality-Max/9lives-runner/internal/adapters/playwrightsdk"
 	"github.com/Quality-Max/9lives-runner/internal/browsercheck"
+	"github.com/Quality-Max/9lives-runner/internal/prove"
 )
 
 func doctorCommand(args []string, out, errOut io.Writer) int {
@@ -32,7 +34,10 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: map[string]any{"cliVersion": version, "sdk": *sdk}}, browsercheck.Options{Timeout: 10 * time.Second})
+	// What this engine admits and can request, so the helper can judge an
+	// installed SDK by its declared protocol rather than by version string.
+	engine := map[string]any{"protocol": playwrightsdk.Version, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}
+	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: map[string]any{"cliVersion": version, "sdk": *sdk, "engine": engine}}, browsercheck.Options{Timeout: 10 * time.Second})
 	if err != nil {
 		// Never echo a helper's arbitrary stderr or project paths from diagnostics.
 		if errors.Is(err, browsercheck.ErrNodeUnavailable) {
