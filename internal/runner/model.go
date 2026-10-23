@@ -95,7 +95,8 @@ type Receipt struct {
 	// redacted; attachments are referenced and copied only on request.
 	Failures []TestFailure `json:"failures,omitempty"`
 	// KeepAttachments records that retention was requested. FailureAttachments
-	// counts the attachments the reported failures carried and
+	// counts the attachment files the listed failures reference (inline
+	// bodies and files outside the project are never referenced) and
 	// RetainedAttachments those copied into the receipt directory, so a
 	// request that found nothing to copy is distinguishable from one that
 	// was never made.

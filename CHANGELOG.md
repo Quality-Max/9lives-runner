@@ -25,11 +25,11 @@ SDK versions.
   JSON reporter serializes only `test.step` steps. Receipt, run-result and
   run-status contracts gain the two optional fields (additive).
 - Receipts record `keepAttachments` when `--keep-attachments` was given,
-  `failureAttachments` for the attachments the listed failures carried and
-  `retainedAttachments` for those copied into the receipt directory. A
-  request that found nothing to copy, such as a failure with no attached
-  files, prints `--keep-attachments: the failed test(s) produced no
-  attachments` under the job instead of silently doing nothing (additive).
+  `failureAttachments` for the attachment files the listed failures
+  reference and `retainedAttachments` for those copied into the receipt
+  directory. A request that found nothing to copy prints `--keep-attachments:
+  the listed failures referenced no attachment files` under the job instead
+  of silently doing nothing (additive).
 - `9l doctor` judges the SDK pair by the protocol and capabilities the
   installed `@9l/playwright` declares, the contract `run --sdk` checks in the
   handshake, instead of by version string. A different release that this CLI
