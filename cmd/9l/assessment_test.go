@@ -237,7 +237,7 @@ func TestAssessTextGroupsAnalysisLimitsPerFile(t *testing.T) {
 			{Location: assessment.Location{Line: 2, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{limit("nested-function", 2, 30), limit("nested-function", 3, 12)}},
 		}}},
 		{Path: "tests/c.spec.ts", Error: "syntax"},
-	}, Summary: assessment.SuiteSummary{Files: 3, Assessed: 2, Failed: 1, Tests: 3, Findings: 5, Rules: map[string]int{"analysis-limit/unresolved-helper": 2, "analysis-limit/nested-function": 2, "fixed-wait": 1}}}
+	}, Summary: assessment.SuiteSummary{Files: 3, Assessed: 2, Failed: 1, Tests: 3, Findings: 6, Rules: map[string]int{"analysis-limit/unresolved-helper": 2, "analysis-limit/nested-function": 3, "fixed-wait": 1}}}
 
 	var grouped bytes.Buffer
 	writeSuiteText(&grouped, suite, false)
@@ -245,7 +245,7 @@ func TestAssessTextGroupsAnalysisLimitsPerFile(t *testing.T) {
 		"file \"tests/a.spec.ts\":\ntest at 3:1: ",
 		"  fixed-wait [demonstrated] at 7:9: A waitForTimeout call is present.\n  analysis limits: unresolved-helper ×2, nested-function ×1\nfile \"tests/b.spec.ts\":\n",
 		"test at 2:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=concern\n  analysis limits: nested-function ×2\nfile \"tests/c.spec.ts\": not assessed: syntax\n",
-		"Summary: 3 files (2 assessed, 1 not assessed), 3 tests, 5 findings\n  analysis-limit/nested-function: 2\n  analysis-limit/unresolved-helper: 2\n  fixed-wait: 1\n",
+		"Summary: 3 files (2 assessed, 1 not assessed), 3 tests, 6 findings\n  analysis-limit/nested-function: 3\n  analysis-limit/unresolved-helper: 2\n  fixed-wait: 1\n",
 	} {
 		if !strings.Contains(grouped.String(), want) {
 			t.Fatalf("grouped text lacks %q:\n%s", want, grouped.String())
