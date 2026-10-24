@@ -47,6 +47,9 @@ export default class EngineReporter implements Reporter {
     this.emit('test_begin', {testId: this.testId(test), retry: result.retry});
   }
   onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
+    // expect.poll and matchers that retry report their inner matcher as a
+    // nested expect step. One assertion in the spec is one frame.
+    if (step.category === 'expect' && step.parent?.category === 'expect') return;
     const categories: Record<string, string> = {'test.step': 'action', expect: 'assertion', 'pw:api': 'browser', fixture: 'fixture'};
     const operation = this.target && step.category === 'test.step' && step.location?.file === targetStepFile && step.title.startsWith('9l target ') ? step.title.slice('9l target '.length) : undefined;
     this.emit('step_end', {

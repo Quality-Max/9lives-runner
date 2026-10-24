@@ -118,6 +118,9 @@
         "repository": {
           "type": "string"
         },
+        "scope": {
+          "type": "string"
+        },
         "source": {
           "type": "string"
         },

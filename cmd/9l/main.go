@@ -288,7 +288,12 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 
 func writeAssessmentText(out io.Writer, report assessment.Report) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
-	fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
+	fmt.Fprint(out, "Agent branch/source provenance: ", report.AgentProvenance.Status)
+	if report.AgentProvenance.Scope == "spec" {
+		// "matched" is easy to over-trust: name what was compared.
+		fmt.Fprint(out, " (the selected spec, its path, branch, commit and workspace root; imported modules are not compared)")
+	}
+	fmt.Fprintln(out)
 	writeAssessmentTests(out, report)
 	for _, limit := range report.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
@@ -556,6 +561,9 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	deadline := fs.Duration("deadline", 0, "shared run deadline (0 is unlimited)")
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job: 9l's own retry of the whole job; the project's Playwright retries still apply inside each attempt unless --retries overrides them")
 	retries := fs.Int("retries", -1, "Playwright retries per test inside each attempt, replacing the project's setting; 0 with --attempts lets 9l own all retries (default: the project's setting)")
+	var waitFor waitTargets
+	fs.Var(&waitFor, "wait-for", "before any test process starts, wait until this http(s) URL answers without a server error or this host:port accepts connections (repeatable)")
+	waitTimeout := fs.Duration("wait-timeout", time.Minute, "how long --wait-for targets may take to become ready; a target still not ready leaves the run incomplete without starting it")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
@@ -601,6 +609,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-timeout": true, "--timeout": true,
 		"-deadline": true, "--deadline": true,
 		"-attempts": true, "--attempts": true, "-retries": true, "--retries": true,
+		"-wait-for": true, "--wait-for": true, "-wait-timeout": true, "--wait-timeout": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
 		"-receipt-dir": true, "--receipt-dir": true,
 		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
@@ -729,7 +738,11 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	config := ""
 	if *configFile != "" {
 		absolute, err := filepath.Abs(*configFile)
-		if info, statErr := os.Stat(absolute); err != nil || statErr != nil || !info.Mode().IsRegular() {
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
+			return 2
+		}
+		if info, err := os.Stat(absolute); err != nil || !info.Mode().IsRegular() {
 			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
 			return 2
 		}
@@ -768,6 +781,35 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A target that never comes up is an environment failure, not a test
+	// failure: nothing starts, and the run is incomplete rather than failed.
+	if waitFor.invalid {
+		fmt.Fprintln(errOut, "9l: --wait-for: each target is one http(s) URL or host:port of at most 512 bytes, at most 16 targets")
+		return exitUsage
+	}
+	if len(waitFor.values) > 0 {
+		if *waitTimeout <= 0 || *waitTimeout > 30*time.Minute {
+			fmt.Fprintln(errOut, "9l: --wait-timeout must be between 1s and 30m")
+			return exitUsage
+		}
+		if err := waitForTargets(ctx, waitFor.values, *waitTimeout); err != nil {
+			var usage waitUsageError
+			if errors.As(err, &usage) {
+				fmt.Fprintf(errOut, "9l: --wait-for: %v\n", err)
+				return exitUsage
+			}
+			started := time.Now().UTC()
+			result := runner.RunSummary{Version: runner.RunSummaryVersion, Outcome: runner.OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, FinishedAt: started,
+				PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Skipped: plan.Skipped, Receipts: []runner.Receipt{}}
+			fmt.Fprintf(errOut, "9l: target not ready (environment): %v; nothing ran\n", err)
+			if *format == "json" {
+				_ = json.NewEncoder(out).Encode(result)
+			} else {
+				fmt.Fprintf(out, "run %s: nothing ran\n  INCOMPLETE: %v (environment); no test process was started\n", plan.RunID, err)
+			}
+			return exitIncomplete
+		}
+	}
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
 		OnStarted: func() {
 			if *format == "json" {

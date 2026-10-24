@@ -30,7 +30,12 @@ type AgentProvenance struct {
 	SourcePath string `json:"sourcePathSHA256"`
 }
 type ProvenanceAssessment struct {
-	Status     string           `json:"status"`
+	Status string `json:"status"`
+	// Scope names what a matched status covers: "spec" means the selected
+	// spec's bytes, its relative path, the branch, commit and workspace root.
+	// Helpers, page objects and the module under test are not compared, so a
+	// matched spec does not mean unchanged dependencies.
+	Scope      string           `json:"scope,omitempty"`
 	Branch     string           `json:"branch"`
 	Commit     string           `json:"commit"`
 	Source     string           `json:"source"`
@@ -155,7 +160,7 @@ func CompareAgentProvenance(expected, actual AgentProvenance) ProvenanceAssessme
 		}
 		return "mismatch"
 	}
-	r := ProvenanceAssessment{Status: "matched", Branch: compare(expected.Branch, actual.Branch), Commit: compare(expected.Commit, actual.Commit), Source: compare(expected.Source, actual.Source), Repository: compare(expected.Repository, actual.Repository), Expected: &expected, Before: &actual}
+	r := ProvenanceAssessment{Status: "matched", Scope: "spec", Branch: compare(expected.Branch, actual.Branch), Commit: compare(expected.Commit, actual.Commit), Source: compare(expected.Source, actual.Source), Repository: compare(expected.Repository, actual.Repository), Expected: &expected, Before: &actual}
 	if expected.SourcePath != actual.SourcePath {
 		r.Source = "mismatch"
 	}

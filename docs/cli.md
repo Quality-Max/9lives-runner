@@ -35,6 +35,16 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Readiness: `--wait-for <url|host:port>` (repeatable) waits before any test
+  process starts until an http(s) target answers without a server error (a
+  status below 500 other than 429) or a host:port accepts a TCP connection,
+  polling every 500 ms for `--wait-timeout` (default 1m, at most 30m). A
+  target still not ready leaves the run incomplete (exit 3) with the reason
+  on stderr, `9l: target not ready (environment): <target> was not ready
+  after 1m0s: dial: connection refused; nothing ran`, and no receipts, so an
+  application that never came up is not reported as failing tests. Targets
+  are named without credentials or query strings. `plan` and `--dry-run` do
+  not wait.
 - Retries: `--attempts <n>` is 9l's own retry of the whole job, with a receipt
   per attempt. The project's Playwright `retries` still apply inside each
   attempt, so a failing test can run several times within one receipt.
@@ -141,7 +151,11 @@
   report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
   `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
-  commit and test source for later assessment/execution checks.
+  commit and test source for later assessment/execution checks. A `matched`
+  assessment has `scope: "spec"`: it compared the selected spec's bytes, its
+  path, the branch, commit and workspace root. Helpers, page objects and the
+  module under test are not compared, so `matched` does not mean unchanged
+  dependencies; the text output says so.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
   proposals remain unverified and require approval.
 - `9l heal`: execute a failing Playwright spec, verify a selector-only
