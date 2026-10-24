@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -42,6 +43,7 @@ func TestRejectsInvalidTypedAnswers(t *testing.T) {
 		{"distribution sum", Question{Type: "choice", Criteria: map[string]string{"a": "A", "b": "B"}}, `{"type":"choice","choice":"a","confidence":0.9,"probabilities":{"a":0.9,"b":0.9}}`},
 		{"confidence range", Question{Type: "choice", Criteria: map[string]string{"a": "A", "b": "B"}}, `{"type":"choice","choice":"a","confidence":1.1,"probabilities":{"a":0.9,"b":0.1}}`},
 		{"missing box edge", Question{Type: "box"}, `{"type":"box","confidence":0.9,"box":{"top":0.1,"right":0.8,"bottom":0.8}}`},
+		{"box alias hides missing top", Question{Type: "box"}, `{"type":"box","confidence":0.9,"box":{"left":0.1,"Left":0.2,"right":0.8,"bottom":0.8}}`},
 		{"reversed box", Question{Type: "box"}, `{"type":"box","confidence":0.9,"box":{"left":0.9,"top":0.1,"right":0.8,"bottom":0.8}}`},
 		{"zero box", Question{Type: "box"}, `{"type":"box","confidence":0.9,"box":{"left":0.1,"top":0.1,"right":0.1,"bottom":0.8}}`},
 		{"out of image", Question{Type: "box"}, `{"type":"box","confidence":0.9,"box":{"left":-0.1,"top":0.1,"right":0.8,"bottom":0.8}}`},
@@ -57,6 +59,72 @@ func TestRejectsInvalidTypedAnswers(t *testing.T) {
 			raw := []byte(`{"model":"jev-1.14.0","answers":{"answer":` + tc.answer + `}}`)
 			if answers, _, _, err := parseResponse(raw, contract); err == nil || answers != nil {
 				t.Fatal("invalid provider answer accepted")
+			}
+		})
+	}
+}
+
+func TestResponseRequiresExactFieldNames(t *testing.T) {
+	noul := `{"model":"jev-1.14.0","answers":{"answer":{"type":"noul","noul":0.97}},"usage":{"input_tokens":0,"output_tokens":0}}`
+	box := `{"model":"jev-1.14.0","answers":{"answer":{"type":"box","confidence":0.9,"box":{"left":0,"top":0,"right":0.8,"bottom":0.8}}}}`
+	cases := []struct {
+		name, body string
+		q          Question
+		path       []string
+		required   []string
+	}{
+		{"envelope", noul, Question{Type: "noul"}, nil, []string{"model", "answers"}},
+		{"usage", noul, Question{Type: "noul"}, []string{"usage"}, []string{"input_tokens", "output_tokens"}},
+		{"noul", noul, Question{Type: "noul"}, []string{"answers", "answer"}, []string{"type", "noul"}},
+		{"choice", `{"model":"jev-1.14.0","answers":{"answer":{"type":"choice","choice":"a","confidence":0.9,"probabilities":{"a":0.9,"A":0.1}}}}`, Question{Type: "choice", Criteria: map[string]string{"a": "A", "A": "Other"}}, []string{"answers", "answer"}, []string{"type", "choice", "confidence", "probabilities"}},
+		{"score", `{"model":"jev-1.14.0","answers":{"answer":{"type":"score","score":0.2,"confidence":0.8,"legend":{"0":"clear","1":"blocked"},"probabilities":{"0":0.8,"1":0.2}}}}`, Question{Type: "score", Levels: []string{"clear", "blocked"}}, []string{"answers", "answer"}, []string{"type", "score", "confidence", "legend", "probabilities"}},
+		{"box", box, Question{Type: "box"}, []string{"answers", "answer"}, []string{"type", "confidence", "box"}},
+		{"edges", box, Question{Type: "box"}, []string{"answers", "answer", "box"}, []string{"left", "top", "right", "bottom"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			contract := Contract{Questions: map[string]Question{"answer": tc.q}}
+			if _, _, _, err := parseResponse([]byte(tc.body), contract); err != nil {
+				t.Fatal("valid response rejected", err)
+			}
+			var original map[string]any
+			if err := json.Unmarshal([]byte(tc.body), &original); err != nil {
+				t.Fatal(err)
+			}
+			object := original
+			for _, key := range tc.path {
+				object = object[key].(map[string]any)
+			}
+			for field := range object {
+				for _, mutation := range []string{"alias", "duplicate alias", "missing"} {
+					if mutation == "missing" && !slices.Contains(tc.required, field) {
+						continue
+					}
+					t.Run(field+"/"+mutation, func(t *testing.T) {
+						var body map[string]any
+						if err := json.Unmarshal([]byte(tc.body), &body); err != nil {
+							t.Fatal(err)
+						}
+						fields := body
+						for _, key := range tc.path {
+							fields = fields[key].(map[string]any)
+						}
+						if mutation != "missing" {
+							fields[strings.ToUpper(field)] = fields[field]
+						}
+						if mutation != "duplicate alias" {
+							delete(fields, field)
+						}
+						raw, err := json.Marshal(body)
+						if err != nil {
+							t.Fatal(err)
+						}
+						answers, model, usage, err := parseResponse(raw, contract)
+						if err == nil || answers != nil || model != "" || usage != (Usage{}) {
+							t.Fatal("malformed field names produced a response")
+						}
+					})
+				}
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -146,9 +147,39 @@ type response struct {
 	} `json:"usage,omitempty"`
 }
 
+// Struct decoding accepts case-insensitive field aliases. Check the exact
+// required/optional names before decoding so aliases cannot hide missing data.
+func responseFields(raw []byte, required []string, optional ...string) (map[string]json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	invalid := errors.New("invalid Jev response schema")
+	if decode(raw, &fields) != nil {
+		return nil, invalid
+	}
+	for _, key := range required {
+		if _, ok := fields[key]; !ok {
+			return nil, invalid
+		}
+	}
+	for key := range fields {
+		if !slices.Contains(required, key) && !slices.Contains(optional, key) {
+			return nil, invalid
+		}
+	}
+	return fields, nil
+}
+
 func parseResponse(raw []byte, contract Contract) (map[string]Answer, string, Usage, error) {
 	var r response
 	invalid := errors.New("invalid Jev response schema")
+	fields, err := responseFields(raw, []string{"model", "answers"}, "usage")
+	if err != nil {
+		return nil, "", Usage{}, invalid
+	}
+	if usage, ok := fields["usage"]; ok {
+		if _, err := responseFields(usage, []string{"input_tokens", "output_tokens"}); err != nil {
+			return nil, "", Usage{}, invalid
+		}
+	}
 	if decode(raw, &r) != nil || !modelName.MatchString(r.Model) || len(r.Answers) != len(contract.Questions) {
 		return nil, "", Usage{}, invalid
 	}
@@ -161,21 +192,39 @@ func parseResponse(raw []byte, contract Contract) (map[string]Answer, string, Us
 	}
 	answers := make(map[string]Answer, len(r.Answers))
 	for id, q := range contract.Questions {
+		var required []string
+		switch q.Type {
+		case "noul":
+			required = []string{"type", "noul"}
+		case "choice":
+			required = []string{"type", "choice", "confidence", "probabilities"}
+		case "box":
+			required = []string{"type", "confidence", "box"}
+		case "score":
+			required = []string{"type", "score", "confidence", "legend", "probabilities"}
+		default:
+			return nil, "", Usage{}, invalid
+		}
+		fields, err := responseFields(r.Answers[id], required)
+		if err != nil {
+			return nil, "", Usage{}, invalid
+		}
+		if q.Type == "box" {
+			if _, err := responseFields(fields["box"], []string{"left", "top", "right", "bottom"}); err != nil {
+				return nil, "", Usage{}, invalid
+			}
+		}
 		var a Answer
 		if decode(r.Answers[id], &a) != nil || a.Type != q.Type {
 			return nil, "", Usage{}, invalid
 		}
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(r.Answers[id], &fields) != nil {
-			return nil, "", Usage{}, invalid
-		}
 		switch q.Type {
 		case "noul":
-			if len(fields) != 2 || a.Noul == nil || !probability(*a.Noul) || a.Confidence != nil || a.Choice != "" || a.Probabilities != nil || a.Box != nil {
+			if a.Noul == nil || !probability(*a.Noul) {
 				return nil, "", Usage{}, invalid
 			}
 		case "choice":
-			if len(fields) != 4 || a.Noul != nil || a.Box != nil || a.Confidence == nil || !probability(*a.Confidence) || q.Criteria[a.Choice] == "" || len(a.Probabilities) != len(q.Criteria) {
+			if a.Confidence == nil || !probability(*a.Confidence) || q.Criteria[a.Choice] == "" || len(a.Probabilities) != len(q.Criteria) {
 				return nil, "", Usage{}, invalid
 			}
 			sum := 0.0
@@ -191,15 +240,11 @@ func parseResponse(raw []byte, contract Contract) (map[string]Answer, string, Us
 			}
 		case "box":
 			b := a.Box
-			var edges map[string]json.RawMessage
-			if json.Unmarshal(fields["box"], &edges) != nil {
-				return nil, "", Usage{}, invalid
-			}
-			if len(fields) != 3 || len(edges) != 4 || a.Noul != nil || a.Choice != "" || a.Probabilities != nil || a.Confidence == nil || !probability(*a.Confidence) || b == nil || !probability(b.Left) || !probability(b.Top) || !probability(b.Right) || !probability(b.Bottom) || b.Left >= b.Right || b.Top >= b.Bottom {
+			if a.Confidence == nil || !probability(*a.Confidence) || b == nil || !probability(b.Left) || !probability(b.Top) || !probability(b.Right) || !probability(b.Bottom) || b.Left >= b.Right || b.Top >= b.Bottom {
 				return nil, "", Usage{}, invalid
 			}
 		case "score":
-			if len(fields) != 5 || a.Score == nil || math.IsNaN(*a.Score) || math.IsInf(*a.Score, 0) || *a.Score < 0 || *a.Score > float64(len(q.Levels)-1) || a.Confidence == nil || !probability(*a.Confidence) || len(a.Legend) != len(q.Levels) || len(a.Probabilities) != len(q.Levels) {
+			if a.Score == nil || math.IsNaN(*a.Score) || math.IsInf(*a.Score, 0) || *a.Score < 0 || *a.Score > float64(len(q.Levels)-1) || a.Confidence == nil || !probability(*a.Confidence) || len(a.Legend) != len(q.Levels) || len(a.Probabilities) != len(q.Levels) {
 				return nil, "", Usage{}, invalid
 			}
 			sum, weighted := 0.0, 0.0
