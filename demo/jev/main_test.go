@@ -29,7 +29,7 @@ func TestBrowserHelperCannotInheritProviderCredential(t *testing.T) {
 	// Presence alone is enough to detect a leak; no credential value is printed.
 	script := `#!/bin/sh
 if [ "${TYPESAFE_API_KEY+x}" = x ]; then exit 1; fi
-printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,"height":40},"assertionFailed":true,"observedAt":"2026-10-24T10:00:00Z"}'
+printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,"height":40},"assertionFailed":true,"assertionPassed":false,"scenario":"declined","observedAt":"2026-10-24T10:00:00Z"}'
 `
 	if err := os.WriteFile(filepath.Join(bin, "node"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,
 	t.Setenv("PATH", bin)
 	t.Setenv(jev.CredentialName, "present") // non-credential presence sentinel
 	var c capture
-	if err := captureFixture(context.Background(), t.TempDir(), &c); err != nil || !c.AssertionFailed {
+	if err := captureFixture(context.Background(), t.TempDir(), &c, "declined"); err != nil || !c.AssertionFailed {
 		t.Fatal("helper inherited provider credential or failed capture")
 	}
 }

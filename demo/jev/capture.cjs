@@ -12,23 +12,33 @@ const path = require('node:path');
     // The fixed local fixture has no external resources. Block network anyway.
     await page.route('**/*', route => route.abort());
     await page.setContent(html);
+    const scenario = await page.locator('body').getAttribute('data-scenario');
+    const success = scenario === 'success';
+    if (!['declined', 'success'].includes(scenario)) throw new Error('Unknown fixture');
     await page.getByRole('button', { name: 'Place order', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('Payment declined. Try another card.');
-    await expect(page.getByRole('status')).toHaveText('Order not placed');
+    if (success) {
+      await expect(page.getByRole('alert')).toBeHidden();
+      await expect(page.getByRole('status')).toHaveText('Order placed');
+    } else {
+      await expect(page.getByRole('alert')).toHaveText('Payment declined. Try another card.');
+      await expect(page.getByRole('status')).toHaveText('Order not placed');
+    }
     let assertionFailed = false;
+    let assertionPassed = false;
     try {
       await expect(page.getByRole('status')).toHaveText('Order placed', { timeout: 400 });
+      assertionPassed = true;
     } catch (error) {
       if (!error.matcherResult) throw error;
       assertionFailed = true;
     }
-    if (!assertionFailed) throw new Error('The intended business assertion did not fail');
-    const retry = page.getByRole('button', { name: 'Try again', exact: true });
+    if (assertionPassed !== success || assertionFailed === success) throw new Error('Unexpected assertion outcome');
+    const retry = page.getByRole('button', { name: success ? 'Start again' : 'Try again', exact: true });
     await expect(retry).toHaveCount(1);
     const bounds = await retry.boundingBox();
     const snapshot = await page.locator('body').ariaSnapshot();
     await page.screenshot({ path: path.join(process.argv[2], 'checkout.png'), animations: 'disabled' });
-    process.stdout.write(JSON.stringify({ snapshot, bounds, assertionFailed, observedAt: new Date().toISOString() }));
+    process.stdout.write(JSON.stringify({ snapshot, bounds, assertionFailed, assertionPassed, scenario, observedAt: new Date().toISOString() }));
   } finally {
     await browser.close();
   }

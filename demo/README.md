@@ -31,6 +31,14 @@ Run `npm run smoke:demo` for theme, responsive, evidence and production-CSP
 checks in Chromium. Pass a deployed URL to `node scripts/demo-smoke.cjs URL`
 to repeat the browser checks against the live site.
 
+## Jev: an interactive checkout story
+
+Run `npm run demo:jev` after installing dependencies and Chromium. Buy a pretend
+notebook, run a real browser confirmation check, then switch between broken and
+working payments. Optionally connect Jev to answer questions about the same
+checkout and highlight its predicted button. The shop and check work without a
+key; live AI calls require an explicit click. [Setup and presenter guide](jev/README.md).
+
 ## Release lab: the experimental feature tour
 
 Run `npm run demo:lab` for a local shop walkthrough covering scan/inspect,

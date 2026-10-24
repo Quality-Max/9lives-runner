@@ -8,15 +8,15 @@
 </style>
 <main>
 <header><div><div class="eyebrow">9LIVES / JEV FOUNDATION</div><h1>One checkout. Two kinds of evidence.</h1></div><span class="badge">{{if .Live}}Live request · {{.Record.Status}}{{else}}Offline · zero API requests{{end}}</span></header>
-<p class="intro">Playwright observes a failed order assertion. The optional Jev client can judge the same fixed synthetic state. The executed assertion and the model's inference remain separate.</p>
+<p class="intro">Playwright checks whether an order was placed. The optional Jev client can judge the same fixed synthetic state. The executed assertion and the model's inference remain separate.</p>
 <div class="grid"><section>
 <div class="card"><h2>1. Observed browser state</h2>
-<div class="screen"><img src="checkout.png" width="850" height="600" alt="Synthetic checkout with Payment declined, Order not placed and a Try again button.">
+<div class="screen"><img src="checkout.png" width="850" height="600" alt="Actual synthetic checkout after placing the selected order.">
 {{with .Observed}}<div class="box" style="left:{{.X}}%;top:{{.Y}}%;width:{{.Width}}%;height:{{.Height}}%"></div>{{end}}
 {{with .Predicted}}<div class="box predicted" style="left:{{.X}}%;top:{{.Y}}%;width:{{.Width}}%;height:{{.Height}}%"></div>{{end}}</div>
 <div class="legend"><span>Green: observed Playwright control</span>{{if .Predicted}}<span>Orange: inferred Jev Box</span>{{end}}</div>
 </div>
-<div class="card"><h2>2. Executed assertion</h2><div class="status">Expected “Order placed” → actual “Order not placed”. Assertion failed as intended.</div><p class="small muted">The fixture also passes explicit checks for the declined-payment message and a unique retry button. No real payment or order is created. This demonstration does not create a runner passing receipt.</p></div>
+<div class="card"><h2>2. Executed assertion</h2><div class="status"{{if .Capture.AssertionPassed}} style="color:#22623b;background:#ecf8f0"{{end}}>{{if .Capture.AssertionPassed}}Expected “Order placed” → actual “Order placed”. Assertion passed.{{else}}Expected “Order placed” → actual “Order not placed”. Assertion failed as intended.{{end}}</div><p class="small muted">The fixture also checks the selected payment outcome and a unique action button. No real payment or order is created. This demonstration does not create a runner passing receipt.</p></div>
 </section><aside>
 <div class="card"><h2>3. Optional typed inference</h2>
 <div class="fact"><span>Payment declined?</span><span class="value">{{prob .Declined}}</span></div>

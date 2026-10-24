@@ -1,0 +1,126 @@
+// Real local browser checks plus an explicitly synthetic UI-only provider fixture.
+// This smoke never connects to TypeSafe or reads a provider credential.
+const { chromium, expect } = require('@playwright/test');
+const { execFileSync, spawn } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { once } = require('node:events');
+
+(async () => {
+  fs.mkdirSync('.context', { recursive: true });
+  const output = fs.mkdtempSync(path.resolve('.context/jev-interactive-smoke-'));
+  const childEnv = {};
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SYSTEMROOT', 'WINDIR', 'LOCALAPPDATA', 'PLAYWRIGHT_BROWSERS_PATH', 'XDG_CACHE_HOME', 'GOCACHE', 'GOMODCACHE', 'GOPATH', 'GOROOT', 'GOTOOLCHAIN']) {
+    if (process.env[key] !== undefined) childEnv[key] = process.env[key];
+  }
+  const binary = path.join(output, process.platform === 'win32' ? 'jev-demo.exe' : 'jev-demo');
+  execFileSync('go', ['build', '-o', binary, './demo/jev'], { env: childEnv, stdio: 'pipe' });
+  const server = spawn(binary, ['--serve', '--port', '0'], { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = once(server, 'exit');
+  let browser;
+  try {
+    const origin = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Local demo did not start')), 30000);
+      let log = '';
+      server.stdout.on('data', chunk => {
+        log += chunk;
+        const match = log.match(/http:\/\/127\.0\.0\.1:\d+/);
+        if (match) { clearTimeout(timeout); resolve(match[0]); }
+      });
+      server.once('error', () => { clearTimeout(timeout); reject(new Error('Local demo could not start')); });
+      server.once('exit', () => { clearTimeout(timeout); reject(new Error('Local demo exited early')); });
+    });
+    browser = await chromium.launch({ headless: true, env: childEnv });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, colorScheme: 'light' });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.name));
+    let runs = 0;
+    page.on('request', request => { if (request.url() === origin + '/api/run') runs++; });
+    await page.goto(origin);
+    await expect(page.getByRole('button', { name: 'Try the payment', exact: true })).toBeEnabled();
+    assert.equal(runs, 0, 'Opening the page must not start a check');
+    await page.screenshot({ path: path.join(output, 'desktop-start.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
+    await expect(page.frameLocator('#shop').getByRole('alert')).toHaveText('Payment declined. Try another card.');
+    await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
+    await expect(page.locator('#check-title')).toHaveText('× Order confirmation failed', { timeout: 30000 });
+    await expect(page.locator('#metric-status')).toHaveText('No AI request');
+    await expect(page.locator('#inference')).toBeHidden();
+    assert.equal(runs, 1);
+    const record = JSON.parse(await page.locator('#record').textContent());
+    assert.equal(record.status, 'disabled');
+    assert.equal(record.requestCount, 0);
+    await expect(page.locator('#capture')).toBeVisible();
+    await page.waitForFunction(() => document.querySelector('#capture').complete && document.querySelector('#capture').naturalWidth === 850);
+    await page.screenshot({ path: path.join(output, 'desktop-failure.png'), fullPage: true });
+    await page.locator('#compare').uncheck();
+    await expect(page.locator('#observed')).toBeHidden();
+    await page.locator('#compare').check();
+    await expect(page.locator('#observed')).toBeVisible();
+    const reportPage = await browser.newPage();
+    await reportPage.goto(new URL(await page.locator('#report-link').getAttribute('href'), origin).href);
+    await expect(reportPage.getByText('Expected “Order placed” → actual “Order not placed”. Assertion failed as intended.')).toBeVisible();
+    await reportPage.close();
+    await page.getByRole('button', { name: 'Try the working payment', exact: true }).click();
+    await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
+    await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
+    await expect(page.locator('#check-title')).toHaveText('✓ Order confirmation passed', { timeout: 30000 });
+    await expect(page.locator('#metric-status')).toHaveText('No AI request');
+    assert.equal(runs, 2);
+    await page.screenshot({ path: path.join(output, 'desktop-success.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Switch color theme' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('button', { name: 'Switch color theme' }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('button', { name: 'Try the payment', exact: true })).toBeEnabled();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Mobile horizontal overflow');
+    await page.getByRole('button', { name: 'Working', exact: true }).click();
+    await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
+    await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
+    await expect(page.locator('#check-title')).toHaveText('✓ Order confirmation passed', { timeout: 30000 });
+    await page.screenshot({ path: path.join(output, 'mobile-success.png'), fullPage: true });
+
+    // Exercise AI presentation with a UI fixture, never a fabricated live result.
+    await page.route('**/api/config', route => route.fulfill({ json: { live: true, images: true, remaining: 6, runsRemaining: 20 } }));
+    let liveClicks = 0;
+    await page.route('**/api/run', route => {
+      if (!route.request().postDataJSON().live) return route.continue();
+      liveClicks++;
+      return route.fulfill({ json: { scenario: 'declined', passed: false, declined: 0.91, confirmed: 0.07, observed: null, predicted: { X: 12, Y: 50, Width: 76, Height: 8 }, image: '/unused-ui-fixture.png', report: '/', record: { status: 'answered', requestCount: 1, durationMs: 123 } } });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
+    await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Ask Jev to look', exact: true })).toBeEnabled({ timeout: 30000 });
+    assert.equal(liveClicks, 0, 'Browser check must not implicitly ask AI');
+    await page.getByRole('button', { name: 'Ask Jev to look', exact: true }).click();
+    await expect(page.locator('#declined')).toHaveText('91.0% yes');
+    await expect(page.locator('#confirmed')).toHaveText('7.0% yes');
+    await expect(page.locator('#predicted')).toBeVisible();
+    await expect(page.locator('#check-title')).toHaveText('× Order confirmation failed');
+    assert.equal(liveClicks, 1);
+    // A delayed UI-only request verifies that cancellation releases the controls.
+    await page.unroute('**/api/run');
+    let held;
+    await page.route('**/api/run', route => { held = route; });
+    await page.getByRole('button', { name: 'Start over', exact: true }).click();
+    await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
+    await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Cancel this check', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Working', exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Cancel this check', exact: true }).click();
+    await expect(page.locator('#error')).toHaveText('Check cancelled. You can try again.');
+    await expect(page.getByRole('button', { name: 'Check with 9lives', exact: true })).toBeEnabled();
+    await held?.abort().catch(() => {});
+    assert.deepEqual(errors, [], 'Browser JavaScript errors');
+    console.log('PASS: real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    console.log('Screenshots:', output);
+  } finally {
+    await browser?.close();
+    server.kill('SIGTERM');
+    await exited;
+  }
+})().catch(error => { console.error(error.stack); process.exitCode = 1; });

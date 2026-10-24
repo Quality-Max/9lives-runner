@@ -19,6 +19,8 @@
     "smoke:assessment-portability": "node scripts/assessment-portability-smoke.cjs",
     "parser:check": "node scripts/bundle-assessment-parser.cjs --check",
     "demo": "npm run build && go run ./cmd/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json",
+    "demo:jev": "go run ./demo/jev --serve --open",
+    "smoke:jev": "node demo/jev/interactive-smoke.cjs",
     "demo:bank": "node demo/bank/run-demo.cjs",
     "demo:lab": "node demo/release-lab/run-demo.cjs",
     "demo:first-run": "npm run build && node demo/first-run/run-demo.cjs",
