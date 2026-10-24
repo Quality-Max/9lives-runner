@@ -342,7 +342,8 @@ func TestAttemptBudgetsAreSharedAcrossConcurrentCalls(t *testing.T) {
 				q.Questions["second"] = q.Questions["present"]
 			}
 			result, err := c.Decide(context.Background(), b, o, q)
-			if !errors.Is(err, ErrBudget) || result.Record.RequestCount != 0 {
+			// An oversized request is reported as such, not as a spent budget.
+			if !errors.Is(err, ErrBudget) || result.Record.RequestCount != 0 || result.Record.Status != "request_too_large" {
 				t.Fatal("budget exceeded before request")
 			}
 		})
@@ -357,7 +358,7 @@ func TestFailedRequestsConsumeAttemptBudget(t *testing.T) {
 	if result, err := c.Decide(context.Background(), b, o, q); err == nil || result.Record.RequestCount != 1 || result.Record.Status != "provider_error" {
 		t.Fatal("failed request not accounted")
 	}
-	if result, err := c.Decide(context.Background(), b, o, q); !errors.Is(err, ErrBudget) || result.Record.RequestCount != 0 || calls.Load() != 1 {
+	if result, err := c.Decide(context.Background(), b, o, q); !errors.Is(err, ErrBudget) || result.Record.RequestCount != 0 || result.Record.Status != "budget_exhausted" || calls.Load() != 1 {
 		t.Fatal("failure refunded request budget")
 	}
 }
@@ -426,5 +427,18 @@ func TestCancellationAndLateEvidenceCannotProduceAnswer(t *testing.T) {
 				t.Fatal("provider connection remained active after cancellation")
 			}
 		})
+	}
+}
+
+func TestOversizedRequestAfterSpendingIsNotReportedAsExhausted(t *testing.T) {
+	limits := DefaultLimits()
+	limits.MaxQuestions = 1
+	c, b, o, q := fixture(t, writeNoul, Config{Enabled: true}, limits)
+	if result, err := c.Decide(context.Background(), b, o, q); err != nil || result.Record.Status != "answered" {
+		t.Fatal("first request not answered", err)
+	}
+	q.Questions["second"] = q.Questions["present"]
+	if result, err := c.Decide(context.Background(), b, o, q); !errors.Is(err, ErrBudget) || result.Record.Status != "request_too_large" {
+		t.Fatal("oversized request reported as a spent budget")
 	}
 }

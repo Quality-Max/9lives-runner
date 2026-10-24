@@ -229,7 +229,12 @@ func (c *Client) Decide(ctx context.Context, expected Binding, observation Obser
 	c.mu.Lock()
 	if c.requests >= c.limits.MaxRequests || c.questions+len(contract.Questions) > c.limits.MaxQuestions || c.bytes+int64(len(body)) > c.limits.MaxBytes {
 		c.mu.Unlock()
+		// A call that alone exceeds the attempt budget can never be sent:
+		// report the oversized request, not a spent budget.
 		result.Record.Status = "budget_exhausted"
+		if len(contract.Questions) > c.limits.MaxQuestions || int64(len(body)) > c.limits.MaxBytes {
+			result.Record.Status = "request_too_large"
+		}
 		return result, ErrBudget
 	}
 	c.requests++

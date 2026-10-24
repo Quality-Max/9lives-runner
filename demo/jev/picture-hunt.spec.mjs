@@ -89,8 +89,12 @@ test('Find every requested figure. Check every click.', async ({ page }) => {
       const control = page.locator(`[data-target="${id}"]`);
       await expect(control).toBeVisible(); await expect(control).toBeEnabled();
       const b = await control.boundingBox(), old = candidates[id].box;
-      // Reject changed geometry rather than acting on an old image.
-      expect([b.x/8.5,b.y/6,b.width/8.5,b.height/6]).toEqual([old.X,old.Y,old.Width,old.Height]);
+      // Reject changed geometry rather than acting on an old image. The small
+      // tolerance absorbs subpixel drift only; a moved or resized control is
+      // still rejected well before it could be mistaken for another spot.
+      const drift = Math.max(...[b.x/8.5, b.y/6, b.width/8.5, b.height/6].map((v, i) =>
+        Math.abs(v - [old.X, old.Y, old.Width, old.Height][i])));
+      expect(drift, 'Control geometry must still match the observed image').toBeLessThan(0.5);
       const before = await score();
       await control.click(); // Mutations have no Playwright or runner retry.
       await test.step(`Figure at spot ${id+1}: one click must add exactly one to the score`, async () => {

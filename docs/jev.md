@@ -120,10 +120,12 @@ Default attempt limits are four requests, 32 total questions, 32 MiB outgoing
 JSON, 60 seconds total lifetime and 30 seconds evidence age. Each call accepts
 at most nine questions, 16 KiB of snapshot text, 24 MiB of encoded request and
 1 MiB of response. Request, question and byte reservations are atomic across
-concurrent calls, include failures and are never refunded. Retries and redirects
-are disabled. HTTP failures expose only a numeric status. Missing credentials,
-invalid evidence/schema, exhausted budgets, cancellation and stale results
-return no answers, with a truthful status rather than fabricated success.
+concurrent calls, include failures and are never refunded. A call that
+alone exceeds the question or byte budget reports `request_too_large`; other
+refusals report `budget_exhausted`. Retries and redirects are disabled. HTTP
+failures expose only a numeric status. Missing credentials, invalid
+evidence/schema, exhausted budgets, cancellation and stale results return no
+answers, with a truthful status rather than fabricated success.
 
 Persist only `Result.Record`. It records versions, binding, status, observed
 time, redacted snapshot hash, optional image metadata, reserved request/question/
