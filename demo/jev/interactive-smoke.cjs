@@ -7,6 +7,20 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 
+async function expectShopToFit(page) {
+  // Check rendered geometry: an unscaled iframe clips both the card and button.
+  await expect.poll(() => page.evaluate(() => {
+    const stage = document.getElementById('stage').getBoundingClientRect();
+    const shop = document.getElementById('shop').getBoundingClientRect();
+    return Math.max(...['left', 'top', 'right', 'bottom'].map(edge => Math.abs(stage[edge] - shop[edge])));
+  }), { message: 'The entire live shop must fit its preview, including after resize' }).toBeLessThan(1);
+  const stage = await page.locator('#stage').boundingBox();
+  const button = await page.frameLocator('#shop').getByRole('button').boundingBox();
+  assert.ok(button && stage && button.x >= stage.x && button.y >= stage.y &&
+    button.x + button.width <= stage.x + stage.width &&
+    button.y + button.height <= stage.y + stage.height, 'Shop action must remain fully visible');
+}
+
 (async () => {
   fs.mkdirSync('.context', { recursive: true });
   const output = fs.mkdtempSync(path.resolve('.context/jev-interactive-smoke-'));
@@ -39,10 +53,18 @@ const { once } = require('node:events');
     page.on('request', request => { if (request.url() === origin + '/api/run') runs++; });
     await page.goto(origin);
     await expect(page.getByRole('button', { name: 'Try the payment', exact: true })).toBeEnabled();
+    await expectShopToFit(page);
+    for (const width of [1920, 768, 640, 390, 1440]) {
+      await page.setViewportSize({ width, height: 1050 });
+      await expectShopToFit(page);
+    }
     assert.equal(runs, 0, 'Opening the page must not start a check');
     await page.screenshot({ path: path.join(output, 'desktop-start.png'), fullPage: true });
     await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
     await expect(page.frameLocator('#shop').getByRole('alert')).toHaveText('Payment declined. Try another card.');
+    await expectShopToFit(page);
+    const liveButton = await page.frameLocator('#shop').getByRole('button').boundingBox();
+    await page.screenshot({ path: path.join(output, 'desktop-before-check.png'), fullPage: true });
     await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
     await expect(page.locator('#check-title')).toHaveText('× Order confirmation failed', { timeout: 30000 });
     await expect(page.locator('#metric-status')).toHaveText('No AI request');
@@ -53,6 +75,10 @@ const { once } = require('node:events');
     assert.equal(record.requestCount, 0);
     await expect(page.locator('#capture')).toBeVisible();
     await page.waitForFunction(() => document.querySelector('#capture').complete && document.querySelector('#capture').naturalWidth === 850);
+    const outline = await page.locator('#observed').boundingBox();
+    for (const key of ['x', 'y', 'width', 'height']) {
+      assert.ok(Math.abs(outline[key] - liveButton[key]) < 1, 'Captured outline must match the live button position: ' + key);
+    }
     await page.screenshot({ path: path.join(output, 'desktop-failure.png'), fullPage: true });
     await page.locator('#compare').uncheck();
     await expect(page.locator('#observed')).toBeHidden();
@@ -116,7 +142,7 @@ const { once } = require('node:events');
     await expect(page.getByRole('button', { name: 'Check with 9lives', exact: true })).toBeEnabled();
     await held?.abort().catch(() => {});
     assert.deepEqual(errors, [], 'Browser JavaScript errors');
-    console.log('PASS: real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    console.log('PASS: live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
     console.log('Screenshots:', output);
   } finally {
     await browser?.close();
