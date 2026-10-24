@@ -6,6 +6,27 @@ SDK versions.
 
 ## Unreleased
 
+### SDK
+
+- The prove channel applies two more opt-in faults. `redirect-cross-origin`
+  answers 302 with `Location: http://redirect.invalid/`, a reserved name that
+  never resolves, so the browser's redirect fails without contacting a host.
+  `delay` holds the real response for 35 s, longer than Playwright's default
+  test and `expect` timeouts, then lets it through; it is credited when the
+  hold starts and the hold ends as soon as the context closes, so a fault run
+  never outlives its test. The manifest's `"9l".faults` lists both.
+
+### CLI
+
+- `9l prove --faults` accepts `redirect-cross-origin` and `delay`, planned
+  after the existing kinds for every observed request. Defaults stay
+  `abort,http-500,empty-json`. An installed SDK that does not report the new
+  kinds is refused for them after the baseline with exit 2, as before, and
+  `9l doctor --sdk` names them under `sdk/faults`. Reports use policy
+  `prove-network-v4`; the rules are unchanged from `v3`. The text output
+  widens the kind column so every kind aligns. The real Chromium smoke
+  qualifies both kinds on the shop fixture (#43).
+
 ## 0.5.0 — 2026-10-23
 
 ### SDK

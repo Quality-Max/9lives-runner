@@ -11,7 +11,7 @@ import {engineIdentity} from './protocol';
 // enter the 9l.engine/1 stream, whose metadata excludes URLs by design.
 export const proveProtocol = '9l.prove/1';
 // Must match prove.Kinds in internal/prove/prove.go.
-export const faultKinds = ['abort', 'http-500', 'empty-json', 'http-401', 'http-403', 'http-429', 'malformed-json'] as const;
+export const faultKinds = ['abort', 'http-500', 'empty-json', 'http-401', 'http-403', 'http-429', 'malformed-json', 'redirect-cross-origin', 'delay'] as const;
 export type FaultKind = typeof faultKinds[number];
 export type Target = {method: string; origin: string; path: string};
 export type Fault = Target & {id: string; kind: FaultKind};
@@ -105,12 +105,34 @@ export function openProveChannel(env: NodeJS.ProcessEnv, testInfo: {testId: stri
   return channel;
 }
 
+// redirect-cross-origin sends the page to a fixed origin on a reserved,
+// never-resolving name (RFC 2606), so following the redirect always fails
+// and no real host is contacted.
+export const redirectLocation = 'http://redirect.invalid/';
+// delay holds the response this long before letting it through: longer than
+// Playwright's default 30s test timeout and 5s expect timeout, so a test that
+// waits for the response fails unless its own timeouts are longer. The hold
+// ends early when the context closes, so it never outlives the test.
+export const delayHoldMs = 35_000;
+
 const statusFaults: Partial<Record<FaultKind, {status: number; headers?: Record<string, string>}>> = {
   'http-500': {status: 500},
   'http-401': {status: 401},
   'http-403': {status: 403},
   'http-429': {status: 429, headers: {'retry-after': '1'}},
+  'redirect-cross-origin': {status: 302, headers: {location: redirectLocation}},
 };
+
+// Resolves after ms, or as soon as the context closes. The timer never keeps
+// the worker process alive on its own.
+function hold(context: Pick<BrowserContext, 'on' | 'off'>, ms: number) {
+  return new Promise<void>(resolve => {
+    const done = () => { clearTimeout(timer); context.off('close', done); resolve(); };
+    const timer = setTimeout(done, ms);
+    timer.unref?.();
+    context.on('close', done);
+  });
+}
 
 // The replacement body for a JSON object or array, or undefined when the
 // response is neither. malformed-json keeps the first half of the trimmed
@@ -129,8 +151,9 @@ function isJSON(contentType: string | undefined) {
   return media.endsWith('/json') || media.endsWith('+json');
 }
 
-export async function instrument(context: BrowserContext, channel: ProveChannel) {
+export async function instrument(context: BrowserContext, channel: ProveChannel, options: {holdMs?: number} = {}) {
   const fault = channel.fault;
+  const holdMs = options.holdMs ?? delayHoldMs;
   if (!fault) {
     // Observation is passive: listeners only, so the baseline run is unchanged.
     context.on('request', request => {
@@ -153,6 +176,22 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
     if (fault.kind === 'abort') return route.abort('failed').then(applied);
     const status = statusFaults[fault.kind];
     if (status) return route.fulfill({...status, body: ''}).then(applied);
+    if (fault.kind === 'delay') {
+      // The request is dispatched first, so the application receives it as
+      // usual; only its response is held. The hold is the fault, so it is
+      // credited as soon as it starts, and the response follows once it ends
+      // unless the test is already over.
+      let response;
+      try {
+        response = await route.fetch();
+      } catch {
+        channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
+        return route.continue().catch(() => {});
+      }
+      applied();
+      await hold(context, holdMs);
+      return route.fulfill({response}).catch(() => {});
+    }
     const kind = fault.kind as 'empty-json' | 'malformed-json';
     // The JSON faults need the real response first; say why when it cannot
     // be replaced: the upstream was unreachable, or the body was not an
