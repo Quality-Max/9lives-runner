@@ -177,11 +177,20 @@ export async function instrument(context: BrowserContext, channel: ProveChannel,
     const status = statusFaults[fault.kind];
     if (status) return route.fulfill({...status, body: ''}).then(applied);
     if (fault.kind === 'delay') {
-      // The hold is the fault, so it is credited as soon as it starts; the
-      // real response follows once it ends, unless the test is already over.
+      // The request is dispatched first, so the application receives it as
+      // usual; only its response is held. The hold is the fault, so it is
+      // credited as soon as it starts, and the response follows once it ends
+      // unless the test is already over.
+      let response;
+      try {
+        response = await route.fetch();
+      } catch {
+        channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
+        return route.continue().catch(() => {});
+      }
       applied();
       await hold(context, holdMs);
-      return route.fallback().catch(() => {});
+      return route.fulfill({response}).catch(() => {});
     }
     const kind = fault.kind as 'empty-json' | 'malformed-json';
     // The JSON faults need the real response first; say why when it cannot

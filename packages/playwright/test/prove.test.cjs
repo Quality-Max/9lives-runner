@@ -256,24 +256,27 @@ test('delay holds the response, is credited when the hold starts, then lets the 
       on: (event, fn) => { listeners.set(event, fn); },
       off: (event, fn) => { if (listeners.get(event) === fn) listeners.delete(event); },
     };
-    // The hold runs its course: the request reaches the network afterwards.
+    // The request is dispatched at once; only its response is held, then
+    // delivered as fetched.
     let file = path.join(dir, 'elapsed.ndjson');
     let channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
     await instrument(context, channel, {holdMs: 50});
-    const calls = {fallback: 0, fulfill: 0, continued: 0};
+    const upstream = {status: () => 200};
+    const calls = {fetched: 0, fulfilled: [], continued: 0};
     const started = Date.now();
     const pending = context.handler({
       request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
-      fallback: async () => { calls.fallback++; },
-      fulfill: async () => { calls.fulfill++; },
+      fetch: async () => { calls.fetched++; return upstream; },
+      fulfill: async (options) => { calls.fulfilled.push(options); },
       continue: async () => { calls.continued++; },
     });
     await new Promise(resolve => setTimeout(resolve, 10));
-    assert.equal(calls.fallback, 0, 'the response must still be held');
+    assert.equal(calls.fetched, 1, 'the request reaches the application before the hold');
+    assert.equal(calls.fulfilled.length, 0, 'the response must still be held');
     assert(fs.readFileSync(file, 'utf8').includes('"applied"'), 'credited when the hold starts');
     await pending;
     assert(Date.now() - started >= 45, 'the hold must last the configured time');
-    assert.deepEqual(calls, {fallback: 1, fulfill: 0, continued: 0});
+    assert.deepEqual(calls, {fetched: 1, fulfilled: [{response: upstream}], continued: 0});
     assert.equal(listeners.size, 0, 'the close listener is removed after the hold');
     channel.close();
     assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}]);
@@ -283,18 +286,33 @@ test('delay holds the response, is credited when the hold starts, then lets the 
     file = path.join(dir, 'closed.ndjson');
     channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
     await instrument(context, channel, {holdMs: 60_000});
-    let fallbacks = 0;
+    let fulfilled = 0;
     const held = context.handler({
       request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
-      fallback: async () => { fallbacks++; throw new Error('Target page, context or browser has been closed'); },
+      fetch: async () => ({status: () => 200}),
+      fulfill: async () => { fulfilled++; throw new Error('Target page, context or browser has been closed'); },
     });
     await new Promise(resolve => setTimeout(resolve, 10));
-    assert.equal(fallbacks, 0);
+    assert.equal(fulfilled, 0);
     listeners.get('close')();
     await held;
-    assert.equal(fallbacks, 1);
+    assert.equal(fulfilled, 1);
     channel.close();
     assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}]);
+
+    // An application that cannot be reached has no response to hold.
+    file = path.join(dir, 'unreachable.ndjson');
+    channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
+    await instrument(context, channel, {holdMs: 60_000});
+    let continued = 0;
+    await context.handler({
+      request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
+      fetch: async () => { throw new Error('ECONNREFUSED'); },
+      continue: async () => { continued++; },
+    });
+    assert.equal(continued, 1);
+    channel.close();
+    assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'not-applicable', fault: 'fault-1', reason: 'unreachable'}]);
 
     // A request the fault does not match is never held.
     let fallback = 0;

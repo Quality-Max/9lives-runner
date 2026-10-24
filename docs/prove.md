@@ -52,15 +52,19 @@ dependency instead of continuing as if the request had succeeded;
 `malformed-json` checks that a test notices a response the application
 cannot parse. Faults are planned in the table's order, whatever order you list.
 
-`redirect-cross-origin` checks that a test notices a request sent to another
-origin. The browser follows the redirect to `redirect.invalid`, a reserved
-name that never resolves, so the page's `fetch` rejects and no real host is
-contacted; a test that follows redirects without checking where they lead
-survives it. Document requests are not observed, so only the spec's fetch and
+`redirect-cross-origin` answers a request with a redirect to another origin,
+`redirect.invalid`, a reserved name that never resolves. The browser follows
+it, the page's `fetch` rejects, and no real host is contacted. A test whose
+assertion depends on that request's result therefore reports `caught`, which
+shows that the test notices the failed request, not that it checks where
+redirects lead: a test that follows redirects without inspecting them is told
+apart only when it never waits for or asserts on the request, which gives
+`survived`. Document requests are not observed, so only the spec's fetch and
 XHR requests are redirected.
 
 `delay` checks that a test notices a request that does not come back in time.
-The SDK holds the real response for 35 s, longer than Playwright's default
+The request is dispatched to the application as usual; the SDK holds its
+response for 35 s, longer than Playwright's default
 30 s test timeout and 5 s `expect` timeout, then lets it through. An `expect`
 that waits for the response fails first and gives `caught`; a test that only
 times out, or that never waited for the request, gives
