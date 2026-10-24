@@ -29,7 +29,7 @@ func TestBrowserHelperCannotInheritProviderCredential(t *testing.T) {
 	// Presence alone is enough to detect a leak; no credential value is printed.
 	script := `#!/bin/sh
 if [ "${TYPESAFE_API_KEY+x}" = x ]; then exit 1; fi
-printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,"height":40},"assertionFailed":true,"assertionPassed":false,"scenario":"declined","observedAt":"2026-10-24T10:00:00Z"}'
+printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,"height":40},"assertionFailed":true,"assertionPassed":false,"orderCount":0,"scenario":"declined","observedAt":"2026-10-24T10:00:00Z"}'
 `
 	if err := os.WriteFile(filepath.Join(bin, "node"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
@@ -58,5 +58,26 @@ func TestIllustrativeReportExcludesRawObservation(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(dir, "index.html"))
 	if !bytes.Contains(raw, []byte("98.0%")) {
 		t.Fatal("synthetic typed probability missing from illustrative report")
+	}
+}
+
+func TestCaptureRejectsMissingOrInconsistentOrderEvidence(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	for _, count := range []string{"", `,"orderCount":null`, `,"orderCount":1`} {
+		t.Run(count, func(t *testing.T) {
+			// A declined capture cannot claim zero orders without measured evidence.
+			payload := `{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,"height":40},"assertionFailed":true,"assertionPassed":false,"scenario":"declined","observedAt":"2026-10-24T10:00:00Z"` + count + `}`
+			if err := os.WriteFile(filepath.Join(bin, "node"), []byte("#!/bin/sh\nprintf '%s' '"+payload+"'\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var c capture
+			if captureFixture(context.Background(), t.TempDir(), &c, "declined") == nil {
+				t.Fatal("capture accepted absent or contradictory order evidence")
+			}
+		})
 	}
 }

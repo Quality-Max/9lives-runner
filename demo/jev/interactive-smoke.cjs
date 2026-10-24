@@ -63,10 +63,12 @@ async function expectShopToFit(page) {
     await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
     await expect(page.frameLocator('#shop').getByRole('alert')).toHaveText('Payment declined. Try another card.');
     await expectShopToFit(page);
+    await expect(page.frameLocator('#shop').getByRole('status')).toHaveCount(0);
+    assert.deepEqual(await page.frameLocator('#shop').locator('body').evaluate(() => window.demoOrderStore.list()), []);
     const liveButton = await page.frameLocator('#shop').getByRole('button').boundingBox();
     await page.screenshot({ path: path.join(output, 'desktop-before-check.png'), fullPage: true });
     await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
-    await expect(page.locator('#check-title')).toHaveText('× Order confirmation failed', { timeout: 30000 });
+    await expect(page.locator('#check-title')).toHaveText('× No notebook order saved', { timeout: 30000 });
     await expect(page.locator('#metric-status')).toHaveText('No AI request');
     await expect(page.locator('#inference')).toBeHidden();
     assert.equal(runs, 1);
@@ -86,13 +88,14 @@ async function expectShopToFit(page) {
     await expect(page.locator('#observed')).toBeVisible();
     const reportPage = await browser.newPage();
     await reportPage.goto(new URL(await page.locator('#report-link').getAttribute('href'), origin).href);
-    await expect(reportPage.getByText('Expected “Order placed” → actual “Order not placed”. Assertion failed as intended.')).toBeVisible();
+    await expect(reportPage.getByText('Expected one notebook order → found none. Assertion failed as intended.')).toBeVisible();
     await reportPage.close();
     await page.getByRole('button', { name: 'Try the working payment', exact: true }).click();
     await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
     await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
-    await expect(page.locator('#check-title')).toHaveText('✓ Order confirmation passed', { timeout: 30000 });
+    await expect(page.locator('#check-title')).toHaveText('✓ Notebook order saved', { timeout: 30000 });
     await expect(page.locator('#metric-status')).toHaveText('No AI request');
+    await expect(page.locator('#check-copy')).toContainText('Found 1.');
     assert.equal(runs, 2);
     await page.screenshot({ path: path.join(output, 'desktop-success.png'), fullPage: true });
     await page.getByRole('button', { name: 'Switch color theme' }).click();
@@ -106,7 +109,7 @@ async function expectShopToFit(page) {
     await page.getByRole('button', { name: 'Working', exact: true }).click();
     await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
     await page.getByRole('button', { name: 'Check with 9lives', exact: true }).click();
-    await expect(page.locator('#check-title')).toHaveText('✓ Order confirmation passed', { timeout: 30000 });
+    await expect(page.locator('#check-title')).toHaveText('✓ Notebook order saved', { timeout: 30000 });
     await page.screenshot({ path: path.join(output, 'mobile-success.png'), fullPage: true });
 
     // Exercise AI presentation with a UI fixture, never a fabricated live result.
@@ -115,7 +118,7 @@ async function expectShopToFit(page) {
     await page.route('**/api/run', route => {
       if (!route.request().postDataJSON().live) return route.continue();
       liveClicks++;
-      return route.fulfill({ json: { scenario: 'declined', passed: false, declined: 0.91, confirmed: 0.07, observed: null, predicted: { X: 12, Y: 50, Width: 76, Height: 8 }, image: '/unused-ui-fixture.png', report: '/', record: { status: 'answered', requestCount: 1, durationMs: 123 } } });
+      return route.fulfill({ json: { scenario: 'declined', passed: false, orderCount: 0, declined: 0.91, confirmed: 0.07, observed: null, predicted: { X: 12, Y: 50, Width: 76, Height: 8 }, image: '/unused-ui-fixture.png', report: '/', record: { status: 'answered', requestCount: 1, durationMs: 123 } } });
     });
     await page.reload();
     await page.getByRole('button', { name: 'Try the payment', exact: true }).click();
@@ -126,7 +129,7 @@ async function expectShopToFit(page) {
     await expect(page.locator('#declined')).toHaveText('91.0% yes');
     await expect(page.locator('#confirmed')).toHaveText('7.0% yes');
     await expect(page.locator('#predicted')).toBeVisible();
-    await expect(page.locator('#check-title')).toHaveText('× Order confirmation failed');
+    await expect(page.locator('#check-title')).toHaveText('× No notebook order saved');
     assert.equal(liveClicks, 1);
     // A delayed UI-only request verifies that cancellation releases the controls.
     await page.unroute('**/api/run');
@@ -142,7 +145,32 @@ async function expectShopToFit(page) {
     await expect(page.getByRole('button', { name: 'Check with 9lives', exact: true })).toBeEnabled();
     await held?.abort().catch(() => {});
     assert.deepEqual(errors, [], 'Browser JavaScript errors');
-    console.log('PASS: live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    // The same real capture helper must judge the ledger, not page wording.
+    // These are controlled synthetic mutations, never model accuracy claims.
+    const fixture = fs.readFileSync('demo/jev/checkout.html', 'utf8');
+    function captureVariant(html, name) {
+      const dir = path.join(output, name);
+      fs.mkdirSync(dir);
+      return JSON.parse(execFileSync(process.execPath, ['demo/jev/capture.cjs', dir], {
+        input: html, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000
+      }));
+    }
+    const working = fixture.replace('data-scenario="declined"', 'data-scenario="success"');
+    const changedCopy = captureVariant(working.replace('Thank you! Your notebook is on its way.',
+      'All done! We are packing your notebook.'), 'changed-copy');
+    assert.equal(changedCopy.assertionPassed, true, 'Confirmation wording must not decide the order assertion');
+    assert.equal(changedCopy.orderCount, 1);
+    const misleadingCopy = captureVariant(fixture.replace('Payment declined. Try another card.',
+      'Thank you! Your notebook is on its way.'), 'misleading-copy');
+    assert.equal(misleadingCopy.assertionFailed, true, 'A thank-you message cannot pass without a saved order');
+    assert.equal(misleadingCopy.orderCount, 0);
+    for (const capture of [changedCopy, misleadingCopy]) {
+      assert.doesNotMatch(capture.snapshot, /order placed|order not placed|demo-order-1|demoOrderStore|data-scenario/i,
+        'The model observation must not include a status label, scenario or hidden ledger');
+    }
+    assert.throws(() => captureVariant(working.replace('totalCents: 1200', 'totalCents: 9999'),
+      'wrong-total'), 'A visible confirmation cannot pass an order with the wrong total');
+    console.log('PASS: independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
     console.log('Screenshots:', output);
   } finally {
     await browser?.close();

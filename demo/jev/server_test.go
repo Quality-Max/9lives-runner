@@ -84,7 +84,8 @@ func TestInteractiveDemoProjectsSafeEvidenceAndBoundsCalls(t *testing.T) {
 	var modes []bool
 	s := testDemoServer(t, true, func(_ context.Context, c jev.Config, scenario string) (string, report, error) {
 		modes = append(modes, c.Enabled)
-		return dir, report{Capture: capture{AssertionPassed: scenario == "success", Snapshot: "raw-observation-sentinel"}, Record: jev.Record{Status: "disabled"}}, nil
+		count := 1
+		return dir, report{Capture: capture{AssertionPassed: scenario == "success", OrderCount: &count, Snapshot: "raw-observation-sentinel"}, Record: jev.Record{Status: "disabled"}}, nil
 	})
 	for i := 0; i < maxDemoRuns; i++ {
 		live := i < maxLiveRuns
@@ -94,7 +95,7 @@ func TestInteractiveDemoProjectsSafeEvidenceAndBoundsCalls(t *testing.T) {
 		}
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, demoRequest(s, "POST", "/api/run", body))
-		if w.Code != 200 || !strings.Contains(w.Body.String(), `"passed":true`) || strings.Contains(w.Body.String(), "raw-observation-sentinel") {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `"passed":true`) || !strings.Contains(w.Body.String(), `"orderCount":1`) || strings.Contains(w.Body.String(), "raw-observation-sentinel") {
 			t.Fatal("safe executed result missing")
 		}
 		if i == maxLiveRuns-1 {

@@ -43,16 +43,17 @@ type demoServer struct {
 }
 
 type browserResult struct {
-	Scenario  string     `json:"scenario"`
-	Passed    bool       `json:"passed"`
-	Declined  *float64   `json:"declined"`
-	Confirmed *float64   `json:"confirmed"`
-	Observed  *rectangle `json:"observed"`
-	Predicted *rectangle `json:"predicted"`
-	Image     string     `json:"image"`
-	Report    string     `json:"report"`
-	Record    jev.Record `json:"record"`
-	Error     string     `json:"error,omitempty"`
+	Scenario   string     `json:"scenario"`
+	Passed     bool       `json:"passed"`
+	OrderCount *int       `json:"orderCount"`
+	Declined   *float64   `json:"declined"`
+	Confirmed  *float64   `json:"confirmed"`
+	Observed   *rectangle `json:"observed"`
+	Predicted  *rectangle `json:"predicted"`
+	Image      string     `json:"image"`
+	Report     string     `json:"report"`
+	Record     jev.Record `json:"record"`
+	Error      string     `json:"error,omitempty"`
 }
 
 func serveDemo(ctx context.Context, config jev.Config, port int, open bool, out, errOut io.Writer) int {
@@ -250,7 +251,7 @@ func (s *demoServer) run(w http.ResponseWriter, r *http.Request) {
 		s.artifacts[base+name] = filepath.Join(dir, name)
 	}
 	s.mu.Unlock()
-	body := browserResult{Scenario: input.Scenario, Passed: result.Capture.AssertionPassed, Declined: result.Declined, Confirmed: result.Confirmed, Observed: result.Observed, Predicted: result.Predicted, Image: base + "checkout.png", Report: base + "index.html", Record: result.Record}
+	body := browserResult{Scenario: input.Scenario, Passed: result.Capture.AssertionPassed, OrderCount: result.Capture.OrderCount, Declined: result.Declined, Confirmed: result.Confirmed, Observed: result.Observed, Predicted: result.Predicted, Image: base + "checkout.png", Report: base + "index.html", Record: result.Record}
 	if err != nil {
 		body.Error = "Jev could not answer this time. The browser check below still shows what happened. You can try again."
 	}

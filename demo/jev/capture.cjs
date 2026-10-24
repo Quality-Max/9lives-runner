@@ -15,30 +15,29 @@ const path = require('node:path');
     const scenario = await page.locator('body').getAttribute('data-scenario');
     const success = scenario === 'success';
     if (!['declined', 'success'].includes(scenario)) throw new Error('Unknown fixture');
+    const readOrders = () => page.evaluate(() => window.demoOrderStore.list());
+    await expect.poll(readOrders).toEqual([]);
     await page.getByRole('button', { name: 'Place order', exact: true }).click();
-    if (success) {
-      await expect(page.getByRole('alert')).toBeHidden();
-      await expect(page.getByRole('status')).toHaveText('Order placed');
-    } else {
-      await expect(page.getByRole('alert')).toHaveText('Payment declined. Try another card.');
-      await expect(page.getByRole('status')).toHaveText('Order not placed');
-    }
+    const expectedOrder = { id: 'demo-order-1', sku: 'field-notebook', quantity: 1, totalCents: 1200, currency: 'EUR' };
     let assertionFailed = false;
     let assertionPassed = false;
     try {
-      await expect(page.getByRole('status')).toHaveText('Order placed', { timeout: 400 });
+      // Check what the shop saved, independently of any confirmation wording.
+      await expect.poll(readOrders, { timeout: 400 }).toEqual([expectedOrder]);
       assertionPassed = true;
     } catch (error) {
       if (!error.matcherResult) throw error;
       assertionFailed = true;
     }
     if (assertionPassed !== success || assertionFailed === success) throw new Error('Unexpected assertion outcome');
+    const orders = await readOrders();
+    await expect(orders).toEqual(success ? [expectedOrder] : []);
     const retry = page.getByRole('button', { name: success ? 'Start again' : 'Try again', exact: true });
     await expect(retry).toHaveCount(1);
     const bounds = await retry.boundingBox();
     const snapshot = await page.locator('body').ariaSnapshot();
     await page.screenshot({ path: path.join(process.argv[2], 'checkout.png'), animations: 'disabled' });
-    process.stdout.write(JSON.stringify({ snapshot, bounds, assertionFailed, assertionPassed, scenario, observedAt: new Date().toISOString() }));
+    process.stdout.write(JSON.stringify({ snapshot, bounds, assertionFailed, assertionPassed, orderCount: orders.length, scenario, observedAt: new Date().toISOString() }));
   } finally {
     await browser.close();
   }

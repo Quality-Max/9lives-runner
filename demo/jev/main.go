@@ -38,6 +38,7 @@ type capture struct {
 	Bounds          *rectangle
 	AssertionFailed bool
 	AssertionPassed bool
+	OrderCount      *int
 	Scenario        string
 	ObservedAt      time.Time
 }
@@ -101,9 +102,9 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if r.Capture.AssertionFailed {
-		fmt.Fprintln(out, "Executed Playwright assertion: expected order confirmation FAILED, as intended.")
+		fmt.Fprintln(out, "Executed Playwright assertion: expected one saved notebook order FAILED, as intended.")
 	} else {
-		fmt.Fprintln(out, "Executed Playwright assertion: order confirmation PASSED.")
+		fmt.Fprintln(out, "Executed Playwright assertion: one saved notebook order PASSED.")
 	}
 	fmt.Fprintf(out, "Jev: %s; requests: %d; elapsed: %d ms\n", r.Record.Status, r.Record.RequestCount, r.Record.DurationMS)
 	if r.Declined != nil && r.Confirmed != nil {
@@ -140,13 +141,12 @@ func executeDemo(ctx context.Context, config jev.Config, scenario string) (strin
 	}
 	source := sha256.Sum256(fixtureHTML(scenario))
 	binding := jev.Binding{RunID: "demo-" + hex.EncodeToString(nonce[:]), JobID: "checkout", AttemptID: "attempt-1", Target: "web", Revision: strings.TrimSpace(string(revision)), SourceSHA256: hex.EncodeToString(source[:]), TestID: "checkout-confirmation", StepID: "place-order", ObservationID: scenario + "-checkout"}
-	observation := jev.Observation{Binding: binding, ObservedAt: captured.ObservedAt, Snapshot: captured.Snapshot, FailureClass: ""}
-	if captured.AssertionFailed {
-		observation.FailureClass = runner.FailureAssertion
-	}
-	contract := jev.Contract{Version: jev.Version, Task: "synthetic-checkout", QuestionVersion: "v2", CriteriaVersion: "v1", Questions: map[string]jev.Question{
-		"declined":  {Type: "noul", Instructions: "Does the observed checkout explicitly show that payment was declined? Use `accessible_observation` and the screenshot when present."},
-		"confirmed": {Type: "noul", Instructions: "Does the observed checkout explicitly confirm that an order was placed successfully? Use `accessible_observation` and the screenshot when present."},
+	// Keep the ledger and assertion verdict out of the model's state. Jev judges
+	// only customer-facing clues, rather than receiving the answer from the test.
+	observation := jev.Observation{Binding: binding, ObservedAt: captured.ObservedAt, Snapshot: captured.Snapshot}
+	contract := jev.Contract{Version: jev.Version, Task: "synthetic-checkout", QuestionVersion: "v3", CriteriaVersion: "v1", Questions: map[string]jev.Question{
+		"declined":  {Type: "noul", Instructions: "Within this pretend shop, does the customer-facing checkout indicate that the payment failed? Interpret the meaning of `accessible_observation` and the screenshot when present. Judge the customer's payment outcome from the messages, not merely the button label or color."},
+		"confirmed": {Type: "noul", Instructions: "Within this pretend shop, does the customer-facing checkout indicate that the notebook purchase completed successfully? Interpret the meaning of `accessible_observation` and the screenshot when present. A thank-you message about delivery can confirm success without a literal status label. A button or color alone does not confirm success."},
 	}}
 	if config.Images == "synthetic" {
 		raw, err := os.ReadFile(filepath.Join(dir, "checkout.png"))
@@ -190,7 +190,11 @@ func captureFixture(ctx context.Context, dir string, captured *capture, scenario
 	cmd.Stdin = bytes.NewReader(fixtureHTML(scenario))
 	var stdout cappedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, io.Discard
-	if runner.RunOwnedCommand(ctx, cmd) != nil || stdout.overflow || json.Unmarshal(stdout.Bytes(), captured) != nil || captured.Scenario != scenario || captured.AssertionFailed != (scenario == "declined") || captured.AssertionPassed != (scenario == "success") || captured.Bounds == nil || captured.Bounds.Width <= 0 || captured.Bounds.Height <= 0 || captured.ObservedAt.IsZero() {
+	expectedOrders := 0
+	if scenario == "success" {
+		expectedOrders = 1
+	}
+	if runner.RunOwnedCommand(ctx, cmd) != nil || stdout.overflow || json.Unmarshal(stdout.Bytes(), captured) != nil || captured.Scenario != scenario || captured.AssertionFailed != (scenario == "declined") || captured.AssertionPassed != (scenario == "success") || captured.OrderCount == nil || *captured.OrderCount != expectedOrders || captured.Bounds == nil || captured.Bounds.Width <= 0 || captured.Bounds.Height <= 0 || captured.ObservedAt.IsZero() {
 		return errors.New("Synthetic capture failed. Run npm ci and npm exec playwright install chromium from the repository root.")
 	}
 	return nil

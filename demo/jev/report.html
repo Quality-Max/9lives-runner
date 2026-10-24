@@ -8,7 +8,7 @@
 </style>
 <main>
 <header><div><div class="eyebrow">9LIVES / JEV FOUNDATION</div><h1>One checkout. Two kinds of evidence.</h1></div><span class="badge">{{if .Live}}Live request · {{.Record.Status}}{{else}}Offline · zero API requests{{end}}</span></header>
-<p class="intro">Playwright checks whether an order was placed. The optional Jev client can judge the same fixed synthetic state. The executed assertion and the model's inference remain separate.</p>
+<p class="intro">Playwright checks the pretend shop’s saved orders. Jev interprets the customer-facing messages without seeing that order list or the assertion verdict. The shop has no success or failure status label.</p>
 <div class="grid"><section>
 <div class="card"><h2>1. Observed browser state</h2>
 <div class="screen"><img src="checkout.png" width="850" height="600" alt="Actual synthetic checkout after placing the selected order.">
@@ -16,11 +16,11 @@
 {{with .Predicted}}<div class="box predicted" style="left:{{.X}}%;top:{{.Y}}%;width:{{.Width}}%;height:{{.Height}}%"></div>{{end}}</div>
 <div class="legend"><span>Green: observed Playwright control</span>{{if .Predicted}}<span>Orange: inferred Jev Box</span>{{end}}</div>
 </div>
-<div class="card"><h2>2. Executed assertion</h2><div class="status"{{if .Capture.AssertionPassed}} style="color:#22623b;background:#ecf8f0"{{end}}>{{if .Capture.AssertionPassed}}Expected “Order placed” → actual “Order placed”. Assertion passed.{{else}}Expected “Order placed” → actual “Order not placed”. Assertion failed as intended.{{end}}</div><p class="small muted">The fixture also checks the selected payment outcome and a unique action button. No real payment or order is created. This demonstration does not create a runner passing receipt.</p></div>
+<div class="card"><h2>2. Executed assertion</h2><div class="status"{{if .Capture.AssertionPassed}} style="color:#22623b;background:#ecf8f0"{{end}}>{{if .Capture.AssertionPassed}}Expected one notebook order → found one with the correct item, quantity and total. Assertion passed.{{else}}Expected one notebook order → found none. Assertion failed as intended.{{end}}</div><p class="small muted">The assertion reads a separate in-memory order list, without matching confirmation text. The list resets on reload. No real payment or order is created. This demonstration does not create a runner passing receipt.</p></div>
 </section><aside>
 <div class="card"><h2>3. Optional typed inference</h2>
-<div class="fact"><span>Payment declined?</span><span class="value">{{prob .Declined}}</span></div>
-<div class="fact"><span>Order confirmed?</span><span class="value">{{prob .Confirmed}}</span></div>
+<div class="fact"><span>Page suggests payment failed?</span><span class="value">{{prob .Declined}}</span></div>
+<div class="fact"><span>Page suggests purchase completed?</span><span class="value">{{prob .Confirmed}}</span></div>
 <div class="fact"><span>Retry button Box</span><span class="value">{{if .Predicted}}Shown in orange{{else if .Images}}No inference{{else}}Image upload off{{end}}</span></div>
 <p class="small muted">{{if .Live}}Probabilities are model judgments, not assertion coverage. A Box does not establish presence or permission to click.{{else}}No canned model result is shown. Add --live to make one real request; add --images to include this synthetic screenshot.{{end}}</p>
 </div>

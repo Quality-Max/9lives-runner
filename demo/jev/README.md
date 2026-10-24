@@ -21,7 +21,8 @@ On Linux, install the browser with `npm exec playwright install --with-deps chro
 
 1. **Try the payment.** Click “Place order” in the shop, or the large guided button.
 2. **Check with 9lives.** A real Playwright browser repeats the checkout and asserts
-   that the status says “Order placed”. See the actual screenshot and pass/fail result.
+   that the shop saved one notebook order with the right item, quantity and total.
+   See the actual screenshot and pass/fail result.
 3. **Ask Jev to look**, when connected. See its answers to two questions and, with
    images enabled, its predicted button outline beside the browser’s measured outline.
 
@@ -75,13 +76,23 @@ Provider/model/usage failures return exit 2 with a sanitized report status.
 ## Evidence and limits
 
 The browser uses a controlled page with no external resources and blocks network
-requests during capture. Its confirmation assertion fails for the broken payment
-and passes for the working payment. Both outcomes are exercised in the smoke.
+requests during capture. There is no “Order placed” or “Order not placed” status
+label. Customers see only “Payment declined. Try another card.” or “Thank you! Your
+notebook is on its way.” Jev judges the meaning of those messages.
+
+The browser independently reads a separate in-memory order list. It verifies the
+list is initially empty, clicks the payment button and asserts exactly one saved
+notebook order with the expected quantity and total. The assertion fails for the
+broken payment and passes for the working payment, without matching any message.
+This list is a toy browser store that resets on reload, not a real backend. Both
+outcomes are exercised in the smoke, including changed and misleading messages.
 The page shown to the visitor and the fresh test browser use the same embedded
 fixture and selected scenario; the saved capture belongs to the executed check.
 
 Live text mode sends the synthetic accessibility observation and owned questions
-to TypeSafe. Image mode adds its prepared PNG and experimental image header.
+to TypeSafe. It never sends the order list, scenario identifier or browser verdict
+as model state; the failure-class hint is left empty for both outcomes. Image
+mode adds its prepared PNG and experimental image header.
 There is no arbitrary URL, screenshot-path or prompt input. Each request has a
 20-second deadline, one-request cap, three-question cap, 2 MiB request budget and
 zero retries. Actual available token usage is reported; no billing-cost cap is
@@ -94,7 +105,9 @@ The safe record identifies the checkout revision and exact scenario fixture hash
 The browser UI receives the assertion result, image, bounded judgments and safe
 record; credentials and raw accessibility snapshots are excluded.
 
-Jev’s probabilities and Box are inferences. They never change the assertion,
+If the page lacks meaningful clues, its appearance cannot establish that an order
+exists. Noul probabilities near 0.5 express uncertainty; they are not a passing
+verdict. Jev’s probabilities and Box are inferences. They never change the assertion,
 click an inferred control, heal a test or create a passing runner receipt. This
 implements the QUA-2228 foundation demonstration; diagnosis, verified locator
 repair and goal actions remain separate tickets. See the [contract](../../docs/jev.md).

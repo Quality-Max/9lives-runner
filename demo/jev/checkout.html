@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Studio Supply · checkout</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f7f7fa;color:#18181b;font:17px/1.5 system-ui,sans-serif}main{width:650px;margin:32px auto}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.brand{font-weight:750;letter-spacing:-.7px;font-size:22px}.tag{font-size:11px;border:1px solid #dddde7;padding:5px 10px;border-radius:20px;color:#606071}article{background:white;border:1px solid #e4e4eb;border-radius:18px;padding:26px 30px;box-shadow:0 10px 30px #18181b04}h1{font-size:29px;line-height:1.2;margin:0 0 6px;letter-spacing:-1px}.muted{color:#686878;font-size:14px}.item{display:flex;gap:20px;align-items:center;padding:20px 0;border-bottom:1px solid #ededf2}.item strong{display:block}.price{margin-left:auto}.notebook{width:60px;height:72px;border-radius:3px 8px 8px 3px;background:#ece9ff;border-left:6px solid #6352d8;display:grid;place-items:center;color:#6352d8;font-size:26px;box-shadow:3px 3px 0 #dfdcf3}.total{display:flex;justify-content:space-between;font-weight:700;margin:16px 0}[role=alert]{background:#fff1f0;border:1px solid #f8c6c2;color:#a3322b;padding:12px 15px;border-radius:9px;margin:16px 0;font-size:15px}.success{background:#edf9f1;border:1px solid #b7e1c4;color:#25633a;padding:12px 15px;border-radius:9px;margin:16px 0;font-size:15px}button{width:100%;background:#5040df;color:white;border:0;padding:13px 24px;border-radius:8px;font:650 16px system-ui;cursor:pointer}button:hover{background:#4233c7}button:focus-visible{outline:3px solid #a99df7;outline-offset:4px}footer{font-size:12px;color:#737383;text-align:center;margin-top:17px}p[role=status]{font-size:13px;color:#686878;margin:10px 0 0;text-align:center}[hidden]{display:none}
+*{box-sizing:border-box}body{margin:0;background:#f7f7fa;color:#18181b;font:17px/1.5 system-ui,sans-serif}main{width:650px;margin:32px auto}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.brand{font-weight:750;letter-spacing:-.7px;font-size:22px}.tag{font-size:11px;border:1px solid #dddde7;padding:5px 10px;border-radius:20px;color:#606071}article{background:white;border:1px solid #e4e4eb;border-radius:18px;padding:26px 30px;box-shadow:0 10px 30px #18181b04}h1{font-size:29px;line-height:1.2;margin:0 0 6px;letter-spacing:-1px}.muted{color:#686878;font-size:14px}.item{display:flex;gap:20px;align-items:center;padding:20px 0;border-bottom:1px solid #ededf2}.item strong{display:block}.price{margin-left:auto}.notebook{width:60px;height:72px;border-radius:3px 8px 8px 3px;background:#ece9ff;border-left:6px solid #6352d8;display:grid;place-items:center;color:#6352d8;font-size:26px;box-shadow:3px 3px 0 #dfdcf3}.total{display:flex;justify-content:space-between;font-weight:700;margin:16px 0}[role=alert]{background:#fff1f0;border:1px solid #f8c6c2;color:#a3322b;padding:12px 15px;border-radius:9px;margin:16px 0;font-size:15px}.success{background:#edf9f1;border:1px solid #b7e1c4;color:#25633a;padding:12px 15px;border-radius:9px;margin:16px 0;font-size:15px}button{width:100%;background:#5040df;color:white;border:0;padding:13px 24px;border-radius:8px;font:650 16px system-ui;cursor:pointer}button:hover{background:#4233c7}button:focus-visible{outline:3px solid #a99df7;outline-offset:4px}footer{font-size:12px;color:#737383;text-align:center;margin-top:17px}[hidden]{display:none}
 </style>
 <body data-scenario="declined">
 <main>
@@ -16,20 +16,29 @@
 <div role="alert" hidden>Payment declined. Try another card.</div>
 <div class="success" hidden>Thank you! Your notebook is on its way.</div>
 <button type="button">Place order</button>
-<p role="status">Ready to place order</p>
 </article>
 <footer>A pretend order. No real card. No money moves.</footer>
 </main>
 <script>
 const scenario = document.body.dataset.scenario;
 let placed = false;
+// A tiny in-memory shop ledger. It is separate from the customer-facing messages
+// and is read only by the browser check, never included in Jev's observation.
+const orders = [];
+Object.defineProperty(window, 'demoOrderStore', { value: Object.freeze({
+  list: () => orders.map(order => ({ ...order }))
+}) });
+function payForNotebook() {
+  if (scenario !== 'success') return false;
+  orders.push({ id: 'demo-order-1', sku: 'field-notebook', quantity: 1, totalCents: 1200, currency: 'EUR' });
+  return true;
+}
 document.querySelector('button').addEventListener('click', function () {
   if (placed) { location.reload(); return; }
   placed = true;
-  const success = scenario === 'success';
+  const success = payForNotebook();
   document.querySelector('[role=alert]').hidden = success;
   document.querySelector('.success').hidden = !success;
-  document.querySelector('[role=status]').textContent = success ? 'Order placed' : 'Order not placed';
   this.textContent = success ? 'Start again' : 'Try again';
   if (parent !== window) parent.postMessage({type:'jev-demo-order', scenario}, location.origin);
 });
