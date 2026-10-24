@@ -157,6 +157,40 @@ test('spec/import and spec/fixtures are read from the spec text without executin
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+// Comments, string contents and object arguments are not code the spec runs
+// or fixtures it takes, so they do not change a verdict.
+test('spec checks ignore comments, strings and object arguments', () => {
+  const root = specProject({
+    'commented.spec.ts': poison + "// import { test } from '@9l/playwright';\n/* import { test } from \"@9l/playwright\" */\nimport { test } from '@playwright/test';\ntest('x', async ({ page }) => {});\n",
+    'object.spec.ts': poison + "import { test, expect } from '@9l/playwright';\ntest('x', async ({ request }) => { expect(await request.get('/')).toMatchObject({ page: 1, context: {} }); });\n",
+    'url.spec.ts': poison + "import { test } from '@9l/playwright';\nconst base = 'http://localhost:3000'; // comment after a URL\ntest('x', async ({ page }) => { await page.goto(base); });\n",
+    'fn.spec.ts': poison + "const { test } = require('@9l/playwright');\ntest('x', async function ({ context }) { await context.newPage(); });\n",
+    'computed/playwright.config.ts': poison + "export default { testDir: './tests' + '/e2e' };\n",
+    'computed/tests/a.spec.ts': sdkSpec,
+    'commented-dir/playwright.config.ts': poison + "export default {\n  // testDir: './tests',\n  testDir: './e2e',\n};\n",
+    'commented-dir/tests/a.spec.ts': sdkSpec,
+    'projects/playwright.config.ts': poison + "export default { projects: [{ name: 'a', testDir: './tests' }, { name: 'b', testDir: './other' }] };\n",
+    'projects/tests/a.spec.ts': sdkSpec,
+  });
+  try {
+    const commented = specChecks(path.join(root, 'commented.spec.ts'));
+    assert.equal(byName(commented, 'spec/import').status, 'missing', 'a commented-out SDK import does not hide the real one');
+    const object = specChecks(path.join(root, 'object.spec.ts'));
+    assert.equal(byName(object, 'spec/fixtures').status, 'warning', 'an object argument is not a fixture');
+    assert.equal(byName(specChecks(path.join(root, 'url.spec.ts')), 'spec/fixtures').status, 'ok', 'a // inside a string is not a comment');
+    assert.equal(byName(specChecks(path.join(root, 'fn.spec.ts')), 'spec/fixtures').status, 'ok', 'function-form callbacks count');
+    const computed = byName(specChecks(path.join(root, 'computed', 'tests', 'a.spec.ts')), 'spec/config');
+    assert.equal(computed.status, 'ok');
+    assert.match(computed.message, /testDir not verified: only a literal testDir/);
+    const commentedDir = byName(specChecks(path.join(root, 'commented-dir', 'tests', 'a.spec.ts')), 'spec/config');
+    assert.equal(commentedDir.status, 'warning', 'the commented testDir is ignored and the live one applies');
+    assert.match(commentedDir.message, /outside its literal testDir/);
+    const projects = byName(specChecks(path.join(root, 'projects', 'tests', 'a.spec.ts')), 'spec/config');
+    assert.equal(projects.status, 'ok');
+    assert.match(projects.message, /testDir not verified: the config sets testDir more than once/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('spec/config names the nearest config and verifies only a literal testDir', () => {
   const root = specProject({
     'playwright.config.ts': poison + "export default { testDir: './tests' };\n",

@@ -81,11 +81,17 @@ fixture modules the spec imports are not followed.
   XHR made through those fixtures.
 - `spec/config`: names the nearest `playwright.config.{ts,js,mts,mjs,cts,cjs}`
   above the spec, in that order, which is the config `prove` picks without
-  `--config`. When the config contains a literal `testDir: '…'`, the check
-  reports whether the spec is under it (`ok`) or outside it (a warning, with
-  `prove --config` as the way out). A computed `testDir` is reported as not
+  `--config`. When the config contains exactly one literal `testDir: '…'`
+  as a whole property value, the check reports whether the spec is under it
+  (`ok`) or outside it (a warning, with `prove --config` as the way out). A
+  computed `testDir`, or several (one per project), is reported as not
   verified, and `testMatch` is never read. No config above the spec is a
   warning.
+
+The spec and config are read as text with comments removed, so a commented-out
+import or `testDir` does not count, while string contents are kept. The
+fixture check recognises only a destructured callback parameter such as
+`async ({ page }) =>`, not an object argument like `.toMatchObject({ page: 1 })`.
 
 Messages name basenames only; `--paths` adds the config directory and the
 literal `testDir`. "testDir and testMatch unless literal" is listed as

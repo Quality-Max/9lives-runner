@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.browserInstallCommand = browserInstallCommand;
+exports.withoutComments = withoutComments;
 exports.specChecks = specChecks;
 exports.diagnose = diagnose;
 const node_module_1 = require("node:module");
@@ -74,8 +75,53 @@ const configExtensions = ['ts', 'js', 'mts', 'mjs', 'cts', 'cjs'];
 // bounded so a large file cannot make the match expensive.
 const importForm = /\bimport\s+(\{[^}]{0,512}\})\s+from\s+(['"])(@9l\/playwright|@playwright\/test)\2/g;
 const requireForm = /\b(?:const|let|var)\s+(\{[^}]{0,512}\})\s*=\s*require\(\s*(['"])(@9l\/playwright|@playwright\/test)\2\s*\)/g;
-const fixtureForm = /\(\s*\{[^}]{0,512}?\b(?:page|context)\b/;
-const testDirForm = /\btestDir\s*:\s*(['"])([^'"\n]{1,512})\1/;
+// A destructured callback parameter, `async ({ page, context }) =>` or
+// `function ({ page })`, not an object argument such as `.toMatchObject({ page: 1 })`.
+const fixtureForm = /(?:\basync\s*|\bfunction\s*\w*\s*)?\(\s*\{[^}]{0,512}?\b(?:page|context)\b[^}]{0,512}?\}\s*\)\s*(?:=>|\{)/;
+// The whole property value: a string literal followed by the end of the
+// property, so `'./tests' + suffix` or a template is not read as `./tests`.
+const testDirForm = /\btestDir\s*:\s*(['"])([^'"\n]{1,512})\1\s*(?=[,}\n\r])/g;
+// Source without comments. String and template literals are kept, and a
+// comment marker inside one is not a comment, so `'http://x'` survives and
+// `// import { test } from '@9l/playwright'` does not count as an import.
+function withoutComments(source) {
+    let out = '';
+    let quote;
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i];
+        const next = source[i + 1];
+        if (quote) {
+            out += ch;
+            if (ch === '\\' && i + 1 < source.length) {
+                out += next;
+                i++;
+            }
+            else if (ch === quote)
+                quote = undefined;
+            continue;
+        }
+        if (ch === "'" || ch === '"' || ch === '`') {
+            quote = ch;
+            out += ch;
+            continue;
+        }
+        if (ch === '/' && next === '/') {
+            while (i < source.length && source[i] !== '\n')
+                i++;
+            out += '\n';
+            continue;
+        }
+        if (ch === '/' && next === '*') {
+            const end = source.indexOf('*/', i + 2);
+            const skipped = source.slice(i, end === -1 ? source.length : end + 2);
+            out += skipped.replace(/[^\n]/g, '');
+            i = end === -1 ? source.length : end + 1;
+            continue;
+        }
+        out += ch;
+    }
+    return out;
+}
 // The modules the spec takes `test` from, by name, without evaluating it.
 function testImports(source) {
     const modules = new Set();
@@ -133,7 +179,8 @@ function specChecks(spec, paths = false) {
         checks.push({ name: 'spec', status: 'warning', message: `${name}: spec too large to inspect (over 1 MiB); the import and fixture checks were skipped.` });
     }
     else {
-        const modules = testImports(source.text ?? '');
+        const code = withoutComments(source.text ?? '');
+        const modules = testImports(code);
         if (modules.has('@9l/playwright')) {
             checks.push({ name: 'spec/import', status: 'ok', message: `${name} imports test from @9l/playwright.` });
         }
@@ -143,7 +190,7 @@ function specChecks(spec, paths = false) {
         else {
             checks.push({ name: 'spec/import', status: 'warning', message: `${name} has no test import from @9l/playwright or @playwright/test; a test imported through a local fixtures module is not followed.` });
         }
-        checks.push(fixtureForm.test(source.text ?? '')
+        checks.push(fixtureForm.test(code)
             ? { name: 'spec/fixtures', status: 'ok', message: `${name} uses the page or context fixture.` }
             : { name: 'spec/fixtures', status: 'warning', message: `prove faults reach only fetch and XHR made through page or context; this spec uses neither.` });
     }
@@ -154,11 +201,15 @@ function specChecks(spec, paths = false) {
     }
     const found = `config found: ${node_path_1.default.basename(config)}${paths ? ` in ${node_path_1.default.dirname(config)}` : ''}.`;
     const contents = readBounded(config, configLimit);
-    const literal = contents.text?.match(testDirForm)?.[2];
-    if (!literal) {
-        checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: only a literal testDir can be read without executing the config.` });
+    const literals = [...withoutComments(contents.text ?? '').matchAll(testDirForm)].map(match => match[2]);
+    if (literals.length !== 1) {
+        // Several literals belong to several projects; which one applies is
+        // only known by executing the config.
+        const why = literals.length > 1 ? 'the config sets testDir more than once, so which applies is only known by executing it' : 'only a literal testDir can be read without executing the config';
+        checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: ${why}.` });
         return checks;
     }
+    const literal = literals[0];
     const testDir = node_path_1.default.resolve(node_path_1.default.dirname(config), literal);
     const relative = node_path_1.default.relative(testDir, spec);
     const inside = relative !== '' && !relative.startsWith('..') && !node_path_1.default.isAbsolute(relative);
