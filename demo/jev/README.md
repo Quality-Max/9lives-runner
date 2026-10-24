@@ -49,8 +49,9 @@ out. Zoom in for small figures, or use Tab and Enter/Space on the hiding spots.
 ### Watch 9lives play
 
 Press **Watch 9lives play** to watch a separate browser round. Your game and timer
-pause. The default uses the known synthetic answer map, costs nothing and makes
-no model request. Turn on **Break one correct click** and run again: the same
+pause. Without Jev configured, the **Free demo** uses the known synthetic answer map,
+costs nothing and makes no model request. Under **Demo settings**, turn on
+**Make one click miss** and run again: the same
 picture now has one broken click handler, and the score assertion fails.
 
 This button runs an ordinary Playwright spec through the **existing Go 9lives
@@ -61,14 +62,15 @@ runner**, with one job, one attempt, no retries and a bounded deadline. It check
 - A repeated click adds nothing, and lookalikes add nothing.
 - The final score equals the number of requested figures.
 
-The action log and screenshots show actual browser progress. **Open the 9lives
-receipt** opens the runner’s saved JSON summary, including the executed-test
+The action log and screenshots show actual browser progress. **See the saved test result** opens the runner’s saved JSON summary, including the executed-test
 count, validation status and any failed assertion. Passing is based on the
 runner receipt, not a model claim or screenshot caption. Ordinary Playwright
 assertion coverage remains `unknown`; this is not independent semantic coverage.
 Stop cancels the owned runner attempt and cannot produce a passing result.
 
-With `--live --images` and a TypeSafe key, enable **Let Jev choose where to click**.
+With `--live --images` and a TypeSafe key, the button automatically uses Jev.
+The panel shows **Live Jev** and explains the three steps: Jev looks, 9lives
+clicks, and 9lives checks. Opening the page never sends a request.
 One explicit run sends a clean picture and three Choice questions, each
 classifying three of the nine observed controls. Options contain geometry and
 the requested visual features. The answer map, correct count, player score and
@@ -104,7 +106,7 @@ unset TYPESAFE_API_KEY
 ```
 
 Opening the page and running “Check with 9lives” still make **no provider request**.
-Each explicit “Ask Jev” click, or a hunt run with Jev enabled, makes **one paid-provider request**. The server
+Each explicit “Ask Jev” click, or a hunt run in Live Jev mode, makes **one paid-provider request**. The server
 allows one check at a time, at most six live requests and 24 total checks per
 session. Failed or cancelled attempts consume their slot. Restart for a new session.
 There are no automatic retries.

@@ -121,7 +121,9 @@ async function expectShopToFit(page) {
     await expect(page.locator('#watch')).toBeEnabled();
     assert.equal(runs,beforeCats);
     assert.equal(hunts,0,'Opening the game must not run a test');
-    await expect(page.locator('#use-jev')).toBeDisabled();
+    await expect(page.locator('#use-jev')).toHaveCount(0);
+    await expect(page.locator('#engine-mode')).toHaveText('Free demo');
+    await expect(page.locator('#look-title')).toHaveText('Use the hiding-place map');
     await expect(page.locator('[data-level="1"]')).toBeDisabled();
     await expect(page.locator('#timed')).not.toBeChecked();
     for (const width of [1920,950,768,640,390,1440]) {
@@ -139,7 +141,9 @@ async function expectShopToFit(page) {
       await page.mouse.click(stage.x+(target.box.X+target.box.Width/2)*stage.width/100,stage.y+(target.box.Y+target.box.Height/2)*stage.height/100);
     }
     async function finishRun(broken,goal){
+      await page.locator('#demo-settings').evaluate(e=>e.open=true);
       await page.locator('#broken').setChecked(broken);
+      await expect(page.locator('#run-result')).toBeHidden();
       await page.locator('#watch').click();
       await expect(page.locator('#run-result')).toBeVisible({timeout:80000});
       const href=await page.locator('#receipt').getAttribute('href');
@@ -230,10 +234,15 @@ async function expectShopToFit(page) {
     // UI fixtures only: provider availability never makes a request on page load,
     // and a malformed "passed" summary must not paint a green result.
     await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:6,runsRemaining:20}}));
-    await page.reload();await expect(page.locator('#use-jev')).toBeEnabled();
+    await page.reload();await expect(page.locator('#engine-mode')).toHaveText('Live Jev');
+    await expect(page.locator('#look-title')).toHaveText('Jev looks');
+    await expect(page.locator('#engine-note')).toContainText('6 left');
+    await page.screenshot({path:path.join(output,'mobile-live-jev-ui-fixture.png'),fullPage:true});
+    await page.setViewportSize({width:1440,height:1050});
+    await page.screenshot({path:path.join(output,'live-jev-ui-fixture.png'),fullPage:true});
     let fakeCalls=0;
-    await page.route('**/api/hunt',route=>{fakeCalls++;return route.fulfill({json:{outcome:'passed',receipts:[{status:'passed',validated:false,executedTests:1}]}})});
-    assert.equal(fakeCalls,0);await page.locator('#use-jev').check();await page.locator('#watch').click();
+    await page.route('**/api/hunt',route=>{fakeCalls++;assert.equal(route.request().postDataJSON().live,true,'Configured Jev is automatic on an explicit watch click');return route.fulfill({json:{outcome:'passed',receipts:[{status:'passed',validated:false,executedTests:1}]}})});
+    assert.equal(fakeCalls,0);await page.locator('#watch').click();
     await expect(page.locator('#run-title')).toHaveText('The run did not finish');
     await expect(page.locator('#receipt')).toBeHidden();
     assert.equal(fakeCalls,1);
@@ -256,6 +265,13 @@ async function expectShopToFit(page) {
     await page.locator('#back').click();
     await expect(page.locator('#card-title')).toHaveText('Time for another try?');
     await expect(page.locator('#start')).toHaveText('Try this level again');
+    await page.unroute('**/api/config');
+    await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:0,runsRemaining:20}}));
+    const usedCalls=fakeCalls;await page.reload();
+    await expect(page.locator('#engine-mode')).toHaveText('Live Jev');
+    await expect(page.locator('#watch')).toBeDisabled();
+    await expect(page.locator('#engine-note')).toContainText('No Jev looks left');
+    assert.equal(fakeCalls,usedCalls,'Budget exhaustion must not silently switch to a free run');
     await page.unroute('**/api/hunt');await page.unroute('**/api/config');
     await page.goto(origin);
     // Exercise AI presentation with a UI fixture, never a fabricated live result.
