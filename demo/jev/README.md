@@ -62,7 +62,9 @@ runner**, with one job, one attempt, no retries and a bounded deadline. It check
 - A repeated click adds nothing, and lookalikes add nothing.
 - The final score equals the number of requested figures.
 
-The action log and screenshots show actual browser progress. **See the saved test result** opens the runner’s saved JSON summary, including the executed-test
+The **Clicks and checks** log opens automatically beneath the game picture and
+shows actual browser progress alongside the screenshots. Scroll the log to review
+earlier steps. **See the saved test result** opens the runner’s saved JSON summary, including the executed-test
 count, validation status and any failed assertion. Passing is based on the
 runner receipt, not a model claim or screenshot caption. Ordinary Playwright
 assertion coverage remains `unknown`; this is not independent semantic coverage.

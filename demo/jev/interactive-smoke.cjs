@@ -184,6 +184,24 @@ async function expectShopToFit(page) {
       }
       await page.screenshot({path:path.join(output,`level-${scenario}.png`),fullPage:true});
       await finishRun(false,goal);
+      if(index===0){
+        // Real runner events must fill the space beneath the picture, without a disclosure.
+        await expect(page.getByRole('region',{name:'Clicks and checks'})).toBeVisible();
+        await expect(page.locator('.scene-pane #timeline')).toContainText('score 8 → 9');
+        await expect(page.locator('.robot #timeline')).toHaveCount(0);
+        for(const width of [1920,950,768,640,390,1440]){
+          await page.setViewportSize({width,height:1050});
+          const log=await page.locator('#run-details').boundingBox();
+          const tools=await page.locator('.scene-tools').boundingBox();
+          const pane=await page.locator('.scene-pane').boundingBox();
+          const guide=await page.locator('.guide').boundingBox();
+          assert.ok(log.y>=tools.y+tools.height-1,'Activity must sit beneath the picture tools');
+          assert.ok(log.x>=pane.x && log.x+log.width<=pane.x+pane.width,'Activity must fit the scene pane');
+          if(width<=720)assert.ok(log.y+log.height<=guide.y+1,'Mobile activity must stay above the guide');
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Activity must not overflow the viewport');
+          if(width===390)await page.screenshot({path:path.join(output,'runner-cats-activity-mobile.png'),fullPage:true});
+        }
+      }
       await page.screenshot({path:path.join(output,`runner-${scenario}-pass.png`),fullPage:true});
       await page.locator('#back').click();
       await expect(page.locator('#counter')).toHaveText(`${index<3?1:0} / ${goal} ${noun} found`);
