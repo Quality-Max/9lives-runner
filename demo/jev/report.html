@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>9lives · Jev local demo</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7f6;color:#183c35;font:15px/1.6 system-ui,sans-serif}main{max-width:1240px;margin:auto;padding:44px 32px 72px}header{display:flex;justify-content:space-between;align-items:center;gap:24px}h1{font-size:36px;line-height:1.2;letter-spacing:-1.3px;margin:12px 0}h2{font-size:17px;margin:0 0 12px}.eyebrow{font-size:12px;font-weight:750;letter-spacing:1.8px;color:#4c7568}.badge{display:inline-block;padding:7px 14px;border:1px solid #cadbd2;border-radius:30px;background:#eaf3ee;font-size:13px}.intro{max-width:720px;color:#5b746a;margin:12px 0 30px}.grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:24px}.card{background:white;border:1px solid #dce5df;border-radius:16px;padding:24px;margin-bottom:20px}.screen{position:relative;line-height:0;overflow:hidden;border-radius:12px;border:1px solid #dce5df}.screen img{display:block;width:100%;height:auto}.box{position:absolute;border:2px solid #16795b;pointer-events:none}.predicted{border:3px dashed #e28731}.legend{font-size:12px;color:#577569;margin-top:12px}.legend span{margin-right:18px}.fact{display:flex;justify-content:space-between;padding:13px 0;border-bottom:1px solid #e7ede9;gap:10px}.fact:last-child{border:0}.value{font-weight:700}.muted{color:#6b8077}.status{color:#9e432e;background:#fff1ec;border-radius:9px;padding:14px 16px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f7f5;border-radius:9px;padding:18px;font:12px/1.65 ui-monospace,monospace}summary{cursor:pointer;font-weight:650}.small{font-size:13px}@media(max-width:850px){.grid{grid-template-columns:1fr}main{padding:28px 18px}header{align-items:flex-start;flex-direction:column}h1{font-size:30px}}
+</style>
+<main>
+<header><div><div class="eyebrow">9LIVES / JEV FOUNDATION</div><h1>One checkout. Two kinds of evidence.</h1></div><span class="badge">{{if .Live}}Live request · {{.Record.Status}}{{else}}Offline · zero API requests{{end}}</span></header>
+<p class="intro">Playwright observes a failed order assertion. The optional Jev client can judge the same fixed synthetic state. The executed assertion and the model's inference remain separate.</p>
+<div class="grid"><section>
+<div class="card"><h2>1. Observed browser state</h2>
+<div class="screen"><img src="checkout.png" width="850" height="600" alt="Synthetic checkout with Payment declined, Order not placed and a Try again button.">
+{{with .Observed}}<div class="box" style="left:{{.X}}%;top:{{.Y}}%;width:{{.Width}}%;height:{{.Height}}%"></div>{{end}}
+{{with .Predicted}}<div class="box predicted" style="left:{{.X}}%;top:{{.Y}}%;width:{{.Width}}%;height:{{.Height}}%"></div>{{end}}</div>
+<div class="legend"><span>Green: observed Playwright control</span>{{if .Predicted}}<span>Orange: inferred Jev Box</span>{{end}}</div>
+</div>
+<div class="card"><h2>2. Executed assertion</h2><div class="status">Expected “Order placed” → actual “Order not placed”. Assertion failed as intended.</div><p class="small muted">The fixture also passes explicit checks for the declined-payment message and a unique retry button. No real payment or order is created. This demonstration does not create a runner passing receipt.</p></div>
+</section><aside>
+<div class="card"><h2>3. Optional typed inference</h2>
+<div class="fact"><span>Payment declined?</span><span class="value">{{prob .Declined}}</span></div>
+<div class="fact"><span>Order confirmed?</span><span class="value">{{prob .Confirmed}}</span></div>
+<div class="fact"><span>Retry button Box</span><span class="value">{{if .Predicted}}Shown in orange{{else if .Images}}No inference{{else}}Image upload off{{end}}</span></div>
+<p class="small muted">{{if .Live}}Probabilities are model judgments, not assertion coverage. A Box does not establish presence or permission to click.{{else}}No canned model result is shown. Add --live to make one real request; add --images to include this synthetic screenshot.{{end}}</p>
+</div>
+<div class="card"><h2>4. Request accounting</h2>
+<div class="fact"><span>Status</span><span class="value">{{.Record.Status}}</span></div>
+<div class="fact"><span>Requests / cap</span><span class="value">{{.Record.RequestCount}} / 1</span></div>
+<div class="fact"><span>Latency</span><span class="value">{{.Record.DurationMS}} ms</span></div>
+<div class="fact"><span>Actual model</span><span class="value">{{if .Record.Model}}{{.Record.Model}}{{else}}Unavailable{{end}}</span></div>
+<div class="fact"><span>Tokens in / out</span><span class="value">{{if .Record.Usage.Available}}{{.Record.Usage.InputTokens}} / {{.Record.Usage.OutputTokens}}{{else}}Unavailable{{end}}</span></div>
+<p class="small muted">20-second request deadline. No retries. Cost unavailable. Provider credentials stay in Go and are withheld from the browser.</p>
+</div>
+</aside></div>
+<div class="card"><details><summary>Inspect the safe decision record</summary><pre>{{.RecordJSON}}</pre></details><p class="small muted">The report displays only bounded numeric judgments from this known synthetic fixture. No raw provider response, accessibility snapshot, prompt, credential or error body is saved. Production callers should persist only the safe record.</p></div>
+</main>
+</html>

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Quality-Max/9lives-runner/internal/providerhttp"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -455,21 +455,9 @@ func (p HTTPProvider) complete(ctx context.Context, prompt, model string, maxTok
 	} else {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
-	response, err := (&http.Client{Timeout: p.timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
+	raw, err := providerhttp.Do(req, p.timeout, maxResponseBytes)
 	if err != nil {
-		if ctx.Err() != nil {
-			return Completion{}, ctx.Err()
-		}
-		return Completion{}, errors.New("provider request failed")
-	}
-	defer response.Body.Close()
-	limited := io.LimitReader(response.Body, maxResponseBytes+1)
-	raw, err := io.ReadAll(limited)
-	if err != nil || len(raw) > maxResponseBytes {
-		return Completion{}, errors.New("provider response is too large")
-	}
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return Completion{}, fmt.Errorf("provider returned HTTP %d", response.StatusCode)
+		return Completion{}, err
 	}
 	var responsePayload struct {
 		Usage struct {

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>9lives · synthetic checkout</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f1f5f4;color:#173c38;font:17px system-ui,sans-serif}main{width:680px;margin:48px auto}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.brand{font-weight:750;letter-spacing:-.5px}.tag{font-size:12px;border:1px solid #bacbc6;padding:6px 10px;border-radius:20px}article{background:white;border:1px solid #d6e2dd;border-radius:20px;padding:32px;box-shadow:0 12px 30px #163c3808}h1{font-size:32px;margin:0 0 8px;letter-spacing:-1px}.muted{color:#667d75}.item{display:flex;justify-content:space-between;padding:24px 0;border-bottom:1px solid #e3eae7}.total{display:flex;justify-content:space-between;font-weight:700;margin:24px 0}[role=alert]{background:#fff0eb;border:1px solid #f0c3b3;color:#963f25;padding:16px;border-radius:10px;margin:20px 0}button{background:#155e50;color:white;border:0;padding:14px 24px;border-radius:9px;font:600 16px system-ui;cursor:pointer}footer{font-size:13px;color:#667d75;margin-top:22px}p[role=status]{font-size:14px;color:#963f25;margin:12px 0 0}[hidden]{display:none}
+</style>
+<main>
+<header><span class="brand">9lives / checkout</span><span class="tag">SYNTHETIC FIXTURE</span></header>
+<article>
+<h1>Your order</h1><div class="muted">A small shop. One deliberately failed payment.</div>
+<div class="item"><span>Field notebook × 1</span><span>€12.00</span></div>
+<div class="total"><span>Total</span><span>€12.00</span></div>
+<div role="alert" hidden>Payment declined. Try another card.</div>
+<button type="button">Place order</button>
+<p role="status">Ready to place order</p>
+</article>
+<footer>Local demonstration only. No card details, payment service or real order.</footer>
+</main>
+<script>
+document.querySelector('button').addEventListener('click', function () {
+  document.querySelector('[role=alert]').hidden = false;
+  document.querySelector('[role=status]').textContent = 'Order not placed';
+  this.textContent = 'Try again';
+});
+</script>
+</html>

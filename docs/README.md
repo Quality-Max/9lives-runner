@@ -18,6 +18,7 @@
 | [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |
 | [Confirm](confirm.md) | You want to know whether a reported finding's reproduction fails before a fix and passes after it (experimental) |
 | [Goals](goals.md) | You are configuring bounded observed-control execution |
+| [Jev foundation](jev.md) | You are integrating optional typed decisions and image evidence in Go |
 | [SDK bridge](sdk-bridge.md) | You need protocol, privacy and evidence boundaries |
 | [Native Tier 1](native-tier1.md) / [Native Tier 2](native-tier2.md) | You are evaluating healing proposals and isolated candidate verification |
 | [Architecture](architecture.md) | You need package boundaries and design decisions |

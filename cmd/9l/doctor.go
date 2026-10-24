@@ -14,6 +14,7 @@ import (
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwrightsdk"
 	"github.com/Quality-Max/9lives-runner/internal/browsercheck"
+	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/prove"
 )
 
@@ -22,6 +23,9 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	format := fs.String("format", "text", "text or json")
 	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK")
+	jevEnabled := fs.Bool("jev", false, "check optional Jev configuration locally (no API request)")
+	jevModel := fs.String("jev-model", jev.DefaultModel, "explicit Jev model for local configuration preflight")
+	jevImages := fs.String("jev-images", "off", "explicit image-upload policy: off, synthetic or masked")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -29,8 +33,24 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if fs.NArg() != 0 || (*format != "text" && *format != "json") {
-		fmt.Fprintln(errOut, "9l: doctor takes only --sdk and --format text|json")
+		fmt.Fprintln(errOut, "9l: doctor takes --sdk, --format text|json, or --jev with --jev-model and --jev-images")
 		return 2
+	}
+	jevMode, jevOptions := false, false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "jev" {
+			jevMode = true
+		}
+		if f.Name == "jev-model" || f.Name == "jev-images" {
+			jevOptions = true
+		}
+	})
+	if (jevOptions && !jevMode) || (jevMode && *sdk) {
+		fmt.Fprintln(errOut, "9l: Jev preflight requires --jev and cannot be combined with --sdk")
+		return 2
+	}
+	if jevMode {
+		return jevPreflight(jev.Config{Enabled: *jevEnabled, Model: *jevModel, Images: *jevImages}, *format, out, errOut)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

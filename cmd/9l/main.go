@@ -113,6 +113,7 @@ Usage:
           # experimental: does a reproduction spec fail before a fix and pass after it? needs @9l/playwright
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l doctor [--sdk] [--format text|json]  # read-only local prerequisite checks
+  9l doctor --jev[=false] [--jev-model MODEL] [--jev-images off|synthetic|masked] [--format text|json]
   9l version [--format text|json]  # json: contract versions for host integrations
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
