@@ -77,10 +77,14 @@ Stop cancels the owned runner attempt and cannot produce a passing result.
 With `--live --images` and a TypeSafe key, the button automatically uses Jev.
 The panel shows **Live Jev**. The three steps above the game explain: Jev looks,
 9lives clicks, and 9lives checks. Opening the page never sends a request.
-One explicit run sends a picture with numbered outlines and nine independent
-yes/no (Noul) questions, one per observed control. Questions contain geometry
-and the requested visual features. The answer map, correct count, player score and
-broken-click flag are withheld. Every probability must be at least 0.7 (yes) or at most 0.3 (no);
+One explicit run sends a 3 × 3 contact sheet of enlarged crops from one fresh
+screenshot and nine independent yes/no (Noul) questions, one per observed control.
+Each labelled tile shows the original pixels and a small rim of scene context,
+without redrawing or isolating figures. Questions name the tile and requested
+visual features. The tile IDs map back to the original observed controls; clicks
+use those controls and recheck their geometry, never contact-sheet coordinates.
+The answer map, correct count, player score and broken-click flag are withheld.
+Every probability must be at least 0.7 (yes) or at most 0.3 (no);
 uncertain decisions stop. The test checks the proposed set against the
 synthetic oracle before clicking. Score checks run independently afterward.
 
@@ -89,13 +93,17 @@ It is **not the general Jev goal provider**: navigation, filling forms and gener
 goal actions remain QUA-2232. The final
 scene is an original illustration, not artwork from a commercial puzzle book.
 
-Local live checks on 24 October 2026 with `jev-1.14.0`: cats passed two
-complete runner executions, and mice passed one, excluding all three cheese decoys.
-A deliberately broken cat click failed on its score assertion. Dogs and the
-striped crowd stopped before clicks because a judgment was uncertain. These
-are individual synthetic checks, not an accuracy benchmark or qualification
-of every level. The page explains stopped selection as **Jev needs your help**,
-while retaining the failed receipt and keeping score failures distinct.
+Local live checks on 24 October 2026 with `jev-1.14.0` and enlarged crops:
+all four healthy levels passed complete runner executions — cats 9/9, dogs 9/9,
+mice 6/6 (excluding three cheese decoys), and the striped stranger 1/1. A
+separate run with the missing-point bug failed on its score assertion for each
+level. All eight runs produced validated receipts with one executed test and
+no retries. The earlier full-picture observation stopped on uncertain dog and
+crowd judgments; enlarged crops resolved these checks without changing the
+confidence thresholds or assertions. These are individual synthetic checks,
+not an accuracy benchmark or a guarantee of future model decisions. The page
+explains stopped selection as **Jev needs your help**, while retaining the
+failed receipt and keeping score failures distinct.
 
 The earlier standalone picture reports remain available (including the bonus
 cats-versus-cushions illustration):

@@ -49,12 +49,11 @@ type huntDecision struct {
 }
 
 // Each observed spot gets an independent yes/no judgment in one request.
-// Only numbered geometry and visual features are sent, never the answer map.
+// Only observed crops and visual features are sent, never the answer map.
 func huntContract(scenario string, candidates []huntCandidate) jev.Contract {
-	c := jev.Contract{Version: jev.Version, Task: "synthetic-picture-actions", QuestionVersion: "v3", CriteriaVersion: "v3", Questions: map[string]jev.Question{}}
+	c := jev.Contract{Version: jev.Version, Task: "synthetic-picture-actions", QuestionVersion: "v4", CriteriaVersion: "v4", Questions: map[string]jev.Question{}}
 	for _, p := range candidates {
-		b := p.Box
-		c.Questions[fmt.Sprintf("spot%d", p.ID)] = jev.Question{Type: "noul", Instructions: fmt.Sprintf("Look at numbered region %d in `screenshot` (left %.3f%%, top %.3f%%, width %.3f%%, height %.3f%% of the whole image). Does the figure inside this region match: %s? Judge only this region; the numbered outline is an annotation, not part of the figure.", p.ID+1, b.X, b.Y, b.Width, b.Height, huntSubject(scenario))}
+		c.Questions[fmt.Sprintf("spot%d", p.ID)] = jev.Question{Type: "noul", Instructions: fmt.Sprintf("In `screenshot`, look only at the enlarged tile labelled Spot %d (row %d, column %d of the 3 by 3 grid). Does the central figure match: %s? Judge the central figure, not other figures in the background. Each tile is a magnified crop from the same fresh game picture. Labels and borders are annotations.", p.ID+1, p.ID/3+1, p.ID%3+1, huntSubject(scenario))}
 	}
 	return c
 }
@@ -137,7 +136,7 @@ func (f huntServices) Start(ctx context.Context, identity runner.AttemptIdentity
 			http.Error(w, "Invalid observation", 400)
 			return
 		}
-		binding := jev.Binding{RunID: identity.RunID, JobID: identity.JobID, AttemptID: identity.AttemptID, Target: identity.Target, Revision: f.revision, SourceSHA256: f.source, TestID: "cat-hunt", StepID: "choose-spots", ObservationID: "clean-room"}
+		binding := jev.Binding{RunID: identity.RunID, JobID: identity.JobID, AttemptID: identity.AttemptID, Target: identity.Target, Revision: f.revision, SourceSHA256: f.source, TestID: "cat-hunt", StepID: "choose-spots", ObservationID: "observed-control-crops"}
 		now := time.Now().UTC()
 		image, err := jev.PrepareImage(binding, now, input.PNG, jev.Transform{ScaleX: 1, ScaleY: 1}, "synthetic", nil)
 		if err != nil || image == nil {
@@ -145,7 +144,7 @@ func (f huntServices) Start(ctx context.Context, identity runner.AttemptIdentity
 			return
 		}
 		// Inputs are bounded controls. The fixture's hidden answer map is absent.
-		result, err := client.Decide(r.Context(), binding, jev.Observation{Binding: binding, ObservedAt: now, Snapshot: "A synthetic room with numbered outlines around observed controls. Judge only the figure inside the requested region.", Image: image}, huntContract(f.scenario, input.Candidates))
+		result, err := client.Decide(r.Context(), binding, jev.Observation{Binding: binding, ObservedAt: now, Snapshot: "A 3 by 3 contact sheet of magnified observed controls, numbered Spot 1 through Spot 9 in row order. These are crops of one fresh synthetic screenshot. Image coordinates refer to this contact sheet; actions use the separately observed original control geometry. Judge only the central figure in the requested tile.", Image: image}, huntContract(f.scenario, input.Candidates))
 		raw, _ := json.MarshalIndent(result.Record, "", "  ")
 		if os.WriteFile(filepath.Join(f.dir, "jev-record.json"), raw, 0600) != nil {
 			http.Error(w, "Could not save safe record", 500)

@@ -32,25 +32,36 @@ test('Find every requested figure. Check every click.', async ({ page }) => {
       candidates.push({ id, box: { X: b.x/8.5, Y: b.y/6, Width: b.width/8.5, Height: b.height/6 } });
     }
     phase = 'selection';
-    await progress('looking', input.live ? 'Jev is choosing matching figures from the picture…' : 'Using the game’s known hiding places. No AI request.');
+    await progress('looking', input.live ? 'Jev is checking close-ups of nine hiding spots…' : 'Using the game’s known hiding places. No AI request.');
     let selected;
     if (input.live) {
-      // Number only observed geometry; no answer-map values enter this image.
-      await page.evaluate(spots => {
-        const overlay = document.createElement('div'); overlay.id = 'jev-regions';
-        Object.assign(overlay.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: '9999' });
-        for (const { id, box: b } of spots) {
-          const region = document.createElement('div');
-          Object.assign(region.style, { position: 'absolute', left: `${b.X}%`, top: `${b.Y}%`, width: `${b.Width}%`, height: `${b.Height}%`, outline: '2px solid #1455c0' });
-          const label = document.createElement('span'); label.textContent = String(id + 1);
-          Object.assign(label.style, { position: 'absolute', left: '0', bottom: '100%', background: '#1455c0', color: 'white', font: 'bold 12px sans-serif', padding: '1px 3px' });
-          region.append(label); overlay.append(region);
+      // Magnify pixels from one fresh screenshot, using only observed geometry.
+      // The contact sheet is a virtual image surface, not page coordinates:
+      // tile N maps to candidate N; actual clicks still use the original control.
+      const screenshot = (await page.screenshot()).toString('base64');
+      const png = await page.evaluate(async ({ screenshot, candidates }) => {
+        const image = new Image(); image.src = `data:image/png;base64,${screenshot}`;
+        await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 900;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 900, 900);
+        for (const { id, box: b } of candidates) {
+          const x = id % 3 * 300, y = Math.floor(id / 3) * 300;
+          // Include a small rim of scene context; never isolate or redraw a figure.
+          const left = Math.max(0, b.X / 100 * image.width - 2);
+          const top = Math.max(0, b.Y / 100 * image.height - 2);
+          const width = Math.min(image.width - left, b.Width / 100 * image.width + 4);
+          const height = Math.min(image.height - top, b.Height / 100 * image.height + 4);
+          const scale = Math.min(264 / width, 250 / height);
+          ctx.drawImage(image, left, top, width, height,
+            x + (300 - width * scale) / 2, y + 38 + (250 - height * scale) / 2,
+            width * scale, height * scale);
+          ctx.fillStyle = '#1455c0'; ctx.font = 'bold 22px sans-serif';
+          ctx.fillText(`Spot ${id + 1}`, x + 14, y + 27);
+          ctx.strokeStyle = '#ccd5e0'; ctx.strokeRect(x + 1, y + 1, 298, 298);
         }
-        document.body.append(overlay);
-      }, candidates);
-      let png;
-      try { png = (await page.screenshot()).toString('base64'); }
-      finally { await page.locator('#jev-regions').evaluate(el => el.remove()); }
+        return canvas.toDataURL('image/png').split(',')[1];
+      }, { screenshot, candidates });
       // Private attempt-owned Go bridge. Credentials never enter this worker.
       const response = await fetch(process.env.CAT_HUNT_PROVIDER, { method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Hunt-Token': process.env.CAT_HUNT_TOKEN },
