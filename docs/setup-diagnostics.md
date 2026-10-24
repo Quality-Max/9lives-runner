@@ -6,18 +6,32 @@ project:
 ```sh
 9l doctor
 9l doctor --sdk --format json
+9l doctor --sdk tests/checkout.spec.ts   # also check one spec for prove
 ```
 
-The command checks Node (22 minimum, 24 qualified), `package.json` presence,
-locally resolved `@playwright/test`, the optional SDK, and the exact
-Chromium and headless-shell files needed by each installed Playwright runtime.
-Scan/inspect and test runs can resolve different runtimes; both are checked.
-It prints package versions and fixed diagnostic messages, never environment
-values, config contents, browser-cache paths or authentication state.
+The command checks which `9l` PATH selects, Node (22 minimum, 24
+qualified), `package.json` presence, locally resolved `@playwright/test`, the
+optional SDK, and the exact Chromium and headless-shell files needed by each
+installed Playwright runtime. Scan/inspect and test runs can resolve
+different runtimes; both are checked. It prints package versions and fixed
+diagnostic messages, never environment values, config contents, browser-cache
+paths or authentication state. File system paths appear only with `--paths`,
+a flag for local reading in the spirit of `prove --paths`; nothing doctor
+prints is persisted.
 
 Exit 0 means no required prerequisite is missing; warnings and unverified
 checks still apply. Exit 2 means setup is missing or diagnostics could not
-complete. `--sdk` makes the otherwise optional SDK required.
+complete. `--sdk` makes the otherwise optional SDK required and, with a spec
+path after it, adds the [spec checks](#check-a-spec-for-prove).
+
+The `executable` check compares the file doctor runs from with the `9l` that
+PATH resolves to, without running either. Usually they are the same file.
+When they differ, terminals, scripts and MCP hosts start the one on PATH
+unless configured with a full path, so the check warns and names the fix:
+put this build's directory first on PATH, or configure the host with this
+executable's full path. Without `--paths` the report says only that the two
+differ; `--paths` adds both resolved paths. Doctor cannot see which binary a
+running MCP host selected; that stays unverified.
 
 Node below 22 is missing and gets the install step. Node 24 is qualified. Any
 other release from 22 up is supported but outside the qualified matrix: a
@@ -45,6 +59,44 @@ budget, and the same restricted environment as browser checks. It resolves
 installed packages and uses Playwright's registry code. Use trusted local
 dependencies. It does not establish that config is valid, that Linux libraries
 are installed, or that a target is reachable. A real scan verifies those paths.
+
+## Check a spec for prove
+
+```sh
+9l doctor --sdk tests/checkout.spec.ts
+```
+
+With `--sdk`, one spec path adds three checks read from the file as text, at
+most 1 MiB. Nothing is executed: not the spec, not the config, and local
+fixture modules the spec imports are not followed.
+
+- `spec/import`: `ok` when the spec imports `test` from `@9l/playwright`
+  (`import { test } from '@9l/playwright'` or
+  `const { test } = require('@9l/playwright')`); `missing` when it takes
+  `test` from `@playwright/test`, which `prove` refuses, so the report is not
+  ready and the command exits 2; a warning when neither import is in the
+  file, for example a `test` extended in a local fixtures module.
+- `spec/fixtures`: `ok` when a test signature destructures `page` or
+  `context`; otherwise a warning, because prove faults reach only fetch and
+  XHR made through those fixtures.
+- `spec/config`: names the nearest `playwright.config.{ts,js,mts,mjs,cts,cjs}`
+  above the spec, in that order, which is the config `prove` picks without
+  `--config`. When the config contains exactly one literal `testDir: '…'`
+  as a whole property value, the check reports whether the spec is under it
+  (`ok`) or outside it (a warning, with `prove --config` as the way out). A
+  computed `testDir`, or several (one per project), is reported as not
+  verified, and `testMatch` is never read. No config above the spec is a
+  warning.
+
+The spec and config are read as text with comments removed, so a commented-out
+import or `testDir` does not count, while string contents are kept. The
+fixture check recognises only a destructured callback parameter such as
+`async ({ page }) =>`, not an object argument like `.toMatchObject({ page: 1 })`.
+
+Messages name basenames only; `--paths` adds the config directory and the
+literal `testDir`. "testDir and testMatch unless literal" is listed as
+unverified whenever a spec was given. Passing a spec without `--sdk`, or a
+path that is not a file, is a usage error.
 
 ## Apply a repair explicitly
 
@@ -88,8 +140,9 @@ that a spec's assertions passed. Use the execution receipt for that.
 ## Qualification and onboarding timing
 
 Automated checks cover an empty workspace, missing Node, package/config
-non-disclosure, installed and absent Chromium/headless-shell builds, and
-shared CLI/MCP unreachable-target guidance. CI requires real browser checks
+non-disclosure, installed and absent Chromium/headless-shell builds, a stale
+`9l` on PATH that is reported but never run, spec checks for every import,
+fixture and `testDir` case, and shared CLI/MCP unreachable-target guidance. CI requires real browser checks
 on Linux and native Windows, and checks the registry across every qualified
 Playwright version. Treat a CI configuration as planned coverage until its
 run succeeds. Local execution evidence and its actual platform are recorded

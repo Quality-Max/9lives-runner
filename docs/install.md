@@ -137,6 +137,9 @@ command; check `--version` and `--help` before upgrading it. A successful
 install does not replace another executable earlier on PATH, an alias or a
 shell function. Update that selection, reopen the shell if necessary, then
 repeat these checks. The Python `9lives` distribution also installs `9l`.
+`9l doctor`, run by its full path, reports the same mismatch: its
+`executable` check warns when the `9l` first on PATH is a different file,
+and `--paths` prints both paths. It never runs the other binary.
 
 For SDK execution, use the [qualified CLI/SDK pair](../README.md#compatibility).
 The engine checks protocol and capabilities rather than package semver; a
