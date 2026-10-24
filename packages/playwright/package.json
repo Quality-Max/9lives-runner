@@ -15,7 +15,8 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},
-    "./reporter": {"types": "./dist/reporter.d.ts", "default": "./dist/reporter.js"}
+    "./reporter": {"types": "./dist/reporter.d.ts", "default": "./dist/reporter.js"},
+    "./android": {"types": "./dist/android.d.ts", "default": "./dist/android.js"}
   },
   "files": ["dist", "LICENSE", "NOTICE", "README.md"],
   "scripts": {"build": "tsc -p tsconfig.json"},

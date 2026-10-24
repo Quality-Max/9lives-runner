@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {closeSync, openSync, writeSync} from 'node:fs';
 import type {Reporter, FullConfig, Suite, TestCase, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
+import {validAndroidRuntime, androidRuntimeType} from './android-runtime';
 
 // Worker logs, error messages, step titles, URLs and attachment bodies never enter
 // the protocol. IDs are hashes; Go persists only this bounded metadata stream.
@@ -57,6 +58,14 @@ export default class EngineReporter implements Reporter {
   }
   onTestEnd(test: TestCase, result: TestResult) {
     if (result.attachments.length > 32) { this.emit('engine_error'); return; }
+    for (const attachment of result.attachments) {
+      if (attachment.name !== '9l.android-runtime') continue;
+      if (this.target?.kind !== 'android' || attachment.contentType !== androidRuntimeType || !attachment.body || attachment.body.length > 2048) { this.emit('engine_error'); return; }
+      let runtime: unknown;
+      try { runtime = JSON.parse(attachment.body.toString('utf8')); } catch { this.emit('engine_error'); return; }
+      if (!validAndroidRuntime(runtime)) { this.emit('engine_error'); return; }
+      this.emit('target_runtime', {testId: this.testId(test), retry: result.retry, runtime});
+    }
     this.emit('test_end', {
       testId: this.testId(test), retry: result.retry, status: result.status, expectedStatus: test.expectedStatus,
       artifacts: result.attachments.map((attachment, index) => ({

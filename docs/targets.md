@@ -1,7 +1,9 @@
 # Shared target contract (experimental)
 
 QUA-2203 / Demo M1 adds an opt-in deterministic surface shared by a web
-worker and a **fake native worker**. The fake runs in memory. This does not
+worker and a **fake native worker**. The fake runs in memory. The optional M2
+`android:<app-alias>` adapter uses a real local emulator; see
+[Android setup and qualification](android-driver.md). The fake fixture does not
 qualify Android, iOS, semantic screen checks, independent verification or replay.
 Existing specs and Playwright configuration keep their existing behavior.
 
@@ -63,10 +65,15 @@ second match at action time fails instead of being chosen. Only test-ID lookup i
 XPath, coordinates and role lookup have no API in this contract. Unsupported
 states, driver versions and capabilities fail the test.
 
-An operation receives an abort signal and absolute deadline. Every operation
-and assertion defaults to 5 seconds and accepts up to 60 seconds, always capped
-by Go's worker deadline. Assertions make at most 200 observations and fail on
-their own before the deadline. There is one operation in flight per app.
+An operation receives an abort signal and absolute deadline. Operations and
+assertions default to 5 seconds and accept up to 60 seconds, always capped
+by Go's worker deadline. Android open defaults to 180 seconds and accepts up to
+180 seconds. Assertions make at most 200 observations. At their own polling
+bound, a completed mismatch reports `assertion_failed`, even if a later read
+stalls. A bound reached before any completed check reports `deadline`;
+cancellation and Go's outer deadline retain their own reason. If every completed
+read fails, its operation error is preserved rather than claiming a false
+business comparison. There is one operation in flight per app.
 
 Any failure permanently stops the session; catching the error cannot make the
 receipt pass. Errors name the reason (`missing_test_id`, `ambiguous_test_id`,

@@ -89,7 +89,7 @@ Usage:
           [--reporter html,...]  # also run project reporters beside the evidence reporter
           [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
           [--sdk]  # opt-in @9l/playwright engine protocol
-          [--target web:<app-alias>|android-fake:<app-alias>]...  # with --sdk; one attempt per target project
+          [--target web:<app-alias>|android:<app-alias>|android-fake:<app-alias>]...  # with --sdk; one attempt per target project
           [--failure-details]  # with --sdk, record failed test titles and errors
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
@@ -567,7 +567,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	keepAttachments := fs.Bool("keep-attachments", false, "copy each failed test's attachments (error context, screenshot, trace) into its receipt directory; they can hold page content")
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	var targets projectNames
-	fs.Var(&targets, "target", "with --sdk, schedule one job per target project: web:<app-alias> or android-fake:<app-alias> (repeatable; no automatic retries)")
+	fs.Var(&targets, "target", "with --sdk, schedule one job per target project: web:<app-alias>, android:<app-alias> or android-fake:<app-alias> (repeatable; no automatic retries)")
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
@@ -707,7 +707,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		seen := map[string]bool{}
 		for _, target := range targets {
 			if !playwrightsdk.ValidTarget(target) || seen[target] {
-				fmt.Fprintln(errOut, "9l: targets must be distinct web:<app-alias> or android-fake:<app-alias> projects")
+				fmt.Fprintln(errOut, "9l: targets must be distinct web:<app-alias>, android:<app-alias> or android-fake:<app-alias> projects")
 				return 2
 			}
 			seen[target] = true

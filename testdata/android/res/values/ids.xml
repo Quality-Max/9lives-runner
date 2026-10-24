@@ -1,0 +1,7 @@
+<resources>
+  <item name="recipient" type="id" />
+  <item name="amount" type="id" />
+  <item name="send" type="id" />
+  <item name="receipt" type="id" />
+  <item name="confirmed" type="id" />
+</resources>

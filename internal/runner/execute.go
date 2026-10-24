@@ -404,6 +404,18 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			return infrastructureError("engine evidence channel could not be created")
 		}
 		defer os.RemoveAll(directory)
+		if strings.HasPrefix(job.Target, "android:") {
+			scratch := filepath.Join(directory, "native")
+			if err := os.Mkdir(scratch, 0o700); err != nil {
+				if service != nil {
+					receipt.Goals = service.Close()
+				}
+				return infrastructureError("native scratch directory could not be created")
+			}
+			job.Env["NINELIVES_TARGET_SCRATCH_DIR"] = scratch
+			job.Env["PLAYWRIGHT_NO_COPY_PROMPT"] = "1"
+			job.Command = append(job.Command, "--output="+filepath.Join(scratch, "playwright-output"))
+		}
 		evidencePath = filepath.Join(directory, "events.ndjson")
 		job.Env[channel.EvidenceEnv()] = evidencePath
 		if diagnostics, ok := channel.(DiagnosticsChannel); ok && diagnostics.DiagnosticsEnv() != "" {
@@ -477,6 +489,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.FlakyTests = validation.FlakyTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.TargetAssertions = validation.TargetAssertions
+				receipt.AndroidRuntimes = validation.AndroidRuntimes
 				receipt.AssertionCoverage = validation.AssertionCoverage
 				receipt.ReportedAssertions = validation.ReportedAssertions
 				receipt.PassedWithoutAssertions = validation.PassedWithoutAssertions

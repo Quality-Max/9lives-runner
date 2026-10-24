@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
@@ -46,9 +47,10 @@ type event struct {
 		Kind     string `json:"kind"`
 		Retained bool   `json:"retained"`
 	} `json:"artifacts"`
-	TargetID      string `json:"targetId"`
-	TargetVersion string `json:"targetVersion"`
-	Operation     string `json:"operation"`
+	TargetID      string                 `json:"targetId"`
+	TargetVersion string                 `json:"targetVersion"`
+	Operation     string                 `json:"operation"`
+	Runtime       *runner.AndroidRuntime `json:"runtime"`
 }
 
 type testState struct {
@@ -60,6 +62,7 @@ type testState struct {
 	goalFailed   bool
 	targetFailed bool
 	assertions   int
+	runtime      bool
 	// reportedAttempt counts the assertion steps the worker reported as passed
 	// in the attempt in progress; reportedFinal and finalStatus keep the last
 	// completed attempt's count and status.
@@ -166,6 +169,13 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				return invalid("duplicate or late test attempt")
 			}
 			state.retry, state.active, state.reportedAttempt = frame.Retry, true, 0
+		case "target_runtime":
+			if !strings.HasPrefix(identity.Target, "android:") || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.runtime || frame.Runtime == nil || !validAndroidRuntime(*frame.Runtime) {
+				return invalid("missing, foreign or malformed Android runtime")
+			}
+			state.runtime = true
+			frame.Runtime.TestID = frame.TestID
+			validation.AndroidRuntimes = append(validation.AndroidRuntimes, *frame.Runtime)
 		case "step_end":
 			if summarizing || state == nil || !state.active || frame.Retry != state.retry || !stepID.MatchString(frame.StepID) || steps[frame.StepID] {
 				return invalid("foreign, duplicate or late step")
@@ -208,6 +218,8 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("target test hid a failed target operation")
 				case frame.Status == "passed" && state.assertions == 0:
 					return invalid("target test passed without a successful target assertion")
+				case frame.Status == "passed" && strings.HasPrefix(identity.Target, "android:") && !state.runtime:
+					return invalid("Android test passed without runtime identity")
 				}
 			}
 			if state.expected != "" && state.expected != frame.ExpectedStatus {
@@ -397,6 +409,8 @@ func decodeEvent(raw []byte) (event, error) {
 		fields = append(fields, "testId")
 	case "test_begin":
 		fields = append(fields, "testId", "retry")
+	case "target_runtime":
+		fields = append(fields, "testId", "retry", "runtime")
 	case "step_end":
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
 		if frame.Operation != "" {
@@ -424,6 +438,18 @@ func decodeEvent(raw []byte) (event, error) {
 		}
 	}
 	// Artifact objects are a closed metadata schema too.
+	if value := values["runtime"]; value != nil {
+		var runtime map[string]json.RawMessage
+		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker"}
+		if json.Unmarshal(value, &runtime) != nil || len(runtime) != len(keys) {
+			return frame, fmt.Errorf("invalid runtime")
+		}
+		for _, key := range keys {
+			if runtime[key] == nil {
+				return frame, fmt.Errorf("invalid runtime")
+			}
+		}
+	}
 	if value := values["artifacts"]; value != nil {
 		var artifacts []map[string]json.RawMessage
 		if json.Unmarshal(value, &artifacts) != nil {
@@ -436,6 +462,15 @@ func decodeEvent(raw []byte) (event, error) {
 		}
 	}
 	return frame, nil
+}
+
+var androidPackage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$`)
+var androidVersion = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$`)
+
+func validAndroidRuntime(r runner.AndroidRuntime) bool {
+	return len(r.AppPackage) <= 200 && androidPackage.MatchString(r.AppPackage) && testID.MatchString(r.APKSHA256) && testID.MatchString(r.Worker) && r.TestID == "" &&
+		regexp.MustCompile(`^[0-9]{1,3}$`).MatchString(r.API) && androidVersion.MatchString(r.Release) && androidVersion.MatchString(r.Emulator) &&
+		r.Appium == "3.8.0" && r.UIAutomator2 == "8.7.0" && oneOf(r.ABI, "arm64-v8a", "x86_64")
 }
 
 // TestAssertionFacts is one test's outcome in an attempt's evidence.

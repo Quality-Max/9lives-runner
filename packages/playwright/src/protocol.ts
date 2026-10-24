@@ -14,10 +14,10 @@ export const targetStepFile = realpathSync(join(__dirname, 'targets.js'));
 
 export function selectedTarget(env: NodeJS.ProcessEnv = process.env) {
   const name = env.NINELIVES_TARGET;
-  if (!name || !/^(web|android-fake):[a-zA-Z0-9_-]{1,64}$/.test(name)) {
-    throw new Error('9lives target requires --sdk --target web:<app-alias> or android-fake:<app-alias>');
+  if (!name || !/^(web|android-fake|android):[a-zA-Z0-9_-]{1,64}$/.test(name)) {
+    throw new Error('9lives target requires --sdk --target web:<app-alias>, android:<app-alias> or android-fake:<app-alias>');
   }
-  const [kind, appId] = name.split(':') as ['web' | 'android-fake', string];
+  const [kind, appId] = name.split(':') as ['web' | 'android-fake' | 'android', string];
   return {name, kind, appId, id: createHash('sha256').update(name).digest('hex')};
 }
 
