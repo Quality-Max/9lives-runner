@@ -207,7 +207,22 @@ async function expectShopToFit(page) {
       await finishRun(true,goal);
       await page.screenshot({path:path.join(output,`runner-${scenario}-fail.png`),fullPage:true});
       await page.locator('#back').click();
-      for(const spot of real.slice(index<3?1:0))await tapTarget(spot);
+      // Switching the bug on restarted the player's level too. Both rounds use the same defect.
+      await expect(page.locator('#counter')).toHaveText(`0 / ${goal} ${noun} found`);
+      await expect(page.locator('#picture-note')).toContainText('Bug planted');
+      await page.locator('#start').click();
+      for(const spot of real)await tapTarget(spot);
+      await expect(page.locator('#counter')).toHaveText(`${goal-1} / ${goal} ${noun} found`);
+      await expect(page.locator('#curtain')).toBeHidden();
+      await tapTarget(real[1]||real[0]);
+      await expect(page.locator('#feedback')).toContainText('planted bug');
+      if(index===0)await page.screenshot({path:path.join(output,'player-cats-bug.png'),fullPage:true});
+      await page.locator('#broken').uncheck();
+      await expect(page.locator('#counter')).toHaveText(`0 / ${goal} ${noun} found`);
+      await expect(page.locator('#run-result')).toBeHidden();
+      await expect(page.locator('#picture-note')).not.toContainText('Bug planted');
+      await page.locator('#start').click();
+      for(const spot of real)await tapTarget(spot);
       await expect(page.locator('#card-title')).toHaveText(index===3?'Master detective!':'You found them all!');
       if(index<3){await expect(page.locator(`[data-level="${index+1}"]`)).toBeEnabled();await page.locator('#start').click()}
     }
@@ -360,7 +375,7 @@ async function expectShopToFit(page) {
     }
     assert.throws(() => captureVariant(working.replace('totalCents: 1200', 'totalCents: 9999'),
       'wrong-total'), 'A visible confirmation cannot pass an order with the wrong total');
-    console.log('PASS: four progressive hunt levels, optional timer, decoys, separate player score, eight real healthy/broken 9lives runs, assertion-attributed failures, real owned cancellation, mobile/zoom, malformed evidence rejection; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    console.log('PASS: four progressive hunt levels, optional timer, decoys, separate player score, manual bug/repaired scores and mode resets on all four levels, eight real healthy/broken 9lives runs, assertion-attributed failures, real owned cancellation, mobile/zoom, malformed evidence rejection; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
     console.log('Screenshots:', output);
   } finally {
     await browser?.close();

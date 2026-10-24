@@ -52,8 +52,11 @@ Press **Watch 9lives play** to watch a separate browser round. Your game and tim
 pause. Without Jev configured, the **Free demo** uses the known synthetic answer map,
 costs nothing and makes no model request. The introduction explains Jev’s visual
 judgment and 9lives’ browser actions and score checks before the first run. Turn on
-**Plant a bug: one find earns no point** and run again: the same
-picture now has one broken click handler, and the score assertion fails.
+**Plant a bug: one find earns no point** to restart the current level with a broken
+click handler in both your game and 9lives’ round. Find all nine cats yourself: the
+score sticks at 8/9, and clicking the affected cat explains the missed point.
+Watch 9lives test the same defect: the score assertion fails. Switch the bug off
+to restart a working level. Watching alone preserves your own score and timer.
 
 This button runs an ordinary Playwright spec through the **existing Go 9lives
 runner**, with one job, one attempt, no retries and a bounded deadline. It checks:
