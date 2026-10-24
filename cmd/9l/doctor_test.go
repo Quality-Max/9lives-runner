@@ -219,7 +219,7 @@ func TestDoctorWarnsAboutAnotherNineLOnPathWithoutRunningIt(t *testing.T) {
 	if check.Status != "warning" || !strings.Contains(check.Message, "is not this executable") || !strings.Contains(check.Fix, "full path") {
 		t.Fatalf("stale PATH: %+v", check)
 	}
-	if strings.Contains(raw, bin) {
+	if strings.Contains(raw, bin) || strings.Contains(check.Message, "This executable:") {
 		t.Fatal("doctor printed executable paths without --paths")
 	}
 	var text, stderr bytes.Buffer
@@ -231,7 +231,11 @@ func TestDoctorWarnsAboutAnotherNineLOnPathWithoutRunningIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if raw, check = find("--format", "json", "--paths"); !strings.Contains(check.Message, other) || !strings.Contains(raw, other) {
+	// Windows may hand the test an 8.3 short name for the temp directory
+	// while doctor reports the long one, so there the fake binary is matched
+	// by its file name at the end of the reported path.
+	raw, check = find("--format", "json", "--paths")
+	if !strings.Contains(check.Message, "First on PATH: ") || !strings.Contains(check.Message, string(filepath.Separator)+name+".") || (runtime.GOOS != "windows" && !strings.Contains(raw, other)) {
 		t.Fatalf("--paths omits the PATH binary: %+v", check)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
