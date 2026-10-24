@@ -30,6 +30,37 @@ The default works offline, with **zero provider requests** and no key. It shows
 no canned AI answers. You can try both payments, toggle the button outline and
 open the saved execution evidence. Light/dark theme follows the existing 9lives demo.
 
+## Play hide-and-seek with cats
+
+Open **[the cat hunt](http://127.0.0.1:4175/cats)**, or follow “Find the hidden
+cats” from the shop. Tap cats to mark them, zoom in for a closer look, and start
+over whenever you like. There is no timer.
+
+- **Cozy Hide-and-Seek:** nine sleepy cartoon cats among books and furniture.
+- **Cats or Cushions?:** six cats plus three cat-shaped cushions. Stitches,
+  fabric tags and X-shaped button eyes distinguish the cushions.
+
+“Reveal the cats” runs real Playwright checks of every target, repeat taps and
+cushions, then shows numbered outlines and a list of hiding places. No key is
+needed. “Ask Jev to look” needs `--live --images` and a TypeSafe key. One explicit
+click sends a fresh, clean PNG with three fixed questions: presence (Noul), count
+(Choice, including an uncertain option), and one proposed cat location (Box).
+The answer map, correct count, room identifier and player taps are withheld from
+the model input. Nothing in the illustration labels a cat or its count.
+
+The UI compares the answer with this synthetic drawing’s known geometry. A Box
+matches when its intersection over union with a cat rectangle is at least 35%.
+That is a demo comparison rule, not a model benchmark or permission to click.
+AI guesses never add to the player’s score. The same six-request live limit is
+shared with the shop. Text-only live sessions cannot ask cat picture questions.
+
+Standalone cat reports are also available:
+
+```sh
+go run ./demo/jev --scenario cats --images
+go run ./demo/jev --scenario cat-decoys --live --images
+```
+
 ## Connect Jev for real answers
 
 Stop the demo, then supply `TYPESAFE_API_KEY` to the local Go process. In an
@@ -50,7 +81,7 @@ session. Failed or cancelled attempts consume their slot. Restart for a new sess
 There are no automatic retries.
 
 `--images` includes only this demo’s synthetic screenshot and a Box question.
-Omit it for two text-only Noul questions. Select another supported model with
+Omit it for the shop’s two text-only Noul questions. Select another supported model with
 `--model`; the default is `jev-1.14.0`. Missing credentials fail before starting
 the server or browser capture. Live availability and visual accuracy require
 real qualification; offline tests do not establish either.
@@ -68,7 +99,7 @@ go run ./demo/jev --scenario success
 go run ./demo/jev --live --images
 ```
 
-Each command captures the selected fixed checkout once and prints a saved HTML
+Each command captures the selected fixed scene once and prints a saved HTML
 report path. The last command requires the key and makes one provider request.
 Provider/model/usage failures return exit 2 with a sanitized report status.
 `go run ./demo/jev --images` exercises image preparation without a provider call.
@@ -117,7 +148,8 @@ go test ./demo/jev
 npm run smoke:jev
 ```
 
-The smoke starts its own offline server, executes both actual browser outcomes,
+The smoke starts its own offline server, executes both checkout outcomes and
+both cat rooms (including decoys, repeat taps, reveal, zoom and mobile layouts),
 checks saved reports, mobile layout, theme persistence and offline continuation.
 A separate, explicitly synthetic UI fixture checks answer/Box presentation;
 it never contacts TypeSafe and does not qualify model accuracy.

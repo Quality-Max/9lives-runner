@@ -112,6 +112,107 @@ async function expectShopToFit(page) {
     await expect(page.locator('#check-title')).toHaveText('✓ Notebook order saved', { timeout: 30000 });
     await page.screenshot({ path: path.join(output, 'mobile-success.png'), fullPage: true });
 
+    // Real cat game, including scaled taps, decoys and browser-backed reveal.
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const beforeCats = runs;
+    await page.goto(origin+'/cats');
+    await expect(page.locator('#reveal')).toBeEnabled();
+    assert.equal(runs, beforeCats, 'Opening the game must not start a check');
+    await expect(page.locator('#ask')).toBeDisabled();
+    for (const width of [1920, 950, 768, 640, 390, 1440]) {
+      await page.setViewportSize({ width, height: 1050 });
+      await expect.poll(() => page.evaluate(() => {
+        const a=document.querySelector('#stage').getBoundingClientRect(), b=document.querySelector('#scene').getBoundingClientRect();
+        return Math.max(...['left','top','right','bottom'].map(k=>Math.abs(a[k]-b[k])));
+      })).toBeLessThan(1);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth), true, 'Cat game must fit the viewport');
+    }
+    const targets = () => page.frameLocator('#scene').locator('body').evaluate(() => window.catGame.targets());
+    async function tapTarget(target) {
+      const stage=await page.locator('#stage').boundingBox();
+      await page.mouse.click(stage.x+(target.box.X+target.box.Width/2)*stage.width/100, stage.y+(target.box.Y+target.box.Height/2)*stage.height/100);
+    }
+    await page.screenshot({path:path.join(output,'desktop-cats.png'),fullPage:true});
+    await tapTarget((await targets())[0]);
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    await tapTarget((await targets())[0]);
+    await expect(page.locator('#feedback')).toContainText('already found');
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    await page.locator('[data-room="cat-decoys"]').click();
+    await expect(page.locator('#reveal')).toBeEnabled();
+    const trickyTargets=await targets();
+    await tapTarget(trickyTargets.find(p=>p.decoy));
+    await expect(page.locator('#feedback')).toContainText('Sneaky cushion');
+    await expect(page.locator('#counter')).toHaveText('0 cats found');
+    await tapTarget(trickyTargets.find(p=>!p.decoy));
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    await page.locator('#reveal').click();
+    await expect(page.locator('#actual')).toHaveText('6 cats',{timeout:30000});
+    await expect(page.frameLocator('#scene').locator('.found')).toHaveCount(6);
+    await expect(page.locator('#places li')).toHaveCount(6);
+    await expect(page.locator('#result-note')).toContainText('No AI request was made');
+    await page.screenshot({path:path.join(output,'desktop-cat-decoys.png'),fullPage:true});
+    const catReport=await browser.newPage();
+    await catReport.goto(new URL(await page.locator('#report').getAttribute('href'),origin).href);
+    await expect(catReport.getByText('Playwright checked 6 living cartoon cat targets, repeat taps and any decoys. This is a known synthetic illustration.')).toBeVisible();
+    await catReport.close();
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('[data-room="cats"]').click();
+    await expect(page.locator('#reveal')).toBeEnabled();
+    await tapTarget((await targets())[1]);
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    await page.locator('#zoom').click();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth),true,'Zoom must scroll inside the room');
+    await page.locator('#zoom').click();
+    await page.locator('#reveal').click();
+    await expect(page.locator('#actual')).toHaveText('9 cats',{timeout:30000});
+    await expect(page.frameLocator('#scene').locator('.found')).toHaveCount(9);
+    await page.screenshot({path:path.join(output,'mobile-cats.png'),fullPage:true});
+    assert.equal(runs,beforeCats+2,'Only explicit reveals run the browser');
+    // Synthetic answer presentation: a wrong AI guess cannot increase the score.
+    await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:6,runsRemaining:20}}));
+    let catLiveClicks=0;
+    await page.route('**/api/run',route=>{
+      catLiveClicks++;
+      assert.equal(route.request().postDataJSON().live,true);
+      return route.fulfill({json:{cats:{actualCount:9,guessedCount:4,countConfidence:.72,hasCats:.99,countMatches:false,boxHitsCat:false},predicted:{X:30,Y:10,Width:8,Height:8},report:'/',record:{status:'answered',requestCount:1}}});
+    });
+    await page.reload();
+    await expect(page.locator('#ask')).toBeEnabled();
+    await tapTarget((await targets())[0]);
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    assert.equal(catLiveClicks,0);
+    await page.locator('#ask').click();
+    await expect(page.locator('#guess')).toHaveText('4 cats');
+    await expect(page.locator('#box-hit')).toHaveText('Missed the cats');
+    await expect(page.locator('#result-note')).toContainText('differs');
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    await expect(page.locator('#predicted')).toBeVisible();
+    assert.equal(catLiveClicks,1);
+    await page.unroute('**/api/run');
+    // Provider failure must preserve the independent browser evidence.
+    await page.route('**/api/run',route=>route.fulfill({json:{error:'Jev could not answer this time.',cats:{actualCount:9,guessedCount:null,countConfidence:null,hasCats:null,countMatches:null,boxHitsCat:null},predicted:null,report:'/',record:{status:'provider_error',requestCount:1}}}));
+    await page.locator('#ask').click();
+    await expect(page.locator('#error')).toHaveText('Jev could not answer this time.');
+    await expect(page.locator('#result-title')).toHaveText('Jev couldn’t answer');
+    await expect(page.locator('#actual')).toHaveText('9 cats');
+    await expect(page.locator('#guess')).toHaveText('Unsure');
+    await expect(page.locator('#predicted')).toBeHidden();
+    await expect(page.locator('#counter')).toHaveText('1 cat found');
+    await page.unroute('**/api/run');
+    let heldCat;
+    await page.route('**/api/run',route=>{heldCat=route});
+    await page.locator('#ask').click();
+    await expect(page.locator('#cancel')).toBeVisible();
+    await expect(page.locator('[data-room="cat-decoys"]')).toBeDisabled();
+    await expect(page.locator('#scene')).toHaveCSS('pointer-events','none');
+    await page.locator('#cancel').click();
+    await expect(page.locator('#error')).toHaveText('Check cancelled. Your hunt is still here.');
+    await expect(page.locator('#ask')).toBeEnabled();
+    await heldCat?.abort().catch(()=>{});
+    await page.unroute('**/api/run');
+    await page.unroute('**/api/config');
+    await page.goto(origin);
     // Exercise AI presentation with a UI fixture, never a fabricated live result.
     await page.route('**/api/config', route => route.fulfill({ json: { live: true, images: true, remaining: 6, runsRemaining: 20 } }));
     let liveClicks = 0;
@@ -170,7 +271,7 @@ async function expectShopToFit(page) {
     }
     assert.throws(() => captureVariant(working.replace('totalCents: 1200', 'totalCents: 9999'),
       'wrong-total'), 'A visible confirmation cannot pass an order with the wrong total');
-    console.log('PASS: independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    console.log('PASS: cat rooms, decoys, repeat taps, reveals, zoom, mobile fit, wrong AI guesses and cancellation; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
     console.log('Screenshots:', output);
   } finally {
     await browser?.close();

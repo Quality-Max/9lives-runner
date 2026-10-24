@@ -53,6 +53,7 @@ type browserResult struct {
 	Image      string     `json:"image"`
 	Report     string     `json:"report"`
 	Record     jev.Record `json:"record"`
+	Cats       *catResult `json:"cats,omitempty"`
 	Error      string     `json:"error,omitempty"`
 }
 
@@ -154,6 +155,9 @@ func (s *demoServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, strings.Replace(interactiveHTML, "__DEMO_SESSION__", s.session, 1))
+	case "/cats":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, strings.Replace(catsHTML, "__DEMO_SESSION__", s.session, 1))
 	case "/api/config":
 		s.mu.Lock()
 		remaining := maxLiveRuns - s.liveRuns
@@ -162,7 +166,7 @@ func (s *demoServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeDemoJSON(w, http.StatusOK, map[string]any{"live": s.config.Enabled, "images": s.config.Images == "synthetic", "remaining": remaining, "runsRemaining": runsRemaining})
 	case "/shop":
 		scenario := r.URL.Query().Get("scenario")
-		if scenario != "declined" && scenario != "success" {
+		if !validScenario(scenario) {
 			http.NotFound(w, r)
 			return
 		}
@@ -212,12 +216,16 @@ func (s *demoServer) run(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 256))
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	var fields map[string]json.RawMessage
-	if err != nil || strictjson.Value(decoder) != nil || decoder.Decode(&struct{}{}) != io.EOF || json.Unmarshal(raw, &fields) != nil || len(fields) != 2 || fields["scenario"] == nil || fields["live"] == nil || json.Unmarshal(raw, &input) != nil || (input.Scenario != "declined" && input.Scenario != "success") {
-		writeDemoJSON(w, http.StatusBadRequest, map[string]string{"error": "Choose one of the two demo payments."})
+	if err != nil || strictjson.Value(decoder) != nil || decoder.Decode(&struct{}{}) != io.EOF || json.Unmarshal(raw, &fields) != nil || len(fields) != 2 || fields["scenario"] == nil || fields["live"] == nil || json.Unmarshal(raw, &input) != nil || !validScenario(input.Scenario) {
+		writeDemoJSON(w, http.StatusBadRequest, map[string]string{"error": "Choose one of the demo scenes."})
 		return
 	}
 	if input.Live && !s.config.Enabled {
 		writeDemoJSON(w, http.StatusConflict, map[string]string{"error": "Jev is not connected. You can still try the shop and browser check."})
+		return
+	}
+	if input.Live && isCatScenario(input.Scenario) && s.config.Images != "synthetic" {
+		writeDemoJSON(w, http.StatusConflict, map[string]string{"error": "Restart with --live --images to let Jev see the cat room."})
 		return
 	}
 	if !s.active.TryLock() {
@@ -251,7 +259,7 @@ func (s *demoServer) run(w http.ResponseWriter, r *http.Request) {
 		s.artifacts[base+name] = filepath.Join(dir, name)
 	}
 	s.mu.Unlock()
-	body := browserResult{Scenario: input.Scenario, Passed: result.Capture.AssertionPassed, OrderCount: result.Capture.OrderCount, Declined: result.Declined, Confirmed: result.Confirmed, Observed: result.Observed, Predicted: result.Predicted, Image: base + "checkout.png", Report: base + "index.html", Record: result.Record}
+	body := browserResult{Cats: result.Cats, Scenario: input.Scenario, Passed: result.Capture.AssertionPassed, OrderCount: result.Capture.OrderCount, Declined: result.Declined, Confirmed: result.Confirmed, Observed: result.Observed, Predicted: result.Predicted, Image: base + "checkout.png", Report: base + "index.html", Record: result.Record}
 	if err != nil {
 		body.Error = "Jev could not answer this time. The browser check below still shows what happened. You can try again."
 	}
