@@ -159,7 +159,7 @@ func executeDemo(ctx context.Context, config jev.Config, scenario string) (strin
 		"confirmed": {Type: "noul", Instructions: "Within this pretend shop, does the customer-facing checkout indicate that the notebook purchase completed successfully? Interpret the meaning of `accessible_observation` and the screenshot when present. A thank-you message about delivery can confirm success without a literal status label. A button or color alone does not confirm success."},
 	}}
 	if isCatScenario(scenario) {
-		contract = catContract(config.Images == "synthetic")
+		contract = catContract(scenario, config.Images == "synthetic")
 	}
 	if config.Images == "synthetic" {
 		raw, err := os.ReadFile(filepath.Join(dir, "checkout.png"))

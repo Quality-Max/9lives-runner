@@ -11,13 +11,13 @@ const path = require('node:path');
     await page.route('**/*', route => route.abort());
     await page.setContent(html);
     const scenario = await page.locator('body').getAttribute('data-scenario');
-    if (!['cats', 'cat-decoys'].includes(scenario)) throw Error('Unknown room');
+    if (!['cats', 'cat-decoys', 'dogs', 'mice', 'striped'].includes(scenario)) throw Error('Unknown room');
     await expect(page.locator('#animals > [data-target]')).toHaveCount(9);
     for (const animal of await page.locator('#animals > [data-target]').all()) await expect(animal).toBeVisible();
     const targets = await page.evaluate(() => window.catGame.targets());
     const cats = targets.filter(p => !p.decoy), decoys = targets.filter(p => p.decoy);
-    expect(cats).toHaveLength(scenario === 'cats' ? 9 : 6);
-    expect(decoys).toHaveLength(scenario === 'cats' ? 0 : 3);
+    expect(cats).toHaveLength(({cats:9,'cat-decoys':6,dogs:9,mice:6,striped:1})[scenario]);
+    expect(decoys).toHaveLength(9-cats.length);
     await expect(page.locator('.found')).toHaveCount(0);
     // Save the unmarked scene before exercising its targets.
     await page.screenshot({ path: path.join(process.argv[2], 'checkout.png'), animations: 'disabled' });

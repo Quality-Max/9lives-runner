@@ -26,24 +26,40 @@ type catResult struct {
 	BoxHitsCat      *bool    `json:"boxHitsCat"`
 }
 
-func isCatScenario(s string) bool { return s == "cats" || s == "cat-decoys" }
+func isCatScenario(s string) bool {
+	return s == "cats" || s == "cat-decoys" || s == "dogs" || s == "mice" || s == "striped"
+}
 func validScenario(s string) bool { return s == "declined" || s == "success" || isCatScenario(s) }
 
 func catFixture(scenario string) []byte {
 	return bytes.Replace(catRoom, []byte(`data-scenario="cats"`), []byte(`data-scenario="`+scenario+`"`), 1)
 }
 
-func catContract(images bool) jev.Contract {
-	criteria := map[string]string{"uncertain": "The visible cats cannot be counted reliably from this picture."}
-	for i := 0; i <= 12; i++ {
-		criteria[fmt.Sprintf("n%d", i)] = fmt.Sprintf("Exactly %d living cartoon cats are visible, including partly hidden cats. Exclude cat-shaped cushions, toys and pictures.", i)
+func huntSubject(scenario string) string {
+	switch scenario {
+	case "dogs":
+		return "living cartoon dogs with floppy ears; exclude toys and other objects"
+	case "mice":
+		return "living cartoon mice with round ears and tails; exclude wedges of cheese"
+	case "striped":
+		return "people wearing a red-and-white striped shirt AND a red-and-white hat, round glasses and blue trousers; exclude people with green hats or other shirt colours"
+	default:
+		return "living cartoon cats with whiskers and curved sleepy eyes; exclude cat-shaped cushions with X-shaped button eyes, stitched seams and fabric tags"
 	}
-	c := jev.Contract{Version: jev.Version, Task: "synthetic-cat-hunt", QuestionVersion: "v1", CriteriaVersion: "v1", Questions: map[string]jev.Question{
-		"count":   {Type: "choice", Instructions: "How many living cartoon cats can you see in `screenshot`? Look across the entire room. Count each animal once, including partly hidden ones. Cat-shaped cushions have stitched seams and X-shaped button eyes: these are objects, not animals. Select uncertain if you cannot tell.", Criteria: criteria},
-		"present": {Type: "noul", Instructions: "Is at least one living cartoon cat visible in `screenshot`? Exclude cat-shaped cushions with stitched seams and X-shaped button eyes."},
+}
+
+func catContract(scenario string, images bool) jev.Contract {
+	subject := huntSubject(scenario)
+	criteria := map[string]string{"uncertain": "The requested figures cannot be counted reliably from this picture."}
+	for i := 0; i <= 12; i++ {
+		criteria[fmt.Sprintf("n%d", i)] = fmt.Sprintf("Exactly %d matching figures are visible: %s.", i, subject)
+	}
+	c := jev.Contract{Version: jev.Version, Task: "synthetic-picture-hunt", QuestionVersion: "v2", CriteriaVersion: "v2", Questions: map[string]jev.Question{
+		"count":   {Type: "choice", Instructions: "How many matching figures can you see in `screenshot`? Find " + subject + ". Look across the entire picture. Count each matching figure once. Select uncertain if you cannot tell.", Criteria: criteria},
+		"present": {Type: "noul", Instructions: "Is at least one matching figure visible in `screenshot`? Find " + subject + "."},
 	}}
 	if images {
-		c.Questions["cat"] = jev.Question{Type: "box", Instructions: "Find one living cartoon cat anywhere in `screenshot`. Return the smallest box around its visible body, head and ears. Exclude furniture and cat-shaped cushions with stitched seams and X-shaped button eyes. This is a proposed location, not an action."}
+		c.Questions["cat"] = jev.Question{Type: "box", Instructions: "Find one matching figure anywhere in `screenshot`: " + subject + ". Return the smallest box around its visible body and head. This is a proposed location, not an action."}
 	}
 	return c
 }
@@ -75,8 +91,11 @@ func compareCats(c capture, answers map[string]jev.Answer, predicted *rectangle)
 
 func validCatCapture(c capture) bool {
 	expected := 9
-	if c.Scenario == "cat-decoys" {
+	if c.Scenario == "cat-decoys" || c.Scenario == "mice" {
 		expected = 6
+	}
+	if c.Scenario == "striped" {
+		expected = 1
 	}
 	if !c.AssertionPassed || c.AssertionFailed || len(c.CatBoxes) != expected {
 		return false

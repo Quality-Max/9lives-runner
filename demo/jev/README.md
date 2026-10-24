@@ -30,35 +30,64 @@ The default works offline, with **zero provider requests** and no key. It shows
 no canned AI answers. You can try both payments, toggle the button outline and
 open the saved execution evidence. Light/dark theme follows the existing 9lives demo.
 
-## Play hide-and-seek with cats
+## Play The Great Little Hunt
 
-Open **[the cat hunt](http://127.0.0.1:4175/cats)**, or follow “Find the hidden
-cats” from the shop. Tap cats to mark them, zoom in for a closer look, and start
-over whenever you like. There is no timer.
+Open **[the game](http://127.0.0.1:4175/cats)**, or follow the game link from the
+shop. Press **Let’s play**. Finish a level to unlock the next:
 
-- **Cozy Hide-and-Seek:** nine sleepy cartoon cats among books and furniture.
-- **Cats or Cushions?:** six cats plus three cat-shaped cushions. Stitches,
-  fabric tags and X-shaped button eyes distinguish the cushions.
+1. **Cats:** nine sleepy cats in a cozy room.
+2. **Dogs:** nine smaller dogs scattered around a park.
+3. **Mice:** six tiny mice among pantry jars and three cheese decoys.
+4. **Striped stranger:** one person in a crowd, with a red-and-white striped shirt
+   and hat, round glasses and blue trousers.
 
-“Reveal the cats” runs real Playwright checks of every target, repeat taps and
-cushions, then shows numbered outlines and a list of hiding places. No key is
-needed. “Ask Jev to look” needs `--live --images` and a TypeSafe key. One explicit
-click sends a fresh, clean PNG with three fixed questions: presence (Noul), count
-(Choice, including an uncertain option), and one proposed cat location (Box).
-The answer map, correct count, room identifier and player taps are withheld from
-the model input. Nothing in the illustration labels a cat or its count.
+Play untimed, or select **Race the clock** before starting a level. Each level
+has a shorter countdown (75, 60, 50 and 40 seconds). Retry a level when time runs
+out. Zoom in for small figures, or use Tab and Enter/Space on the hiding spots.
+**Show hiding places** is practice and cannot unlock the next level.
 
-The UI compares the answer with this synthetic drawing’s known geometry. A Box
-matches when its intersection over union with a cat rectangle is at least 35%.
-That is a demo comparison rule, not a model benchmark or permission to click.
-AI guesses never add to the player’s score. The same six-request live limit is
-shared with the shop. Text-only live sessions cannot ask cat picture questions.
+### Watch 9lives play
 
-Standalone cat reports are also available:
+Press **Watch 9lives play** to watch a separate browser round. Your game and timer
+pause. The default uses the known synthetic answer map, costs nothing and makes
+no model request. Turn on **Break one correct click** and run again: the same
+picture now has one broken click handler, and the score assertion fails.
+
+This button runs an ordinary Playwright spec through the **existing Go 9lives
+runner**, with one job, one attempt, no retries and a bounded deadline. It checks:
+
+- The selected observed spots match every requested figure and no lookalike.
+- Each correct click adds exactly one to the score.
+- A repeated click adds nothing, and lookalikes add nothing.
+- The final score equals the number of requested figures.
+
+The action log and screenshots show actual browser progress. **Open the 9lives
+receipt** opens the runner’s saved JSON summary, including the executed-test
+count, validation status and any failed assertion. Passing is based on the
+runner receipt, not a model claim or screenshot caption. Ordinary Playwright
+assertion coverage remains `unknown`; this is not independent semantic coverage.
+Stop cancels the owned runner attempt and cannot produce a passing result.
+
+With `--live --images` and a TypeSafe key, enable **Let Jev choose where to click**.
+One explicit run sends a clean picture and three Choice questions, each
+classifying three of the nine observed controls. Options contain geometry and
+the requested visual features. The answer map, correct count, player score and
+broken-click flag are withheld. All three decisions need confidence at least
+0.85; uncertain decisions stop. The test checks the proposed set against the
+synthetic oracle before clicking. Score checks run independently afterward.
+
+This fixed example demonstrates real runner execution with bounded Jev choices.
+It is **not the general Jev goal provider**: navigation, filling forms and generic
+goal actions remain QUA-2232. Visual accuracy has not been qualified. The final
+scene is an original illustration, not artwork from a commercial puzzle book.
+
+The earlier standalone picture reports remain available (including the bonus
+cats-versus-cushions illustration):
 
 ```sh
 go run ./demo/jev --scenario cats --images
-go run ./demo/jev --scenario cat-decoys --live --images
+go run ./demo/jev --scenario mice --images
+go run ./demo/jev --scenario striped --live --images
 ```
 
 ## Connect Jev for real answers
@@ -75,12 +104,13 @@ unset TYPESAFE_API_KEY
 ```
 
 Opening the page and running “Check with 9lives” still make **no provider request**.
-Each explicit “Ask Jev” click makes **one paid-provider request**. The server
+Each explicit “Ask Jev” click, or a hunt run with Jev enabled, makes **one paid-provider request**. The server
 allows one check at a time, at most six live requests and 24 total checks per
 session. Failed or cancelled attempts consume their slot. Restart for a new session.
 There are no automatic retries.
 
-`--images` includes only this demo’s synthetic screenshot and a Box question.
+`--images` allows only this demo’s synthetic screenshots. Single-report and shop
+requests include a Box question; the game runner uses bounded Choice questions.
 Omit it for the shop’s two text-only Noul questions. Select another supported model with
 `--model`; the default is `jev-1.14.0`. Missing credentials fail before starting
 the server or browser capture. Live availability and visual accuracy require
@@ -124,7 +154,7 @@ Live text mode sends the synthetic accessibility observation and owned questions
 to TypeSafe. It never sends the order list, scenario identifier or browser verdict
 as model state; the failure-class hint is left empty for both outcomes. Image
 mode adds its prepared PNG and experimental image header.
-There is no arbitrary URL, screenshot-path or prompt input. Each request has a
+There is no arbitrary URL, screenshot-path or prompt input. Each shop request has a
 20-second deadline, one-request cap, three-question cap, 2 MiB request budget and
 zero retries. Actual available token usage is reported; no billing-cost cap is
 invented. Cancelling the browser request cancels the owned execution context.
@@ -138,8 +168,10 @@ record; credentials and raw accessibility snapshots are excluded.
 
 If the page lacks meaningful clues, its appearance cannot establish that an order
 exists. Noul probabilities near 0.5 express uncertainty; they are not a passing
-verdict. Jev’s probabilities and Box are inferences. They never change the assertion,
-click an inferred control, heal a test or create a passing runner receipt. This
+verdict. Jev’s probabilities and Box are inferences. In the shop they never change the
+assertion, click a control, heal a test or create a passing runner receipt. The
+game can click a finite observed spot only after its proposed set passes the
+independent synthetic oracle check. This
 implements the QUA-2228 foundation demonstration; diagnosis, verified locator
 repair and goal actions remain separate tickets. See the [contract](../../docs/jev.md).
 
@@ -149,7 +181,9 @@ npm run smoke:jev
 ```
 
 The smoke starts its own offline server, executes both checkout outcomes and
-both cat rooms (including decoys, repeat taps, reveal, zoom and mobile layouts),
-checks saved reports, mobile layout, theme persistence and offline continuation.
+all four game levels, passing and deliberately failing runner receipts,
+cancellation, progressive unlock, repeat taps, decoys, practice mode, the optional
+timer and mobile layouts. It also checks saved reports, theme persistence and
+offline continuation.
 A separate, explicitly synthetic UI fixture checks answer/Box presentation;
 it never contacts TypeSafe and does not qualify model accuracy.

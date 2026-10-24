@@ -40,6 +40,7 @@ type demoServer struct {
 	mu              sync.Mutex
 	runs, liveRuns  int
 	artifacts       map[string]string
+	hunt            huntState
 }
 
 type browserResult struct {
@@ -142,6 +143,10 @@ func (s *demoServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Open the demo using its printed local address.", http.StatusForbidden)
 		return
 	}
+	if r.URL.Path == "/api/hunt" {
+		s.runHunt(w, r)
+		return
+	}
 	if r.URL.Path == "/api/run" {
 		s.run(w, r)
 		return
@@ -158,6 +163,8 @@ func (s *demoServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/cats":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, strings.Replace(catsHTML, "__DEMO_SESSION__", s.session, 1))
+	case "/api/hunt/progress":
+		s.huntProgress(w, r)
 	case "/api/config":
 		s.mu.Lock()
 		remaining := maxLiveRuns - s.liveRuns

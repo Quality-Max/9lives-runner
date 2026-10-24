@@ -9,8 +9,8 @@ provider-free.
 The client is infrastructure for subsequent diagnosis, locator repair, semantic
 checks and goal adapters. Those integrations are not enabled by this change.
 There is no new SDK method or `run --provider jev` option. A schema-valid answer
-is an inference; it cannot create a passing execution receipt or execute an
-action. Live accuracy and model availability have not been qualified here.
+is an inference; by itself it cannot create a passing execution receipt or
+execute an action. Live accuracy and model availability have not been qualified here.
 
 ## Configuration and API key
 
@@ -31,7 +31,12 @@ For an executable illustration, run `go run ./demo/jev` from the repository
 root after installing Playwright and Chromium. Add `--live` for one real request
 and `--images` to include only its synthetic screenshot. The
 [local demo guide](../demo/jev/README.md) explains setup, credential entry and
-the visual report. Offline mode displays no simulated model answer.
+the visual report. `npm run demo:jev` opens the interactive shop and a four-level
+picture-hunt game. Its fixed “Watch 9lives play” example runs an ordinary
+Playwright spec through the existing runner; optional Jev choices must pass an
+independent synthetic answer-map check before any click, followed by real score
+assertions. This is not the general goal adapter. Offline mode displays no
+simulated model answer.
 
 These commands perform local configuration checks without contacting TypeSafe:
 

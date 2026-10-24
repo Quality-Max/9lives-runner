@@ -112,106 +112,151 @@ async function expectShopToFit(page) {
     await expect(page.locator('#check-title')).toHaveText('✓ Notebook order saved', { timeout: 30000 });
     await page.screenshot({ path: path.join(output, 'mobile-success.png'), fullPage: true });
 
-    // Real cat game, including scaled taps, decoys and browser-backed reveal.
+    // Real four-level game and ordinary Playwright runs owned by 9lives.
     await page.setViewportSize({ width: 1440, height: 1050 });
     const beforeCats = runs;
+    let hunts = 0;
+    page.on('request', request => { if(request.url() === origin+'/api/hunt') hunts++; });
     await page.goto(origin+'/cats');
-    await expect(page.locator('#reveal')).toBeEnabled();
-    assert.equal(runs, beforeCats, 'Opening the game must not start a check');
-    await expect(page.locator('#ask')).toBeDisabled();
-    for (const width of [1920, 950, 768, 640, 390, 1440]) {
-      await page.setViewportSize({ width, height: 1050 });
+    await expect(page.locator('#watch')).toBeEnabled();
+    assert.equal(runs,beforeCats);
+    assert.equal(hunts,0,'Opening the game must not run a test');
+    await expect(page.locator('#use-jev')).toBeDisabled();
+    await expect(page.locator('[data-level="1"]')).toBeDisabled();
+    await expect(page.locator('#timed')).not.toBeChecked();
+    for (const width of [1920,950,768,640,390,1440]) {
+      await page.setViewportSize({width,height:1050});
       await expect.poll(() => page.evaluate(() => {
-        const a=document.querySelector('#stage').getBoundingClientRect(), b=document.querySelector('#scene').getBoundingClientRect();
+        const a=document.querySelector('#stage').getBoundingClientRect(),b=document.querySelector('#scene').getBoundingClientRect();
         return Math.max(...['left','top','right','bottom'].map(k=>Math.abs(a[k]-b[k])));
       })).toBeLessThan(1);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth), true, 'Cat game must fit the viewport');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Game must fit the viewport');
     }
-    const targets = () => page.frameLocator('#scene').locator('body').evaluate(() => window.catGame.targets());
-    async function tapTarget(target) {
+    const targets=()=>page.frameLocator('#scene').locator('body').evaluate(()=>window.catGame.targets());
+    async function tapTarget(target){
+      await page.locator('#stage').scrollIntoViewIfNeeded();
       const stage=await page.locator('#stage').boundingBox();
-      await page.mouse.click(stage.x+(target.box.X+target.box.Width/2)*stage.width/100, stage.y+(target.box.Y+target.box.Height/2)*stage.height/100);
+      await page.mouse.click(stage.x+(target.box.X+target.box.Width/2)*stage.width/100,stage.y+(target.box.Y+target.box.Height/2)*stage.height/100);
     }
-    await page.screenshot({path:path.join(output,'desktop-cats.png'),fullPage:true});
+    async function finishRun(broken,goal){
+      await page.locator('#broken').setChecked(broken);
+      await page.locator('#watch').click();
+      await expect(page.locator('#run-result')).toBeVisible({timeout:80000});
+      const href=await page.locator('#receipt').getAttribute('href');
+      const summary=await(await page.request.get(origin+href)).json();
+      assert.equal(summary.outcome,broken?'failed':'passed');
+      assert.equal(summary.receipts.length,1);
+      const receipt=summary.receipts[0];
+      assert.equal(receipt.attempt,1);assert.equal(receipt.executedTests,1);assert.equal(receipt.validated,true);
+      assert.equal(receipt.status,broken?'failed':'passed');
+      assert.equal(receipt.assertionCoverage,'unknown','Ordinary execution must not invent independent assertion coverage');
+      if(broken){
+        assert.equal(receipt.failures[0].class,'assertion','A timeout or setup error is not proof of a broken score');
+        assert.match(receipt.failures[0].message,/expect\(locator\)\.toHaveCount/);
+        await expect(page.locator('#feedback')).toContainText('did not add one');
+      }else{
+        await expect(page.locator('#run-title')).toHaveText('✓ Every click checked');
+        await expect(page.locator('#counter')).toHaveText(`9lives: ${goal} / ${goal} found`);
+      }
+      return summary;
+    }
+    await page.screenshot({path:path.join(output,'game-start.png'),fullPage:true});
+    for(const [index,scenario,goal,noun] of [[0,'cats',9,'cats'],[1,'dogs',9,'dogs'],[2,'mice',6,'mice'],[3,'striped',1,'striped stranger']]){
+      await expect(page.frameLocator('#scene').locator('body')).toHaveAttribute('data-scenario',scenario);
+      await page.locator('#start').click();
+      const spots=await targets(),real=spots.filter(p=>!p.decoy);
+      assert.equal(real.length,goal);
+      await expect(page.locator('#clock')).toHaveText('Take your time');
+      if(index<3){
+        await tapTarget(real[0]);
+        await tapTarget(real[0]);
+        await expect(page.locator('#counter')).toHaveText(`1 / ${goal} ${noun} found`);
+        await expect(page.locator('#feedback')).toContainText('already found');
+      }
+      if(index===2){
+        await tapTarget(spots.find(p=>p.decoy));
+        await expect(page.locator('#feedback')).toContainText('cheese');
+        await expect(page.locator('#counter')).toHaveText('1 / 6 mice found');
+      }
+      await page.screenshot({path:path.join(output,`level-${scenario}.png`),fullPage:true});
+      await finishRun(false,goal);
+      await page.screenshot({path:path.join(output,`runner-${scenario}-pass.png`),fullPage:true});
+      await page.locator('#back').click();
+      await expect(page.locator('#counter')).toHaveText(`${index<3?1:0} / ${goal} ${noun} found`);
+      await finishRun(true,goal);
+      await page.screenshot({path:path.join(output,`runner-${scenario}-fail.png`),fullPage:true});
+      await page.locator('#back').click();
+      for(const spot of real.slice(index<3?1:0))await tapTarget(spot);
+      await expect(page.locator('#card-title')).toHaveText(index===3?'Master detective!':'You found them all!');
+      if(index<3){await expect(page.locator(`[data-level="${index+1}"]`)).toBeEnabled();await page.locator('#start').click()}
+    }
+    assert.equal(hunts,8,'Exactly eight explicit healthy/broken runs');
+    await page.screenshot({path:path.join(output,'game-complete.png'),fullPage:true});
+    await page.locator('[data-level="0"]').click();
+    await page.locator('#start').click();
     await tapTarget((await targets())[0]);
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    await tapTarget((await targets())[0]);
-    await expect(page.locator('#feedback')).toContainText('already found');
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    await page.locator('[data-room="cat-decoys"]').click();
-    await expect(page.locator('#reveal')).toBeEnabled();
-    const trickyTargets=await targets();
-    await tapTarget(trickyTargets.find(p=>p.decoy));
-    await expect(page.locator('#feedback')).toContainText('Sneaky cushion');
-    await expect(page.locator('#counter')).toHaveText('0 cats found');
-    await tapTarget(trickyTargets.find(p=>!p.decoy));
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    await page.locator('#reveal').click();
-    await expect(page.locator('#actual')).toHaveText('6 cats',{timeout:30000});
-    await expect(page.frameLocator('#scene').locator('.found')).toHaveCount(6);
-    await expect(page.locator('#places li')).toHaveCount(6);
-    await expect(page.locator('#result-note')).toContainText('No AI request was made');
-    await page.screenshot({path:path.join(output,'desktop-cat-decoys.png'),fullPage:true});
-    const catReport=await browser.newPage();
-    await catReport.goto(new URL(await page.locator('#report').getAttribute('href'),origin).href);
-    await expect(catReport.getByText('Playwright checked 6 living cartoon cat targets, repeat taps and any decoys. This is a known synthetic illustration.')).toBeVisible();
-    await catReport.close();
-    await page.setViewportSize({width:390,height:844});
-    await page.locator('[data-room="cats"]').click();
-    await expect(page.locator('#reveal')).toBeEnabled();
-    await tapTarget((await targets())[1]);
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    await page.locator('#zoom').click();
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth),true,'Zoom must scroll inside the room');
-    await page.locator('#zoom').click();
-    await page.locator('#reveal').click();
-    await expect(page.locator('#actual')).toHaveText('9 cats',{timeout:30000});
-    await expect(page.frameLocator('#scene').locator('.found')).toHaveCount(9);
-    await page.screenshot({path:path.join(output,'mobile-cats.png'),fullPage:true});
-    assert.equal(runs,beforeCats+2,'Only explicit reveals run the browser');
-    // Synthetic answer presentation: a wrong AI guess cannot increase the score.
-    await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:6,runsRemaining:20}}));
-    let catLiveClicks=0;
-    await page.route('**/api/run',route=>{
-      catLiveClicks++;
-      assert.equal(route.request().postDataJSON().live,true);
-      return route.fulfill({json:{cats:{actualCount:9,guessedCount:4,countConfidence:.72,hasCats:.99,countMatches:false,boxHitsCat:false},predicted:{X:30,Y:10,Width:8,Height:8},report:'/',record:{status:'answered',requestCount:1}}});
-    });
-    await page.reload();
-    await expect(page.locator('#ask')).toBeEnabled();
-    await tapTarget((await targets())[0]);
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    assert.equal(catLiveClicks,0);
-    await page.locator('#ask').click();
-    await expect(page.locator('#guess')).toHaveText('4 cats');
-    await expect(page.locator('#box-hit')).toHaveText('Missed the cats');
-    await expect(page.locator('#result-note')).toContainText('differs');
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    await expect(page.locator('#predicted')).toBeVisible();
-    assert.equal(catLiveClicks,1);
-    await page.unroute('**/api/run');
-    // Provider failure must preserve the independent browser evidence.
-    await page.route('**/api/run',route=>route.fulfill({json:{error:'Jev could not answer this time.',cats:{actualCount:9,guessedCount:null,countConfidence:null,hasCats:null,countMatches:null,boxHitsCat:null},predicted:null,report:'/',record:{status:'provider_error',requestCount:1}}}));
-    await page.locator('#ask').click();
-    await expect(page.locator('#error')).toHaveText('Jev could not answer this time.');
-    await expect(page.locator('#result-title')).toHaveText('Jev couldn’t answer');
-    await expect(page.locator('#actual')).toHaveText('9 cats');
-    await expect(page.locator('#guess')).toHaveText('Unsure');
-    await expect(page.locator('#predicted')).toBeHidden();
-    await expect(page.locator('#counter')).toHaveText('1 cat found');
-    await page.unroute('**/api/run');
-    let heldCat;
-    await page.route('**/api/run',route=>{heldCat=route});
-    await page.locator('#ask').click();
-    await expect(page.locator('#cancel')).toBeVisible();
-    await expect(page.locator('[data-room="cat-decoys"]')).toBeDisabled();
-    await expect(page.locator('#scene')).toHaveCSS('pointer-events','none');
+    await page.locator('#broken').uncheck();
+    await page.locator('#watch').click();
+    await expect(page.locator('#timeline')).toContainText('score 0 → 1',{timeout:30000});
+    const image=await page.locator('#run-picture').getAttribute('src');
     await page.locator('#cancel').click();
-    await expect(page.locator('#error')).toHaveText('Check cancelled. Your hunt is still here.');
-    await expect(page.locator('#ask')).toBeEnabled();
-    await heldCat?.abort().catch(()=>{});
-    await page.unroute('**/api/run');
-    await page.unroute('**/api/config');
+    await expect(page.locator('#error')).toContainText('Stopped. No passing result.');
+    const cancelDir=path.join('.context',image.split('/')[2]);
+    await expect.poll(()=>fs.existsSync(path.join(cancelDir,'summary.json')),{timeout:15000}).toBe(true);
+    const canceled=JSON.parse(fs.readFileSync(path.join(cancelDir,'summary.json'),'utf8'));
+    assert.equal(canceled.outcome,'incomplete');
+    assert.equal(canceled.receipts[0].status,'canceled','Cancel must stop the owned runner attempt');
+    await page.locator('#back').click();
+    await expect(page.locator('#counter')).toHaveText('1 / 9 cats found');
+    // A practice peek cannot unlock a level. Mobile zoom stays within the page.
+    await page.reload();await expect(page.locator('#watch')).toBeEnabled();
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('#start').click();await page.locator('#reveal').click();
+    await expect(page.frameLocator('#scene').locator('.found')).toHaveCount(9);
+    await expect(page.locator('[data-level="1"]')).toBeDisabled();
+    await page.locator('#reset').click();
+    await page.locator('#zoom').click();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.locator('#zoom').click();
+    await page.screenshot({path:path.join(output,'mobile-game.png'),fullPage:true});
+    // Fake browser time exercises the optional real countdown; no test retries.
+    await page.clock.install();
+    await page.locator('#timed').check();await page.locator('#start').click();
+    await expect(page.locator('#clock')).toHaveText('75s left');
+    await page.clock.fastForward(76000);
+    await expect(page.locator('#card-title')).toHaveText('Time for another try?');
+    await expect(page.locator('#scene')).toHaveCSS('pointer-events','none');
+    await page.screenshot({path:path.join(output,'mobile-timeout.png'),fullPage:true});
+    // UI fixtures only: provider availability never makes a request on page load,
+    // and a malformed "passed" summary must not paint a green result.
+    await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:6,runsRemaining:20}}));
+    await page.reload();await expect(page.locator('#use-jev')).toBeEnabled();
+    let fakeCalls=0;
+    await page.route('**/api/hunt',route=>{fakeCalls++;return route.fulfill({json:{outcome:'passed',receipts:[{status:'passed',validated:false,executedTests:1}]}})});
+    assert.equal(fakeCalls,0);await page.locator('#use-jev').check();await page.locator('#watch').click();
+    await expect(page.locator('#run-title')).toHaveText('The run did not finish');
+    await expect(page.locator('#receipt')).toBeHidden();
+    assert.equal(fakeCalls,1);
+    // Watching must preserve the player's start, practice and timeout screens.
+    await page.locator('#back').click();
+    await expect(page.locator('#card-title')).toHaveText('Ready, detective?');
+    await page.locator('#start').click();await page.locator('#reveal').click();
+    await page.locator('#watch').click();
+    await expect(page.locator('#run-title')).toHaveText('The run did not finish');
+    await page.locator('#back').click();
+    await expect(page.locator('#card-title')).toHaveText('Here they are!');
+    await expect(page.locator('#start')).toHaveText('Try this level again');
+    await expect(page.locator('[data-level="1"]')).toBeDisabled();
+    await page.locator('#reset').click();
+    await page.locator('#timed').check();await page.locator('#start').click();
+    await page.clock.fastForward(76000);
+    await expect(page.locator('#card-title')).toHaveText('Time for another try?');
+    await page.locator('#watch').click();
+    await expect(page.locator('#run-title')).toHaveText('The run did not finish');
+    await page.locator('#back').click();
+    await expect(page.locator('#card-title')).toHaveText('Time for another try?');
+    await expect(page.locator('#start')).toHaveText('Try this level again');
+    await page.unroute('**/api/hunt');await page.unroute('**/api/config');
     await page.goto(origin);
     // Exercise AI presentation with a UI fixture, never a fabricated live result.
     await page.route('**/api/config', route => route.fulfill({ json: { live: true, images: true, remaining: 6, runsRemaining: 20 } }));
@@ -271,7 +316,7 @@ async function expectShopToFit(page) {
     }
     assert.throws(() => captureVariant(working.replace('totalCents: 1200', 'totalCents: 9999'),
       'wrong-total'), 'A visible confirmation cannot pass an order with the wrong total');
-    console.log('PASS: cat rooms, decoys, repeat taps, reveals, zoom, mobile fit, wrong AI guesses and cancellation; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    console.log('PASS: four progressive hunt levels, optional timer, decoys, separate player score, eight real healthy/broken 9lives runs, assertion-attributed failures, real owned cancellation, mobile/zoom, malformed evidence rejection; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
     console.log('Screenshots:', output);
   } finally {
     await browser?.close();
