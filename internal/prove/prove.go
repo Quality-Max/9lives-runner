@@ -10,7 +10,7 @@ import (
 
 // Policy names the fault set and classification rules. Change it whenever
 // either changes, so reports from different rules are never compared as equal.
-const Policy = "prove-network-v3"
+const Policy = "prove-network-v4"
 
 const (
 	KindAbort         = "abort"
@@ -20,11 +20,18 @@ const (
 	KindHTTP403       = "http-403"
 	KindHTTP429       = "http-429"
 	KindMalformedJSON = "malformed-json"
+	// KindRedirectCrossOrigin answers 302 with a Location on a reserved,
+	// never-resolving origin, so following it fails without reaching a host.
+	KindRedirectCrossOrigin = "redirect-cross-origin"
+	// KindDelay holds the real response for longer than Playwright's default
+	// test timeout (35s in the SDK), then lets it through; the hold ends when
+	// the test's context closes, so it never outlives the run.
+	KindDelay = "delay"
 )
 
 // Kinds lists every fault kind in planning order. It must match faultKinds in
 // packages/playwright/src/prove.ts.
-var Kinds = []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP401, KindHTTP403, KindHTTP429, KindMalformedJSON}
+var Kinds = []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP401, KindHTTP403, KindHTTP429, KindMalformedJSON, KindRedirectCrossOrigin, KindDelay}
 
 // DefaultKinds is planned when no fault kinds are selected. Every SDK with
 // prove support applies these, so they need no capability record.

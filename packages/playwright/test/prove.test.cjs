@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {createHash} = require('node:crypto');
-const {faultKinds, matches, openProveChannel, proveProtocol, readFault, replaceJSON, requestTarget} = require('../dist/prove.js');
+const {delayHoldMs, faultKinds, matches, openProveChannel, proveProtocol, readFault, redirectLocation, replaceJSON, requestTarget} = require('../dist/prove.js');
 const {protocolVersion} = require('../dist/protocol.js');
 
 const request = (url, method = 'GET', resourceType = 'fetch') => ({url: () => url, method: () => method, resourceType: () => resourceType});
@@ -33,7 +33,7 @@ test('the fault schema is closed', () => {
   for (const bad of [
     'not json', '[]', 'null',
     JSON.stringify({...fault, extra: 1}),
-    JSON.stringify({...fault, kind: 'delay'}),
+    JSON.stringify({...fault, kind: 'future-fault'}),
     JSON.stringify({...fault, id: 'fault-0'}),
     JSON.stringify({...fault, method: 'post'}),
     JSON.stringify({...fault, origin: 'http://user@host'}),
@@ -177,6 +177,7 @@ test('status faults fulfill their status with an empty body', async () => {
       ['http-401', {status: 401, body: ''}],
       ['http-403', {status: 403, body: ''}],
       ['http-429', {status: 429, headers: {'retry-after': '1'}, body: ''}],
+      ['redirect-cross-origin', {status: 302, headers: {location: 'http://redirect.invalid/'}, body: ''}],
     ]) {
       const file = path.join(dir, `${kind}.ndjson`);
       const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind});
@@ -229,6 +230,76 @@ test('malformed-json truncates a JSON object or array so it no longer parses', a
       assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), records, name);
       assert.deepEqual(fulfilled, bodies, name);
     }
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('redirect-cross-origin points at a reserved origin that never resolves', () => {
+  const location = new URL(redirectLocation);
+  assert.equal(location.origin, 'http://redirect.invalid');
+  assert.equal(location.pathname, '/');
+  // The redirected request, should Playwright route it back here, is not the
+  // faulted target, so it falls through to the network and fails there.
+  assert(!matches(fault, requestTarget(request(redirectLocation, 'POST'))));
+  assert(!matches({...fault, method: 'GET'}, requestTarget(request(redirectLocation, 'GET'))));
+});
+
+test('delay holds the response, is credited when the hold starts, then lets the real response through', async () => {
+  const {instrument, ProveChannel} = require('../dist/prove.js');
+  assert(delayHoldMs > 30000, 'the hold must outlast Playwright\'s default test timeout');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-delay-'));
+  try {
+    const listeners = new Map();
+    const context = {
+      route: async (_pattern, h) => { context.handler = h; },
+      on: (event, fn) => { listeners.set(event, fn); },
+      off: (event, fn) => { if (listeners.get(event) === fn) listeners.delete(event); },
+    };
+    // The hold runs its course: the request reaches the network afterwards.
+    let file = path.join(dir, 'elapsed.ndjson');
+    let channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
+    await instrument(context, channel, {holdMs: 50});
+    const calls = {fallback: 0, fulfill: 0, continued: 0};
+    const started = Date.now();
+    const pending = context.handler({
+      request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
+      fallback: async () => { calls.fallback++; },
+      fulfill: async () => { calls.fulfill++; },
+      continue: async () => { calls.continued++; },
+    });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(calls.fallback, 0, 'the response must still be held');
+    assert(fs.readFileSync(file, 'utf8').includes('"applied"'), 'credited when the hold starts');
+    await pending;
+    assert(Date.now() - started >= 45, 'the hold must last the configured time');
+    assert.deepEqual(calls, {fallback: 1, fulfill: 0, continued: 0});
+    assert.equal(listeners.size, 0, 'the close listener is removed after the hold');
+    channel.close();
+    assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}]);
+
+    // The context closes mid-hold: the hold ends at once and a route that can
+    // no longer be continued is not an error.
+    file = path.join(dir, 'closed.ndjson');
+    channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
+    await instrument(context, channel, {holdMs: 60_000});
+    let fallbacks = 0;
+    const held = context.handler({
+      request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
+      fallback: async () => { fallbacks++; throw new Error('Target page, context or browser has been closed'); },
+    });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(fallbacks, 0);
+    listeners.get('close')();
+    await held;
+    assert.equal(fallbacks, 1);
+    channel.close();
+    assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}]);
+
+    // A request the fault does not match is never held.
+    let fallback = 0;
+    await context.handler({request: () => request('http://127.0.0.1:4100/api/cart', 'GET'), fallback: async () => { fallback++; }});
+    assert.equal(fallback, 1);
   } finally {
     fs.rmSync(dir, {recursive: true, force: true});
   }
