@@ -15,6 +15,7 @@ it('leads with the recorded experiment and links every chapter', () => {
   render(<Home />);
   expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Agent fixes.9l checks the change.');
   expect(screen.getByRole('link', { name: /explore the real experiment/i }).getAttribute('href')).toBe('/demo.html#proof');
+  expect(screen.getByRole('link', { name: /play the great little hunt/i }).getAttribute('href')).toBe('/hunt.html');
   for (const chapter of ['locator', 'coverage', 'flow', 'live', 'proof']) {
     expect(screen.getAllByRole('link').some(link => link.getAttribute('href') === `/demo.html#${chapter}`)).toBe(true);
   }

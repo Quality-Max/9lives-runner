@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "outcome": "failed",
+  "runId": "run-20261024T202706Z-470b956583a1",
+  "startedAt": "2026-10-24T20:27:06.270955Z",
+  "finishedAt": "2026-10-24T20:27:09.39256Z",
+  "durationMs": 3121,
+  "complete": false,
+  "plannedJobs": 1,
+  "skippedInputs": 0,
+  "passed": 0,
+  "failed": 1,
+  "canceled": 0,
+  "timedOut": 0,
+  "errors": 0,
+  "receipts": [
+    {
+      "version": 1,
+      "runId": "run-20261024T202706Z-470b956583a1",
+      "jobId": "job-001",
+      "attemptId": "job-001-attempt-001",
+      "attempt": 1,
+      "spec": "demo/jev/picture-hunt.spec.mjs",
+      "adapter": "playwright",
+      "status": "failed",
+      "startedAt": "2026-10-24T20:27:06.271799Z",
+      "finishedAt": "2026-10-24T20:27:09.38929Z",
+      "durationMs": 3117,
+      "exitCode": 1,
+      "executed": true,
+      "validated": true,
+      "validation": "Playwright JSON report; assertion count unavailable",
+      "failureCount": 1,
+      "executedTests": 1,
+      "skippedTests": 0,
+      "verifiedAssertions": 0,
+      "assertionCoverage": "unknown",
+      "failures": [
+        {
+          "title": "Find every requested figure. Check every click.",
+          "location": "demo/jev/picture-hunt.spec.mjs:98",
+          "message": "Error: expect(locator).toHaveCount(expected) failed\n\nLocator:  locator('.found')\nExpected: 2\nReceived: 1\nTimeout:  1200ms\n\nCall log:\n  - Expect \"toHaveCount\" with timeout 1200ms\n  - waiting for locator('.found')\n    13 × locator resolved to 1 element\n       - unexpected value \"1\"",
+          "expectedStatus": "passed",
+          "status": "failed",
+          "class": "assertion",
+          "attachments": [
+            {
+              "name": "error-context",
+              "contentType": "text/markdown",
+              "path": ".context/jev-playwright-output/picture-hunt-Find-every-requested-figure-Check-every-click-/error-context.md",
+              "bytes": 10189,
+              "retained": false
+            }
+          ]
+        }
+      ],
+      "failureAttachments": 1,
+      "evidence": {
+        "command": [
+          "node_modules/.bin/playwright",
+          "test",
+          "demo/jev/picture-hunt.spec.mjs",
+          "--reporter=json",
+          "--retries=0",
+          "--config=demo/jev/playwright.config.cjs"
+        ],
+        "stdoutPath": ".context/jev-hunt-3939224936/receipts/run-20261024T202706Z-470b956583a1/job-001/job-001-attempt-001/stdout.log",
+        "stdoutSha256": "e729839ffc3c697418691a79e00eedaedd52b6f72db54cce7791d3a0a85a233f",
+        "artifacts": [
+          {
+            "kind": "structured-output",
+            "path": ".context/jev-hunt-3939224936/receipts/run-20261024T202706Z-470b956583a1/job-001/job-001-attempt-001/stdout.log",
+            "sha256": "e729839ffc3c697418691a79e00eedaedd52b6f72db54cce7791d3a0a85a233f",
+            "bytes": 11356,
+            "required": true,
+            "present": true
+          }
+        ]
+      },
+      "receiptPath": ".context/jev-hunt-3939224936/receipts/run-20261024T202706Z-470b956583a1/job-001/job-001-attempt-001/receipt.json"
+    }
+  ]
+}

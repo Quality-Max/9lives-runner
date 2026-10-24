@@ -114,6 +114,30 @@ go run ./demo/jev --scenario mice --images
 go run ./demo/jev --scenario striped --live --images
 ```
 
+### The website copy
+
+[9lives.run/hunt.html](https://9lives.run/hunt.html) is a static copy of this
+game. Visitors play every level and the planted bug in their own browser.
+**Watch 9lives play** replays eight recorded live runs (each level, normal and
+bug), showing their screenshots, messages, click outlines and receipts. The page
+labels them as recordings. It makes no Jev request and needs no server or key.
+
+`node scripts/sync-hunt.cjs` regenerates `website/public/hunt.html` and the
+rooms from `cats.html` and `cat-room.html`. The website build runs it, and
+`npm test` fails when the copy is stale. The check also fails if the game changes
+after a run was recorded, so the recordings never show a different game.
+To re-record, run live healthy and bug rounds for every level, then import the
+eight `.context/jev-hunt-*` directories:
+
+```sh
+node scripts/sync-hunt.cjs --import .context/jev-hunt-<id> ...
+node scripts/hunt-smoke.cjs
+```
+
+Import accepts only complete live runs with an answered Jev record: passing for
+the normal round, failing on an attributed assertion for the bug round. It
+removes local paths from the published receipts.
+
 ## Connect Jev for real answers
 
 Stop the demo, then supply `TYPESAFE_API_KEY` to the local Go process. In an

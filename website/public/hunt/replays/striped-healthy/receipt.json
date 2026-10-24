@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "outcome": "passed",
+  "runId": "run-20261024T202235Z-98bea87be450",
+  "startedAt": "2026-10-24T20:22:35.698252Z",
+  "finishedAt": "2026-10-24T20:22:38.332561Z",
+  "durationMs": 2634,
+  "complete": true,
+  "plannedJobs": 1,
+  "skippedInputs": 0,
+  "passed": 1,
+  "failed": 0,
+  "canceled": 0,
+  "timedOut": 0,
+  "errors": 0,
+  "receipts": [
+    {
+      "version": 1,
+      "runId": "run-20261024T202235Z-98bea87be450",
+      "jobId": "job-001",
+      "attemptId": "job-001-attempt-001",
+      "attempt": 1,
+      "spec": "demo/jev/picture-hunt.spec.mjs",
+      "adapter": "playwright",
+      "status": "passed",
+      "startedAt": "2026-10-24T20:22:35.699121Z",
+      "finishedAt": "2026-10-24T20:22:38.330462Z",
+      "durationMs": 2631,
+      "exitCode": 0,
+      "executed": true,
+      "validated": true,
+      "validation": "Playwright JSON report; assertion count unavailable",
+      "failureCount": 0,
+      "executedTests": 1,
+      "skippedTests": 0,
+      "verifiedAssertions": 0,
+      "assertionCoverage": "unknown",
+      "evidence": {
+        "command": [
+          "node_modules/.bin/playwright",
+          "test",
+          "demo/jev/picture-hunt.spec.mjs",
+          "--reporter=json",
+          "--retries=0",
+          "--config=demo/jev/playwright.config.cjs"
+        ],
+        "stdoutPath": ".context/jev-hunt-3837243168/receipts/run-20261024T202235Z-98bea87be450/job-001/job-001-attempt-001/stdout.log",
+        "stdoutSha256": "4c1fe438b21c271e58e237c6998e868d9c40df45436efd6ba2841d428bf3f291",
+        "artifacts": [
+          {
+            "kind": "structured-output",
+            "path": ".context/jev-hunt-3837243168/receipts/run-20261024T202235Z-98bea87be450/job-001/job-001-attempt-001/stdout.log",
+            "sha256": "4c1fe438b21c271e58e237c6998e868d9c40df45436efd6ba2841d428bf3f291",
+            "bytes": 3371,
+            "required": true,
+            "present": true
+          }
+        ]
+      },
+      "receiptPath": ".context/jev-hunt-3837243168/receipts/run-20261024T202235Z-98bea87be450/job-001/job-001-attempt-001/receipt.json"
+    }
+  ]
+}

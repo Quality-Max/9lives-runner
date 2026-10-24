@@ -1,0 +1,58 @@
+{
+  "version": "9l.jev/1",
+  "binding": {
+    "runId": "run-20261024T202334Z-3a99b03b6b29",
+    "jobId": "job-001",
+    "attemptId": "job-001-attempt-001",
+    "target": "web",
+    "revision": "3d66afa9ffbdd6c5ae9a9461aed5703b3337eed5",
+    "sourceSHA256": "8ed426d1090ca5be9255425fc11f752bd8688beb0156357bb2f444117b8ca59d",
+    "testId": "cat-hunt",
+    "stepId": "choose-spots",
+    "observationId": "observed-control-crops"
+  },
+  "task": "synthetic-picture-actions",
+  "questionVersion": "v4",
+  "criteriaVersion": "v4",
+  "status": "answered",
+  "requestCount": 1,
+  "questionCount": 9,
+  "requestBytes": 260217,
+  "durationMs": 202,
+  "configuredModel": "jev-1.14.0",
+  "model": "jev-1.14.0",
+  "usage": {
+    "inputTokens": 3407,
+    "outputTokens": 157,
+    "available": true
+  },
+  "costAvailable": false,
+  "observedAt": "2026-10-24T20:23:35.532254Z",
+  "snapshotSHA256": "a56eb9cbfe438307b3cff8c5f1d7515053ca93b56328f590e39ba82026a74b79",
+  "image": {
+    "binding": {
+      "runId": "run-20261024T202334Z-3a99b03b6b29",
+      "jobId": "job-001",
+      "attemptId": "job-001-attempt-001",
+      "target": "web",
+      "revision": "3d66afa9ffbdd6c5ae9a9461aed5703b3337eed5",
+      "sourceSHA256": "8ed426d1090ca5be9255425fc11f752bd8688beb0156357bb2f444117b8ca59d",
+      "testId": "cat-hunt",
+      "stepId": "choose-spots",
+      "observationId": "observed-control-crops"
+    },
+    "observedAt": "2026-10-24T20:23:35.532254Z",
+    "sha256": "6a87f58897eee0e05204003c4773c88b6cbb16bf195ef788833ebc2bd813ad37",
+    "width": 900,
+    "height": 900,
+    "bytes": 191968,
+    "pixelPolicy": "synthetic",
+    "maskedRegions": 0,
+    "transform": {
+      "scaleX": 1,
+      "scaleY": 1,
+      "offsetX": 0,
+      "offsetY": 0
+    }
+  }
+}
