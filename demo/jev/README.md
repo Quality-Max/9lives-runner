@@ -50,8 +50,9 @@ out. Zoom in for small figures, or use Tab and Enter/Space on the hiding spots.
 
 Press **Watch 9lives play** to watch a separate browser round. Your game and timer
 pause. Without Jev configured, the **Free demo** uses the known synthetic answer map,
-costs nothing and makes no model request. Under **Demo settings**, turn on
-**Make one click miss** and run again: the same
+costs nothing and makes no model request. The introduction explains Jev’s visual
+judgment and 9lives’ browser actions and score checks before the first run. Turn on
+**Plant a bug: one find earns no point** and run again: the same
 picture now has one broken click handler, and the score assertion fails.
 
 This button runs an ordinary Playwright spec through the **existing Go 9lives
@@ -71,8 +72,8 @@ assertion coverage remains `unknown`; this is not independent semantic coverage.
 Stop cancels the owned runner attempt and cannot produce a passing result.
 
 With `--live --images` and a TypeSafe key, the button automatically uses Jev.
-The panel shows **Live Jev** and explains the three steps: Jev looks, 9lives
-clicks, and 9lives checks. Opening the page never sends a request.
+The panel shows **Live Jev**. The three steps above the game explain: Jev looks,
+9lives clicks, and 9lives checks. Opening the page never sends a request.
 One explicit run sends a picture with numbered outlines and nine independent
 yes/no (Noul) questions, one per observed control. Questions contain geometry
 and the requested visual features. The answer map, correct count, player score and

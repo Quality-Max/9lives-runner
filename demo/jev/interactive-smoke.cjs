@@ -141,7 +141,6 @@ async function expectShopToFit(page) {
       await page.mouse.click(stage.x+(target.box.X+target.box.Width/2)*stage.width/100,stage.y+(target.box.Y+target.box.Height/2)*stage.height/100);
     }
     async function finishRun(broken,goal){
-      await page.locator('#demo-settings').evaluate(e=>e.open=true);
       await page.locator('#broken').setChecked(broken);
       await expect(page.locator('#run-result')).toBeHidden();
       await page.locator('#watch').click();
