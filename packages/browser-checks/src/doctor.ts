@@ -53,8 +53,115 @@ export function browserInstallCommand(browser: string, root = process.cwd()): st
   return installed ? `npx --yes playwright@${installed.version} install ${browser}` : `npx playwright install ${browser}`;
 }
 
-export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: Engine }, root = process.cwd()) {
+// What the CLI learned about its own executable and the 9l first on PATH. The
+// CLI compares the two files itself and sends the paths only under --paths,
+// so the helper can only ever print what it was handed.
+export type Executable = { samePath: boolean; otherOnPath: boolean; self?: string; other?: string };
+
+function executableCheck(found: Executable): Diagnostic {
+  if (!found.otherOnPath) return { name: 'executable', status: 'ok', message: 'no other 9l on PATH.' };
+  if (found.samePath) return { name: 'executable', status: 'ok', message: 'this executable is the 9l first on PATH.' };
+  const where = typeof found.self === 'string' && typeof found.other === 'string' ? ` This executable: ${found.self}. First on PATH: ${found.other}.` : '';
+  return { name: 'executable', status: 'warning',
+    message: `the 9l first on PATH is not this executable; terminals, scripts and MCP hosts start that one unless configured with a full path.${where}`,
+    fix: "put this build's directory first on PATH, or configure the host with this executable's full path" };
+}
+
+const specLimit = 1024 * 1024;
+const configLimit = 256 * 1024;
+const configExtensions = ['ts', 'js', 'mts', 'mjs', 'cts', 'cjs'];
+// Static import forms only: `import { test } from '<module>'` and
+// `const { test } = require('<module>')`, single or double quotes. Clauses are
+// bounded so a large file cannot make the match expensive.
+const importForm = /\bimport\s+(\{[^}]{0,512}\})\s+from\s+(['"])(@9l\/playwright|@playwright\/test)\2/g;
+const requireForm = /\b(?:const|let|var)\s+(\{[^}]{0,512}\})\s*=\s*require\(\s*(['"])(@9l\/playwright|@playwright\/test)\2\s*\)/g;
+const fixtureForm = /\(\s*\{[^}]{0,512}?\b(?:page|context)\b/;
+const testDirForm = /\btestDir\s*:\s*(['"])([^'"\n]{1,512})\1/;
+
+// The modules the spec takes `test` from, by name, without evaluating it.
+function testImports(source: string): Set<string> {
+  const modules = new Set<string>();
+  for (const form of [importForm, requireForm]) {
+    form.lastIndex = 0;
+    for (let match = form.exec(source); match; match = form.exec(source)) {
+      if (/\btest\b/.test(match[1])) modules.add(match[3]);
+    }
+  }
+  return modules;
+}
+
+// Read a regular file as text when it is within the limit; otherwise say why not.
+function readBounded(file: string, limit: number): { text?: string; reason: 'missing' | 'large' | 'ok' } {
+  try {
+    const info = statSync(file);
+    if (!info.isFile()) return { reason: 'missing' };
+    if (info.size > limit) return { reason: 'large' };
+    return { text: readFileSync(file, 'utf8'), reason: 'ok' };
+  } catch { return { reason: 'missing' }; }
+}
+
+// The nearest playwright.config.* above the spec, in the order the SDK adapter
+// tries them, so doctor names the config prove picks without --config.
+function nearestConfig(spec: string): string | undefined {
+  for (let directory = path.dirname(spec); ; directory = path.dirname(directory)) {
+    for (const extension of configExtensions) {
+      const candidate = path.join(directory, `playwright.config.${extension}`);
+      try { if (statSync(candidate).isFile()) return candidate; } catch { /* Try the next name. */ }
+    }
+    if (path.dirname(directory) === directory) return undefined;
+  }
+}
+
+// Spec readiness for prove: the import, the instrumented fixtures and the
+// config that will select the spec. Everything is read as text; neither the
+// spec nor any config is executed, and messages name only basenames unless
+// the CLI asked for paths.
+export function specChecks(spec: string, paths = false): Diagnostic[] {
   const checks: Diagnostic[] = [];
+  const name = path.basename(spec);
+  const source = readBounded(spec, specLimit);
+  if (source.reason === 'missing') {
+    checks.push({ name: 'spec', status: 'missing', message: `${name} is not a readable file.`, fix: 'pass the path of one Playwright spec file after --sdk' });
+  } else if (source.reason === 'large') {
+    checks.push({ name: 'spec', status: 'warning', message: `${name}: spec too large to inspect (over 1 MiB); the import and fixture checks were skipped.` });
+  } else {
+    const modules = testImports(source.text ?? '');
+    if (modules.has('@9l/playwright')) {
+      checks.push({ name: 'spec/import', status: 'ok', message: `${name} imports test from @9l/playwright.` });
+    } else if (modules.has('@playwright/test')) {
+      checks.push({ name: 'spec/import', status: 'missing', message: `${name} imports test from @playwright/test; prove refuses it.`, fix: 'import test from @9l/playwright; prove instruments only its page and context fixtures' });
+    } else {
+      checks.push({ name: 'spec/import', status: 'warning', message: `${name} has no test import from @9l/playwright or @playwright/test; a test imported through a local fixtures module is not followed.` });
+    }
+    checks.push(fixtureForm.test(source.text ?? '')
+      ? { name: 'spec/fixtures', status: 'ok', message: `${name} uses the page or context fixture.` }
+      : { name: 'spec/fixtures', status: 'warning', message: `prove faults reach only fetch and XHR made through page or context; this spec uses neither.` });
+  }
+  const config = nearestConfig(spec);
+  if (!config) {
+    checks.push({ name: 'spec/config', status: 'warning', message: 'no playwright.config.* above the spec; prove runs it with Playwright defaults.', fix: 'add a playwright.config.ts above the spec, or pass prove --config' });
+    return checks;
+  }
+  const found = `config found: ${path.basename(config)}${paths ? ` in ${path.dirname(config)}` : ''}.`;
+  const contents = readBounded(config, configLimit);
+  const literal = contents.text?.match(testDirForm)?.[2];
+  if (!literal) {
+    checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: only a literal testDir can be read without executing the config.` });
+    return checks;
+  }
+  const testDir = path.resolve(path.dirname(config), literal);
+  const relative = path.relative(testDir, spec);
+  const inside = relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  const named = paths ? ` (${literal})` : '';
+  checks.push(inside
+    ? { name: 'spec/config', status: 'ok', message: `${found} The spec is under its literal testDir${named}.` }
+    : { name: 'spec/config', status: 'warning', message: `${found} The spec is outside its literal testDir${named}, so prove will not select it.`, fix: 'move the spec under that testDir, or pass prove --config with a config that includes it' });
+  return checks;
+}
+
+export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: Engine; executable?: Executable; spec?: string; paths?: boolean }, root = process.cwd()) {
+  const checks: Diagnostic[] = [];
+  if (args.executable && typeof args.executable === 'object') checks.push(executableCheck(args.executable));
   const major = Number(process.versions.node.split('.')[0]);
   // Below the minimum is a defect with an install step. Any other version
   // outside the qualified one is supported but untested; never suggest a
@@ -125,8 +232,11 @@ export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: En
       checks.push({ name: `${mode}/browser`, status: 'warning', message: 'Browser files could not be verified for this package version.', fix });
     }
   }
+  const spec = typeof args.spec === 'string' && path.isAbsolute(args.spec) ? args.spec : undefined;
+  if (spec) checks.push(...specChecks(spec, args.paths === true));
   return { version: 1, cliVersion: args.cliVersion, platform: `${process.platform}/${process.arch}`,
     ready: !checks.some(check => check.status === 'missing' || check.name.endsWith('/browser')), checks,
-    unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login'],
+    unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login',
+      ...(spec ? ['testDir and testMatch unless literal'] : [])],
     next: 'Start your app, then run: 9l scan http://localhost:<port> --allow-private-network. No account is required.' };
 }
