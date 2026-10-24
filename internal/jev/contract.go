@@ -52,7 +52,7 @@ func (q Question) MarshalJSON() ([]byte, error) {
 }
 
 func (c Contract) validate() error {
-	if c.Version != Version || !identifier.MatchString(c.Task) || !identifier.MatchString(c.QuestionVersion) || !identifier.MatchString(c.CriteriaVersion) || len(c.Questions) == 0 || len(c.Questions) > 8 {
+	if c.Version != Version || !identifier.MatchString(c.Task) || !identifier.MatchString(c.QuestionVersion) || !identifier.MatchString(c.CriteriaVersion) || len(c.Questions) == 0 || len(c.Questions) > 9 {
 		return errors.New("invalid Jev contract")
 	}
 	for id, q := range c.Questions {

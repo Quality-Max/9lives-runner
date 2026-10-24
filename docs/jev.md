@@ -118,7 +118,7 @@ observed target before any future action or isolated repair.
 
 Default attempt limits are four requests, 32 total questions, 32 MiB outgoing
 JSON, 60 seconds total lifetime and 30 seconds evidence age. Each call accepts
-at most eight questions, 16 KiB of snapshot text, 24 MiB of encoded request and
+at most nine questions, 16 KiB of snapshot text, 24 MiB of encoded request and
 1 MiB of response. Request, question and byte reservations are atomic across
 concurrent calls, include failures and are never refunded. Retries and redirects
 are disabled. HTTP failures expose only a numeric status. Missing credentials,

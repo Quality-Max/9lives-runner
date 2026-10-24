@@ -48,54 +48,27 @@ type huntDecision struct {
 	IDs      []int `json:"ids"`
 }
 
-// Each question classifies three observed spots, so all nine fit in one request.
-// The options contain geometry only; neither the answer map nor bug flag is sent.
+// Each observed spot gets an independent yes/no judgment in one request.
+// Only numbered geometry and visual features are sent, never the answer map.
 func huntContract(scenario string, candidates []huntCandidate) jev.Contract {
-	c := jev.Contract{Version: jev.Version, Task: "synthetic-picture-actions", QuestionVersion: "v2", CriteriaVersion: "v2", Questions: map[string]jev.Question{}}
-	for group := 0; group < 3; group++ {
-		var areas []string
-		for i := 0; i < 3; i++ {
-			p := candidates[group*3+i]
-			b := p.Box
-			areas = append(areas, fmt.Sprintf("Spot %d: left %.3f%%, top %.3f%%, width %.3f%%, height %.3f%%.", p.ID+1, b.X, b.Y, b.Width, b.Height))
-		}
-		criteria := map[string]string{"uncertain": "At least one of these three spots cannot be classified reliably."}
-		for mask := 0; mask < 8; mask++ {
-			var cats, cushions []string
-			for i := 0; i < 3; i++ {
-				label := fmt.Sprintf("spot %d", group*3+i+1)
-				if mask&(1<<i) != 0 {
-					cats = append(cats, label)
-				} else {
-					cushions = append(cushions, label)
-				}
-			}
-			criteria[fmt.Sprintf("m%d", mask)] = fmt.Sprintf("Matching figures in [%s]; other objects or people in [%s].", strings.Join(cats, ", "), strings.Join(cushions, ", "))
-		}
-		c.Questions[fmt.Sprintf("group%d", group)] = jev.Question{Type: "choice", Instructions: "In `screenshot`, which of these three regions contain " + huntSubject(scenario) + "? Coordinates are percentages of the whole image. " + strings.Join(areas, " ") + " Classify only these regions. Choose uncertain if any region is unclear.", Criteria: criteria}
+	c := jev.Contract{Version: jev.Version, Task: "synthetic-picture-actions", QuestionVersion: "v3", CriteriaVersion: "v3", Questions: map[string]jev.Question{}}
+	for _, p := range candidates {
+		b := p.Box
+		c.Questions[fmt.Sprintf("spot%d", p.ID)] = jev.Question{Type: "noul", Instructions: fmt.Sprintf("Look at numbered region %d in `screenshot` (left %.3f%%, top %.3f%%, width %.3f%%, height %.3f%% of the whole image). Does the figure inside this region match: %s? Judge only this region; the numbered outline is an annotation, not part of the figure.", p.ID+1, b.X, b.Y, b.Width, b.Height, huntSubject(scenario))}
 	}
 	return c
 }
 func chooseHunt(answers map[string]jev.Answer) huntDecision {
 	d := huntDecision{IDs: []int{}}
-	for group := 0; group < 3; group++ {
-		a, ok := answers[fmt.Sprintf("group%d", group)]
-		if !ok || a.Confidence == nil || *a.Confidence < .85 {
+	for id := 0; id < 9; id++ {
+		a, ok := answers[fmt.Sprintf("spot%d", id)]
+		// Use the documented Noul yes/no starting thresholds for harmless game actions.
+		// The complete selection is independently checked before any click.
+		if !ok || a.Type != "noul" || a.Noul == nil || math.IsNaN(*a.Noul) || math.IsInf(*a.Noul, 0) || *a.Noul < 0 || *a.Noul > 1 || (*a.Noul > .3 && *a.Noul < .7) {
 			return huntDecision{IDs: []int{}}
 		}
-		mask := -1
-		for i := 0; i < 8; i++ {
-			if a.Choice == fmt.Sprintf("m%d", i) {
-				mask = i
-			}
-		}
-		if mask < 0 {
-			return huntDecision{IDs: []int{}}
-		}
-		for i := 0; i < 3; i++ {
-			if mask&(1<<i) != 0 {
-				d.IDs = append(d.IDs, group*3+i)
-			}
+		if *a.Noul >= .7 {
+			d.IDs = append(d.IDs, id)
 		}
 	}
 	d.Resolved = true
@@ -118,7 +91,7 @@ func (f huntServices) Start(ctx context.Context, identity runner.AttemptIdentity
 	identity.Target = "web"
 	limits := jev.DefaultLimits()
 	limits.MaxRequests = 1
-	limits.MaxQuestions = 3
+	limits.MaxQuestions = 9
 	limits.MaxBytes = 2 << 20
 	limits.Timeout = 25 * time.Second
 	client, err := jev.New(ctx, f.config, identity, f.revision, f.source, limits)
@@ -172,7 +145,7 @@ func (f huntServices) Start(ctx context.Context, identity runner.AttemptIdentity
 			return
 		}
 		// Inputs are bounded controls. The fixture's hidden answer map is absent.
-		result, err := client.Decide(r.Context(), binding, jev.Observation{Binding: binding, ObservedAt: now, Snapshot: "An unmarked synthetic room. Judge only screenshot regions.", Image: image}, huntContract(f.scenario, input.Candidates))
+		result, err := client.Decide(r.Context(), binding, jev.Observation{Binding: binding, ObservedAt: now, Snapshot: "A synthetic room with numbered outlines around observed controls. Judge only the figure inside the requested region.", Image: image}, huntContract(f.scenario, input.Candidates))
 		raw, _ := json.MarshalIndent(result.Record, "", "  ")
 		if os.WriteFile(filepath.Join(f.dir, "jev-record.json"), raw, 0600) != nil {
 			http.Error(w, "Could not save safe record", 500)

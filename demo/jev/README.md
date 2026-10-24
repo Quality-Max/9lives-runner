@@ -71,17 +71,25 @@ Stop cancels the owned runner attempt and cannot produce a passing result.
 With `--live --images` and a TypeSafe key, the button automatically uses Jev.
 The panel shows **Live Jev** and explains the three steps: Jev looks, 9lives
 clicks, and 9lives checks. Opening the page never sends a request.
-One explicit run sends a clean picture and three Choice questions, each
-classifying three of the nine observed controls. Options contain geometry and
-the requested visual features. The answer map, correct count, player score and
-broken-click flag are withheld. All three decisions need confidence at least
-0.85; uncertain decisions stop. The test checks the proposed set against the
+One explicit run sends a picture with numbered outlines and nine independent
+yes/no (Noul) questions, one per observed control. Questions contain geometry
+and the requested visual features. The answer map, correct count, player score and
+broken-click flag are withheld. Every probability must be at least 0.7 (yes) or at most 0.3 (no);
+uncertain decisions stop. The test checks the proposed set against the
 synthetic oracle before clicking. Score checks run independently afterward.
 
 This fixed example demonstrates real runner execution with bounded Jev choices.
 It is **not the general Jev goal provider**: navigation, filling forms and generic
-goal actions remain QUA-2232. Visual accuracy has not been qualified. The final
+goal actions remain QUA-2232. The final
 scene is an original illustration, not artwork from a commercial puzzle book.
+
+Local live checks on 24 October 2026 with `jev-1.14.0`: cats passed two
+complete runner executions, and mice passed one, excluding all three cheese decoys.
+A deliberately broken cat click failed on its score assertion. Dogs and the
+striped crowd stopped before clicks because a judgment was uncertain. These
+are individual synthetic checks, not an accuracy benchmark or qualification
+of every level. The page explains stopped selection as **Jev needs your help**,
+while retaining the failed receipt and keeping score failures distinct.
 
 The earlier standalone picture reports remain available (including the bonus
 cats-versus-cushions illustration):
@@ -112,7 +120,7 @@ session. Failed or cancelled attempts consume their slot. Restart for a new sess
 There are no automatic retries.
 
 `--images` allows only this demo’s synthetic screenshots. Single-report and shop
-requests include a Box question; the game runner uses bounded Choice questions.
+requests include a Box question; the game runner uses bounded Noul questions.
 Omit it for the shop’s two text-only Noul questions. Select another supported model with
 `--model`; the default is `jev-1.14.0`. Missing credentials fail before starting
 the server or browser capture. Live availability and visual accuracy require

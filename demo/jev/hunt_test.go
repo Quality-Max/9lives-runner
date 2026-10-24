@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -14,22 +15,47 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 )
 
-func TestHuntRequiresEveryConfidentGroupBeforeAnyAction(t *testing.T) {
-	confidence := .93
-	answers := map[string]jev.Answer{"group0": {Choice: "m5", Confidence: &confidence}, "group1": {Choice: "m2", Confidence: &confidence}, "group2": {Choice: "m0", Confidence: &confidence}}
-	if got := chooseHunt(answers); !got.Resolved || !reflect.DeepEqual(got.IDs, []int{0, 2, 4}) {
-		t.Fatal("finite group choices were not mapped to observed IDs")
+func TestHuntRequiresEveryConfidentSpotBeforeAnyAction(t *testing.T) {
+	yes, no := .97, .03
+	answers := map[string]jev.Answer{}
+	for id := 0; id < 9; id++ {
+		answers[fmt.Sprintf("spot%d", id)] = jev.Answer{Type: "noul", Noul: &no}
 	}
-	low := .84
-	for _, bad := range []jev.Answer{{Choice: "uncertain", Confidence: &confidence}, {Choice: "m8", Confidence: &confidence}, {Choice: "m5"}, {Choice: "m5", Confidence: &low}} {
-		answers["group2"] = bad
+	for _, id := range []int{0, 2, 4} {
+		answers[fmt.Sprintf("spot%d", id)] = jev.Answer{Type: "noul", Noul: &yes}
+	}
+	if got := chooseHunt(answers); !got.Resolved || !reflect.DeepEqual(got.IDs, []int{0, 2, 4}) {
+		t.Fatal("independent judgments did not select the observed controls")
+	}
+	for _, probability := range []float64{.5, .699, .301, -1, 2, math.NaN(), math.Inf(1)} {
+		answers["spot8"] = jev.Answer{Type: "noul", Noul: &probability}
 		if got := chooseHunt(answers); got.Resolved || len(got.IDs) != 0 {
-			t.Fatal("partial or uncertain choices permitted clicks")
+			t.Fatal("partial or uncertain judgments permitted clicks")
 		}
 	}
-	delete(answers, "group2")
+	answers["spot8"] = jev.Answer{Type: "noul"}
 	if chooseHunt(answers).Resolved {
-		t.Fatal("missing group permitted clicks")
+		t.Fatal("missing probability permitted clicks")
+	}
+	delete(answers, "spot8")
+	if chooseHunt(answers).Resolved {
+		t.Fatal("missing spot permitted clicks")
+	}
+}
+
+// Regression: a real synthetic cats request returned .81–.93. Those are yes
+// probabilities, not Choice confidence values to normalize a second time.
+func TestHuntUsesBinaryProbabilityForVerifiedGameActions(t *testing.T) {
+	yes, no := .7, .3
+	answers := map[string]jev.Answer{}
+	for id := 0; id < 9; id++ {
+		answers[fmt.Sprintf("spot%d", id)] = jev.Answer{Type: "noul", Noul: &no}
+	}
+	for _, id := range []int{0, 2, 4} {
+		answers[fmt.Sprintf("spot%d", id)] = jev.Answer{Type: "noul", Noul: &yes}
+	}
+	if got := chooseHunt(answers); !got.Resolved || !reflect.DeepEqual(got.IDs, []int{0, 2, 4}) {
+		t.Fatal("clear binary judgments were rejected before independent verification")
 	}
 }
 
@@ -50,12 +76,12 @@ func TestHuntGroundingAndSubjectDoNotIncludeTheAnswerMap(t *testing.T) {
 	}
 	for _, scenario := range []string{"cats", "dogs", "mice", "striped"} {
 		c := huntContract(scenario, candidates)
-		if len(c.Questions) != 3 {
+		if len(c.Questions) != 9 {
 			t.Fatal("one bounded request must cover all spots")
 		}
 		for _, q := range c.Questions {
-			if len(q.Criteria) != 9 || !strings.Contains(q.Instructions, huntSubject(scenario)) {
-				t.Fatal("subject or explicit uncertainty is missing")
+			if q.Type != "noul" || len(q.Criteria) != 0 || !strings.Contains(q.Instructions, huntSubject(scenario)) {
+				t.Fatal("independent visual question is missing")
 			}
 		}
 		raw, _ := json.Marshal(c)

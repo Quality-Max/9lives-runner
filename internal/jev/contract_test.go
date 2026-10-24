@@ -3,6 +3,7 @@ package jev
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -149,5 +150,32 @@ func TestInvalidContractMakesNoRequest(t *testing.T) {
 		if result, err := c.Decide(context.Background(), b, o, contract); err == nil || result.Record.RequestCount != 0 || result.Answers != nil {
 			t.Fatal("invalid contract accepted")
 		}
+	}
+}
+
+func TestContractQuestionBound(t *testing.T) {
+	calls := 0
+	client, binding, observation, contract := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request struct{ Questions map[string]Question }
+		if json.NewDecoder(r.Body).Decode(&request) != nil || len(request.Questions) != 9 {
+			t.Error("nine independent questions were not sent")
+		}
+		answers := map[string]any{}
+		for id := range request.Questions {
+			answers[id] = map[string]any{"type": "noul", "noul": .97}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": DefaultModel, "answers": answers})
+	}, Config{Enabled: true}, DefaultLimits())
+	contract.Questions = map[string]Question{}
+	for i := 0; i < 9; i++ {
+		contract.Questions[fmt.Sprintf("q%d", i)] = Question{Type: "noul", Instructions: "Is this a matching figure?"}
+	}
+	if result, err := client.Decide(context.Background(), binding, observation, contract); err != nil || len(result.Answers) != 9 || result.Record.QuestionCount != 9 || calls != 1 {
+		t.Fatal("nine independent questions rejected", err)
+	}
+	contract.Questions["extra"] = Question{Type: "noul", Instructions: "Extra?"}
+	if result, err := client.Decide(context.Background(), binding, observation, contract); err == nil || result.Record.RequestCount != 0 || result.Answers != nil || calls != 1 {
+		t.Fatal("oversized contract reached provider")
 	}
 }

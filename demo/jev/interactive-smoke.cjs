@@ -265,6 +265,17 @@ async function expectShopToFit(page) {
     await page.locator('#back').click();
     await expect(page.locator('#card-title')).toHaveText('Time for another try?');
     await expect(page.locator('#start')).toHaveText('Try this level again');
+    // A stopped visual selection must explain that no click check ran. It is
+    // still a failed receipt, never a passing result or a claimed game defect.
+    await page.unroute('**/api/hunt');
+    await page.route('**/api/hunt/progress?*', route => route.fulfill({json:{stage:'selection-stopped',found:0,checked:0,message:'Jev could not choose every spot confidently. No clicks were made.'}}));
+    await page.route('**/api/hunt', route => route.fulfill({json:{outcome:'failed',receipts:[{status:'failed',validated:true,executedTests:1}]}}));
+    await page.locator('#watch').click();
+    await expect(page.locator('#run-title')).toHaveText('Jev needs your help');
+    await expect(page.locator('#run-copy')).toContainText('No clicks were made.');
+    await expect(page.locator('#run-result')).toHaveAttribute('data-outcome','incomplete');
+    await expect(page.locator('#counter')).toContainText('0 / 9');
+    await page.unroute('**/api/hunt/progress?*');
     await page.unroute('**/api/config');
     await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:0,runsRemaining:20}}));
     const usedCalls=fakeCalls;await page.reload();

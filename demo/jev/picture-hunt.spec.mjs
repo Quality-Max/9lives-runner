@@ -35,10 +35,26 @@ test('Find every requested figure. Check every click.', async ({ page }) => {
     await progress('looking', input.live ? 'Jev is choosing matching figures from the picture…' : 'Using the game’s known hiding places. No AI request.');
     let selected;
     if (input.live) {
+      // Number only observed geometry; no answer-map values enter this image.
+      await page.evaluate(spots => {
+        const overlay = document.createElement('div'); overlay.id = 'jev-regions';
+        Object.assign(overlay.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: '9999' });
+        for (const { id, box: b } of spots) {
+          const region = document.createElement('div');
+          Object.assign(region.style, { position: 'absolute', left: `${b.X}%`, top: `${b.Y}%`, width: `${b.Width}%`, height: `${b.Height}%`, outline: '2px solid #1455c0' });
+          const label = document.createElement('span'); label.textContent = String(id + 1);
+          Object.assign(label.style, { position: 'absolute', left: '0', bottom: '100%', background: '#1455c0', color: 'white', font: 'bold 12px sans-serif', padding: '1px 3px' });
+          region.append(label); overlay.append(region);
+        }
+        document.body.append(overlay);
+      }, candidates);
+      let png;
+      try { png = (await page.screenshot()).toString('base64'); }
+      finally { await page.locator('#jev-regions').evaluate(el => el.remove()); }
       // Private attempt-owned Go bridge. Credentials never enter this worker.
       const response = await fetch(process.env.CAT_HUNT_PROVIDER, { method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Hunt-Token': process.env.CAT_HUNT_TOKEN },
-        body: JSON.stringify({ candidates, png: (await page.screenshot()).toString('base64') }),
+        body: JSON.stringify({ candidates, png }),
         signal: AbortSignal.timeout(25000) });
       expect(response.ok, 'Jev must return a usable decision before any click').toBe(true);
       const decision = await response.json();
@@ -93,7 +109,7 @@ test('Find every requested figure. Check every click.', async ({ page }) => {
       'selection-check': 'The proposed spots did not match all the requested figures. No clicks were made.',
       'cat-click': 'Caught it! A correct click did not add one to the score.', 'repeat-check': 'A repeat click changed the score.',
       'cushion-check': 'A lookalike changed the score.', complete: 'The final score did not match every matching figure.' }[phase];
-    await progress('failed', message).catch(() => {});
+    await progress(phase === 'selection' ? 'selection-stopped' : phase === 'selection-check' ? 'selection-rejected' : 'failed', message).catch(() => {});
     throw error; // Keep the original assertion for the runner’s real receipt.
   }
 });
