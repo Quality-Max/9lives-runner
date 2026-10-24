@@ -105,7 +105,8 @@ Usage:
   9l inspect <url> [--format markdown|json] [--allow-private-network]  # ranked locators and testability
           # scan and inspect: [--viewport WxH] [--storage-state FILE --acknowledge-private-content]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
-  9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
+  9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles] [--limits]
+          # text groups analysis limits per file by code; --limits lists each location
   9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
           # needs @9l/playwright installed and a spec importing test from it; faults reach only fetch/XHR
           # made through its page or context fixtures, not Node-side fetch or database clients
@@ -137,6 +138,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 	format := fs.String("format", "text", "text or json advisory report")
 	agentRecord := fs.String("agent-provenance", "", "agent creation snapshot JSON")
 	titles := fs.Bool("titles", false, "include literal test titles (source text) for local use")
+	limits := fs.Bool("limits", false, "text: list every analysis-limit location instead of one count per code and file")
 	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true})) != nil {
 		return 2
 	}
@@ -185,7 +187,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			fmt.Fprintln(errOut, "9l: --agent-provenance applies to a single spec")
 			return 2
 		}
-		return assessSuite(ctx, fs.Args(), contract, *format, *titles, read, out, errOut)
+		return assessSuite(ctx, fs.Args(), contract, *format, *titles, *limits, read, out, errOut)
 	}
 	source, err := read(fs.Arg(0), assessment.MaxSource)
 	if err != nil {
@@ -219,7 +221,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			return 2
 		}
 	} else {
-		writeAssessmentText(out, report)
+		writeAssessmentText(out, report, *limits)
 	}
 	// Advice does not gate execution. Invalid or unavailable analysis exits 2.
 	return 0
@@ -227,7 +229,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 
 // assessSuite reads and assesses every discovered file. It writes the combined
 // report even when some files could not be assessed, then exits 2 for them.
-func assessSuite(ctx context.Context, inputs []string, contract []byte, format string, titles bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
+func assessSuite(ctx context.Context, inputs []string, contract []byte, format string, titles, limits bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
 	paths, err := assessment.DiscoverSpecs(inputs)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
@@ -260,24 +262,7 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 			return 2
 		}
 	} else {
-		fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
-		for _, file := range suite.Files {
-			if file.Report == nil {
-				fmt.Fprintf(out, "file %s: not assessed: %s\n", strconv.Quote(file.Path), file.Error)
-				continue
-			}
-			fmt.Fprintf(out, "file %s:\n", strconv.Quote(file.Path))
-			writeAssessmentTests(out, *file.Report)
-		}
-		for _, limit := range suite.Limits {
-			fmt.Fprintln(out, "Limit:", limit)
-		}
-		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed+suite.Summary.Unrecognized)
-		if suite.Summary.Unrecognized > 0 {
-			fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
-		}
-		fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
-		writeRuleCounts(out, suite.Summary.Rules)
+		writeSuiteText(out, suite, limits)
 	}
 	if suite.Summary.Failed > 0 {
 		fmt.Fprintf(errOut, "9l: %d of %d files could not be assessed\n", suite.Summary.Failed, suite.Summary.Files)
@@ -286,10 +271,33 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 	return 0
 }
 
-func writeAssessmentText(out io.Writer, report assessment.Report) {
+// writeSuiteText writes the combined report. limits lists every
+// analysis-limit location instead of one count per code and file.
+func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
+	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
+	for _, file := range suite.Files {
+		if file.Report == nil {
+			fmt.Fprintf(out, "file %s: not assessed: %s\n", strconv.Quote(file.Path), file.Error)
+			continue
+		}
+		fmt.Fprintf(out, "file %s:\n", strconv.Quote(file.Path))
+		writeAssessmentTests(out, *file.Report, limits)
+	}
+	for _, limit := range suite.Limits {
+		fmt.Fprintln(out, "Limit:", limit)
+	}
+	fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed+suite.Summary.Unrecognized)
+	if suite.Summary.Unrecognized > 0 {
+		fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
+	}
+	fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
+	writeRuleCounts(out, suite.Summary.Rules)
+}
+
+func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
 	fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
-	writeAssessmentTests(out, report)
+	writeAssessmentTests(out, report, limits)
 	for _, limit := range report.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
 	}
@@ -298,7 +306,21 @@ func writeAssessmentText(out io.Writer, report assessment.Report) {
 	writeRuleCounts(out, counts)
 }
 
-func writeAssessmentTests(out io.Writer, report assessment.Report) {
+// writeAssessmentTests lists each test with its findings. Analysis limits
+// repeat for every test that calls the same unresolved helper or passes the
+// same callback, so unless limits is set they are left out of the test lines
+// and summed in one line per file: one count per limit code, in which a
+// location counts once however many tests report it, as in the summary. Limit
+// findings carry no call site (only assertions, waits and hazards do), so a
+// limit inside a helper counts once for the helper line, not per calling test.
+func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) {
+	type limitKey struct {
+		code string
+		at   assessment.Location
+		site assessment.Location
+	}
+	seen := map[limitKey]bool{}
+	grouped := map[string]int{}
 	for _, test := range report.Tests {
 		title := ""
 		if test.Title != "" {
@@ -307,6 +329,17 @@ func writeAssessmentTests(out io.Writer, report assessment.Report) {
 		}
 		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
 		for _, finding := range test.Findings {
+			if finding.Rule == "analysis-limit" && !limits {
+				k := limitKey{code: finding.Code, at: finding.Location}
+				if finding.Site != nil {
+					k.site = *finding.Site
+				}
+				if !seen[k] {
+					seen[k] = true
+					grouped[finding.Code]++
+				}
+				continue
+			}
 			fields := ""
 			if finding.Requirement != "" {
 				fields += " requirement=" + finding.Requirement
@@ -321,6 +354,27 @@ func writeAssessmentTests(out io.Writer, report assessment.Report) {
 			fmt.Fprintf(out, "  %s [%s] at %d:%d%s: %s\n", assessment.FindingRule(finding), finding.Classification, finding.Line, finding.Column, fields, finding.Message)
 		}
 	}
+	if len(grouped) > 0 {
+		fmt.Fprintf(out, "  analysis limits: %s\n", strings.Join(countedCodes(grouped), ", "))
+	}
+}
+
+// countedCodes renders codes as "code ×N" by descending count, then name.
+func countedCodes(counts map[string]int) []string {
+	codes := make([]string, 0, len(counts))
+	for code := range counts {
+		codes = append(codes, code)
+	}
+	sort.Slice(codes, func(i, j int) bool {
+		if counts[codes[i]] != counts[codes[j]] {
+			return counts[codes[i]] > counts[codes[j]]
+		}
+		return codes[i] < codes[j]
+	})
+	for i, code := range codes {
+		codes[i] = fmt.Sprintf("%s ×%d", code, counts[code])
+	}
+	return codes
 }
 
 // writeRuleCounts lists rules by descending count, then name.
