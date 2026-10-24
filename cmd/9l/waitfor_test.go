@@ -52,6 +52,24 @@ func TestWaitForTargetsWaitsForServerErrorsToClearAndForPortsToOpen(t *testing.T
 	}
 }
 
+// A redirect is the target's own answer, so it counts as ready and is not
+// followed.
+func TestWaitForTargetsDoesNotFollowRedirects(t *testing.T) {
+	var followed atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			followed.Add(1)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}))
+	defer server.Close()
+	if err := waitForTargets(context.Background(), []string{server.URL + "/"}, 2*time.Second); err != nil || followed.Load() != 0 {
+		t.Fatalf("redirecting target: err=%v followed=%d", err, followed.Load())
+	}
+}
+
 func TestWaitForTargetsNamesTheTargetAndReasonWithoutSecrets(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
 	defer server.Close()
@@ -63,7 +81,7 @@ func TestWaitForTargetsNamesTheTargetAndReasonWithoutSecrets(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "was not ready after 1s: dial: ") {
 		t.Fatalf("tcp: %v", err)
 	}
-	for _, bad := range []string{"localhost", "ftp://x", "http://"} {
+	for _, bad := range []string{"localhost", "ftp://x", "http://", "http://:8080", "http://localhost:65536", "127.0.0.1:0"} {
 		var usage waitUsageError
 		if err := waitForTargets(context.Background(), []string{bad}, time.Second); err == nil || !errorsAs(err, &usage) {
 			t.Fatalf("%q accepted as a target: %v", bad, err)
@@ -92,6 +110,13 @@ func TestRunWaitForLeavesTheRunIncompleteWithoutStarting(t *testing.T) {
 	stderr.Reset()
 	if code := run([]string{"run", "--wait-for", "nonsense", "--receipt-dir", receipts, filepath.Join(project, "tests/shop.spec.ts")}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "--wait-for: a target is an http(s) URL or host:port") {
 		t.Fatalf("usage: code=%d stderr=%s", code, stderr.String())
+	}
+	// A value the collector rejects is never echoed: it may carry a credential.
+	stdout.Reset()
+	stderr.Reset()
+	long := "http://user:fixture-secret@localhost:3000/" + strings.Repeat("x", 600)
+	if code := run([]string{"run", "--wait-for", long, "--receipt-dir", receipts, filepath.Join(project, "tests/shop.spec.ts")}, &stdout, &stderr); code != exitUsage || strings.Contains(stderr.String(), "fixture-secret") || !strings.Contains(stderr.String(), "at most 512 bytes") {
+		t.Fatalf("long target: code=%d stderr=%s", code, stderr.String())
 	}
 }
 

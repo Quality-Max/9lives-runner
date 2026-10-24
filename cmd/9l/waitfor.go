@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -58,11 +59,18 @@ func waitForTargets(ctx context.Context, targets []string, timeout time.Duration
 func targetProbe(target string) (func(context.Context) error, string, error) {
 	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
 		parsed, err := url.Parse(target)
-		if err != nil || parsed.Host == "" {
+		if err != nil || parsed.Hostname() == "" {
 			return nil, "", errors.New("an http(s) target needs a host")
 		}
+		if port := parsed.Port(); port != "" {
+			if number, err := strconv.Atoi(port); err != nil || number < 1 || number > 65535 {
+				return nil, "", errors.New("an http(s) target's port must be between 1 and 65535")
+			}
+		}
 		display := &url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: parsed.Path}
-		client := &http.Client{Timeout: 5 * time.Second}
+		// Readiness is the target's own answer: a redirect is a response, so
+		// it is not followed to a login service or into a loop.
+		client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		return func(ctx context.Context) error {
 			request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 			if err != nil {
@@ -74,7 +82,7 @@ func targetProbe(target string) (func(context.Context) error, string, error) {
 			}
 			response.Body.Close()
 			if response.StatusCode >= 500 || response.StatusCode == http.StatusTooManyRequests {
-				return fmt.Errorf("HTTP %d", response.StatusCode)
+				return httpStatusError(response.StatusCode)
 			}
 			return nil
 		}, display.String(), nil
@@ -94,23 +102,60 @@ func targetProbe(target string) (func(context.Context) error, string, error) {
 }
 
 // waitReason is the structured part of a probe error: the HTTP status, the
-// network error's operation and code, or a timeout. URLs inside the error
-// are dropped so a credential in a target never reaches output.
+// network error's operation and code, or a timeout. Anything else is a fixed
+// phrase, so no error text that could quote the target reaches output.
 func waitReason(err error) string {
+	var status httpStatusError
+	if errors.As(err, &status) {
+		return status.Error()
+	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		err = urlErr.Err
 	}
 	var opErr *net.OpError
 	if errors.As(err, &opErr) && opErr.Err != nil {
-		return opErr.Op + ": " + opErr.Err.Error()
+		return opErr.Op + ": " + netReason(opErr.Err)
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
 		return "timed out"
 	}
-	text := err.Error()
-	if strings.Contains(text, "://") {
-		return "request failed"
+	return "request failed"
+}
+
+// netReason keeps the operating system's error code text ("connection
+// refused", "no such host") and nothing a target could have supplied.
+func netReason(err error) string {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "no such host"
 	}
-	return text
+	var sysErr interface{ Errno() uintptr }
+	if errors.As(err, &sysErr) || strings.Contains(err.Error(), "connection refused") {
+		return strings.TrimSpace(strings.TrimPrefix(err.Error(), "connect: "))
+	}
+	return "unreachable"
+}
+
+// httpStatusError is a probe answer that is not ready yet.
+type httpStatusError int
+
+func (status httpStatusError) Error() string { return fmt.Sprintf("HTTP %d", int(status)) }
+
+// waitTargets collects --wait-for values. A rejected value is never
+// returned through flag.Value, which would print it verbatim, since a
+// target may carry a credential; the caller reports a fixed message.
+type waitTargets struct {
+	values  []string
+	invalid bool
+}
+
+func (w *waitTargets) String() string { return strings.Join(w.values, ",") }
+func (w *waitTargets) Set(value string) error {
+	if strings.TrimSpace(value) == "" || len(value) > 512 || strings.ContainsAny(value, "\r\n\x00") || len(w.values) == 16 {
+		w.invalid = true
+		return nil
+	}
+	w.values = append(w.values, value)
+	return nil
 }

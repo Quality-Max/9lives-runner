@@ -561,7 +561,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	deadline := fs.Duration("deadline", 0, "shared run deadline (0 is unlimited)")
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job: 9l's own retry of the whole job; the project's Playwright retries still apply inside each attempt unless --retries overrides them")
 	retries := fs.Int("retries", -1, "Playwright retries per test inside each attempt, replacing the project's setting; 0 with --attempts lets 9l own all retries (default: the project's setting)")
-	var waitFor projectNames
+	var waitFor waitTargets
 	fs.Var(&waitFor, "wait-for", "before any test process starts, wait until this http(s) URL answers without a server error or this host:port accepts connections (repeatable)")
 	waitTimeout := fs.Duration("wait-timeout", time.Minute, "how long --wait-for targets may take to become ready; a target still not ready leaves the run incomplete without starting it")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
@@ -783,12 +783,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	defer stop()
 	// A target that never comes up is an environment failure, not a test
 	// failure: nothing starts, and the run is incomplete rather than failed.
-	if len(waitFor) > 0 {
+	if waitFor.invalid {
+		fmt.Fprintln(errOut, "9l: --wait-for: each target is one http(s) URL or host:port of at most 512 bytes, at most 16 targets")
+		return exitUsage
+	}
+	if len(waitFor.values) > 0 {
 		if *waitTimeout <= 0 || *waitTimeout > 30*time.Minute {
 			fmt.Fprintln(errOut, "9l: --wait-timeout must be between 1s and 30m")
 			return exitUsage
 		}
-		if err := waitForTargets(ctx, waitFor, *waitTimeout); err != nil {
+		if err := waitForTargets(ctx, waitFor.values, *waitTimeout); err != nil {
 			var usage waitUsageError
 			if errors.As(err, &usage) {
 				fmt.Fprintf(errOut, "9l: --wait-for: %v\n", err)
