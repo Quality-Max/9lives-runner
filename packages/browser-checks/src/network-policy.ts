@@ -2,7 +2,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import http, { type IncomingMessage } from 'node:http';
 import https from 'node:https';
 import net, { type LookupFunction } from 'node:net';
-import { Readable } from 'node:stream';
+import { type Duplex, Readable } from 'node:stream';
 
 export type NetworkPolicyOptions = {
   allowPrivateNetwork?: boolean;
@@ -200,9 +200,22 @@ const DEFAULT_REQUEST_HEADERS = { accept: '*/*', 'accept-language': '*', 'user-a
  * then keeps running, unreferenced, until the body ends, so an unread body
  * cannot hold a socket open beyond it. Transport failures read as one generic
  * error; a policy refusal keeps its own text.
+ *
+ * The promise settles exactly once. A `101 Switching Protocols` answer (or a
+ * reply to CONNECT) emits neither `response` nor `error`, and destroying the
+ * request afterwards emits nothing either, so without its own handler such an
+ * answer left the check pending past its timeout. It is refused as a transport
+ * failure, and `close` settles anything else that ends without a response.
  */
 function pinnedRequest(url: URL, init: SafeRequestInit, policy: NetworkPolicyOptions, timeoutMs: number): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error instanceof NetworkPolicyRefusal ? new Error(error.message) : new Error('Network request failed.'));
+    };
     const request = (url.protocol === 'https:' ? https : http).request({
       protocol: url.protocol,
       hostname: bareHostname(url),
@@ -214,12 +227,26 @@ function pinnedRequest(url: URL, init: SafeRequestInit, policy: NetworkPolicyOpt
       agent: false,
       lookup: pinnedLookup(url, policy),
     });
-    const timeout = setTimeout(() => request.destroy(), timeoutMs);
-    request.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error instanceof NetworkPolicyRefusal ? new Error(error.message) : new Error('Network request failed.'));
-    });
+    const timeout = setTimeout(() => {
+      request.destroy();
+      fail();
+    }, timeoutMs);
+    // Kept for the request's lifetime: an error after the response must not go uncaught.
+    request.on('error', fail);
+    // Registering these takes the upgraded socket from Node; nothing here speaks another protocol.
+    const refuseUpgrade = (_message: IncomingMessage, socket: Duplex) => {
+      socket.destroy();
+      fail();
+    };
+    request.once('upgrade', refuseUpgrade);
+    request.once('connect', refuseUpgrade);
+    request.once('close', () => fail());
     request.once('response', (message) => {
+      if (settled) {
+        message.destroy();
+        return;
+      }
+      settled = true;
       timeout.unref();
       message.once('close', () => clearTimeout(timeout));
       resolve(message);

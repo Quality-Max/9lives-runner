@@ -9,6 +9,7 @@
  */
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const net = require('node:net');
 const test = require('node:test');
 
 const { safeFetch } = require('../dist/network-policy.js');
@@ -172,7 +173,7 @@ test('a streamed body over the limit errors while it is read', async (t) => {
   await assert.rejects(response.text(), /exceeded the safety size limit/);
 });
 
-test('a target that never answers fails after the timeout', async (t) => {
+test('a target that never answers fails after the timeout', { timeout: 5_000 }, async (t) => {
   const target = await server(t, () => {});
   const started = Date.now();
   await assert.rejects(
@@ -180,6 +181,50 @@ test('a target that never answers fails after the timeout', async (t) => {
     /^Error: Network request failed\.$/
   );
   assert.ok(Date.now() - started < 5_000);
+});
+
+/** A raw TCP server that writes `reply` once the first request bytes arrive and then keeps the socket open. */
+async function rawServer(t, reply) {
+  const sockets = new Set();
+  const srv = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    socket.once('data', () => socket.write(reply));
+  });
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    for (const socket of sockets) socket.destroy();
+    return new Promise((resolve) => srv.close(resolve));
+  });
+  return { origin: `http://localhost:${srv.address().port}` };
+}
+
+// Node emits neither `response` nor `error` for a 101 answer, and a later
+// destroy settles nothing, so before the fix this request stayed pending past
+// its own timeout; the test's own timeout turns that hang into a failure.
+for (const [label, headers] of [
+  ['a plain request', {}],
+  ['a request that asked to upgrade', { connection: 'Upgrade', upgrade: 'websocket' }],
+]) {
+  test(`a 101 Switching Protocols answer to ${label} fails promptly with the generic message`, { timeout: 5_000 }, async (t) => {
+    const target = await rawServer(t, 'HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n');
+    const started = Date.now();
+    const message = await refusal(
+      safeFetch(`${target.origin}/`, { headers }, { allowPrivateNetwork: true, lookup: loopbackResolver, timeoutMs: 3_000 })
+    );
+    assert.equal(message, 'Network request failed.');
+    assert.ok(Date.now() - started < 1_000, 'the upgrade is refused at once, not at the per-hop timeout');
+  });
+}
+
+test('an informational answer never followed by a response fails after the timeout', { timeout: 5_000 }, async (t) => {
+  const target = await rawServer(t, 'HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n');
+  const started = Date.now();
+  await assert.rejects(
+    safeFetch(`${target.origin}/`, {}, { allowPrivateNetwork: true, lookup: loopbackResolver, timeoutMs: 200 }),
+    /^Error: Network request failed\.$/
+  );
+  assert.ok(Date.now() - started < 2_000);
 });
 
 test('too many redirects fail with the redirect limit', async (t) => {
