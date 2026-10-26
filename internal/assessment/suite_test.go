@@ -169,7 +169,7 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "node"), []byte(wrapper), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("PATH", dir)
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			suite, err := AssessSuite(context.Background(), []SuiteInput{{Path: "a.spec.ts", Source: source}}, nil, Options{})
 			if err != nil {
 				t.Fatal(err)

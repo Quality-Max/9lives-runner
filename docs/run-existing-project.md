@@ -103,6 +103,16 @@ It uses synthetic data and makes no model calls.
 | Test failed | Inspect the failing assertion and receipt; preserve the intended behavior when fixing it. |
 | Run timed out or was interrupted | Inspect application state before rerunning a test that mutates data. Review both Playwright's timeout and the CLI budget. |
 
+On Unix, the runner stops its process group and tracks descendants to clean up
+Playwright's detached `webServer` processes on exit, deadline or cancellation.
+This requires `ps` on `PATH`; an unavailable or invalid process snapshot makes
+the command unsuccessful. Snapshots contain only process IDs, relationships,
+status and start time. Tracking is sampled, so a process that detaches and loses
+its parent entirely between observations can escape tracking. This is not
+kernel process containment. Start times have one-second resolution. The detached
+server cleanup regression is runtime-qualified on macOS with Chromium; other
+Unix platforms need their own runtime qualification.
+
 ## Optional next steps
 
 Add the [SDK](sdk-bridge.md) only when you want step/assertion evidence or
