@@ -449,16 +449,160 @@ function createAnalyzer(ts) {
                 const outer = carrier(child);
                 return !ctx.floating && (ts.isAwaitExpression(unparen(outer).parent) || returnedHere(outer));
               };
+              // A handler rethrows when its own body, outside nested functions,
+              // has a throw statement or a Promise.reject call. Any other handler,
+              // including a named function whose body is not visible, is taken
+              // to swallow the rejection.
+              const rethrows = body => {
+                let found = false;
+                (function walk(node) {
+                  if (found || (ts.isFunctionLike(node) && node !== body)) return;
+                  if (ts.isThrowStatement(node) || (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+                    && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'Promise' && node.expression.name.text === 'reject')) found = true;
+                  else ts.forEachChild(node, walk);
+                })(body);
+                return found;
+              };
+              // Parentheses and type-only wrappers do not change a handler.
+              const bare = node => {
+                while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)
+                  || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
+                return node;
+              };
+              // A promise ignores a handler that is not a function, so the
+              // rejection passes on. Literals of any kind, array and object
+              // literals, templates, `undefined`, `void`, `typeof` and prefix
+              // operators never yield one; an identifier or call result may.
+              const callable = handler => !(ts.isLiteralExpression(handler) || ts.isTemplateExpression(handler)
+                || [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(handler.kind)
+                || ts.isArrayLiteralExpression(handler) || ts.isObjectLiteralExpression(handler)
+                || ts.isVoidExpression(handler) || ts.isTypeOfExpression(handler) || ts.isPrefixUnaryExpression(handler)
+                || (ts.isIdentifier(handler) && handler.text === 'undefined'));
+              const swallows = argument => {
+                const handler = bare(argument);
+                return !!handler && callable(handler) && !(isFunction(handler) && rethrows(handler));
+              };
+              // Whether a then/catch/finally chain on the promise handles its
+              // rejection: .catch(handler), or .then(onFulfilled, onRejected).
+              const handledChain = child => {
+                while (true) {
+                  while (ts.isParenthesizedExpression(child.parent)) child = child.parent;
+                  const access = child.parent;
+                  if (!ts.isPropertyAccessExpression(access) || !['then', 'catch', 'finally'].includes(access.name.text)
+                    || !ts.isCallExpression(access.parent) || access.parent.expression !== access) return false;
+                  const call = access.parent;
+                  if ((access.name.text === 'catch' && swallows(call.arguments[0])) || (access.name.text === 'then' && swallows(call.arguments[1]))) return true;
+                  child = call;
+                }
+              };
+              // Whether a failure of `child` cannot fail the test. A synchronous
+              // failure is thrown ('throw') while the expression is evaluated; an
+              // asynchronous one rejects its promise ('reject'). Only a rejection
+              // is handled by the promise's chain, by the chain of the Promise
+              // combinator carrying it, or by Promise.allSettled. A try block of
+              // this function whose catch does not rethrow catches a throw, and a
+              // rejection only when it is awaited inside the block. A failure
+              // that leaves this function, a throw from its own body or a
+              // rejection it awaits or returns, reaches its caller: as a
+              // rejection from an async function, otherwise unchanged, and is
+              // caught there as `ctx.caught` records.
+              const handled = (child, mode) => {
+                if (mode === 'reject') {
+                  if (handledChain(child)) return true;
+                  const outer = unparen(chained(child));
+                  if (ts.isArrayLiteralExpression(outer.parent)) {
+                    const array = unparen(outer.parent);
+                    const call = array.parent;
+                    if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
+                      && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
+                      && (call.expression.name.text === 'allSettled' || (['all', 'race', 'any'].includes(call.expression.name.text) && handledChain(call)))) return true;
+                  }
+                }
+                let awaited = false, node = child;
+                for (; node.parent && !ts.isFunctionLike(node.parent); node = node.parent) {
+                  if (ts.isAwaitExpression(node.parent)) awaited = true;
+                  const parent = node.parent;
+                  if (ts.isTryStatement(parent) && parent.tryBlock === node && parent.catchClause && !rethrows(parent.catchClause.block)
+                    && (mode === 'throw' || awaited)) return true;
+                }
+                // A failure inside a nested function goes to its unknown caller.
+                if (node.parent !== fn) return false;
+                if (mode === 'reject') {
+                  const outer = unparen(carrier(child));
+                  if (!ts.isAwaitExpression(outer.parent) && !ts.isReturnStatement(outer.parent) && outer.parent !== fn) return false;
+                }
+                return ctx.caught[mode === 'reject' || isAsync(fn) ? 'reject' : 'throw'];
+              };
+              // A matcher or helper that may either throw or reject (mode null)
+              // is caught only when both are. When just one is, the answer
+              // depends on whether it returns a promise, which is unknown.
+              const caught = (child, mode) => {
+                if (mode) return handled(child, mode);
+                const thrown = handled(child, 'throw'), rejected = handled(child, 'reject');
+                if (thrown !== rejected) limited('unknown-matcher', child);
+                return thrown && rejected;
+              };
+              // expect.soft, or an expect configured as soft, records its failure
+              // on the test whether or not anything catches it. Each
+              // expect.configure call merges its options over the ones it was
+              // called on, so the outermost call setting `soft` decides. Options
+              // the analyzer cannot read (a variable, a spread, a computed key or
+              // a `soft` value other than true or false) make it 'unknown'.
+              const softness = call => {
+                const configured = options => {
+                  if (!options) return null;
+                  if (!ts.isObjectLiteralExpression(options)) return 'unknown';
+                  let value = null;
+                  for (const property of options.properties) {
+                    const name = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) ? property.name.text : null;
+                    if (ts.isSpreadAssignment(property) || (property.name && ts.isComputedPropertyName(property.name))) value = 'unknown';
+                    else if (name !== 'soft') continue;
+                    else if (ts.isPropertyAssignment(property) && property.initializer.kind === ts.SyntaxKind.TrueKeyword) value = 'soft';
+                    else if (ts.isPropertyAssignment(property) && property.initializer.kind === ts.SyntaxKind.FalseKeyword) value = 'hard';
+                    else value = 'unknown';
+                  }
+                  return value;
+                };
+                for (let callee = call.expression; ;) {
+                  if (ts.isPropertyAccessExpression(callee)) {
+                    if (callee.name.text === 'soft') return 'soft';
+                    callee = callee.expression;
+                  } else if (ts.isCallExpression(callee)) {
+                    if (ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === 'configure') {
+                      const value = configured(callee.arguments[0]);
+                      if (value) return value;
+                    }
+                    callee = callee.expression;
+                  } else return 'hard';
+                }
+              };
+              // expect.poll(...), also on an expect.configure(...) chain, read
+              // from the syntax tree rather than the source text, so spacing,
+              // line breaks and configuration do not hide it. Every matcher on
+              // a poll is asynchronous.
+              const polls = call => {
+                const callee = bare(call.expression);
+                if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'poll') return false;
+                for (let receiver = bare(callee.expression); ;) {
+                  if (ts.isIdentifier(receiver)) return expects.has(receiver.text);
+                  if (!ts.isCallExpression(receiver)) return false;
+                  const configure = bare(receiver.expression);
+                  if (!ts.isPropertyAccessExpression(configure) || configure.name.text !== 'configure') return false;
+                  receiver = bare(configure.expression);
+                }
+              };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
               // The outermost nested function being scanned, if any.
               let nested = null;
               const browserSide = child => ts.isCallExpression(child.parent) && child.parent.arguments.includes(child)
                 && ts.isPropertyAccessExpression(child.parent.expression) && browserMethods.has(child.parent.expression.name.text)
                 && roots.has(root(child.parent.expression));
-              const assertion = (child, outcomes, unawaited, isAbsence) => {
+              // A caught assertion is a conditional probe: it cannot fail the
+              // test, so it is no completion signal after a fixed wait.
+              const assertion = (child, outcomes, unawaited, isAbsence, matcher, isCaught) => {
                 record();
-                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited });
-                order.waited = false;
+                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited, caught: isCaught, matcher });
+                if (!isCaught) order.waited = false;
               };
               function scan(child) {
                 spend();
@@ -478,8 +622,9 @@ function createAnalyzer(ts) {
                     return;
                   }
                 }
-                // Helpers, branches and shadowed identifiers prevent complete analysis.
-                if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
+                // Helpers, branches and shadowed identifiers prevent complete
+                // analysis. A loop is not a branch; see the loop case below.
+                if (ts.isIfStatement(child) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
                   || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
                 // Hazards are present in source whether or not their code runs, so
                 // they do not make a nested function a limit. A location is
@@ -520,7 +665,8 @@ function createAnalyzer(ts) {
                       // other unconsumed marked helper the timing is unknown.
                       const pending = !settled && !ctx.floating;
                       if (pending && !(helper.fn && isAsync(helper.fn))) limited('unknown-matcher', child);
-                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false);
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false,
+                        'assertion-helper', caught(child, helper.fn && isAsync(helper.fn) ? 'reject' : null));
                     } else {
                       // Inline a same-file helper. Parameters given a browser
                       // fixture value are fixture roots inside it.
@@ -534,7 +680,8 @@ function createAnalyzer(ts) {
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
-                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]) });
+                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]),
+                          caught: { throw: handled(child, 'throw'), reject: handled(child, 'reject') } });
                       } catch (error) {
                         if (!(error instanceof Exhausted)) throw error;
                         fact.assertions.length = saved.assertions;
@@ -556,18 +703,50 @@ function createAnalyzer(ts) {
                     let chain = child.expression.expression;
                     const modifiers = [];
                     while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
-                    if (ts.isCallExpression(chain)) {
+                    // expect.configure(...) returns an expect function, so a call
+                    // made on it, such as .configure or .soft, is not a matcher.
+                    if (ts.isCallExpression(chain) && !(ts.isPropertyAccessExpression(chain.expression) && chain.expression.name.text === 'configure')) {
                       let anchor = child;
                       while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
                       const awaited = consumed(child);
                       const matcher = child.expression.name.text;
-                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects')
-                        || child.getText(file).startsWith(root(child.expression) + '.poll(');
+                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects') || polls(chain);
                       // An unawaited matcher of unknown timing may be an unawaited promise.
                       if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited && !ctx.floating) limited('unknown-matcher', child);
-                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments));
+                      // Matcher names outside the pinned API are source identifiers
+                      // and are reported only as custom.
+                      const known = asyncMatchers.has(matcher) || syncMatchers.has(matcher) ? matcher : 'custom';
+                      // A caught matcher that may be soft may still fail the test:
+                      // it stays an assertion, with a limit, rather than a probe.
+                      const soft = softness(chain);
+                      let isCaught = soft !== 'soft' && caught(child, asyncMatcher ? 'reject' : syncMatchers.has(matcher) ? 'throw' : null);
+                      if (isCaught && soft === 'unknown') {
+                        limited('possibly-soft', child);
+                        isCaught = false;
+                      }
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments),
+                        known, isCaught);
                     }
                   }
+                }
+                // A loop repeats its body an unknown number of times. Its
+                // assertions are recorded once and need no limit; a fixed wait in
+                // its body or in a condition or update, directly or through an
+                // inlined helper, repeats too, and the order of waits and
+                // assertions across iterations is not read. A for initializer
+                // and a for…of or for…in input run once, so a wait there is
+                // recorded in order but does not make the loop a limit.
+                if (ts.isIterationStatement(child, false)) {
+                  const once = new Set([ts.isForStatement(child) ? child.initializer : null,
+                    ts.isForOfStatement(child) || ts.isForInStatement(child) ? child.expression : null]);
+                  let repeated = false;
+                  ts.forEachChild(child, part => {
+                    const before = fact.sleeps.length;
+                    scan(part);
+                    if (!once.has(part) && fact.sleeps.length > before) repeated = true;
+                  });
+                  if (repeated) limited('loop', child);
+                  return;
                 }
                 ts.forEachChild(child, scan);
               }
@@ -576,7 +755,7 @@ function createAnalyzer(ts) {
               if (ts.isBlock(fn.body)) ts.forEachChild(fn.body, scan);
               else scan(fn.body);
             }
-            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set() });
+            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: { throw: false, reject: false } });
           }
           results.push(fact);
           if (results.length > 256) throw new AnalysisError('limit');
@@ -603,7 +782,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 10, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 11, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -626,7 +805,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 10, error: code }));
+    process.stdout.write(JSON.stringify({ version: 11, error: code }));
     process.exitCode = 2;
   }
 }

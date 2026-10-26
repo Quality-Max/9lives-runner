@@ -280,13 +280,21 @@ func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
 			fmt.Fprintf(out, "file %s: not assessed: %s\n", strconv.Quote(file.Path), file.Error)
 			continue
 		}
+		if len(file.Report.Tests) == 0 && len(file.Report.UnrecognizedTestImports) == 0 {
+			fmt.Fprintf(out, "file %s: no tests\n", strconv.Quote(file.Path))
+			continue
+		}
 		fmt.Fprintf(out, "file %s:\n", strconv.Quote(file.Path))
 		writeAssessmentTests(out, *file.Report, limits)
 	}
 	for _, limit := range suite.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
 	}
-	fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed+suite.Summary.Unrecognized)
+	fmt.Fprintf(out, "Summary: %d files (%d assessed, ", suite.Summary.Files, suite.Summary.Assessed)
+	if suite.Summary.NoTests > 0 {
+		fmt.Fprintf(out, "%d with no tests, ", suite.Summary.NoTests)
+	}
+	fmt.Fprintf(out, "%d not assessed", suite.Summary.Failed+suite.Summary.Unrecognized)
 	if suite.Summary.Unrecognized > 0 {
 		fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
 	}
@@ -327,6 +335,10 @@ func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) 
 			title = " " + strconv.Quote(test.Title)
 		}
 		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+		if test.Assertions.Count > 0 {
+			// What was recognized, beside any limit on what was not.
+			fmt.Fprintf(out, "  recognized assertions: %d (%s)\n", test.Assertions.Count, strings.Join(test.Assertions.Matchers, ", "))
+		}
 		for _, finding := range test.Findings {
 			if finding.Rule == "analysis-limit" && !limits {
 				if k := assessment.FindingCountKey(finding); !seen[k] {
