@@ -8,26 +8,31 @@ SDK versions.
 
 ### SDK
 
-- The engine reporter no longer counts a matcher nested inside another
-  `expect` step, which `expect.poll` and retrying matchers report for their
-  inner matcher. One assertion in the spec is one assertion step, so
-  `reportedAssertions` no longer overcounts such tests by one each.
+- A retrying assertion (`expect.poll`, `toPass`, a custom matcher that calls
+  `expect`) counts once in `reportedAssertions`, including the assertions it
+  runs inside it on every retry, even inside a `test.step`. Previously each
+  passing inner assertion was counted as well, and failed retries were
+  reported as failed assertion steps. The count is of top-level assertion
+  steps, not of every `expect` in the source.
 
 ### CLI
 
-- `9l run --wait-for <url|host:port>` (repeatable) and `--wait-timeout`
-  (default 1m) wait before any test process starts until an http(s) target
-  answers without a server error (5xx or 429) or a host:port accepts
-  connections. A target still not ready leaves the run incomplete (exit 3)
-  with an environment reason and no receipts, instead of a test failure
-  against an application that never came up. Targets are named without
-  credentials or query strings.
+- `9l run --wait-for <url|host:port>` (repeatable) and `--wait-timeout` (1s
+  to 30m, default 1m) wait, inside the started run and before any test
+  process starts, until an http(s) target answers without a server error
+  (5xx or 429) or a host:port accepts connections. A target still not ready
+  leaves the run incomplete (exit 3) with an error receipt per job reading
+  `not started: --wait-for target not ready (environment): …`, instead of a
+  test failure against an application that never came up; `9l result` and
+  `9l status` read the run back. The wait counts against `--deadline`, and
+  `9l cancel` or Ctrl-C during it reports the run canceled. Targets are
+  named only as `scheme://host:port` or `host:port`, never with a path,
+  query, fragment or credentials. A self-signed https target is reported as
+  `certificate not trusted`; wait for its `host:port` instead.
 - Agent provenance assessments carry `scope: "spec"` and the text output says
   what a `matched` status compared: the selected spec, its path, branch,
   commit and workspace root. Imported modules are not compared, and the
   wording no longer invites reading `matched` as unchanged dependencies.
-- `run --config` reports a path that cannot be resolved before checking it
-  exists, as `prove --config` already did.
 
 ## 0.5.0 — 2026-10-23
 

@@ -35,16 +35,25 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
-- Readiness: `--wait-for <url|host:port>` (repeatable) waits before any test
-  process starts until an http(s) target answers without a server error (a
-  status below 500 other than 429) or a host:port accepts a TCP connection,
-  polling every 500 ms for `--wait-timeout` (default 1m, at most 30m). A
-  target still not ready leaves the run incomplete (exit 3) with the reason
-  on stderr, `9l: target not ready (environment): <target> was not ready
-  after 1m0s: dial: connection refused; nothing ran`, and no receipts, so an
-  application that never came up is not reported as failing tests. Targets
-  are named without credentials or query strings. `plan` and `--dry-run` do
-  not wait.
+- Readiness: `--wait-for <url|host:port>` (repeatable) waits, inside the
+  started run and before any test process starts, until an http(s) target
+  answers without a server error (a status below 500 other than 429) or a
+  host:port accepts a TCP connection, polling every 500 ms for
+  `--wait-timeout` (1s to 30m, default 1m). A target still not ready when
+  the wait timeout passes leaves the run incomplete (exit 3): no test
+  process starts, and each planned job gets an error receipt reading `not
+  started: --wait-for target not ready (environment): <target> was not ready
+  after 1m0s: dial: connection refused`, so `9l result` and `9l status` read
+  the run back and an application that never came up is not reported as
+  failing tests. The wait counts against `--deadline`, and `9l cancel` or
+  Ctrl-C during it reports the run canceled, like any canceled run. A
+  target is named only as `scheme://host:port` or `host:port`, never with
+  its path, query, fragment or credentials; the reason is an HTTP status, a
+  network error code, `timed out`, `certificate not trusted` or `tls
+  handshake failed`. An https target with a self-signed certificate is not
+  trusted and never becomes ready; wait for its `host:port` instead, which
+  checks only that it accepts connections. `plan` and `--dry-run` validate
+  the targets but do not wait.
 - Retries: `--attempts <n>` is 9l's own retry of the whole job, with a receipt
   per attempt. The project's Playwright `retries` still apply inside each
   attempt, so a failing test can run several times within one receipt.
@@ -82,7 +91,8 @@
 - Assertion steps: with `--sdk`, the receipt records `reportedAssertions`,
   the assertion steps the worker reported as passed in each executed test's
   last completed attempt, and `passedWithoutAssertions`, the tests that passed
-  while reporting none. `9l run` and `9l result` print `N passed test(s)
+  while reporting none. A retrying assertion (`expect.poll`, `toPass`) counts
+  once, including the assertions inside it. `9l run` and `9l result` print `N passed test(s)
   reported no assertion step` under such a job. These are the worker's
   report, not verified coverage: `assertionCoverage` stays `unknown`. Without
   `--sdk`, Playwright's JSON reporter carries only `test.step` steps, so the

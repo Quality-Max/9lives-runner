@@ -2,77 +2,137 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
-// waitUsageError is a --wait-for target that cannot be probed at all, such
-// as a malformed URL; it is a usage error, not an environment one.
-type waitUsageError struct{ error }
+const (
+	waitInterval   = 500 * time.Millisecond
+	minWaitTimeout = time.Second
+	maxWaitTimeout = 30 * time.Minute
+)
+
+// waitProbe is one parsed --wait-for target: a readiness check and a display
+// name that is only scheme://host[:port] or host:port, never a path, query,
+// fragment or user info.
+type waitProbe struct {
+	name  string
+	check func(context.Context) error
+}
+
+// waitNotReadyError is a target that did not become ready before the wait
+// timeout. Its text is persisted in receipts, so it holds only the display
+// name, the timeout and a fixed reason.
+type waitNotReadyError struct{ detail string }
+
+func (err waitNotReadyError) Error() string {
+	return "--wait-for target not ready (environment): " + err.detail
+}
+
+// waitHost is a host name or an IP address: no user info, path or spaces.
+var waitHost = regexp.MustCompile(`^[A-Za-z0-9._:%-]+$`)
+
+// validPort accepts only 1 to 5 decimal digits naming 1-65535, so "+80",
+// "-1" and " 80" are rejected rather than reinterpreted.
+func validPort(port string) bool {
+	if port == "" || len(port) > 5 {
+		return false
+	}
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	number, err := strconv.Atoi(port)
+	return err == nil && number >= 1 && number <= 65535
+}
+
+// parseWaitTargets turns --wait-for values into probes. Its errors are fixed
+// phrases: a rejected target is never echoed, since it may carry a
+// credential.
+func parseWaitTargets(targets []string) ([]waitProbe, error) {
+	probes := make([]waitProbe, 0, len(targets))
+	for _, target := range targets {
+		probe, err := targetProbe(target)
+		if err != nil {
+			return nil, err
+		}
+		probes = append(probes, probe)
+	}
+	return probes, nil
+}
 
 // waitForTargets probes each target in turn until all are ready or the
 // shared timeout passes. A target is an http(s) URL, ready when it answers
 // with a status below 500 other than 429, or a host:port, ready when it
-// accepts a TCP connection. The error names the target without credentials
-// or query and the last reason it was not ready.
-func waitForTargets(ctx context.Context, targets []string, timeout time.Duration) error {
-	probes := make([]func(context.Context) error, 0, len(targets))
-	names := make([]string, 0, len(targets))
-	for _, target := range targets {
-		probe, name, err := targetProbe(target)
-		if err != nil {
-			return waitUsageError{err}
-		}
-		probes, names = append(probes, probe), append(names, name)
-	}
+// accepts a TCP connection. If ctx ends first (cancellation, or the run's
+// own deadline) its error is returned unchanged, so the caller reports an
+// interrupted run rather than a target that was not ready.
+func waitForTargets(ctx context.Context, probes []waitProbe, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+	waitCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	for i, probe := range probes {
-		var last error
+	for _, probe := range probes {
+		reason := ""
 		for {
-			if last = probe(ctx); last == nil {
+			err := probe.check(waitCtx)
+			if err == nil {
 				break
 			}
-			if ctx.Err() != nil || !time.Now().Add(500*time.Millisecond).Before(deadline) {
-				return fmt.Errorf("%s was not ready after %s: %s", names[i], timeout.Round(time.Second), waitReason(last))
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// A probe cut short by the wait deadline keeps the last real
+			// reason, such as "connection refused", rather than "timed out".
+			if reason == "" || waitCtx.Err() == nil {
+				reason = waitReason(err)
+			}
+			if waitCtx.Err() != nil {
+				return waitNotReadyError{fmt.Sprintf("%s was not ready after %s: %s", probe.name, timeout.Round(time.Second), reason)}
 			}
 			select {
-			case <-ctx.Done():
-				return fmt.Errorf("%s was not ready: %s", names[i], waitReason(last))
-			case <-time.After(500 * time.Millisecond):
+			case <-waitCtx.Done():
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return waitNotReadyError{fmt.Sprintf("%s was not ready after %s: %s", probe.name, timeout.Round(time.Second), reason)}
+			case <-time.After(waitInterval):
 			}
 		}
 	}
 	return nil
 }
 
-// targetProbe returns one readiness check and the target's display name,
-// which never carries user info or a query string.
-func targetProbe(target string) (func(context.Context) error, string, error) {
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+// targetProbe returns one readiness check and its display name.
+func targetProbe(target string) (waitProbe, error) {
+	lower := strings.ToLower(target)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		parsed, err := url.Parse(target)
-		if err != nil || parsed.Hostname() == "" {
-			return nil, "", errors.New("an http(s) target needs a host")
+		if err != nil || parsed.Hostname() == "" || !waitHost.MatchString(parsed.Hostname()) {
+			return waitProbe{}, errors.New("an http(s) target needs a host name or IP address")
 		}
-		if port := parsed.Port(); port != "" {
-			if number, err := strconv.Atoi(port); err != nil || number < 1 || number > 65535 {
-				return nil, "", errors.New("an http(s) target's port must be between 1 and 65535")
+		if port := parsed.Port(); port != "" || strings.HasSuffix(parsed.Host, ":") {
+			if !validPort(port) {
+				return waitProbe{}, errors.New("a target's port must be digits naming 1 to 65535")
 			}
 		}
-		display := &url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: parsed.Path}
+		display := (&url.URL{Scheme: strings.ToLower(parsed.Scheme), Host: parsed.Host}).String()
 		// Readiness is the target's own answer: a redirect is a response, so
 		// it is not followed to a login service or into a loop.
 		client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		return func(ctx context.Context) error {
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+		return waitProbe{name: display, check: func(ctx context.Context) error {
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 			if err != nil {
 				return err
 			}
@@ -85,25 +145,27 @@ func targetProbe(target string) (func(context.Context) error, string, error) {
 				return httpStatusError(response.StatusCode)
 			}
 			return nil
-		}, display.String(), nil
+		}}, nil
 	}
 	host, port, err := net.SplitHostPort(target)
-	if number, convErr := strconv.Atoi(port); err != nil || convErr != nil || host == "" || number < 1 || number > 65535 {
-		return nil, "", errors.New("a target is an http(s) URL or host:port")
+	if err != nil || host == "" || !waitHost.MatchString(host) || !validPort(port) {
+		return waitProbe{}, errors.New("a target is an http(s) URL or host:port, with a host name or IP address and a port of 1 to 65535")
 	}
+	address := net.JoinHostPort(host, port)
 	dialer := &net.Dialer{Timeout: 2 * time.Second}
-	return func(ctx context.Context) error {
-		conn, err := dialer.DialContext(ctx, "tcp", target)
+	return waitProbe{name: address, check: func(ctx context.Context) error {
+		conn, err := dialer.DialContext(ctx, "tcp", address)
 		if err != nil {
 			return err
 		}
 		return conn.Close()
-	}, target, nil
+	}}, nil
 }
 
-// waitReason is the structured part of a probe error: the HTTP status, the
-// network error's operation and code, or a timeout. Anything else is a fixed
-// phrase, so no error text that could quote the target reaches output.
+// waitReason is the structured part of a probe error: the HTTP status, a
+// TLS failure, the network operation and error code, or a timeout. Anything
+// else is a fixed phrase, so no error text that could quote the target
+// reaches output or receipts.
 func waitReason(err error) string {
 	var status httpStatusError
 	if errors.As(err, &status) {
@@ -112,6 +174,18 @@ func waitReason(err error) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		err = urlErr.Err
+	}
+	var verification *tls.CertificateVerificationError
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	if errors.As(err, &verification) || errors.As(err, &unknownAuthority) || errors.As(err, &hostname) || errors.As(err, &invalid) {
+		return "certificate not trusted"
+	}
+	var record tls.RecordHeaderError
+	var alert tls.AlertError
+	if errors.As(err, &record) || errors.As(err, &alert) || strings.Contains(err.Error(), "HTTP response to HTTPS client") || strings.Contains(err.Error(), "tls: ") {
+		return "tls handshake failed"
 	}
 	var opErr *net.OpError
 	if errors.As(err, &opErr) && opErr.Err != nil {
@@ -123,16 +197,35 @@ func waitReason(err error) string {
 	return "request failed"
 }
 
-// netReason keeps the operating system's error code text ("connection
-// refused", "no such host") and nothing a target could have supplied.
+// netReason names the operating system's error code with a fixed phrase and
+// nothing a target could have supplied.
 func netReason(err error) string {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		return "no such host"
 	}
-	var sysErr interface{ Errno() uintptr }
-	if errors.As(err, &sysErr) || strings.Contains(err.Error(), "connection refused") {
-		return strings.TrimSpace(strings.TrimPrefix(err.Error(), "connect: "))
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.ECONNREFUSED:
+			return "connection refused"
+		case syscall.ECONNRESET:
+			return "connection reset"
+		case syscall.ECONNABORTED:
+			return "connection aborted"
+		case syscall.EHOSTUNREACH:
+			return "host unreachable"
+		case syscall.ENETUNREACH:
+			return "network unreachable"
+		case syscall.ETIMEDOUT:
+			return "timed out"
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return "timed out"
+	}
+	if strings.Contains(err.Error(), "refused") {
+		return "connection refused"
 	}
 	return "unreachable"
 }
@@ -150,7 +243,8 @@ type waitTargets struct {
 	invalid bool
 }
 
-func (w *waitTargets) String() string { return strings.Join(w.values, ",") }
+// String never lists the targets: flag output must not echo them.
+func (w *waitTargets) String() string { return "" }
 func (w *waitTargets) Set(value string) error {
 	if strings.TrimSpace(value) == "" || len(value) > 512 || strings.ContainsAny(value, "\r\n\x00") || len(w.values) == 16 {
 		w.invalid = true

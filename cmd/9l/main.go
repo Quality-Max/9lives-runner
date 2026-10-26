@@ -563,7 +563,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	retries := fs.Int("retries", -1, "Playwright retries per test inside each attempt, replacing the project's setting; 0 with --attempts lets 9l own all retries (default: the project's setting)")
 	var waitFor waitTargets
 	fs.Var(&waitFor, "wait-for", "before any test process starts, wait until this http(s) URL answers without a server error or this host:port accepts connections (repeatable)")
-	waitTimeout := fs.Duration("wait-timeout", time.Minute, "how long --wait-for targets may take to become ready; a target still not ready leaves the run incomplete without starting it")
+	waitTimeout := fs.Duration("wait-timeout", time.Minute, "how long --wait-for targets may take to become ready, 1s to 30m; a target still not ready leaves the run incomplete without starting a test process")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
@@ -633,6 +633,20 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	// --wait-for is checked here so plan and --dry-run reject what run would.
+	if waitFor.invalid {
+		fmt.Fprintln(errOut, "9l: --wait-for: each target is one http(s) URL or host:port of at most 512 bytes, at most 16 targets")
+		return exitUsage
+	}
+	if *waitTimeout < minWaitTimeout || *waitTimeout > maxWaitTimeout {
+		fmt.Fprintln(errOut, "9l: --wait-timeout must be between 1s and 30m")
+		return exitUsage
+	}
+	waitProbes, err := parseWaitTargets(waitFor.values)
+	if err != nil {
+		fmt.Fprintf(errOut, "9l: --wait-for: %v\n", err)
+		return exitUsage
 	}
 	explicitWorkers := false
 	fs.Visit(func(f *flag.Flag) { explicitWorkers = explicitWorkers || f.Name == "workers" })
@@ -782,32 +796,18 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// A target that never comes up is an environment failure, not a test
-	// failure: nothing starts, and the run is incomplete rather than failed.
-	if waitFor.invalid {
-		fmt.Fprintln(errOut, "9l: --wait-for: each target is one http(s) URL or host:port of at most 512 bytes, at most 16 targets")
-		return exitUsage
-	}
-	if len(waitFor.values) > 0 {
-		if *waitTimeout <= 0 || *waitTimeout > 30*time.Minute {
-			fmt.Fprintln(errOut, "9l: --wait-timeout must be between 1s and 30m")
-			return exitUsage
-		}
-		if err := waitForTargets(ctx, waitFor.values, *waitTimeout); err != nil {
-			var usage waitUsageError
-			if errors.As(err, &usage) {
-				fmt.Fprintf(errOut, "9l: --wait-for: %v\n", err)
-				return exitUsage
+	// failure. The wait runs inside the stored run, so `9l cancel`, the run
+	// deadline and `9l result` cover it; a target still not ready leaves an
+	// error receipt per job and no test process started.
+	var beforeJobs func(context.Context) error
+	if len(waitProbes) > 0 {
+		beforeJobs = func(ctx context.Context) error {
+			err := waitForTargets(ctx, waitProbes, *waitTimeout)
+			var notReady waitNotReadyError
+			if errors.As(err, &notReady) {
+				fmt.Fprintf(errOut, "9l: %v; no test process was started\n", err)
 			}
-			started := time.Now().UTC()
-			result := runner.RunSummary{Version: runner.RunSummaryVersion, Outcome: runner.OutcomeIncomplete, RunID: plan.RunID, StartedAt: started, FinishedAt: started,
-				PlannedJobs: len(plan.Jobs), SkippedInputs: len(plan.Skipped), Skipped: plan.Skipped, Receipts: []runner.Receipt{}}
-			fmt.Fprintf(errOut, "9l: target not ready (environment): %v; nothing ran\n", err)
-			if *format == "json" {
-				_ = json.NewEncoder(out).Encode(result)
-			} else {
-				fmt.Fprintf(out, "run %s: nothing ran\n  INCOMPLETE: %v (environment); no test process was started\n", plan.RunID, err)
-			}
-			return exitIncomplete
+			return err
 		}
 	}
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
@@ -818,6 +818,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 				fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
 			}
 		},
+		BeforeJobs:      beforeJobs,
 		AgentProvenance: agentProvenance,
 		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
