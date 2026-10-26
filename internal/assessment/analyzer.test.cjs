@@ -468,6 +468,26 @@ test('a caught probe is no completion signal after a fixed wait and passes caugh
     [[4, 11, true, 'toBeVisible'], [12, undefined, true, 'assertion-helper'], [4, 13, false, 'toBeVisible']]);
 });
 
+test('a loop is not conditional flow, and is a limit only when it repeats a fixed wait', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function settle(page) { await page.waitForTimeout(50); }
+    test('for of', async () => { for (const c of cases) { expect(c.input * 2).toEqual(c.output); } });
+    test('for and while', async ({page}) => {
+      for (let i = 0; i < 3; i++) await expect(page.getByRole('row').nth(i)).toBeVisible();
+      while (await page.getByRole('button').isVisible()) { await page.getByRole('button').click(); }
+      do { expect(n).toBeGreaterThan(0); } while (false);
+    });
+    test('wait in a loop', async ({page}) => {
+      for (const id of ids) { await page.waitForTimeout(100); await expect(page.getByRole('alert')).toBeHidden(); }
+    });
+    test('helper wait in a loop', async ({page}) => { for (const id of ids) { await settle(page); expect(id).toBeTruthy(); } });
+    test('branch in a loop', async ({page}) => { for (const c of cases) { if (c.skip) continue; expect(c.ok).toBe(true); } });
+    test('branch', async ({page}) => { if (mobile) await expect(page.getByRole('heading')).toBeVisible(); });`);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[], [], [['loop', 10]], [['loop', 12]], [['conditional-flow', 13]], [['conditional-flow', 14]]]);
+  assert.deepEqual(facts.tests.map(t => t.assertions.length), [1, 2, 1, 1, 1, 1]);
+});
+
 test('a nested function is a limit only when it holds an assertion or wait', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
     const settle = async page => { await page.waitForTimeout(100); };

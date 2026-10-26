@@ -640,6 +640,74 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 	}
 }
 
+func TestTestsListTheAssertionsTheyAreCreditedWith(t *testing.T) {
+	enabled := false
+	fact := Fact{Location: Location{1, 1}, Disabled: &enabled, Unsupported: true,
+		Limits: []AnalysisLimit{{Location: Location{2, 3}, Code: "unresolved-helper"}},
+		Assertions: []Assertion{
+			{Location: Location{3, 3}, Matcher: "toEqual"},
+			{Location: Location{4, 3}, Matcher: "toBe"},
+			{Location: Location{5, 3}, Matcher: "toEqual"},
+			{Location: Location{6, 3}, Matcher: "toBeVisible", Caught: true},
+		}}
+	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if test.Assertions.Count != 3 || strings.Join(test.Assertions.Matchers, ",") != "toBe,toEqual" {
+		t.Fatalf("credited assertions %+v", test.Assertions)
+	}
+	// Listing what was recognized changes no dimension: a limit still leaves
+	// adequacy unknown, and static assessment never has runtime evidence.
+	if test.Dimensions["assertionAdequacy"] != "unknown" || test.Dimensions["runtimeEvidence"] != "unknown" {
+		t.Fatalf("dimensions %v", test.Dimensions)
+	}
+	none := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{{Location: Location{1, 1}, Disabled: &enabled}}}).Tests[0]
+	if none.Assertions.Count != 0 || none.Assertions.Matchers == nil {
+		t.Fatalf("an empty summary must be a count of 0 and an empty list: %+v", none.Assertions)
+	}
+}
+
+func TestAssessCreditsDirectAssertionsBesideAnUnresolvedHelperAndLoop(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"import {seedCases} from './seed';\n" +
+		"test('seeded cases', async ({request}) => {\n" +
+		"  const cases = await seedCases(request);\n" +
+		"  for (const c of cases) {\n" +
+		"    const response = await request.get(c.url);\n" +
+		"    expect(response.status()).toBe(200);\n" +
+		"    expect(await response.json()).toEqual(c.body);\n" +
+		"  }\n" +
+		"});\n" +
+		"test('helper only', async ({request}) => { await seedCases(request); });\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, fmt.Sprintf("%d %v %s", test.Assertions.Count, test.Assertions.Matchers, strings.Join(rules, ",")))
+	}
+	// The loop is no limit; the unresolved helper stays one, at its call.
+	want := []string{"2 [toBe toEqual] analysis-limit/unresolved-helper@4", "0 [] analysis-limit/unresolved-helper@11"}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("credited assertions %q", got)
+	}
+}
+
+func TestAFileWithNoTestsSaysSo(t *testing.T) {
+	report := Build([]byte("source"), nil, Contract{}, Facts{Compiler: "5.9.3", Tests: []Fact{}})
+	if !strings.Contains(strings.Join(report.Limits, "\n"), NoTestsLimit) {
+		t.Fatalf("no-tests limit missing: %q", report.Limits)
+	}
+	unrecognized := Build([]byte("source"), nil, Contract{}, Facts{Compiler: "5.9.3", Tests: []Fact{}, UnrecognizedTestImports: []string{"e2e"}})
+	if strings.Contains(strings.Join(unrecognized.Limits, "\n"), NoTestsLimit) {
+		t.Fatal("an unrecognized test import is reported as a file with no tests")
+	}
+}
+
 func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 	requireNode(t)
 	source := []byte("import {test,expect} from '@playwright/test';\n" +

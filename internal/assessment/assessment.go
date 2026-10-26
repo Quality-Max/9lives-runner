@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -37,6 +38,10 @@ const (
 	CodeMapsNoOutcome  = "maps-no-outcome"
 	CodeUnmappedInFile = "unmapped-in-file"
 )
+
+// NoTestsLimit is the report limit of a file in which no test declaration was
+// recognized, such as a helper or fixture module.
+const NoTestsLimit = "no-tests: no test declaration was recognized in this file, so it holds nothing to assess; assertions in a helper or fixture module are not attributed to the tests in other files that import it."
 
 // ReportVersion is the version of a single-file assess report.
 const ReportVersion = 3
@@ -166,11 +171,25 @@ type Finding struct {
 	// rule itself for every other finding.
 	Code string `json:"code"`
 }
+
+// AssertionSummary counts the recognized assertions credited to a test:
+// matchers in its body and in the same-file helpers resolved from it, and
+// marked assertion helper calls. Caught probes are not counted. It shows what
+// was recognized beside any analysis limit, such as an unresolved helper whose
+// own assertions stay unknown; it is not a measure of adequacy.
+type AssertionSummary struct {
+	Count int `json:"count"`
+	// Matchers are the distinct matcher names, sorted: names from the pinned
+	// Playwright API, "custom" for any other matcher and "assertion-helper"
+	// for a marked helper call.
+	Matchers []string `json:"matchers"`
+}
 type Test struct {
 	Location
 	Title        string            `json:"title,omitempty"`
 	Requirements []string          `json:"requirements"`
 	Dimensions   map[string]string `json:"dimensions"`
+	Assertions   AssertionSummary  `json:"assertions"`
 	Findings     []Finding         `json:"findings"`
 }
 type Report struct {
@@ -443,6 +462,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		report.UnrecognizedTestImports = facts.UnrecognizedTestImports
 		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise (only @playwright/test and @9l/playwright), so its tests were not assessed.")
 	}
+	if len(facts.Tests) == 0 && len(facts.UnrecognizedTestImports) == 0 {
+		report.Limits = append(report.Limits, NoTestsLimit)
+	}
 	if facts.HazardsTruncated {
 		report.Limits = append(report.Limits, "More than 512 debugging-leftover and fragile-selector findings: the rest were not reported.")
 	}
@@ -548,13 +570,20 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		// Even complete declared mappings leave semantic alignment unknown. A
 		// caught matcher cannot fail the test, so it is not an assertion here.
 		credited, probes := 0, 0
+		matchers := map[string]bool{}
 		for _, a := range fact.Assertions {
 			if a.Caught {
 				probes++
 			} else {
 				credited++
+				matchers[a.Matcher] = true
 			}
 		}
+		t.Assertions = AssertionSummary{Count: credited, Matchers: make([]string, 0, len(matchers))}
+		for matcher := range matchers {
+			t.Assertions.Matchers = append(t.Assertions.Matchers, matcher)
+		}
+		sort.Strings(t.Assertions.Matchers)
 		if credited == 0 && !fact.Unsupported {
 			message := "No direct expect matcher was recognized; helper assertions remain unknown."
 			if probes > 0 {

@@ -29,6 +29,7 @@ var analysisLimits = map[string]string{
 	"declaration-generation": "This declaration is inside generated or conditional code; runtime case count is unknown.",
 	"nested-function":        "Assertions in nested functions may not execute or may execute later.",
 	"conditional-flow":       "Conditional control flow prevents complete assertion analysis.",
+	"loop":                   "A loop repeats a fixed wait an unknown number of times; the order of waits and assertions across iterations was not analyzed.",
 	"shadowed-binding":       "An imported test or expect binding is shadowed; affected matcher calls were excluded.",
 	"runtime-skip":           "A body-level skip or fixme depends on runtime behavior that was not evaluated.",
 	"unresolved-helper":      "A helper call was not resolved; assertions inside that helper remain unknown.",

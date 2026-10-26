@@ -22,6 +22,32 @@ SDK versions.
   `Promise.reject` still rejects and stays an assertion. Policy
   `assessment-source-v14`; the analyzer helper version is 11, and report
   version 3 and suite version 1 are unchanged (#21).
+- `9l assess` no longer reports a plain `for`, `for…of`, `for…in`, `while`
+  or `do` loop as `analysis-limit/conditional-flow`, which stays for
+  branches that can skip an assertion (`if`, `switch`, `try`, `?:`, `&&`,
+  `||`, `??`). A loop gives no limit of its own unless it repeats a fixed
+  wait, directly or through an inlined helper; that gives the new
+  `analysis-limit/loop`, since the order of waits and assertions across
+  iterations is not analyzed. Whether a loop runs at all is not evaluated
+  (#141).
+- Each test in the `9l assess` JSON report lists the assertions it is
+  credited with, as `assertions: {"count", "matchers"}`, whatever its limits:
+  recognized matchers in its body and resolved same-file helpers, and marked
+  helper calls, excluding caught probes. Matcher names come from the pinned
+  Playwright API; anything else is `custom` or `assertion-helper`. The text
+  report prints `recognized assertions: 2 (toBe, toEqual)` under such a
+  test, so direct assertions beside an unresolved helper call are visible
+  while the `unresolved-helper` limit stays at that call. No dimension
+  changes: static rules still never mark assertion adequacy or runtime
+  evidence `supported` (#141).
+- A file in which no test declaration is recognized, such as a helper module
+  passed as a path, is no longer counted as assessed. Suite summaries count
+  it in the new `noTests` field and the text summary as `N with no tests`;
+  the file is listed as `file "<path>": no tests`, and its report, like a
+  single-file report, carries a `no-tests` limit. Exit codes are unchanged
+  (#141).
+- The `assess` and `assess-suite` schemas add the test `assertions` summary
+  and the summary's `noTests` count (additive).
 
 ## 0.5.1 — 2026-10-26
 

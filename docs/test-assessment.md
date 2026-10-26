@@ -68,11 +68,16 @@ A single regular file gives the single-file report described below. Several
 inputs, a directory or a quoted pattern give one combined suite report
 (`version` 1) with the shared `policy`, `requirementsSHA256`, `execution` and
 `completeness`, one `files` entry per file holding its single-file `report` or
-an `error` code, a `summary` (files, assessed, failed, unrecognized, tests,
-findings and per-rule counts) and the union of limits. A file with an
+an `error` code, a `summary` (files, assessed, failed, unrecognized, noTests,
+tests, findings and per-rule counts) and the union of limits. A file with an
 unrecognised `test` import counts as `unrecognized`, not `assessed`, and the
 text summary lists it as not assessed; unlike a failed file it does not make
-the command exit 2. A directory contributes files named
+the command exit 2. A file in which no test declaration is recognized, such as
+a helper module given as a path, counts as `noTests`, not `assessed`: the text
+report prints `file "<path>": no tests`, the summary reads, for example,
+`2 files (1 assessed, 1 with no tests, 0 not assessed)`, and its report carries
+a `no-tests` limit. It does not change the exit code. Its assertions are not
+attributed to the specs that import it. A directory contributes files named
 like Playwright's default `testMatch` (`*.spec.*`/`*.test.*` with `js`, `ts`,
 `jsx`, `tsx`, `mjs`, `cjs`, `mts` or `cts`). A pattern matches path segments,
 with `**` matching any number of directories, and takes every matching file. A
@@ -170,8 +175,17 @@ prevent complete analysis. Every report is explicitly partial. Test locations
 identify recognized syntax; this inventory is not authoritative runtime
 discovery. Limit findings carry one bounded code and location per reason:
 `dynamic-callback`, `declaration-generation`, `nested-function`,
-`conditional-flow`, `shadowed-binding`, `runtime-skip`, `unresolved-helper` and
-`unknown-matcher`. A nested function, such as a callback, is a
+`conditional-flow`, `loop`, `shadowed-binding`, `runtime-skip`,
+`unresolved-helper` and `unknown-matcher`. `conditional-flow` marks a branch
+that can skip an assertion: `if`, `switch`, `try`, `?:`, `&&`, `||` and `??`.
+A `for`, `for…of`, `for…in`, `while` or `do` loop is not a branch. A loop
+whose body holds assertions, actions and calls gives no limit of its own;
+each assertion in it is recorded once, and whether or how often the loop runs
+is not evaluated, so a loop over an empty list runs none of them. Branches,
+calls and nested functions inside the loop remain limits of their own. A loop
+that repeats a fixed wait, directly or through an inlined helper, gives the
+`loop` limit, because the order of waits and assertions across iterations,
+which `absence-after-wait` depends on, is not analyzed. A nested function, such as a callback, is a
 `nested-function` limit only when it holds a recognized assertion or wait,
 directly or through an inlined helper, because how often and when it runs is
 unknown; it is reported once, at the outermost such function. Calls, branches
@@ -223,6 +237,24 @@ declaration and adds nothing to the inventory. Limit findings retain independent
 waits, exclusive/disabled syntax and recognized asynchronous matcher findings.
 Unsupported analysis never produces `no-direct-assertion`; a supported body
 with no recognized assertion still produces a suspected absence finding.
+
+Each test lists the assertions it is credited with as
+`assertions: {"count": N, "matchers": [...]}`: every recognized matcher in its
+body and in the same-file helpers resolved from it, and every marked helper
+call, whatever limits the test also has. `matchers` holds the distinct names,
+sorted: names from the pinned Playwright API, `custom` for any other matcher
+and `assertion-helper` for a marked helper call; other source identifiers are
+not reported. Caught probes are not counted. The text report prints
+`recognized assertions: 2 (toBe, toEqual)` under a test with any. A test whose
+direct assertions sit beside one unresolved helper call therefore no longer
+reads like a test with no visible assertion, while the `unresolved-helper`
+limit stays at that call and covers only what the helper itself asserts.
+The list records what the source contains, not what runs: an assertion inside
+a loop, a branch or a nested function is listed even though it may run any
+number of times, including none, and the limits say so. It changes no
+dimension. Assertion adequacy still becomes only `concern` or `unknown`, as
+static rules cannot show that assertions are adequate, and runtime evidence
+stays `unknown` because nothing is executed.
 
 | Finding | Classification | Meaning |
 | --- | --- | --- |
@@ -343,8 +375,12 @@ Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
 inputs invalidate prior assessments. Policy `assessment-source-v14` reads a
 matcher whose failure is caught as a probe with the informational
-`caught-assertion` rule; the helper version is 11 and report version 3 is
-unchanged. Policy `assessment-source-v13` parses
+`caught-assertion` rule, no longer reports a plain loop as `conditional-flow`
+(only a loop repeating a fixed wait gives the new `loop` limit), lists each
+test's credited `assertions`, and counts a file with no tests as `noTests`
+with a `no-tests` limit instead of as assessed. The helper version is 11;
+report version 3 and suite version 1 are unchanged, as the new fields are
+additive. Policy `assessment-source-v13` parses
 `.js`, `.mjs`, `.cjs` and `.jsx` specs as JavaScript, so TypeScript-only syntax
 in them is a `typescript-in-javascript` failure instead of a clean report; the
 helper version was 10 and report version 3 is unchanged. Policy
@@ -368,9 +404,10 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip`, `absence-after-wait`,
-`debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the `unknown-matcher` limit
-code, an absent `requirementsSHA256`, an optional test `title` and an optional
-finding `site` before upgrading. Requirement contract and agent provenance snapshot
+`debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the
+`unknown-matcher` and `loop` limit codes, an absent `requirementsSHA256`, an
+optional test `title`, an optional finding `site`, the test `assertions`
+summary and the suite summary's `noTests` count before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
 payloads, and omit titles unless `--titles` is given.
 

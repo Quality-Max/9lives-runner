@@ -533,8 +533,9 @@ function createAnalyzer(ts) {
                     return;
                   }
                 }
-                // Helpers, branches and shadowed identifiers prevent complete analysis.
-                if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
+                // Helpers, branches and shadowed identifiers prevent complete
+                // analysis. A loop is not a branch; see the loop case below.
+                if (ts.isIfStatement(child) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
                   || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
                 // Hazards are present in source whether or not their code runs, so
                 // they do not make a nested function a limit. A location is
@@ -628,6 +629,16 @@ function createAnalyzer(ts) {
                         known, ctx.caught || caught(child, asyncMatcher || !syncMatchers.has(matcher)));
                     }
                   }
+                }
+                // A loop repeats its body an unknown number of times. Its
+                // assertions are recorded once and need no limit; a fixed wait in
+                // it, directly or through an inlined helper, repeats too, and the
+                // order of waits and assertions across iterations is not read.
+                if (ts.isIterationStatement(child, false)) {
+                  const before = fact.sleeps.length;
+                  ts.forEachChild(child, scan);
+                  if (fact.sleeps.length > before) limited('loop', child);
+                  return;
                 }
                 ts.forEachChild(child, scan);
               }

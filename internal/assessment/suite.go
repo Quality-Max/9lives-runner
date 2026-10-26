@@ -186,10 +186,14 @@ type SuiteSummary struct {
 	Failed   int `json:"failed"`
 	// Unrecognized counts files whose `test` import assess does not
 	// recognise; they have a report but none of their tests were assessed.
-	Unrecognized int            `json:"unrecognized"`
-	Tests        int            `json:"tests"`
-	Findings     int            `json:"findings"`
-	Rules        map[string]int `json:"rules"`
+	Unrecognized int `json:"unrecognized"`
+	// NoTests counts files with a report in which no test declaration was
+	// recognized, such as a helper module given as a path. They are neither
+	// assessed nor failed.
+	NoTests  int            `json:"noTests"`
+	Tests    int            `json:"tests"`
+	Findings int            `json:"findings"`
+	Rules    map[string]int `json:"rules"`
 }
 
 // SuiteReport combines per-file reports. Completeness is partial whenever any
@@ -303,9 +307,12 @@ func buildSuite(files []SuiteFile, contract []byte) SuiteReport {
 			suite.Summary.Failed++
 			continue
 		}
-		if len(file.Report.UnrecognizedTestImports) > 0 {
+		switch {
+		case len(file.Report.UnrecognizedTestImports) > 0:
 			suite.Summary.Unrecognized++
-		} else {
+		case len(file.Report.Tests) == 0:
+			suite.Summary.NoTests++
+		default:
 			suite.Summary.Assessed++
 		}
 		suite.Summary.Tests += len(file.Report.Tests)
