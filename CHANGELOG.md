@@ -6,6 +6,20 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- `9l doctor --sdk <spec>` no longer reports `spec/import` as `missing`, and
+  so exits 2, for a valid spec that registers its tests through a named
+  import from a fixtures module, such as `import { it } from './fixtures'`
+  where the module exports `base.extend(…)` from `@9l/playwright`, beside an
+  unused `test` from `@playwright/test`. A named import the spec uses the way
+  a test function is used (called with a title and a callback outside any
+  test or hook body, or through `describe`, a hook, `extend` or `only`) is
+  now a warning that the module is not followed. Helpers called any other
+  way, such as `login(page)` or a `step('x', fn)` wrapper inside a test, do
+  not count, so a plain spec that uses them is still `missing`.
+  `spec/fixtures` reads the callbacks of such a test function too.
+
 ## 0.5.1 — 2026-10-26
 
 ### SDK

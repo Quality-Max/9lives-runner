@@ -263,6 +263,94 @@ export function readsTest(code: string, local: string): boolean {
   return new RegExp(`(?<![.\\w$])${name}\\s*\\.\\s*test(?![\\w$])`).test(code);
 }
 
+// The leading top-level arguments of the call whose `(` is at `open`, at most
+// `count`. Reading stops after `limit` characters, so the last argument may be
+// cut short; callers only look at how each argument starts.
+function leadingArguments(code: string, open: number, count: number, limit = 4096): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let from = open + 1;
+  const end = Math.min(code.length, open + limit);
+  for (let j = open + 1; j < end; j++) {
+    if (opens[code[j]]) depth++;
+    else if (closes.has(code[j])) {
+      if (depth === 0) { args.push(code.slice(from, j)); return args; }
+      depth--;
+    } else if (code[j] === ',' && depth === 0) {
+      args.push(code.slice(from, j));
+      if (args.length === count) return args;
+      from = j + 1;
+    }
+  }
+  args.push(code.slice(from, end));
+  return args;
+}
+
+// The identifier chain called by the `(` at `open`, such as `test.describe`,
+// or undefined when the bracket is not a call.
+function calledChain(code: string, open: number): string[] | undefined {
+  const chain = code.slice(Math.max(0, open - 256), open).match(/(?<![.\w$])([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?:<[^<>()]{0,128}>)?\s*$/);
+  return chain ? chain[1].split('.').map(segment => segment.trim()) : undefined;
+}
+
+// The brackets still open at each of `positions`, which must be ascending,
+// outermost first; one pass over the code serves every position.
+function openBrackets(code: string, positions: number[]): number[][] {
+  const result: number[][] = [];
+  const stack: number[] = [];
+  for (let j = 0, next = 0; next < positions.length; j++) {
+    while (next < positions.length && positions[next] <= j) { result.push([...stack]); next++; }
+    if (j >= code.length) break;
+    if (opens[code[j]]) stack.push(j);
+    else if (closes.has(code[j])) stack.pop();
+  }
+  return result;
+}
+
+// Whether any of the `open` brackets is a call argument list of a test or
+// hook, `test(…)`, `test.beforeEach(…)`, `test.step(…)` and the like, for a
+// name in `registrars` (a local, or `<namespace>.test`), but not `describe`,
+// whose callback registers tests. Playwright rejects tests and hooks
+// declared in a test body, so a titled call with a callback there is a
+// helper, such as a step wrapper.
+function insideTestBody(code: string, open: number[], registrars: Set<string>): boolean {
+  return open.some(bracket => {
+    const chain = code[bracket] === '(' ? calledChain(code, bracket) : undefined;
+    return Boolean(chain && (registrars.has(chain[0]) || registrars.has(chain.slice(0, 2).join('.'))) && !chain.includes('describe'));
+  });
+}
+
+const titled = /^\s*['"`]/;
+const callback = /^\s*(?:async\b\s*)?(?:function\b|\([\s\S]*?\)\s*(?::[^=;{}()]{0,256})?=>|[A-Za-z_$][\w$]*\s*=>)/;
+// Members of Playwright's test function. These declare tests or hooks with
+// any arguments; `extend` builds a test from it.
+const declaring = new Set(['describe', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'extend']);
+// These take a title and a callback when they register a test or a step.
+const titledMembers = new Set(['only', 'skip', 'fixme', 'fail', 'slow', 'step']);
+
+// Whether `local` is used the way a test function is: called with a title and
+// a callback, `it('x', async ({ page }) => …)` or `it('x', { tag }, fn)`,
+// outside any test or hook body; or through a member that declares tests or
+// hooks or extends the test, as in `it.describe(…)`, `it.beforeEach(…)` or
+// `it.extend(…)`, or `it.only('x', fn)`. A helper called any other way, such
+// as `login(page)`, `login('admin', page)` or `logger.info('x')`, is not.
+// `registrars` names the bindings already known to be test functions.
+export function registersTests(code: string, local: string, registrars: Set<string>): boolean {
+  const name = local.replace(/\$/g, '\\$');
+  const use = new RegExp(`(?<![.\\w$])${name}\\s*((?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*)(?:<[^<>()]{0,128}>\\s*)?\\(`, 'g');
+  // Titled calls with a callback, kept until their nesting is known.
+  const titledCalls: number[] = [];
+  for (const match of code.matchAll(use)) {
+    const members = match[1].split('.').map(member => member.trim()).filter(Boolean);
+    if (members.length && declaring.has(members[0])) return true;
+    if (members.length && !titledMembers.has(members[0])) continue;
+    const [title, ...rest] = leadingArguments(code, (match.index ?? 0) + match[0].length - 1, 3);
+    if (titled.test(title) && rest.some(arg => callback.test(arg))) titledCalls.push(match.index ?? 0);
+  }
+  const nesting = new Set([...registrars, local]);
+  return openBrackets(code, titledCalls).some(open => !insideTestBody(code, open, nesting));
+}
+
 // Top-level comma-separated parts of a bracket's contents.
 function topLevel(text: string): string[] {
   const parts: string[] = [];
@@ -280,11 +368,13 @@ function topLevel(text: string): string[] {
 // The fixtures a test or hook callback destructures from its first
 // parameter: `test('x', async ({ page }, testInfo) => …)`,
 // `test.beforeEach(function ({ context }: Fixtures) { … })`. Callees are
-// `test`, a local alias of an imported `test`, or `<namespace>.test`, with any
-// member such as `.beforeEach` or `.describe.serial`.
-export function callbackFixtures(scanned: Scanned, bindings: Binding[]): Set<string> {
+// `test`, a local alias of an imported `test`, a name in `providers` (an
+// import the spec uses as a test function, such as `it` from a fixtures
+// module), or `<namespace>.test`, with any member such as `.beforeEach` or
+// `.describe.serial`.
+export function callbackFixtures(scanned: Scanned, bindings: Binding[], providers: string[] = []): Set<string> {
   const { code } = scanned;
-  const tests = new Set(['test', ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local)]);
+  const tests = new Set(['test', ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local), ...providers]);
   const namespaces = new Set(bindings.filter(binding => binding.imported === '*' || binding.imported === 'default').map(binding => binding.local));
   const fixtures = new Set<string>();
   const parameters = /\(\s*\{/g;

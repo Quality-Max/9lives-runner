@@ -89,13 +89,23 @@ directory.
   the report is not ready and doctor exits 2. Anything that could provide
   the test instead makes it a warning: a `test` export from another module,
   a default or namespace import from a local module, or one from a package
-  that the spec reads `.test` from or calls, such as `fx.test(…)`. A spec that takes the SDK under another name but also
+  that the spec reads `.test` from or calls, such as `fx.test(…)`. So does a
+  named import the spec uses the way a test function is used, such as `it`
+  from a fixtures module that exports `base.extend(…)`: called with a title
+  and a callback outside any test or hook body (`it('x', async ({ page }) =>
+  …)`, `it('x', { tag }, fn)`), or through `describe`, a hook or `extend`
+  (`it.describe(…)`, `it.beforeEach(…)`, `base.extend(…)`), or `it.only('x',
+  fn)` and the like. Helpers called any other way, such as `login(page)`,
+  `login('admin', page)`, a step wrapper `step('x', fn)` inside a test, or
+  `expect.extend(…)`, do not count, so a spec that only adds them to the
+  plain `test` is still `missing`. A spec that takes the SDK under another name but also
   registers tests through a binding from `@playwright/test`, such as
   `n9l.expect` with a plain `test(…)`, is a warning too, since those tests
   are uninstrumented. So are `test as pwTest` from `@playwright/test` and a
   file doctor cannot read an import from: not verified, never missing.
 - `spec/fixtures`: `ok` when the first parameter of a `test` or `test.*` hook
-  callback destructures `page` or `context`, whatever follows it
+  callback, or of such a named test function as `it`, destructures `page` or
+  `context`, whatever follows it
   (`async ({ page }, testInfo)`, a type annotation, nested patterns).
   Otherwise a warning that no such parameter was found, because prove faults
   reach only fetch and XHR made through those fixtures. Other functions, such

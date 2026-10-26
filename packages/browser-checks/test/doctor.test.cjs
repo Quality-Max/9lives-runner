@@ -446,6 +446,63 @@ test('spec/import never fails a spec whose test may come from a default or packa
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+// A named import used the way a test function is used, called with a title
+// and a callback or through describe, a hook or extend, may be a test built
+// from @9l/playwright in a module doctor does not follow: a warning, never
+// missing. Helpers called any other way do not hide the plain test.
+test('spec/import never fails a spec that registers tests through a named import from a fixtures module', () => {
+  const plain = "import { test } from '@playwright/test';\n";
+  const root = specProject({
+    'it.spec.ts': poison + plain + "import { it } from './fixtures';\nit('x', async ({ page }) => { await page.goto('/'); });\n",
+    'describe.spec.ts': poison + plain + "import { it } from './fixtures';\nit.describe('d', () => {\n  it.beforeEach(async ({ context }) => {});\n});\n",
+    'serial.spec.ts': poison + plain + "import { it } from '../support/fixtures';\nit.describe.serial('d', () => {});\n",
+    'extend.spec.ts': poison + plain + "import { base } from './fixtures';\nconst t = base.extend({});\nt('x', async ({ page }) => {});\n",
+    'details.spec.ts': poison + plain + "import { it } from './fixtures';\nit('x', { tag: '@smoke' }, async function ({ page }) {});\n",
+    'template.spec.ts': poison + plain + "import { it } from './fixtures';\n['a', 'b'].forEach(name => { it(`x ${name}`, async ({ page }) => {}); });\n",
+    'only.spec.ts': poison + plain + "import { it } from './fixtures';\nit.only('x', async ({ page }) => {});\n",
+    'required.spec.cjs': poison + "const { test } = require('@playwright/test');\nconst { it: check } = require('./fixtures');\ncheck('x', async ({ page }) => {});\n",
+    'package.spec.ts': poison + plain + "import { it } from '@company/test-fixtures';\nit('x', async ({ page }) => {});\n",
+    'alone.spec.ts': poison + "import { it } from './fixtures';\nit('x', async ({ page }) => {});\n",
+    'both.spec.ts': poison + plain + "import { it } from './fixtures';\nit('x', async ({ page }) => {});\ntest('y', async ({ page }) => {});\n",
+  });
+  try {
+    const checks = name => specChecks(path.join(root, name));
+    for (const name of fs.readdirSync(root)) {
+      const check = byName(checks(name), 'spec/import');
+      assert.equal(check.status, 'warning', name);
+      assert.match(check.message, /registers tests with \w+ from another module, which is not followed; whether those tests come from @9l\/playwright is not verified/, name);
+    }
+    assert.match(byName(checks('it.spec.ts'), 'spec/import').message, /^it\.spec\.ts imports test from @playwright\/test but registers tests with it from another module/);
+    assert.match(byName(specChecks(path.join(root, 'serial.spec.ts'), true), 'spec/import').message, /with it from \.\.\/support\/fixtures,/);
+    assert.match(byName(checks('required.spec.cjs'), 'spec/import').message, /with check from another module/);
+    assert.match(byName(checks('both.spec.ts'), 'spec/import').message, /Tests the spec registers with the plain test from @playwright\/test are not instrumented\.$/);
+    assert.doesNotMatch(byName(checks('it.spec.ts'), 'spec/import').message, /plain test/);
+    for (const name of ['it.spec.ts', 'describe.spec.ts', 'details.spec.ts', 'template.spec.ts', 'only.spec.ts', 'required.spec.cjs', 'alone.spec.ts']) {
+      assert.equal(byName(checks(name), 'spec/fixtures').status, 'ok', `${name}: callbacks of a fixtures-module test count`);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('spec/import still fails a plain spec that only calls helpers from a local module', () => {
+  const plain = "import { test } from '@playwright/test';\n";
+  const root = specProject({
+    'login.spec.ts': poison + plain + "import { login } from './helpers';\ntest('x', async ({ page }) => { await login(page); });\n",
+    'titled.spec.ts': poison + plain + "import { login, fill } from './helpers';\ntest('x', async ({ page }) => { await login('admin', page); await fill('#q', 'text'); });\nlogin('top level', 'no callback');\n",
+    'step.spec.ts': poison + plain + "import { step } from './helpers';\ntest('x', async ({ page }) => {\n  await step('fill the form', async () => { await page.goto('/'); });\n});\ntest.describe('d', () => {\n  test.beforeEach(async () => { await step('seed', async () => {}); });\n});\n",
+    'members.spec.ts': poison + plain + "import { api, logger, server } from './helpers';\nserver.use(handler);\nlogger.info('x', () => 1);\ntest('x', async ({ page }) => { await api.login(page); api.only('y'); });\n",
+    'expect.spec.ts': poison + plain + "import { expect } from './fixtures';\nexpect.extend({ toBeShown() { return { pass: true }; } });\ntest('x', async ({ page }) => { expect(page).toBeTruthy(); });\n",
+    'comment.spec.ts': poison + plain + "import { it } from './fixtures';\n// it('x', async ({ page }) => {});\nconst s = \"it.describe('d', () => {})\";\ntest('x', async ({ page }) => {});\n",
+    'member-of.spec.ts': poison + plain + "import { it } from './fixtures';\nconst o = { it };\no.it('x', async () => {});\nx.it.describe('d', () => {});\ntest('x', async ({ page }) => {});\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const check = byName(specChecks(path.join(root, name)), 'spec/import');
+      assert.equal(check.status, 'missing', name);
+      assert.equal(check.fix, 'import test from @9l/playwright; prove instruments only its page and context fixtures', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // projects and spreads can change which testDir applies, however written.
 test('spec/config leaves testDir unverified for shorthand projects, spreads and merges', () => {
   const config = body => poison + "import { defineConfig, devices } from '@playwright/test';\nimport shared from './shared';\n" + body;

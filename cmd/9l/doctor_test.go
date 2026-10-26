@@ -451,6 +451,8 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 		"node_modules/@playwright/test/index.js":     "throw new Error('fixture-entry-must-not-run');\n",
 		"node_modules/@9l/playwright/index.js":       "throw new Error('fixture-entry-must-not-run');\n",
 		"tests/a.spec.ts":                            "import { test } from './fixtures';\nimport { test as pwTest } from '@playwright/test';\ntest('x', async ({ page }, testInfo) => {});\n",
+		"tests/it.spec.ts":                           "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', async ({ page }) => {});\n",
+		"tests/helper.spec.ts":                       "import { test } from '@playwright/test';\nimport { login } from './helpers';\ntest('x', async ({ page }) => { await login(page); });\n",
 	})
 	t.Chdir(t.TempDir())
 	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
@@ -472,6 +474,20 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 	}
 	if strings.Contains(raw, project) {
 		t.Fatal("doctor printed the project path without --paths")
+	}
+	// A test function imported from a fixtures module under another name,
+	// used as one, is not followed either; a helper beside the plain test is
+	// not a test function, so that spec still fails.
+	_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "it.spec.ts"))
+	if check := it["spec/import"]; check.Status != "warning" || !strings.Contains(check.Message, "registers tests with it from another module") {
+		t.Fatalf("spec/import with it from fixtures: %+v", check)
+	}
+	if check := it["spec/fixtures"]; check.Status != "ok" {
+		t.Fatalf("spec/fixtures with it from fixtures: %+v", check)
+	}
+	_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "helper.spec.ts"))
+	if check := helper["spec/import"]; check.Status != "missing" {
+		t.Fatalf("spec/import with a helper: %+v", check)
 	}
 	_, _, cwd := doctorChecks(t)
 	if cwd["workspace"].Status != "missing" || !strings.Contains(cwd["workspace"].Message, "current directory") {
