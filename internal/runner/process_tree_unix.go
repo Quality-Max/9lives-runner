@@ -35,15 +35,31 @@ func newUnixProcessTree(pid int) *unixProcessTree {
 	return &unixProcessTree{leader: pid, owned: make(map[int]string), terminated: make(map[int]string)}
 }
 
-func (tree *unixProcessTree) refresh() {
+// Required snapshots gate startup and cleanup. Retry a transient ps failure,
+// but never accept successful completion without fresh ownership evidence.
+func (tree *unixProcessTree) refreshRequired() {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err = tree.refresh(); err == nil {
+			return
+		}
+		if attempt < 2 {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if tree.err == nil {
+		tree.err = err
+	}
+}
+
+// Periodic observations are best effort. Keep remembered ownership across a
+// missed observation, but clear live identities until they can be rechecked.
+func (tree *unixProcessTree) refresh() error {
 	table, err := unixProcessTable()
 	if err != nil {
-		if tree.err == nil {
-			tree.err = err
-		}
 		// Never signal a remembered PID whose identity could not be rechecked.
 		tree.live = nil
-		return
+		return err
 	}
 	for pid, birth := range tree.owned {
 		if current, ok := table[pid]; !ok || current.started != birth {
@@ -74,6 +90,7 @@ func (tree *unixProcessTree) refresh() {
 			tree.live = append(tree.live, process)
 		}
 	}
+	return nil
 }
 
 func (tree *unixProcessTree) signal(signal syscall.Signal) bool {

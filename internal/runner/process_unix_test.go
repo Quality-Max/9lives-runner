@@ -133,7 +133,7 @@ func TestUnixOwnedDetachedServer(t *testing.T) {
 			}
 			connection.Close()
 			// Keep the server observable before the launcher exits or is canceled.
-			time.Sleep(150 * time.Millisecond)
+			time.Sleep(750 * time.Millisecond)
 			if mode == "cancel" {
 				cancel()
 			} else if mode == "normal-exit" || mode == "cancel-during-cleanup" {

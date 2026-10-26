@@ -23,17 +23,19 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 		return err, nil
 	}
 	tree := newUnixProcessTree(command.Process.Pid)
-	tree.refresh()
+	tree.refreshRequired()
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
-	ticker := time.NewTicker(50 * time.Millisecond)
+	// Playwright remains alive throughout its webServer lifetime. Sample at
+	// a lower rate while running; cleanup below keeps the short interval.
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			tree.refresh()
+			_ = tree.refresh()
 		case err := <-done:
-			tree.refresh()
+			tree.refreshRequired()
 			observed := observedSignal(command)
 			if errors.Is(err, exec.ErrWaitDelay) && command.ProcessState != nil && command.ProcessState.Success() {
 				err = nil
@@ -79,7 +81,7 @@ func observedSignal(command *exec.Cmd) *Termination {
 
 func stopGroup(pid int, kind, detail string, tree *unixProcessTree) *Termination {
 	termination := &Termination{Kind: kind, Detail: detail}
-	tree.refresh() // Capture ownership before terminating parents and reparenting.
+	tree.refreshRequired() // Capture ownership before terminating parents and reparenting.
 	sent := syscall.Kill(-pid, syscall.SIGTERM) == nil
 	if tree.signal(syscall.SIGTERM) || sent {
 		termination.Signal = "SIGTERM"
@@ -91,10 +93,10 @@ func stopGroup(pid int, kind, detail string, tree *unixProcessTree) *Termination
 	for groupAlive(pid) || len(tree.live) > 0 {
 		select {
 		case <-ticker.C:
-			tree.refresh()
+			tree.refreshRequired()
 			tree.signal(syscall.SIGTERM)
 		case <-deadline.C:
-			tree.refresh()
+			tree.refreshRequired()
 			sent := syscall.Kill(-pid, syscall.SIGKILL) == nil
 			if tree.signal(syscall.SIGKILL) || sent {
 				termination.EscalationSignal, termination.EscalationAfterMS = "SIGKILL", 2000
@@ -104,7 +106,7 @@ func stopGroup(pid int, kind, detail string, tree *unixProcessTree) *Termination
 			until := time.Now().Add(time.Second)
 			for len(tree.live) > 0 && time.Now().Before(until) {
 				time.Sleep(50 * time.Millisecond)
-				tree.refresh()
+				tree.refreshRequired()
 				tree.signal(syscall.SIGKILL)
 			}
 			if len(tree.live) > 0 && tree.err == nil {
