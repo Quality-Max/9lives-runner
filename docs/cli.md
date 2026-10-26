@@ -226,7 +226,10 @@ Destinations are checked before each request. Link checks requested from
 Node check the address they connect to as well, on every redirect, so a
 hostname whose DNS answer changes after the first check (DNS rebinding) is
 still refused; the browser's navigation, subrequests and WebSockets are not
-yet pinned that way (#108).
+yet pinned that way (#108). One more gap: same-origin links the page itself requests are followed
+through redirects inside Chromium, where only the first URL is checked, so
+such a link that redirects to a private or another loopback address is not
+yet refused (#108).
 
 `scan` and `inspect` are observations from one cold page load on this
 machine, not field data. They run in a Node helper embedded in the binary,
