@@ -68,7 +68,9 @@ The request is dispatched to the application as usual; the SDK holds its
 response for 35 s, longer than Playwright's default
 30 s test timeout and 5 s `expect` timeout, then lets it through. A redirect
 is held and delivered as the server sent it, so the browser follows it itself
-and the page sees the same redirect as without the fault. A test that fails
+and the page sees the same redirect as without the fault. Only that first hop
+is held: the request the browser makes to the redirect's target is not routed
+(see the limits below). A test that fails
 inside an `expect` gives `caught`, whether the `expect`'s own timeout ran out
 first or the test timeout interrupted it: either way an assertion step failed.
 A test that times out while waiting outside an `expect`, for example in
@@ -209,6 +211,10 @@ through unchanged.
   routes run first. A test route must call `route.fallback()` for the fault
   to apply; a catch-all route that calls `route.continue()`, as request
   loggers often do, makes every fault `not-exercised`.
+- Playwright does not route the request a browser makes to follow a server
+  redirect, so only a redirect's first hop can be faulted. A fault of any kind,
+  `delay` included, planned on a redirect's target is never applied and
+  reports `not-exercised`.
 - Faults are network-level only. Changed fields and application-side
   mutations are not implemented; `malformed-json` truncates a body but never
   changes individual fields, `delay` holds a response for a fixed 35 s, not a
