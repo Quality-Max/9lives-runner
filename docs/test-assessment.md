@@ -176,7 +176,7 @@ identify recognized syntax; this inventory is not authoritative runtime
 discovery. Limit findings carry one bounded code and location per reason:
 `dynamic-callback`, `declaration-generation`, `nested-function`,
 `conditional-flow`, `loop`, `shadowed-binding`, `runtime-skip`,
-`unresolved-helper` and `unknown-matcher`. `conditional-flow` marks a branch
+`unresolved-helper`, `unknown-matcher` and `possibly-soft`. `conditional-flow` marks a branch
 that can skip an assertion: `if`, `switch`, `try`, `?:`, `&&`, `||` and `??`.
 A `for`, `for…of`, `for…in`, `while` or `do` loop is not a branch. A loop
 whose body holds assertions, actions and calls gives no limit of its own;
@@ -349,9 +349,16 @@ caught when its call is: a rejection if it is a same-file `async` function,
 otherwise both a throw and a rejection. A matcher outside the pinned API,
 whose form is unknown, is likewise caught only when both forms are; when just
 one is, it stays an assertion and gives the `unknown-matcher` limit. A soft
-matcher, `expect.soft(...)` or one through `expect.configure(...)` with a
-`soft` option that is not literally `false`, records its failure on the test
-whether or not anything catches it, so it is never a probe. A handler is
+matcher, `expect.soft(...)` or one through `expect.configure(...)` whose
+`soft` option is `true`, records its failure on the test whether or not
+anything catches it, so it is never a probe. Each `expect.configure` call
+merges its options over the ones it was called on, so the outermost call that
+sets `soft` decides, and within one object the last property does. When that
+cannot be read, because the options are a variable, a spread, a computed key
+or a `soft` value other than `true` or `false`, a caught matcher stays an
+assertion and gives the `possibly-soft` limit rather than being credited
+silently or read as a probe. A call made on `expect.configure(...)` itself,
+such as `.configure(...)` or `.soft(...)`, is not a matcher. A handler is
 read through parentheses, `as`, `satisfies` and `!`. A handler rethrows when
 its own body, outside nested functions, has a `throw` statement or a
 `Promise.reject` call; any other handler, including a named function whose
@@ -393,7 +400,8 @@ Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
 inputs invalidate prior assessments. Policy `assessment-source-v14` reads a
 matcher whose failure is caught as a probe with the informational
-`caught-assertion` rule, no longer reports a plain loop as `conditional-flow`
+`caught-assertion` rule (with the `possibly-soft` limit for a caught matcher
+whose `soft` option cannot be read), no longer reports a plain loop as `conditional-flow`
 (only a loop repeating a fixed wait gives the new `loop` limit), lists each
 test's credited `assertions`, and counts a file with no tests as `noTests`
 with a `no-tests` limit instead of as assessed. The helper version is 11;
@@ -423,7 +431,7 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip`, `absence-after-wait`,
 `debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the
-`unknown-matcher` and `loop` limit codes, an absent `requirementsSHA256`, an
+`unknown-matcher`, `loop` and `possibly-soft` limit codes, an absent `requirementsSHA256`, an
 optional test `title`, an optional finding `site`, the test `assertions`
 summary and the suite summary's `noTests` count before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic

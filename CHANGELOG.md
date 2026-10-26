@@ -20,8 +20,13 @@ SDK versions.
   matcher. Promise handlers catch only an asynchronous matcher's rejection,
   not a synchronous matcher's throw, which a `try` block catches with or
   without `await`; a promise returned from a `try` block without `await`, by
-  a matcher or a helper, is not caught there. `expect.soft` matchers are never
-  probes, since Playwright records their failure on the test either way. A
+  a matcher or a helper, is not caught there. `expect.soft` matchers, and
+  those through `expect.configure` whose outermost `soft` option is `true`,
+  are never probes, since Playwright records their failure on the test either
+  way; a caught matcher whose `soft` option cannot be read (a variable, a
+  spread, a computed key or a non-literal value) stays an assertion and gives
+  the new `possibly-soft` limit. A call made on `expect.configure(...)`, such
+  as `.configure(...)` or `.soft(...)`, is no longer counted as a matcher. A
   matcher of unknown timing, or a marked helper not declared `async`, caught
   for only one of a throw and a rejection stays an assertion and gives
   `unknown-matcher`. A chain ending only in `.then(onFulfilled)` or

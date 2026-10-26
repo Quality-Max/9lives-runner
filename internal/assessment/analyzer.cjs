@@ -534,21 +534,38 @@ function createAnalyzer(ts) {
                 if (thrown !== rejected) limited('unknown-matcher', child);
                 return thrown && rejected;
               };
-              // expect.soft, or an expect configured as possibly soft, records its
-              // failure on the test whether or not anything catches it.
-              const soft = call => {
-                const possiblySoft = args => args.some(arg => !ts.isObjectLiteralExpression(arg) || arg.properties.some(property => ts.isSpreadAssignment(property)
-                  || (ts.isShorthandPropertyAssignment(property) && property.name.text === 'soft')
-                  || (ts.isPropertyAssignment(property) && (ts.isComputedPropertyName(property.name) || property.name.text === 'soft')
-                    && property.initializer.kind !== ts.SyntaxKind.FalseKeyword)));
+              // expect.soft, or an expect configured as soft, records its failure
+              // on the test whether or not anything catches it. Each
+              // expect.configure call merges its options over the ones it was
+              // called on, so the outermost call setting `soft` decides. Options
+              // the analyzer cannot read (a variable, a spread, a computed key or
+              // a `soft` value other than true or false) make it 'unknown'.
+              const softness = call => {
+                const configured = options => {
+                  if (!options) return null;
+                  if (!ts.isObjectLiteralExpression(options)) return 'unknown';
+                  let value = null;
+                  for (const property of options.properties) {
+                    const name = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) ? property.name.text : null;
+                    if (ts.isSpreadAssignment(property) || (property.name && ts.isComputedPropertyName(property.name))) value = 'unknown';
+                    else if (name !== 'soft') continue;
+                    else if (ts.isPropertyAssignment(property) && property.initializer.kind === ts.SyntaxKind.TrueKeyword) value = 'soft';
+                    else if (ts.isPropertyAssignment(property) && property.initializer.kind === ts.SyntaxKind.FalseKeyword) value = 'hard';
+                    else value = 'unknown';
+                  }
+                  return value;
+                };
                 for (let callee = call.expression; ;) {
                   if (ts.isPropertyAccessExpression(callee)) {
-                    if (callee.name.text === 'soft') return true;
+                    if (callee.name.text === 'soft') return 'soft';
                     callee = callee.expression;
                   } else if (ts.isCallExpression(callee)) {
-                    if (ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === 'configure' && possiblySoft(callee.arguments)) return true;
+                    if (ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === 'configure') {
+                      const value = configured(callee.arguments[0]);
+                      if (value) return value;
+                    }
                     callee = callee.expression;
-                  } else return false;
+                  } else return 'hard';
                 }
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
@@ -663,7 +680,9 @@ function createAnalyzer(ts) {
                     let chain = child.expression.expression;
                     const modifiers = [];
                     while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
-                    if (ts.isCallExpression(chain)) {
+                    // expect.configure(...) returns an expect function, so a call
+                    // made on it, such as .configure or .soft, is not a matcher.
+                    if (ts.isCallExpression(chain) && !(ts.isPropertyAccessExpression(chain.expression) && chain.expression.name.text === 'configure')) {
                       let anchor = child;
                       while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
                       const awaited = consumed(child);
@@ -675,8 +694,16 @@ function createAnalyzer(ts) {
                       // Matcher names outside the pinned API are source identifiers
                       // and are reported only as custom.
                       const known = asyncMatchers.has(matcher) || syncMatchers.has(matcher) ? matcher : 'custom';
+                      // A caught matcher that may be soft may still fail the test:
+                      // it stays an assertion, with a limit, rather than a probe.
+                      const soft = softness(chain);
+                      let isCaught = soft !== 'soft' && caught(child, asyncMatcher ? 'reject' : syncMatchers.has(matcher) ? 'throw' : null);
+                      if (isCaught && soft === 'unknown') {
+                        limited('possibly-soft', child);
+                        isCaught = false;
+                      }
                       assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments),
-                        known, !soft(chain) && caught(child, asyncMatcher ? 'reject' : syncMatchers.has(matcher) ? 'throw' : null));
+                        known, isCaught);
                     }
                   }
                 }

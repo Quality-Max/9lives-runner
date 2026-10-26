@@ -650,6 +650,36 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 	}
 }
 
+// A caught matcher on an expect configured from options that are not read
+// may be soft, and so may still fail the test. It is neither credited
+// silently nor read as a probe: it stays an assertion behind a limit.
+func TestAssessLimitsACaughtMatcherThatMayBeSoft(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"test('spread', async ({page}) => {\n" +
+		"  await expect.configure({ ...options })(page).toHaveURL('/a').catch(() => {});\n" +
+		"});\n" +
+		"test('literal', async ({page}) => {\n" +
+		"  await expect.configure({ ...options, soft: false })(page).toHaveURL('/b').catch(() => {});\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, fmt.Sprintf("%d %s", test.Assertions.Count, strings.Join(rules, ",")))
+	}
+	want := []string{"1 analysis-limit/possibly-soft@3", "0 no-direct-assertion@5,caught-assertion@6"}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("possibly soft findings %q", got)
+	}
+}
+
 func TestTestsListTheAssertionsTheyAreCreditedWith(t *testing.T) {
 	enabled := false
 	fact := Fact{Location: Location{1, 1}, Disabled: &enabled, Unsupported: true,

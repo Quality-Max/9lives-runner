@@ -533,6 +533,51 @@ test('a soft matcher fails the test whether or not it is caught', () => {
   assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught]), [[4, false], [5, false], [2, false], [7, false], [8, true]]);
 });
 
+test('a caught matcher whose expect may or may not be soft stays an assertion with a limit', () => {
+  // Options the analyzer cannot read may or may not set soft: crediting the
+  // matcher silently would overclaim, and calling it a probe would remove
+  // credit from a check that may still fail the test.
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('spread', async ({page}) => {
+      await expect.configure({ ...options })(page).toHaveURL('/a').catch(() => {});
+    });
+    test('variable', async ({page}) => {
+      await expect.configure(options)(page).toHaveURL('/b').catch(() => {});
+    });
+    test('runtime value', async ({page}) => {
+      await expect.configure({ soft: flag })(page).toHaveURL('/c').catch(() => {});
+    });
+    test('soft overridden by a later spread', async ({page}) => {
+      await expect.configure({ soft: true, ...options })(page).toHaveURL('/d').catch(() => {});
+    });
+    test('not caught', async ({page}) => {
+      await expect.configure({ ...options })(page).toHaveURL('/e');
+    });
+    test('soft set after the spread', async ({page}) => {
+      await expect.configure({ ...options, soft: true })(page).toHaveURL('/f').catch(() => {});
+    });
+    test('soft cleared after the spread', async ({page}) => {
+      await expect.configure({ ...options, soft: false })(page).toHaveURL('/g').catch(() => {});
+    });
+    test('a later configure decides', async ({page}) => {
+      await expect.configure({ soft: true }).configure({ soft: false })(page).toHaveURL('/h').catch(() => {});
+      await expect.configure({ soft: false }).configure({ timeout: 5 })(page).toHaveURL('/i').catch(() => {});
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.caught)),
+    [[false], [false], [false], [false], [false], [false], [true], [true, true]]);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[['possibly-soft', 3]], [['possibly-soft', 6]], [['possibly-soft', 9]], [['possibly-soft', 12]], [], [], [], []]);
+});
+
+test('a call on a configured expect is not a matcher', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('configured', async ({page}) => {
+      await expect.configure({ timeout: 5 }).configure({ soft: true })(page).toHaveURL('/a');
+      await expect.configure({ timeout: 5 }).soft(page).toHaveURL('/b');
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.matcher]), [[3, 'toHaveURL'], [4, 'toHaveURL']]);
+});
+
 test('a caught probe is no completion signal after a fixed wait and passes caught into helpers', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
     // @9l-assertion-helper
