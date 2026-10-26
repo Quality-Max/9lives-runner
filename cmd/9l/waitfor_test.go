@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -31,6 +32,16 @@ func closedPort(t *testing.T) string {
 	address := listener.Addr().String()
 	listener.Close()
 	return address
+}
+
+// closedPortReason reports whether reason is what a wait on a closed port
+// ends with. Windows retries a refused connection for about two seconds
+// before reporting it, so within a one-second wait the dial times out there.
+func closedPortReason(reason, prefix string) bool {
+	if reason == prefix+"connection refused" {
+		return true
+	}
+	return runtime.GOOS == "windows" && reason == prefix+"timed out"
 }
 
 func waitFor(ctx context.Context, t *testing.T, targets []string, timeout time.Duration) error {
@@ -100,8 +111,9 @@ func TestWaitForTargetsNamesTheTargetAndReasonWithoutSecrets(t *testing.T) {
 	if elapsed := time.Since(started); elapsed < time.Second {
 		t.Fatalf("reported not ready after 1s when %s had passed", elapsed)
 	}
-	err = waitFor(context.Background(), t, []string{closedPort(t)}, time.Second)
-	if err == nil || !strings.HasSuffix(err.Error(), "was not ready after 1s: dial: connection refused") {
+	closedTarget := closedPort(t)
+	err = waitFor(context.Background(), t, []string{closedTarget}, time.Second)
+	if err == nil || !closedPortReason(err.Error(), "--wait-for target not ready (environment): "+closedTarget+" was not ready after 1s: dial: ") {
 		t.Fatalf("tcp: %v", err)
 	}
 	for _, good := range []string{"[::1]:8080", "http://[::1]:8080/", "localhost:08080", "Https://example.test"} {
@@ -166,16 +178,16 @@ func TestRunWaitForLeavesAStoredIncompleteRunWithoutStarting(t *testing.T) {
 	target := closedPort(t)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"run", "--wait-for", "http://" + target + "/private?token=fixture-secret", "--wait-timeout", "1s", "--format", "json", "--receipt-dir", receipts, filepath.Join(project, "tests/shop.spec.ts")}, &stdout, &stderr)
-	reason := "not started: --wait-for target not ready (environment): http://" + target + " was not ready after 1s: dial: connection refused"
+	reasonPrefix := "not started: --wait-for target not ready (environment): http://" + target + " was not ready after 1s: dial: "
 	if code != exitIncomplete || !strings.Contains(stderr.String(), "target not ready (environment)") || strings.Contains(stderr.String()+stdout.String(), "fixture-secret") {
 		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}
 	var result runner.RunSummary
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.Outcome != runner.OutcomeIncomplete || result.Complete || result.PlannedJobs != 1 || result.Errors != 1 || len(result.Receipts) != 1 || result.Receipts[0].Error != reason {
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil || result.Outcome != runner.OutcomeIncomplete || result.Complete || result.PlannedJobs != 1 || result.Errors != 1 || len(result.Receipts) != 1 || !closedPortReason(result.Receipts[0].Error, reasonPrefix) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	stored, err := runner.LoadResult(receipts, result.RunID)
-	if err != nil || stored.Outcome != runner.OutcomeIncomplete || len(stored.Receipts) != 1 || stored.Receipts[0].Error != reason {
+	if err != nil || stored.Outcome != runner.OutcomeIncomplete || len(stored.Receipts) != 1 || stored.Receipts[0].Error != result.Receipts[0].Error {
 		t.Fatalf("stored=%+v err=%v", stored, err)
 	}
 	stdout.Reset()
