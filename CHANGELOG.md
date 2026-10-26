@@ -30,16 +30,22 @@ SDK versions.
   matcher of unknown timing, or a marked helper not declared `async`, caught
   for only one of a throw and a rejection stays an assertion and gives
   `unknown-matcher`. A chain ending only in `.then(onFulfilled)` or
-  `.finally`, a `.catch()` with no handler, or a handler that throws or
-  returns `Promise.reject`, including through parentheses or type wrappers,
-  still rejects and stays an assertion. Policy
+  `.finally`, a `.catch()` with no handler, a handler that is not a function
+  (a literal of any kind, an array or object literal, a template, `null`,
+  `undefined`, `void`, `typeof` or a prefix operator), or a handler that
+  throws or returns `Promise.reject`, including through parentheses or type
+  wrappers, still rejects and stays an assertion. A matcher on
+  `expect.poll(...)` is asynchronous however it is spaced and also on an
+  `expect.configure(...)` chain, so a caught poll is a probe. Policy
   `assessment-source-v14`; the analyzer helper version is 11, and report
   version 3 and suite version 1 are unchanged (#21).
 - `9l assess` no longer reports a plain `for`, `for…of`, `for…in`, `while`
   or `do` loop as `analysis-limit/conditional-flow`, which stays for
   branches that can skip an assertion (`if`, `switch`, `try`, `?:`, `&&`,
   `||`, `??`). A loop gives no limit of its own unless it repeats a fixed
-  wait, directly or through an inlined helper; that gives the new
+  wait in its body or in a condition or update, directly or through an
+  inlined helper (a wait in a `for` initializer or a `for…of` or `for…in`
+  input runs once and does not count); that gives the new
   `analysis-limit/loop`, since the order of waits and assertions across
   iterations is not analyzed. Whether a loop runs at all is not evaluated
   (#141).

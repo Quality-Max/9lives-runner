@@ -680,6 +680,50 @@ func TestAssessLimitsACaughtMatcherThatMayBeSoft(t *testing.T) {
 	}
 }
 
+// A non-callable rejection handler is ignored, so the matcher still fails
+// the test; a configured or spaced poll is asynchronous, so its .catch makes
+// it a probe; and a wait that a loop header evaluates once is no loop limit.
+func TestAssessReadsHandlersPollsAndLoopHeadersStructurally(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"async function loadRows(page) { await page.waitForTimeout(50); return rows; }\n" +
+		"test('non-callable handler', async ({page}) => {\n" +
+		"  await expect(page).toHaveURL('/a').catch(false);\n" +
+		"  await expect(page).toHaveURL('/b').then(() => {}, {});\n" +
+		"});\n" +
+		"test('configured poll', async () => {\n" +
+		"  await expect.configure({ timeout: 5 }).poll(() => count).toBe(3).catch(() => {});\n" +
+		"  await expect.poll (() => count).toBe(3).catch(() => {});\n" +
+		"});\n" +
+		"test('loop input', async ({page}) => {\n" +
+		"  for (const row of await loadRows(page)) { expect(row.id).toBeDefined(); }\n" +
+		"});\n" +
+		"test('loop condition', async ({page}) => {\n" +
+		"  while (await loadRows(page)) { expect(1).toBe(1); }\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, fmt.Sprintf("%d %s", test.Assertions.Count, strings.Join(rules, ",")))
+	}
+	want := []string{
+		"2 ",
+		"0 no-direct-assertion@7,caught-assertion@8,caught-assertion@9",
+		"1 fixed-wait@2",
+		"1 analysis-limit/loop@15,fixed-wait@2",
+	}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("structural findings %q", got)
+	}
+}
+
 func TestTestsListTheAssertionsTheyAreCreditedWith(t *testing.T) {
 	enabled := false
 	fact := Fact{Location: Location{1, 1}, Disabled: &enabled, Unsupported: true,

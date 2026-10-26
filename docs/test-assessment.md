@@ -183,9 +183,11 @@ whose body holds assertions, actions and calls gives no limit of its own;
 each assertion in it is recorded once, and whether or how often the loop runs
 is not evaluated, so a loop over an empty list runs none of them. Branches,
 calls and nested functions inside the loop remain limits of their own. A loop
-that repeats a fixed wait, directly or through an inlined helper, gives the
-`loop` limit, because the order of waits and assertions across iterations,
-which `absence-after-wait` depends on, is not analyzed. A nested function, such as a callback, is a
+that repeats a fixed wait in its body or in a condition or update, directly
+or through an inlined helper, gives the `loop` limit; a wait in a `for`
+initializer or a `for…of` or `for…in` input runs once and is read in order
+without that limit. The limit is given because the order of waits and
+assertions across iterations, which `absence-after-wait` depends on, is not analyzed. A nested function, such as a callback, is a
 `nested-function` limit only when it holds a recognized assertion or wait,
 directly or through an inlined helper, because how often and when it runs is
 unknown; it is reported once, at the outermost such function. Calls, branches
@@ -307,9 +309,11 @@ between the wait and the absence check counts as a completion signal. An
 unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the Playwright 1.61.1 API, whose matchers are
 unchanged through 1.64.0 (CI checks each release's type declarations),
-including locator, page, API-response and function assertions, and any
-matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
-are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
+including locator, page, API-response and function assertions, any
+matcher chained through `resolves` or `rejects`, and any matcher on
+`expect.poll(...)`, including one called on an `expect.configure(...)` chain.
+These are read from the syntax tree, so spacing and line breaks do not hide
+them. Generic and snapshot matchers are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
 chain on it, is awaited or returned by the function being scanned; the chained
 promise methods are not themselves matchers. A matcher that is an element of
 an array literal passed to `Promise.all`, `allSettled`, `race` or `any` is
@@ -359,11 +363,14 @@ or a `soft` value other than `true` or `false`, a caught matcher stays an
 assertion and gives the `possibly-soft` limit rather than being credited
 silently or read as a probe. A call made on `expect.configure(...)` itself,
 such as `.configure(...)` or `.soft(...)`, is not a matcher. A handler is
-read through parentheses, `as`, `satisfies` and `!`. A handler rethrows when
+read through parentheses, `as`, `satisfies` and a non-null `!`. A handler rethrows when
 its own body, outside nested functions, has a `throw` statement or a
 `Promise.reject` call; any other handler, including a named function whose
-body is not visible, is taken to swallow the failure. A `.catch()` with no
-handler, a `null`, `undefined` or `void` handler, a chain ending only in
+body is not visible, is taken to swallow the failure. A promise ignores a
+handler that is not a function, so a `.catch()` with no handler, a handler
+that is a literal of any kind (such as `false`, `0` or `'x'`), an array or
+object literal, a template, `null`, `undefined`, `void`, `typeof` or a prefix
+operator such as `!` or `-`, a chain ending only in
 `.then(onFulfilled)` or `.finally`, and a `try` with only `finally` still
 reject, so those matchers stay assertions. A probe gets `caught-assertion`
 (informational) at the matcher and does not count as an assertion for

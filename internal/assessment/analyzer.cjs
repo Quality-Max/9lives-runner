@@ -469,10 +469,18 @@ function createAnalyzer(ts) {
                   || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
                 return node;
               };
+              // A promise ignores a handler that is not a function, so the
+              // rejection passes on. Literals of any kind, array and object
+              // literals, templates, `undefined`, `void`, `typeof` and prefix
+              // operators never yield one; an identifier or call result may.
+              const callable = handler => !(ts.isLiteralExpression(handler) || ts.isTemplateExpression(handler)
+                || [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(handler.kind)
+                || ts.isArrayLiteralExpression(handler) || ts.isObjectLiteralExpression(handler)
+                || ts.isVoidExpression(handler) || ts.isTypeOfExpression(handler) || ts.isPrefixUnaryExpression(handler)
+                || (ts.isIdentifier(handler) && handler.text === 'undefined'));
               const swallows = argument => {
                 const handler = bare(argument);
-                return !!handler && handler.kind !== ts.SyntaxKind.NullKeyword && !ts.isVoidExpression(handler)
-                  && !(ts.isIdentifier(handler) && handler.text === 'undefined') && !(isFunction(handler) && rethrows(handler));
+                return !!handler && callable(handler) && !(isFunction(handler) && rethrows(handler));
               };
               // Whether a then/catch/finally chain on the promise handles its
               // rejection: .catch(handler), or .then(onFulfilled, onRejected).
@@ -566,6 +574,21 @@ function createAnalyzer(ts) {
                     }
                     callee = callee.expression;
                   } else return 'hard';
+                }
+              };
+              // expect.poll(...), also on an expect.configure(...) chain, read
+              // from the syntax tree rather than the source text, so spacing,
+              // line breaks and configuration do not hide it. Every matcher on
+              // a poll is asynchronous.
+              const polls = call => {
+                const callee = bare(call.expression);
+                if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'poll') return false;
+                for (let receiver = bare(callee.expression); ;) {
+                  if (ts.isIdentifier(receiver)) return expects.has(receiver.text);
+                  if (!ts.isCallExpression(receiver)) return false;
+                  const configure = bare(receiver.expression);
+                  if (!ts.isPropertyAccessExpression(configure) || configure.name.text !== 'configure') return false;
+                  receiver = bare(configure.expression);
                 }
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
@@ -687,8 +710,7 @@ function createAnalyzer(ts) {
                       while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
                       const awaited = consumed(child);
                       const matcher = child.expression.name.text;
-                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects')
-                        || child.getText(file).startsWith(root(child.expression) + '.poll(');
+                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects') || polls(chain);
                       // An unawaited matcher of unknown timing may be an unawaited promise.
                       if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited && !ctx.floating) limited('unknown-matcher', child);
                       // Matcher names outside the pinned API are source identifiers
@@ -709,12 +731,21 @@ function createAnalyzer(ts) {
                 }
                 // A loop repeats its body an unknown number of times. Its
                 // assertions are recorded once and need no limit; a fixed wait in
-                // it, directly or through an inlined helper, repeats too, and the
-                // order of waits and assertions across iterations is not read.
+                // its body or in a condition or update, directly or through an
+                // inlined helper, repeats too, and the order of waits and
+                // assertions across iterations is not read. A for initializer
+                // and a for…of or for…in input run once, so a wait there is
+                // recorded in order but does not make the loop a limit.
                 if (ts.isIterationStatement(child, false)) {
-                  const before = fact.sleeps.length;
-                  ts.forEachChild(child, scan);
-                  if (fact.sleeps.length > before) limited('loop', child);
+                  const once = new Set([ts.isForStatement(child) ? child.initializer : null,
+                    ts.isForOfStatement(child) || ts.isForInStatement(child) ? child.expression : null]);
+                  let repeated = false;
+                  ts.forEachChild(child, part => {
+                    const before = fact.sleeps.length;
+                    scan(part);
+                    if (!once.has(part) && fact.sleeps.length > before) repeated = true;
+                  });
+                  if (repeated) limited('loop', child);
                   return;
                 }
                 ts.forEachChild(child, scan);
