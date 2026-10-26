@@ -268,6 +268,11 @@ test('the executable check reports only what the CLI compared', () => {
     }
     assert.equal(check({ samePath: false, otherOnPath: true, selfUnknown: true }).status, 'warning');
     assert.equal(check({ samePath: true, otherOnPath: true }).status, 'ok');
+    assert.equal(check({ samePath: true, otherOnPath: true }).message, 'this executable is the 9l first on PATH.');
+    // --paths names both files whatever the comparison found.
+    const same = check({ samePath: true, otherOnPath: true, self: '/fixture/bin/9l', other: '/fixture/bin/9l' });
+    assert.equal(same.status, 'ok');
+    assert.equal(same.message, 'this executable is the 9l first on PATH. This executable: /fixture/bin/9l. First on PATH: /fixture/bin/9l.');
     const differs = check({ samePath: false, otherOnPath: true });
     assert.equal(differs.status, 'warning');
     assert.match(differs.message, /^the 9l first on PATH is not this executable; terminals, scripts and MCP hosts start that one unless configured with a full path\.$/);
@@ -398,4 +403,79 @@ test('spec mode judges the project prove would use for the spec', () => {
     fs.rmSync(project, { recursive: true, force: true });
     fs.rmSync(elsewhere, { recursive: true, force: true });
   }
+});
+
+// A spec that takes the SDK under another name but registers tests with test
+// from @playwright/test runs those tests uninstrumented, so it is not ok.
+test('spec/import does not pass a spec that registers tests with the plain test', () => {
+  const root = specProject({
+    'expect-only.spec.ts': poison + "import * as n9l from '@9l/playwright';\nimport { test } from '@playwright/test';\ntest('x', async ({ page }) => { n9l.expect(page).toBeTruthy(); });\n",
+    'default-sdk.spec.ts': poison + "import n9l from '@9l/playwright';\nimport { test } from '@playwright/test';\ntest.describe('d', () => { n9l.test('x', async ({ page }) => {}); });\n",
+    'both-named.spec.ts': poison + "import { test } from '@9l/playwright';\nimport { test as pw } from '@playwright/test';\npw('x', async ({ page }) => {});\n",
+    'plain-ns.spec.ts': poison + "import { test } from '@9l/playwright';\nimport * as pw from '@playwright/test';\npw.test('x', async ({ page }) => {});\n",
+    'expect-from-plain.spec.ts': poison + "import { test } from '@9l/playwright';\nimport { expect } from '@playwright/test';\ntest('x', async ({ page }) => { expect(page).toBeTruthy(); });\n",
+  });
+  try {
+    const status = name => byName(specChecks(path.join(root, name)), 'spec/import');
+    for (const name of ['expect-only.spec.ts', 'default-sdk.spec.ts', 'both-named.spec.ts', 'plain-ns.spec.ts']) {
+      assert.equal(status(name).status, 'warning', name);
+      assert.match(status(name).message, /also registers tests with test from @playwright\/test, which prove does not instrument; which tests use which is not verified/, name);
+    }
+    assert.equal(status('expect-from-plain.spec.ts').status, 'ok', 'expect from @playwright/test registers nothing');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A default import, or a namespace from a package, can provide the test a
+// spec registers with; doctor does not follow it, so it is never missing.
+test('spec/import never fails a spec whose test may come from a default or package import', () => {
+  const root = specProject({
+    'default-local.spec.ts': poison + "import { test } from '@playwright/test';\nimport fixtures from './fixtures';\nfixtures.test('x', async ({ page }) => {});\n",
+    'default-called.spec.ts': poison + "import { test } from '@playwright/test';\nimport it from '@company/test-fixtures';\nit('x', async ({ page }) => {});\n",
+    'package-ns.spec.ts': poison + "import { test } from '@playwright/test';\nimport * as fx from '@company/test-fixtures';\nfx.test('x', async ({ page }) => {});\n",
+    'package-require.spec.cjs': poison + "const { test } = require('@playwright/test');\nconst fx = require('@company/test-fixtures');\nfx.test('x', async ({ page }) => {});\n",
+    'helpers.spec.ts': poison + "import { test } from '@playwright/test';\nimport * as path from 'node:path';\nimport fs from 'node:fs';\ntest('x', async ({ page }) => { fs.readFileSync(path.join('a', 'b')); });\n",
+  });
+  try {
+    const status = name => byName(specChecks(path.join(root, name)), 'spec/import');
+    for (const name of ['default-local.spec.ts', 'default-called.spec.ts', 'package-ns.spec.ts', 'package-require.spec.cjs']) {
+      assert.equal(status(name).status, 'warning', name);
+      assert.match(status(name).message, /also imports from another module, which is not followed/, name);
+    }
+    assert.match(byName(specChecks(path.join(root, 'package-ns.spec.ts'), true), 'spec/import').message, /also imports from @company\/test-fixtures,/);
+    assert.equal(status('helpers.spec.ts').status, 'missing', 'modules the spec never takes a test from do not hide the plain test');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// projects and spreads can change which testDir applies, however written.
+test('spec/config leaves testDir unverified for shorthand projects, spreads and merges', () => {
+  const config = body => poison + "import { defineConfig, devices } from '@playwright/test';\nimport shared from './shared';\n" + body;
+  const root = specProject({
+    'shorthand/playwright.config.ts': config("import { projects } from './projects';\nexport default defineConfig({ testDir: './api', projects });\n"),
+    'assigned/playwright.config.ts': config("const config = { testDir: './api' };\nconfig.projects = shared;\nexport default config;\n"),
+    'spread-after/playwright.config.ts': config("export default defineConfig({ testDir: './api', ...shared });\n"),
+    'spread-before/playwright.config.ts': config("export default defineConfig({ ...shared, testDir: './api' });\n"),
+    'merged/playwright.config.ts': config("export default defineConfig(shared, { testDir: './api' });\n"),
+    'spread-args/playwright.config.ts': config("export default defineConfig(...[shared], { testDir: './api' });\n"),
+    'assign/playwright.config.ts': config("module.exports = Object.assign({ testDir: './api' }, shared);\n"),
+    'use-spread/playwright.config.ts': config("export default defineConfig({ testDir: './api', reporter: [...shared.reporters], use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost' }, });\n"),
+  });
+  for (const name of fs.readdirSync(root)) {
+    fs.mkdirSync(path.join(root, name, 'web'));
+    fs.writeFileSync(path.join(root, name, 'web', 'a.spec.ts'), sdkSpec);
+  }
+  try {
+    const config = name => byName(specChecks(path.join(root, name, 'web', 'a.spec.ts')), 'spec/config');
+    for (const name of ['shorthand', 'assigned']) {
+      assert.equal(config(name).status, 'ok', name);
+      assert.match(config(name).message, /testDir not verified: the config defines projects/, name);
+    }
+    for (const name of ['spread-after', 'spread-before', 'merged', 'spread-args', 'assign']) {
+      assert.equal(config(name).status, 'ok', name);
+      assert.match(config(name).message, /testDir not verified: the config spreads or merges values that can set testDir or projects/, name);
+    }
+    // A spread into use or an array sets neither, so the literal still applies.
+    const verified = config('use-spread');
+    assert.equal(verified.status, 'warning');
+    assert.match(verified.message, /outside its literal testDir/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

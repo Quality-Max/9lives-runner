@@ -13,14 +13,18 @@ SDK versions.
   differ, since terminals, scripts and MCP hosts start the one on PATH unless
   configured with a full path. It also warns when no `9l` is on PATH, or
   when a relative PATH entry found it. The paths appear only with the new
-  `--paths` flag, which is for local reading and never persisted.
+  `--paths` flag, which is for local reading and never persisted, and then
+  in every case, including when the two are the same file.
   `9l doctor --sdk <spec>` reads one spec as text and adds `spec/import`
   (`missing`, so exit 2, only when the binding `test` comes from
   `@playwright/test` and nothing else could provide it; a `test` from a local
-  fixtures module is a warning), `spec/fixtures` (whether a `test` or hook
-  callback destructures `page` or `context`) and `spec/config` (the nearest
-  `playwright.config.*` and, for a single literal `testDir` in a config
-  without `projects`, whether the spec lies under it). In spec mode the
+  fixtures module, or a package default or namespace import the spec takes
+  `.test` from, is a warning, and so is a spec that takes the SDK but also
+  registers tests with the plain `test`), `spec/fixtures` (whether a `test`
+  or hook callback destructures `page` or `context`) and `spec/config` (the
+  nearest `playwright.config.*` and, for a single literal `testDir` in a
+  config that neither names `projects` nor spreads or merges other values,
+  whether the spec lies under it). In spec mode the
   workspace and package checks describe the project `prove` would use for
   the spec. Neither the spec nor the config is executed; basenames only
   unless `--paths`. (#165)

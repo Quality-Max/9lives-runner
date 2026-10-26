@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { Binding, callbackFixtures, importBindings, scan } from './source-text';
+import { Binding, callbackFixtures, calls, importBindings, mergesValues, readsTest, scan } from './source-text';
 
 export type Diagnostic = { name: string; status: 'ok' | 'warning' | 'missing'; message: string; fix?: string };
 // Engine is what the CLI admits (protocol and capabilities) and can request
@@ -75,7 +75,7 @@ function executableCheck(found: Executable): Diagnostic {
       message: `the 9l first on PATH ${found.samePath ? 'is' : 'is not'} this executable, found through a relative PATH entry that resolves against the current directory; a host started elsewhere finds another 9l or none.${self}${other}`,
       fix: "replace the relative PATH entry with an absolute directory, or configure the host with this executable's full path" };
   }
-  if (found.samePath) return { name: 'executable', status: 'ok', message: 'this executable is the 9l first on PATH.' };
+  if (found.samePath) return { name: 'executable', status: 'ok', message: `this executable is the 9l first on PATH.${self}${other}` };
   return { name: 'executable', status: 'warning',
     message: `the 9l first on PATH is not this executable; terminals, scripts and MCP hosts start that one unless configured with a full path.${self}${other}`,
     fix: "put this build's directory first on PATH, or configure the host with this executable's full path" };
@@ -128,17 +128,25 @@ export function proveProject(spec: string): { config?: string; project?: string 
   return { config, project: config ? path.dirname(config) : project };
 }
 
-function importCheck(name: string, bindings: Binding[], paths: boolean): Diagnostic {
+function importCheck(name: string, code: string, bindings: Binding[], paths: boolean): Diagnostic {
+  const local = (module: string) => paths ? module : 'another module';
   const test = bindings.find(binding => binding.local === 'test');
-  if (test?.module === sdkModule) return { name: 'spec/import', status: 'ok', message: `${name} imports test from @9l/playwright.` };
+  // Tests registered through a binding from @playwright/test are not
+  // instrumented, even when the SDK is imported too, say for its expect.
+  const plain = bindings.filter(binding => binding.module === testModule);
+  const plainRegisters = plain.some(binding => binding.imported === 'test' ? calls(code, binding.local) : ['*', 'default'].includes(binding.imported) && readsTest(code, binding.local));
+  const mixed = { name: 'spec/import', status: 'warning' as const, message: `${name} takes test from @9l/playwright but also registers tests with test from @playwright/test, which prove does not instrument; which tests use which is not verified.` };
+  if (test?.module === sdkModule) return plainRegisters ? mixed : { name: 'spec/import', status: 'ok', message: `${name} imports test from @9l/playwright.` };
   // `import { test as base }` then `base.extend`, or `n9l.test` through a namespace.
   if (bindings.some(binding => binding.module === sdkModule && ['test', '*', 'default'].includes(binding.imported))) {
-    return { name: 'spec/import', status: 'ok', message: `${name} takes test from @9l/playwright under another name.` };
+    return plainRegisters ? mixed : { name: 'spec/import', status: 'ok', message: `${name} takes test from @9l/playwright under another name.` };
   }
-  const local = (module: string) => paths ? module : 'another module';
   if (test && test.module === testModule && test.imported === 'test') {
-    // Another module could still provide the test the spec runs.
-    const other = bindings.find(binding => binding.module !== testModule && (binding.imported === 'test' || (binding.imported === '*' && /^[./]/.test(binding.module))));
+    // Another module could still provide the test the spec runs: a `test`
+    // export, a local fixtures module, or a namespace or default import the
+    // spec reads `.test` from or calls.
+    const other = bindings.find(binding => binding.module !== testModule && (binding.imported === 'test'
+      || (['*', 'default'].includes(binding.imported) && (/^[./]/.test(binding.module) || readsTest(code, binding.local) || (binding.imported === 'default' && calls(code, binding.local, false))))));
     if (other) {
       return { name: 'spec/import', status: 'warning', message: `${name} imports test from @playwright/test and also imports from ${local(other.module)}, which is not followed; whether its tests come from @9l/playwright is not verified.` };
     }
@@ -167,7 +175,7 @@ export function specChecks(spec: string, paths = false): Diagnostic[] {
   } else {
     const scanned = scan(source.text ?? '');
     const bindings = importBindings(scanned);
-    checks.push(importCheck(name, bindings, paths));
+    checks.push(importCheck(name, scanned.code, bindings, paths));
     const fixtures = callbackFixtures(scanned, bindings);
     checks.push(fixtures.has('page') || fixtures.has('context')
       ? { name: 'spec/fixtures', status: 'ok', message: `${name} takes the page or context fixture in a test or hook callback.` }
@@ -185,10 +193,15 @@ export function specChecks(spec: string, paths = false): Diagnostic[] {
     return checks;
   }
   const { code, literals } = scan(contents.text ?? '');
-  if (/(?:^|[^.\w$])projects\s*:/.test(code)) {
+  // `projects: […]`, shorthand `{ projects }` or `config.projects = …`.
+  if (/(?<![\w$])projects(?![\w$])/.test(code)) {
     // A project without its own testDir inherits the config's, so with
     // projects only executing the config tells which one selects the spec.
     checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: the config defines projects, so which one selects the spec is only known by executing it.` });
+    return checks;
+  }
+  if (mergesValues(code)) {
+    checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: the config spreads or merges values that can set testDir or projects, so only executing it tells which applies.` });
     return checks;
   }
   // A whole string literal: the next token after it ends the property, so

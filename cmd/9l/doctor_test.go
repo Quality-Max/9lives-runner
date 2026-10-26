@@ -380,6 +380,41 @@ func TestDoctorReportsARelativePathEntry(t *testing.T) {
 	}
 }
 
+// When PATH finds this very executable the check is ok, and --paths still
+// names the file, so a user can see which build that is.
+func TestDoctorNamesTheExecutableOnPathWithPaths(t *testing.T) {
+	nodeDir := pathWithOnlyNode(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	name := "9l"
+	if runtime.GOOS == "windows" {
+		name = "9l.exe"
+	}
+	if err := os.Symlink(self, filepath.Join(bin, name)); err != nil {
+		t.Skipf("cannot link the test executable: %v", err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+nodeDir)
+	t.Chdir(t.TempDir())
+	_, raw, found := doctorChecks(t)
+	if check := found["executable"]; check.Status != "ok" || check.Message != "this executable is the 9l first on PATH." {
+		t.Fatalf("executable: %+v", check)
+	}
+	if strings.Contains(raw, bin) {
+		t.Fatal("doctor printed paths without --paths")
+	}
+	_, _, found = doctorChecks(t, "--paths")
+	check := found["executable"]
+	if check.Status != "ok" || !strings.HasPrefix(check.Message, "this executable is the 9l first on PATH. This executable: ") || !strings.Contains(check.Message, ". First on PATH: ") {
+		t.Fatalf("--paths drops the paths of a matching executable: %+v", check)
+	}
+	if real, err := filepath.EvalSymlinks(self); err == nil && runtime.GOOS != "windows" && strings.Count(check.Message, real) != 2 {
+		t.Fatalf("--paths should name %s twice: %+v", real, check)
+	}
+}
+
 func writeFiles(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for name, content := range files {

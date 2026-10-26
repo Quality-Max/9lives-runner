@@ -6,6 +6,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.scan = scan;
 exports.importBindings = importBindings;
+exports.mergesValues = mergesValues;
+exports.calls = calls;
+exports.readsTest = readsTest;
 exports.callbackFixtures = callbackFixtures;
 // After these, a `/` starts a regex literal rather than a division.
 const regexAfterChar = new Set('(,=:[!&|?{};+-*%<>~^'.split(''));
@@ -246,6 +249,62 @@ function enclosingCall(code, start, limit = 4096) {
         }
     }
     return undefined;
+}
+// The nearest bracket that is still open at `start`, at any distance.
+function enclosing(code, start) {
+    let depth = 0;
+    for (let j = start - 1; j >= 0; j--) {
+        if (closes.has(code[j]))
+            depth++;
+        else if (opens[code[j]]) {
+            if (depth === 0)
+                return j;
+            depth--;
+        }
+    }
+    return undefined;
+}
+// Whether a config may take testDir or projects from values doctor cannot
+// read: a spread into an object or a call, or a call that merges several
+// configs, such as `defineConfig(base, { … })` or `Object.assign`. A spread
+// inside a `use: { … }` value, such as `...devices['Desktop Chrome']`, and a
+// spread into an array set neither, so they do not count.
+function mergesValues(code) {
+    if (/(?<![.\w$])Object\s*\.\s*assign\s*\(/.test(code))
+        return true;
+    for (const match of code.matchAll(/(?<![.\w$])defineConfig\s*(?:<[^<>()]{0,128}>\s*)?\(/g)) {
+        const open = (match.index ?? 0) + match[0].length - 1;
+        const close = matching(code, open, code.length);
+        if (close === undefined || topLevel(code.slice(open + 1, close)).filter(part => part.trim()).length > 1)
+            return true;
+    }
+    for (const match of code.matchAll(/\.\.\./g)) {
+        const owner = enclosing(code, match.index ?? 0);
+        if (owner === undefined || code[owner] === '[')
+            continue;
+        let inUse = false;
+        for (let open = owner; open !== undefined; open = enclosing(code, open)) {
+            if (code[open] === '{' && /(?<![.\w$])use\s*:\s*$/.test(code.slice(Math.max(0, open - 64), open))) {
+                inUse = true;
+                break;
+            }
+        }
+        if (!inUse)
+            return true;
+    }
+    return false;
+}
+// Whether `local` is called, as in `test('x', …)`, or with `members` also
+// through them, as in `test.describe(…)` or `test.extend(…)`.
+function calls(code, local, members = true) {
+    const name = local.replace(/\$/g, '\\$');
+    const chain = members ? '(?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*' : '';
+    return new RegExp(`(?<![.\\w$])${name}\\s*${chain}(?:<[^<>()]{0,128}>\\s*)?\\(`).test(code);
+}
+// Whether `local.test` is read, as in `fixtures.test('x', …)`.
+function readsTest(code, local) {
+    const name = local.replace(/\$/g, '\\$');
+    return new RegExp(`(?<![.\\w$])${name}\\s*\\.\\s*test(?![\\w$])`).test(code);
 }
 // Top-level comma-separated parts of a bracket's contents.
 function topLevel(text) {

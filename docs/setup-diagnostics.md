@@ -86,9 +86,14 @@ directory.
   when the binding `test` comes from `@playwright/test` and nothing else in
   the file could provide it: `prove` would then run its baseline
   uninstrumented and exit 1 because no browser context was instrumented, so
-  the report is not ready and doctor exits 2. A `test` from a local fixtures
-  module, `test as pwTest` from `@playwright/test`, or a file doctor cannot
-  read an import from is a warning: not verified, never missing.
+  the report is not ready and doctor exits 2. Anything that could provide
+  the test instead makes it a warning: a `test` export from another module,
+  a default or namespace import from a local module, or one from a package
+  that the spec reads `.test` from or calls, such as `fx.test(…)`. A spec that takes the SDK under another name but also
+  registers tests through a binding from `@playwright/test`, such as
+  `n9l.expect` with a plain `test(…)`, is a warning too, since those tests
+  are uninstrumented. So are `test as pwTest` from `@playwright/test` and a
+  file doctor cannot read an import from: not verified, never missing.
 - `spec/fixtures`: `ok` when the first parameter of a `test` or `test.*` hook
   callback destructures `page` or `context`, whatever follows it
   (`async ({ page }, testInfo)`, a type annotation, nested patterns).
@@ -100,10 +105,14 @@ directory.
   `--config`. When the config contains exactly one literal `testDir: '…'`
   as a whole property value, the check reports whether the spec is under it
   (`ok`) or outside it (a warning, with `prove --config` as the way out). A
-  computed `testDir`, several, or any config that defines `projects` (a
-  project without its own `testDir` inherits the config's) is reported as
-  not verified, and `testMatch` is never read. No config above the spec is a
-  warning.
+  computed `testDir`, several, or any config that names `projects` in any
+  form, including the shorthand `{ projects }` (a project without its own
+  `testDir` inherits the config's), is reported as not verified. So is a
+  config that spreads or merges values doctor cannot read, such as
+  `{ testDir: './tests', ...shared }`, `defineConfig(base, { … })` or
+  `Object.assign`, since those can set `testDir` or `projects`; a spread
+  into `use` or an array does not count. `testMatch` is never read. No
+  config above the spec is a warning.
 
 The spec and config are read as text by a lexical scan that sets aside
 comments and the contents of string, template and regex literals, so a
