@@ -463,8 +463,17 @@ function createAnalyzer(ts) {
                 })(body);
                 return found;
               };
-              const swallows = handler => !!handler && handler.kind !== ts.SyntaxKind.NullKeyword
-                && !(ts.isIdentifier(handler) && handler.text === 'undefined') && !(isFunction(handler) && rethrows(handler));
+              // Parentheses and type-only wrappers do not change a handler.
+              const bare = node => {
+                while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)
+                  || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
+                return node;
+              };
+              const swallows = argument => {
+                const handler = bare(argument);
+                return !!handler && handler.kind !== ts.SyntaxKind.NullKeyword && !ts.isVoidExpression(handler)
+                  && !(ts.isIdentifier(handler) && handler.text === 'undefined') && !(isFunction(handler) && rethrows(handler));
+              };
               // Whether a then/catch/finally chain on the promise handles its
               // rejection: .catch(handler), or .then(onFulfilled, onRejected).
               const handledChain = child => {
@@ -478,29 +487,69 @@ function createAnalyzer(ts) {
                   child = call;
                 }
               };
-              // A failure that cannot fail the test: the promise's rejection is
-              // handled by its chain, by the chain of the Promise combinator
-              // carrying it, or by Promise.allSettled; or the call is inside a try
-              // block of this function whose catch does not rethrow, and an
-              // asynchronous call is awaited inside that block.
-              const caught = (child, asynchronous) => {
-                if (handledChain(child)) return true;
-                const outer = unparen(chained(child));
-                if (ts.isArrayLiteralExpression(outer.parent)) {
-                  const array = unparen(outer.parent);
-                  const call = array.parent;
-                  if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
-                    && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
-                    && (call.expression.name.text === 'allSettled' || (['all', 'race', 'any'].includes(call.expression.name.text) && handledChain(call)))) return true;
+              // Whether a failure of `child` cannot fail the test. A synchronous
+              // failure is thrown ('throw') while the expression is evaluated; an
+              // asynchronous one rejects its promise ('reject'). Only a rejection
+              // is handled by the promise's chain, by the chain of the Promise
+              // combinator carrying it, or by Promise.allSettled. A try block of
+              // this function whose catch does not rethrow catches a throw, and a
+              // rejection only when it is awaited inside the block. A failure
+              // that leaves this function, a throw from its own body or a
+              // rejection it awaits or returns, reaches its caller: as a
+              // rejection from an async function, otherwise unchanged, and is
+              // caught there as `ctx.caught` records.
+              const handled = (child, mode) => {
+                if (mode === 'reject') {
+                  if (handledChain(child)) return true;
+                  const outer = unparen(chained(child));
+                  if (ts.isArrayLiteralExpression(outer.parent)) {
+                    const array = unparen(outer.parent);
+                    const call = array.parent;
+                    if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
+                      && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
+                      && (call.expression.name.text === 'allSettled' || (['all', 'race', 'any'].includes(call.expression.name.text) && handledChain(call)))) return true;
+                  }
                 }
-                let awaited = false;
-                for (let node = child; node.parent && !ts.isFunctionLike(node.parent); node = node.parent) {
+                let awaited = false, node = child;
+                for (; node.parent && !ts.isFunctionLike(node.parent); node = node.parent) {
                   if (ts.isAwaitExpression(node.parent)) awaited = true;
                   const parent = node.parent;
                   if (ts.isTryStatement(parent) && parent.tryBlock === node && parent.catchClause && !rethrows(parent.catchClause.block)
-                    && (awaited || !asynchronous)) return true;
+                    && (mode === 'throw' || awaited)) return true;
                 }
-                return false;
+                // A failure inside a nested function goes to its unknown caller.
+                if (node.parent !== fn) return false;
+                if (mode === 'reject') {
+                  const outer = unparen(carrier(child));
+                  if (!ts.isAwaitExpression(outer.parent) && !ts.isReturnStatement(outer.parent) && outer.parent !== fn) return false;
+                }
+                return ctx.caught[mode === 'reject' || isAsync(fn) ? 'reject' : 'throw'];
+              };
+              // A matcher or helper that may either throw or reject (mode null)
+              // is caught only when both are. When just one is, the answer
+              // depends on whether it returns a promise, which is unknown.
+              const caught = (child, mode) => {
+                if (mode) return handled(child, mode);
+                const thrown = handled(child, 'throw'), rejected = handled(child, 'reject');
+                if (thrown !== rejected) limited('unknown-matcher', child);
+                return thrown && rejected;
+              };
+              // expect.soft, or an expect configured as possibly soft, records its
+              // failure on the test whether or not anything catches it.
+              const soft = call => {
+                const possiblySoft = args => args.some(arg => !ts.isObjectLiteralExpression(arg) || arg.properties.some(property => ts.isSpreadAssignment(property)
+                  || (ts.isShorthandPropertyAssignment(property) && property.name.text === 'soft')
+                  || (ts.isPropertyAssignment(property) && (ts.isComputedPropertyName(property.name) || property.name.text === 'soft')
+                    && property.initializer.kind !== ts.SyntaxKind.FalseKeyword)));
+                for (let callee = call.expression; ;) {
+                  if (ts.isPropertyAccessExpression(callee)) {
+                    if (callee.name.text === 'soft') return true;
+                    callee = callee.expression;
+                  } else if (ts.isCallExpression(callee)) {
+                    if (ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === 'configure' && possiblySoft(callee.arguments)) return true;
+                    callee = callee.expression;
+                  } else return false;
+                }
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
               // The outermost nested function being scanned, if any.
@@ -577,7 +626,7 @@ function createAnalyzer(ts) {
                       const pending = !settled && !ctx.floating;
                       if (pending && !(helper.fn && isAsync(helper.fn))) limited('unknown-matcher', child);
                       assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false,
-                        'assertion-helper', ctx.caught || caught(child, !helper.fn || isAsync(helper.fn)));
+                        'assertion-helper', caught(child, helper.fn && isAsync(helper.fn) ? 'reject' : null));
                     } else {
                       // Inline a same-file helper. Parameters given a browser
                       // fixture value are fixture roots inside it.
@@ -591,7 +640,8 @@ function createAnalyzer(ts) {
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
-                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]), caught: ctx.caught || caught(child, isAsync(helper.fn)) });
+                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]),
+                          caught: { throw: handled(child, 'throw'), reject: handled(child, 'reject') } });
                       } catch (error) {
                         if (!(error instanceof Exhausted)) throw error;
                         fact.assertions.length = saved.assertions;
@@ -626,7 +676,7 @@ function createAnalyzer(ts) {
                       // and are reported only as custom.
                       const known = asyncMatchers.has(matcher) || syncMatchers.has(matcher) ? matcher : 'custom';
                       assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments),
-                        known, ctx.caught || caught(child, asyncMatcher || !syncMatchers.has(matcher)));
+                        known, !soft(chain) && caught(child, asyncMatcher ? 'reject' : syncMatchers.has(matcher) ? 'throw' : null));
                     }
                   }
                 }
@@ -647,7 +697,7 @@ function createAnalyzer(ts) {
               if (ts.isBlock(fn.body)) ts.forEachChild(fn.body, scan);
               else scan(fn.body);
             }
-            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: false });
+            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: { throw: false, reject: false } });
           }
           results.push(fact);
           if (results.length > 256) throw new AnalysisError('limit');

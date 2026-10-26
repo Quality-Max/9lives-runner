@@ -17,9 +17,17 @@ SDK versions.
   `no-direct-assertion`, counts toward outcome mapping or acts as the positive
   completion signal that clears `absence-after-wait`. It gets the new
   `caught-assertion` finding (informational, assertion adequacy) at the
-  matcher. A chain ending only in `.then(onFulfilled)` or `.finally`, a
-  `.catch()` with no handler, or a handler that throws or returns
-  `Promise.reject` still rejects and stays an assertion. Policy
+  matcher. Promise handlers catch only an asynchronous matcher's rejection,
+  not a synchronous matcher's throw, which a `try` block catches with or
+  without `await`; a promise returned from a `try` block without `await`, by
+  a matcher or a helper, is not caught there. `expect.soft` matchers are never
+  probes, since Playwright records their failure on the test either way. A
+  matcher of unknown timing, or a marked helper not declared `async`, caught
+  for only one of a throw and a rejection stays an assertion and gives
+  `unknown-matcher`. A chain ending only in `.then(onFulfilled)` or
+  `.finally`, a `.catch()` with no handler, or a handler that throws or
+  returns `Promise.reject`, including through parentheses or type wrappers,
+  still rejects and stays an assertion. Policy
   `assessment-source-v14`; the analyzer helper version is 11, and report
   version 3 and suite version 1 are unchanged (#21).
 - `9l assess` no longer reports a plain `for`, `for…of`, `for…in`, `while`

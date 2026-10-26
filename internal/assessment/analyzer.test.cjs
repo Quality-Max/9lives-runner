@@ -448,6 +448,91 @@ test('a matcher whose failure is caught is a probe, and only a rejecting chain s
   assert.deepEqual(facts.tests[0].assertions.map(a => a.matcher), ['toContainText', 'toBeVisible', 'toHaveURL', 'toHaveCount', 'toHaveCount', 'toBeVisible', 'toBe', 'toBeVisible']);
 });
 
+test('a handler is classified after unwrapping parentheses and type wrappers', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('wrapped', async ({page}) => {
+      await expect(page).toHaveURL('/a').catch((error => { throw error; }));
+      await expect(page).toHaveURL('/b').catch((undefined));
+      await expect(page).toHaveURL('/c').catch(((error: Error) => Promise.reject(error)) as never);
+      await expect(page).toHaveURL('/d').then(() => {}, (undefined)!);
+      await expect(page).toHaveURL('/e').catch(void 0);
+      await expect(page).toHaveURL('/f').catch((null satisfies null));
+      await expect(page).toHaveURL('/g').catch((() => {}));
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught]), [[3, false], [4, false], [5, false], [6, false], [7, false], [8, false], [9, true]]);
+});
+
+test('promise handlers catch only asynchronous failures, and try/catch also catches synchronous throws', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    function checkSync(value) { expect(value).toBe(1); }
+    async function checkAsync(value) { expect(value).toBe(1); }
+    test('direct', async ({page}) => {
+      await Promise.allSettled([expect(actual).toEqual(expected)]);
+      await Promise.all([expect(actual).toBe(1)]).catch(() => {});
+      await Promise.allSettled([expect(page).toHaveURL('/a')]);
+      await expect.poll(() => count).toBe(3).catch(() => {});
+      await expect(pending).resolves.toBe(4).catch(() => {});
+      try { await Promise.allSettled([expect(actual).toBe(2)]); } catch {}
+    });
+    test('helpers', async ({page}) => {
+      await Promise.allSettled([checkSync(a)]);
+      await checkAsync(a).catch(() => {});
+      try { checkSync(b); } catch {}
+    });
+    test('custom', async ({page}) => {
+      await expect(page).toBeCustom().catch(() => {});
+      try { await expect(page).toBeCustom(); } catch {}
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught])), [
+    [[5, false], [6, false], [7, true], [8, true], [9, true], [10, true]],
+    [[2, false], [3, true], [2, true]],
+    [[18, false], [19, true]],
+  ]);
+  // A custom matcher's timing is unknown, so a handler that catches only one
+  // of a thrown failure and a rejected promise is a limit, not a probe. A
+  // promise method chained on a helper call stays an unresolved call.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[['conditional-flow', 10]], [['unresolved-helper', 14], ['conditional-flow', 15]], [['unknown-matcher', 18], ['conditional-flow', 19]]]);
+});
+
+test('a returned helper promise is caught only when awaited inside the try block', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    function check(page) { return expect(page).toHaveURL('/ok'); }
+    async function outer(page) { return check(page); }
+    // @9l-assertion-helper
+    function reviewed(page) { return expect(page).toHaveURL('/ok'); }
+    test('return', async ({page}) => { try { return check(page); } catch {} });
+    test('return await', async ({page}) => { try { return await check(page); } catch {} });
+    test('through an async helper', async ({page}) => { await outer(page).catch(() => {}); });
+    test('marked return', async ({page}) => { try { return reviewed(page); } catch {} });
+    test('marked return await', async ({page}) => { try { return await reviewed(page); } catch {} });
+    async function guarded(page) { try { return expect(page).toHaveURL('/x'); } catch {} }
+    async function guardedAwait(page) { try { return await expect(page).toHaveURL('/y'); } catch {} }
+    test('return inside a helper try', async ({page}) => { await guarded(page); await guardedAwait(page); });
+    async function each(rows) { rows.forEach(async row => { await expect(row).toBeVisible(); }); }
+    test('nested in a caught helper', async ({page}) => { try { await each(rows); } catch {} });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught])),
+    [[[2, false]], [[2, true]], [[2, true]], [[9, false]], [[10, true]], [[11, false], [12, true]], [[14, false]]]);
+  // A non-async marked helper may throw or return a promise; only one of them
+  // is caught by an unawaited return, so that call is a limit.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)),
+    [['conditional-flow'], ['conditional-flow'], ['unresolved-helper'], ['conditional-flow', 'unknown-matcher'], ['conditional-flow'], ['conditional-flow'],
+      ['conditional-flow', 'unresolved-helper', 'nested-function']]);
+});
+
+test('a soft matcher fails the test whether or not it is caught', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function softCheck(page) { await expect.soft(page).toHaveURL('/y'); }
+    test('soft', async ({page}) => {
+      await expect.soft(page.getByRole('alert')).toBeVisible().catch(() => {});
+      try { await expect.soft(page).toHaveURL('/x'); } catch {}
+      await softCheck(page).catch(() => {});
+      await expect.configure({ soft: true })(page).toHaveURL('/z').catch(() => {});
+      await expect.configure({ timeout: 5 })(page).toHaveURL('/w').catch(() => {});
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught]), [[4, false], [5, false], [2, false], [7, false], [8, true]]);
+});
+
 test('a caught probe is no completion signal after a fixed wait and passes caught into helpers', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
     // @9l-assertion-helper

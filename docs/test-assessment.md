@@ -328,17 +328,35 @@ unknown.
 A matcher whose failure is caught cannot fail the test, so it is read as a
 conditional probe, such as
 `await expect(heading).not.toContainText('May').catch(() => next.click())`,
-not as an assertion. That is a matcher consumed through `.catch(handler)` or
-`.then(onFulfilled, onRejected)`, an element of `Promise.allSettled`, an
-element of `Promise.all`, `race` or `any` whose call has such a handler, or a
-matcher inside a `try` block of the same function whose `catch` does not
-rethrow (an asynchronous matcher must be awaited inside the block; a returned
-one is not caught there). A call to a resolved or marked helper consumed in
-one of these ways makes every assertion in it a probe. A handler rethrows when
+not as an assertion. A failure takes one of two forms. An asynchronous
+matcher (above) rejects its promise; a synchronous one throws while the
+expression is evaluated, before any promise exists. A rejection is caught by
+`.catch(handler)` or `.then(onFulfilled, onRejected)` on the matcher, by
+`Promise.allSettled` holding it, or by such a handler on the `Promise.all`,
+`race` or `any` call holding it. None of these catches a throw, so
+`await Promise.allSettled([expect(a).toEqual(b)])` stays an assertion. A
+`try` block of the same function whose `catch` does not rethrow catches a
+throw, and a rejection only when it is awaited inside the block:
+`try { return await check(page); } catch {}` catches it, while
+`try { return check(page); } catch {}` lets the returned promise reject after
+the block. A failure leaves a resolved helper when the helper's own body
+throws it, or awaits or returns the rejecting promise; it reaches the call
+site as a rejection if the helper is `async` and in its own form otherwise,
+and is caught or not there by the same rules, through every level of
+inlining. A failure inside a function nested in the helper goes to that
+function's caller and is not traced to the call site. A marked helper is
+caught when its call is: a rejection if it is a same-file `async` function,
+otherwise both a throw and a rejection. A matcher outside the pinned API,
+whose form is unknown, is likewise caught only when both forms are; when just
+one is, it stays an assertion and gives the `unknown-matcher` limit. A soft
+matcher, `expect.soft(...)` or one through `expect.configure(...)` with a
+`soft` option that is not literally `false`, records its failure on the test
+whether or not anything catches it, so it is never a probe. A handler is
+read through parentheses, `as`, `satisfies` and `!`. A handler rethrows when
 its own body, outside nested functions, has a `throw` statement or a
 `Promise.reject` call; any other handler, including a named function whose
 body is not visible, is taken to swallow the failure. A `.catch()` with no
-handler, a `null` or `undefined` handler, a chain ending only in
+handler, a `null`, `undefined` or `void` handler, a chain ending only in
 `.then(onFulfilled)` or `.finally`, and a `try` with only `finally` still
 reject, so those matchers stay assertions. A probe gets `caught-assertion`
 (informational) at the matcher and does not count as an assertion for

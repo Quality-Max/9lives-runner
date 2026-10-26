@@ -621,6 +621,13 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		"});\n" +
 		"test('still rejects', async ({page}) => {\n" +
 		"  await expect(page).toHaveURL('/a').then(() => {}).finally(() => {});\n" +
+		"});\n" +
+		// A synchronous matcher throws before allSettled exists, a soft matcher
+		// fails the test either way, and a wrapped rethrowing handler rejects.
+		"test('still fail the test', async ({page}) => {\n" +
+		"  await Promise.allSettled([expect(1).toEqual(2)]);\n" +
+		"  await expect.soft(page).toHaveURL('/b').catch(() => {});\n" +
+		"  await expect(page).toHaveURL('/c').catch((error => { throw error; }));\n" +
 		"});\n")
 	report, err := Assess(context.Background(), source, nil, Options{})
 	if err != nil {
@@ -634,9 +641,12 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		}
 		got = append(got, strings.Join(rules, ","))
 	}
-	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", ""}
+	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
 	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v14" {
 		t.Fatalf("caught findings %q under %s", got, report.Policy)
+	}
+	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
+		t.Fatalf("credited assertions %+v", summary)
 	}
 }
 
