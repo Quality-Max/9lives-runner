@@ -95,17 +95,24 @@ directory.
   and a callback outside any test or hook body (`it('x', async ({ page }) =>
   …)`, `it('x', { tag }, fn)`), or through `describe`, a hook or `extend`
   (`it.describe(…)`, `it.beforeEach(…)`, `base.extend(…)`), or `it.only('x',
-  fn)` and the like. Helpers called any other way, such as `login(page)`,
-  `login('admin', page)`, a step wrapper `step('x', fn)` inside a test, or
+  fn)` and the like. The callback may be inline or the name of a function
+  the spec declares once, `function body({ page }) {}` or `const body =
+  async ({ page }) => {}`. Helpers called any other way, such as
+  `login(page)`, `login('admin', page)`, a member call `api.it(…)` however
+  spaced, a step wrapper `step('x', fn)` inside a test, or
   `expect.extend(…)`, do not count, so a spec that only adds them to the
-  plain `test` is still `missing`. A spec that takes the SDK under another name but also
+  plain `test` is still `missing`. A local alias or extension of the plain
+  `test`, such as `const t = test.extend({ … })`, is the plain `test`, so a
+  step wrapper inside its callbacks does not count either. A spec that takes the SDK under another name but also
   registers tests through a binding from `@playwright/test`, such as
   `n9l.expect` with a plain `test(…)`, is a warning too, since those tests
   are uninstrumented. So are `test as pwTest` from `@playwright/test` and a
   file doctor cannot read an import from: not verified, never missing.
 - `spec/fixtures`: `ok` when the first parameter of a `test` or `test.*` hook
-  callback, or of such a named test function as `it`, destructures `page` or
-  `context`, whatever follows it
+  callback, or of such a named test function as `it`, or of a local alias or
+  extension of either, destructures `page` or `context`, whether the
+  callback is inline or a function the spec declares and passes by name,
+  whatever follows it
   (`async ({ page }, testInfo)`, a type annotation, nested patterns).
   Otherwise a warning that no such parameter was found, because prove faults
   reach only fetch and XHR made through those fixtures. Other functions, such

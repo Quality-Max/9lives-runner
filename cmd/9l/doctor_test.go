@@ -453,6 +453,8 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 		"tests/a.spec.ts":                            "import { test } from './fixtures';\nimport { test as pwTest } from '@playwright/test';\ntest('x', async ({ page }, testInfo) => {});\n",
 		"tests/it.spec.ts":                           "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', async ({ page }) => {});\n",
 		"tests/helper.spec.ts":                       "import { test } from '@playwright/test';\nimport { login } from './helpers';\ntest('x', async ({ page }) => { await login(page); });\n",
+		"tests/extended.spec.ts":                     "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/named.spec.ts":                        "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async ({ page }) => {};\nit('x', body);\n",
 	})
 	t.Chdir(t.TempDir())
 	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
@@ -478,16 +480,22 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 	// A test function imported from a fixtures module under another name,
 	// used as one, is not followed either; a helper beside the plain test is
 	// not a test function, so that spec still fails.
-	_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "it.spec.ts"))
-	if check := it["spec/import"]; check.Status != "warning" || !strings.Contains(check.Message, "registers tests with it from another module") {
-		t.Fatalf("spec/import with it from fixtures: %+v", check)
+	// So is one that passes a callback declared in the spec by name. A step
+	// helper inside a locally extended plain test is inside a test body.
+	for _, spec := range []string{"it.spec.ts", "named.spec.ts"} {
+		_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
+		if check := it["spec/import"]; check.Status != "warning" || !strings.Contains(check.Message, "registers tests with it from another module") {
+			t.Fatalf("spec/import with it from fixtures in %s: %+v", spec, check)
+		}
+		if check := it["spec/fixtures"]; check.Status != "ok" {
+			t.Fatalf("spec/fixtures with it from fixtures in %s: %+v", spec, check)
+		}
 	}
-	if check := it["spec/fixtures"]; check.Status != "ok" {
-		t.Fatalf("spec/fixtures with it from fixtures: %+v", check)
-	}
-	_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "helper.spec.ts"))
-	if check := helper["spec/import"]; check.Status != "missing" {
-		t.Fatalf("spec/import with a helper: %+v", check)
+	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts"} {
+		_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
+		if check := helper["spec/import"]; check.Status != "missing" {
+			t.Fatalf("spec/import with a helper in %s: %+v", spec, check)
+		}
 	}
 	_, _, cwd := doctorChecks(t)
 	if cwd["workspace"].Status != "missing" || !strings.Contains(cwd["workspace"].Message, "current directory") {

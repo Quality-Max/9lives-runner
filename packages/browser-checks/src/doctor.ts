@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { Binding, callbackFixtures, calls, importBindings, mergesValues, readsTest, registersTests, scan } from './source-text';
+import { Binding, callbackFixtures, calls, importBindings, localFunctions, mergesValues, readsTest, registersTests, scan, testAliases } from './source-text';
 
 export type Diagnostic = { name: string; status: 'ok' | 'warning' | 'missing'; message: string; fix?: string };
 // Engine is what the CLI admits (protocol and capabilities) and can request
@@ -132,13 +132,15 @@ export function proveProject(spec: string): { config?: string; project?: string 
 // test function is used, such as `it` from `export const it = base.extend(…)`
 // in a fixtures module. Doctor does not follow the module, so such a name may
 // be a test from @9l/playwright; a helper such as `login(page)` is not one.
-function testProviders(code: string, bindings: Binding[]): Binding[] {
-  const registrars = new Set([
+// Local aliases and extensions, `const t = test.extend(…)`, are the test they
+// come from, so a helper called in their callbacks is inside a test body.
+function testProviders(code: string, bindings: Binding[], functions: Map<string, number>): Binding[] {
+  const registrars = testAliases(code, [
     ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local),
     ...bindings.filter(binding => ['*', 'default'].includes(binding.imported)).map(binding => `${binding.local}.test`),
   ]);
   return bindings.filter(binding => ![testModule, sdkModule].includes(binding.module) && !['test', 'expect', '*', 'default'].includes(binding.imported)
-    && registersTests(code, binding.local, registrars));
+    && [...testAliases(code, [binding.local])].some(local => registersTests(code, local, registrars, functions)));
 }
 
 function importCheck(name: string, code: string, bindings: Binding[], providers: Binding[], paths: boolean): Diagnostic {
@@ -193,9 +195,10 @@ export function specChecks(spec: string, paths = false): Diagnostic[] {
   } else {
     const scanned = scan(source.text ?? '');
     const bindings = importBindings(scanned);
-    const providers = testProviders(scanned.code, bindings);
+    const functions = localFunctions(scanned.code, bindings);
+    const providers = testProviders(scanned.code, bindings, functions);
     checks.push(importCheck(name, scanned.code, bindings, providers, paths));
-    const fixtures = callbackFixtures(scanned, bindings, providers.map(provider => provider.local));
+    const fixtures = callbackFixtures(scanned, bindings, providers.map(provider => provider.local), functions);
     checks.push(fixtures.has('page') || fixtures.has('context')
       ? { name: 'spec/fixtures', status: 'ok', message: `${name} takes the page or context fixture in a test or hook callback.` }
       : { name: 'spec/fixtures', status: 'warning', message: `${name}: no destructured page or context parameter found in a test or hook callback; prove faults reach only fetch and XHR made through those fixtures.` });

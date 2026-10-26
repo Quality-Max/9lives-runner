@@ -320,8 +320,92 @@ function insideTestBody(code: string, open: number[], registrars: Set<string>): 
   });
 }
 
+// Whether the name at `index` is a member, as in `o.it`, `o . it`, `o?.it`
+// or `o.\n it`; comments are already blanked to whitespace.
+function memberAt(code: string, index: number): boolean {
+  return /\.\s*$/.test(code.slice(Math.max(0, index - 4096), index));
+}
+
+const declaration = /(?<![.\w$])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]{0,256}?)?=(?![=>])\s*/g;
+
+// The expression starting at `at` when it is an obvious alias or extension of
+// a name: `name`, `ns.test`, or either followed by `.extend(…)` any number
+// of times, ending the declaration. Returns the name, or undefined.
+function aliasOf(code: string, at: number): string | undefined {
+  const head = code.slice(at, at + 256).match(/^([A-Za-z_$][\w$]*)(?:\s*\.\s*(test)(?![\w$]))?/);
+  if (!head) return undefined;
+  let j = at + head[0].length;
+  for (;;) {
+    const extend = code.slice(j, j + 256).match(/^\s*\.\s*extend\s*(?:<[^<>()]{0,128}>\s*)?\(/);
+    if (!extend) break;
+    const close = matching(code, j + extend[0].length - 1, code.length);
+    if (close === undefined) return undefined;
+    j = close + 1;
+  }
+  // The declaration ends here: at a terminator, or at a line break before
+  // the next statement, not before a member, call or operator.
+  const rest = code.slice(j, j + 256).match(/^(\s*)(\S?)([\w$]*)/);
+  const ends = !rest || !rest[2] || ';,)}]'.includes(rest[2])
+    || (/[\r\n]/.test(rest[1]) && /[A-Za-z_$}]/.test(rest[2]) && !['as', 'satisfies', 'in', 'instanceof'].includes(rest[2] + rest[3]));
+  return ends ? (head[2] ? `${head[1]}.test` : head[1]) : undefined;
+}
+
+// `names` with every local declared as an obvious alias or extension of one
+// of them, transitively: `const t = test`, `const t = test.extend({ … })`,
+// `const t = base.extend(…).extend(…)` or `const t = pw.test.extend(…)`.
+export function testAliases(code: string, names: Iterable<string>): Set<string> {
+  const result = new Set(names);
+  const declared: [string, string][] = [];
+  for (const match of code.matchAll(declaration)) {
+    const origin = aliasOf(code, (match.index ?? 0) + match[0].length);
+    if (origin) declared.push([match[1], origin]);
+  }
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [local, origin] of declared) {
+      if (!result.has(local) && result.has(origin)) { result.add(local); grew = true; }
+    }
+  }
+  return result;
+}
+
+// Functions declared once in the file, by name, each with the index of the
+// `(` of its parameter list, or -1 for a bare arrow parameter:
+// `function body({ page }) {}`, or a const bound to a function expression or
+// arrow, `const body = async ({ page }) => {}`. A name declared more than
+// once, or also imported, is left out.
+export function localFunctions(code: string, bindings: Binding[]): Map<string, number> {
+  const declarations = new Map<string, number>();
+  const count = (name: string) => declarations.set(name, (declarations.get(name) ?? 0) + 1);
+  for (const match of code.matchAll(/(?<![.\w$])(?:(?:const|let|var|class)\s+|function\b\s*\*?\s*)([A-Za-z_$][\w$]*)/g)) count(match[1]);
+  const functions = new Map<string, number>();
+  for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^<>()]{0,128}>\s*)?\(/g)) {
+    functions.set(match[1], (match.index ?? 0) + match[0].length - 1);
+  }
+  for (const match of code.matchAll(declaration)) {
+    if (!match[0].startsWith('const')) continue;
+    const at = (match.index ?? 0) + match[0].length;
+    const value = code.slice(at, at + 512).match(/^(?:async\b\s*)?(?:(function\b\s*\*?\s*[\w$]*\s*)?(?:<[^<>()]{0,128}>\s*)?\(|[A-Za-z_$][\w$]*\s*=>)/);
+    if (!value) continue;
+    // `async page => …` has no parameter list to read fixtures from.
+    if (value[0].endsWith('>')) { functions.set(match[1], -1); continue; }
+    const open = at + value[0].length - 1;
+    const close = matching(code, open);
+    // A parenthesized value, `(1, 2)`, is not a function.
+    if (!value[1] && (close === undefined || !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(code.slice(close + 1, close + 300)))) continue;
+    functions.set(match[1], open);
+  }
+  const imported = new Set(bindings.map(binding => binding.local));
+  for (const name of [...functions.keys()]) {
+    if (declarations.get(name) !== 1 || imported.has(name)) functions.delete(name);
+  }
+  return functions;
+}
+
 const titled = /^\s*['"`]/;
 const callback = /^\s*(?:async\b\s*)?(?:function\b|\([\s\S]*?\)\s*(?::[^=;{}()]{0,256})?=>|[A-Za-z_$][\w$]*\s*=>)/;
+// A callback argument: inline, or the name of a function in `functions`.
+const callbackArgument = (arg: string, functions: Map<string, number>) => callback.test(arg) || functions.has(arg.trim());
 // Members of Playwright's test function. These declare tests or hooks with
 // any arguments; `extend` builds a test from it.
 const declaring = new Set(['describe', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'extend']);
@@ -333,19 +417,22 @@ const titledMembers = new Set(['only', 'skip', 'fixme', 'fail', 'slow', 'step'])
 // outside any test or hook body; or through a member that declares tests or
 // hooks or extends the test, as in `it.describe(…)`, `it.beforeEach(…)` or
 // `it.extend(…)`, or `it.only('x', fn)`. A helper called any other way, such
-// as `login(page)`, `login('admin', page)` or `logger.info('x')`, is not.
+// as `login(page)`, `login('admin', page)` or `logger.info('x')`, is not,
+// and neither is a member of another object, `o.it(…)` or `o . it(…)`. The
+// callback may be inline or the name of a function in `functions`.
 // `registrars` names the bindings already known to be test functions.
-export function registersTests(code: string, local: string, registrars: Set<string>): boolean {
+export function registersTests(code: string, local: string, registrars: Set<string>, functions = new Map<string, number>()): boolean {
   const name = local.replace(/\$/g, '\\$');
   const use = new RegExp(`(?<![.\\w$])${name}\\s*((?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*)(?:<[^<>()]{0,128}>\\s*)?\\(`, 'g');
   // Titled calls with a callback, kept until their nesting is known.
   const titledCalls: number[] = [];
   for (const match of code.matchAll(use)) {
+    if (memberAt(code, match.index ?? 0)) continue;
     const members = match[1].split('.').map(member => member.trim()).filter(Boolean);
     if (members.length && declaring.has(members[0])) return true;
     if (members.length && !titledMembers.has(members[0])) continue;
     const [title, ...rest] = leadingArguments(code, (match.index ?? 0) + match[0].length - 1, 3);
-    if (titled.test(title) && rest.some(arg => callback.test(arg))) titledCalls.push(match.index ?? 0);
+    if (titled.test(title) && rest.some(arg => callbackArgument(arg, functions))) titledCalls.push(match.index ?? 0);
   }
   const nesting = new Set([...registrars, local]);
   return openBrackets(code, titledCalls).some(open => !insideTestBody(code, open, nesting));
@@ -365,17 +452,39 @@ function topLevel(text: string): string[] {
   return parts;
 }
 
+// The keys destructured from the first parameter of the parameter list whose
+// `(` is at `open`, `({ page }, testInfo)`, into `fixtures`.
+function destructured(code: string, open: number, fixtures: Set<string>): void {
+  const close = matching(code, open);
+  if (close === undefined) return;
+  const first = topLevel(code.slice(open + 1, close))[0].trim();
+  const pattern = first.startsWith('{') ? matching(first, 0) : undefined;
+  if (pattern === undefined) return;
+  for (const property of topLevel(first.slice(1, pattern))) {
+    const key = property.trim().match(/^([A-Za-z_$][\w$]*)/);
+    if (key) fixtures.add(key[1]);
+  }
+}
+
 // The fixtures a test or hook callback destructures from its first
 // parameter: `test('x', async ({ page }, testInfo) => …)`,
-// `test.beforeEach(function ({ context }: Fixtures) { … })`. Callees are
-// `test`, a local alias of an imported `test`, a name in `providers` (an
-// import the spec uses as a test function, such as `it` from a fixtures
-// module), or `<namespace>.test`, with any member such as `.beforeEach` or
-// `.describe.serial`.
-export function callbackFixtures(scanned: Scanned, bindings: Binding[], providers: string[] = []): Set<string> {
+// `test.beforeEach(function ({ context }: Fixtures) { … })`, or a function in
+// `functions` passed by name, `it('x', body)`. Callees are `test`, a local
+// alias of an imported `test`, a name in `providers` (an import the spec uses
+// as a test function, such as `it` from a fixtures module), `<namespace>.test`,
+// or an obvious alias or extension of any of them, with any member such as
+// `.beforeEach` or `.describe.serial`.
+export function callbackFixtures(scanned: Scanned, bindings: Binding[], providers: string[] = [], functions = new Map<string, number>()): Set<string> {
   const { code } = scanned;
-  const tests = new Set(['test', ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local), ...providers]);
-  const namespaces = new Set(bindings.filter(binding => binding.imported === '*' || binding.imported === 'default').map(binding => binding.local));
+  const namespaces = bindings.filter(binding => binding.imported === '*' || binding.imported === 'default').map(binding => `${binding.local}.test`);
+  const tests = testAliases(code, ['test', ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local), ...providers, ...namespaces]);
+  // Whether the `(` at `call` calls one of the tests.
+  const testCall = (call: number) => {
+    const callee = code.slice(Math.max(0, call - 256), call).match(/([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?:<[^<>()]{0,128}>)?\s*$/);
+    if (!callee) return false;
+    const segments = callee[1].split('.').map(segment => segment.trim());
+    return tests.has(segments[0]) || tests.has(segments.slice(0, 2).join('.'));
+  };
   const fixtures = new Set<string>();
   const parameters = /\(\s*\{/g;
   for (let match = parameters.exec(code); match; match = parameters.exec(code)) {
@@ -388,18 +497,17 @@ export function callbackFixtures(scanned: Scanned, bindings: Binding[], provider
     const before = code.slice(Math.max(0, open - 256), open).match(/(?:\basync\s+function\b\s*\*?\s*[\w$]*|\bfunction\b\s*\*?\s*[\w$]*|\basync)?\s*$/);
     const start = open - (before ? before[0].length : 0);
     const call = enclosingCall(code, start);
-    if (call === undefined) continue;
-    const callee = code.slice(Math.max(0, call - 256), call).match(/([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?:<[^<>()]{0,128}>)?\s*$/);
-    if (!callee) continue;
-    const segments = callee[1].split('.').map(segment => segment.trim());
-    if (!tests.has(segments[0]) && !(namespaces.has(segments[0]) && segments[1] === 'test')) continue;
-    const first = topLevel(code.slice(open + 1, close))[0].trim();
-    const pattern = first.startsWith('{') ? matching(first, 0) : undefined;
-    if (pattern === undefined) continue;
-    for (const property of topLevel(first.slice(1, pattern))) {
-      const key = property.trim().match(/^([A-Za-z_$][\w$]*)/);
-      if (key) fixtures.add(key[1]);
-    }
+    if (call !== undefined && testCall(call)) destructured(code, open, fixtures);
+  }
+  // A declared function passed whole to a test, `it('x', body)` or
+  // `it('x', { tag }, body)`.
+  const read = new Set<string>();
+  for (const reference of functions.size ? code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)(?=\s*[,)])/g) : []) {
+    const open = functions.get(reference[1]);
+    const at = reference.index ?? 0;
+    if (open === undefined || open < 0 || read.has(reference[1]) || !/[(,]\s*$/.test(code.slice(Math.max(0, at - 256), at))) continue;
+    const call = enclosingCall(code, at);
+    if (call !== undefined && testCall(call)) { destructured(code, open, fixtures); read.add(reference[1]); }
   }
   return fixtures;
 }

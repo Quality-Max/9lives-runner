@@ -16,8 +16,11 @@ SDK versions.
   a test function is used (called with a title and a callback outside any
   test or hook body, or through `describe`, a hook, `extend` or `only`) is
   now a warning that the module is not followed. Helpers called any other
-  way, such as `login(page)` or a `step('x', fn)` wrapper inside a test, do
-  not count, so a plain spec that uses them is still `missing`.
+  way, such as `login(page)`, a member call `api.it(…)` or a `step('x', fn)`
+  wrapper inside a test, do not count, so a plain spec that uses them is
+  still `missing`; a local alias or extension of the plain test, such as
+  `const t = test.extend({})`, is the plain test. The callback may be a
+  function the spec declares once and passes by name, `it('x', body)`.
   `spec/fixtures` reads the callbacks of such a test function too.
 
 ### Release process
