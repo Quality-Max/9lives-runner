@@ -49,8 +49,9 @@
   Ctrl-C during it reports the run canceled, like any canceled run. A
   target is named only as `scheme://host:port` or `host:port`, never with
   its path, query, fragment or credentials; the reason is an HTTP status, a
-  network error code, `timed out`, `certificate not trusted` or `tls
-  handshake failed`. An https target with a self-signed certificate is not
+  network error code, `no such host` (the resolver said the name does not
+  exist), `dns lookup timed out` or `dns lookup failed` (the resolver did not
+  answer), `timed out`, `certificate not trusted` or `tls handshake failed`. An https target with a self-signed certificate is not
   trusted and never becomes ready; wait for its `host:port` instead, which
   checks only that it accepts connections. The host is a name, an IPv4
   address or a bracketed IPv6 literal (`[::1]:8080`, `http://[fe80::1%25en0]/`);
