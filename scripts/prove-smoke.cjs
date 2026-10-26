@@ -128,7 +128,20 @@ async function main() {
 
 // delay holds a redirect as the server sent it, so Chromium follows it itself
 // and the page sees the same redirect it sees without the fault, for fetch and
-// XHR alike. The SDK's instrument is driven directly with a short hold.
+// XHR alike. The SDK's instrument is driven directly with a short hold. This
+// page.evaluate runs outside invoke()'s subprocess timeout, so the page bounds
+// each request, the smoke bounds the page, and cleanup runs on every failure.
+const heldRequestLimitMs = 5000;
+const heldEvaluateLimitMs = 10000;
+
+function bounded(promise, ms, what) {
+  let timer;
+  const limit = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not settle within ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 async function delayKeepsRedirects() {
   const http = require('node:http');
   const {chromium} = require('@playwright/test');
@@ -139,36 +152,50 @@ async function delayKeepsRedirects() {
     if (request.url === '/api/new') return response.writeHead(200, {'content-type': 'application/json'}).end('{"ok":true}');
     response.writeHead(404).end();
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const origin = `http://127.0.0.1:${server.address().port}`;
-  const browser = await chromium.launch();
+  let browser;
   try {
+    await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    browser = await chromium.launch();
     for (const via of ['fetch', 'xhr']) {
+      stage = `delay keeps a server redirect (${via})`;
       const file = path.join(work, `held-redirect-${via}.ndjson`);
       const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {id: 'fault-1', kind: 'delay', method: 'GET', origin, path: '/api/old'});
-      const context = await browser.newContext();
-      await instrument(context, channel, {holdMs: 300});
-      const page = await context.newPage();
-      await page.goto(origin + '/');
-      const started = Date.now();
-      const seen = await page.evaluate(via => via === 'fetch'
-        ? fetch('/api/old').then(async r => ({redirected: r.redirected, path: new URL(r.url).pathname, body: await r.text()}))
-        : new Promise(resolve => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('GET', '/api/old');
-          xhr.onload = () => resolve({redirected: new URL(xhr.responseURL).pathname !== '/api/old', path: new URL(xhr.responseURL).pathname, body: xhr.responseText});
-          xhr.send();
-        }), via);
-      const held = Date.now() - started;
-      await context.close();
-      channel.close();
+      let context, seen, held;
+      try {
+        context = await browser.newContext();
+        await instrument(context, channel, {holdMs: 300});
+        const page = await context.newPage();
+        await page.goto(origin + '/');
+        const started = Date.now();
+        seen = await bounded(page.evaluate(({via, limitMs}) => via === 'fetch'
+          ? fetch('/api/old', {signal: AbortSignal.timeout(limitMs)}).then(async r => ({redirected: r.redirected, path: new URL(r.url).pathname, body: await r.text()}))
+          : new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', '/api/old');
+            xhr.timeout = limitMs;
+            xhr.onload = () => resolve({redirected: new URL(xhr.responseURL).pathname !== '/api/old', path: new URL(xhr.responseURL).pathname, body: xhr.responseText});
+            xhr.onerror = () => reject(new Error('xhr failed'));
+            xhr.onabort = () => reject(new Error('xhr aborted'));
+            xhr.ontimeout = () => reject(new Error(`xhr timed out after ${limitMs}ms`));
+            xhr.send();
+          }), {via, limitMs: heldRequestLimitMs}), heldEvaluateLimitMs, `${via} through a held redirect`);
+        held = Date.now() - started;
+      } finally {
+        await context?.close();
+        channel.close();
+      }
       assert.deepEqual(seen, {redirected: true, path: '/api/new', body: '{"ok":true}'}, via);
       assert(held >= 250, `${via} response was not held`);
       assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}], via);
     }
   } finally {
-    await browser.close();
-    await new Promise(resolve => server.close(resolve));
+    try {
+      await browser?.close();
+    } finally {
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+    }
   }
 }
 
