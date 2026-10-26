@@ -217,6 +217,68 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 	}
 }
 
+func TestAssessTextNamesFilesWithNoTestsAndCreditedAssertions(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		if os.Getenv("NINELIVES_REQUIRE_ASSESSMENT") == "1" {
+			t.Fatal("CI requires Node for assessment qualification")
+		}
+		t.Skip("requires Node")
+	}
+	root := t.TempDir()
+	write := func(name, source string) {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A helper module passed as a path holds no tests; the spec's direct
+	// assertions are listed beside its unresolved helper call.
+	write("api.spec.ts", "import {test,expect} from '@playwright/test';\nimport {seed} from './helpers';\n"+
+		"test('a', async ({request}) => {\n  const rows = await seed(request);\n  for (const row of rows) {\n    expect(row.id).toBeDefined();\n    expect(row.total).toEqual(2);\n  }\n});\n")
+	write("helpers.ts", "export async function seed(request) { return (await request.post('/seed')).json(); }\n")
+	t.Chdir(root)
+	var stdout, stderr bytes.Buffer
+	if code := assessCommand([]string{"api.spec.ts", "helpers.ts", "--limits"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("suite failed: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"test at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  recognized assertions: 2 (toBeDefined, toEqual)\n  analysis-limit/unresolved-helper [unsupported] at 4:22: ",
+		"file \"helpers.ts\": no tests\n",
+		"Limit: " + assessment.NoTestsLimit + "\n",
+		"Summary: 2 files (1 assessed, 1 with no tests, 0 not assessed), 1 tests, 1 findings\n",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("suite text lacks %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "conditional-flow") {
+		t.Fatalf("a plain loop is reported as conditional flow:\n%s", stdout.String())
+	}
+	stdout.Reset()
+	if code := assessCommand([]string{"api.spec.ts", "helpers.ts", "--format", "json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("json suite failed: code=%d stderr=%q", code, stderr.String())
+	}
+	var suite struct {
+		Files []struct {
+			Report struct {
+				Tests []struct {
+					Assertions struct {
+						Count    int      `json:"count"`
+						Matchers []string `json:"matchers"`
+					} `json:"assertions"`
+				} `json:"tests"`
+			} `json:"report"`
+		} `json:"files"`
+		Summary struct {
+			Assessed int `json:"assessed"`
+			NoTests  int `json:"noTests"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &suite); err != nil || suite.Summary.Assessed != 1 || suite.Summary.NoTests != 1 ||
+		len(suite.Files) != 2 || suite.Files[0].Report.Tests[0].Assertions.Count != 2 || len(suite.Files[1].Report.Tests) != 0 {
+		t.Fatalf("json suite %s (%v)", stdout.String(), err)
+	}
+}
+
 func TestAssessTextGroupsAnalysisLimitsPerFile(t *testing.T) {
 	limit := func(code string, line, column int) assessment.Finding {
 		return assessment.Finding{Rule: "analysis-limit", Classification: "unsupported", Dimension: "assertionAdequacy", Location: assessment.Location{Line: line, Column: column}, Message: "limit", Suggestion: "review", Code: code}
@@ -362,7 +424,7 @@ func TestAssessLimitsFlagChangesTextOnly(t *testing.T) {
 		"  analysis-limit/unresolved-helper [unsupported] at 3:39: ",
 		"  analysis-limit/unresolved-helper [unsupported] at 4:39: ",
 		"  analysis-limit/nested-function [unsupported] at 4:64: ",
-		"file \"tests/b.spec.ts\":\ntest at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  analysis-limit/unresolved-helper [unsupported] at 3:41: ",
+		"file \"tests/b.spec.ts\":\ntest at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  recognized assertions: 1 (toBe)\n  analysis-limit/unresolved-helper [unsupported] at 3:41: ",
 	} {
 		if !strings.Contains(listed, want) {
 			t.Fatalf("--limits suite text lacks %q:\n%s", want, listed)

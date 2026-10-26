@@ -411,9 +411,286 @@ test('an awaited then/catch/finally chain consumes the matcher', () => {
       expect(page).toHaveURL('/c').catch(() => {});
       showMonth(page.locator('.cal'), page.locator('.next'));
     });`);
-  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.unawaited])), [[[3, false], [7, false], [8, false]], [[11, true], [3, true]]]);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.unawaited, a.caught])),
+    [[[3, false, true], [7, false, false], [8, false, true]], [[11, true, true], [3, true, true]]]);
   // The callbacks hold no assertion, so they are not a limit.
   assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], []]);
+});
+
+test('a matcher whose failure is caught is a probe, and only a rejecting chain stays an assertion', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('handled', async ({page}) => {
+      await expect(page.getByRole('heading')).not.toContainText('May').catch(() => page.getByRole('button').click());
+      await expect(page.getByRole('dialog')).toBeVisible().then(() => {}, () => {});
+      await (expect(page).toHaveURL('/a')).then(() => {}).catch(handleFailure);
+      await Promise.allSettled([expect(page.getByRole('row')).toHaveCount(1)]);
+      await Promise.all([expect(page.getByRole('row')).toHaveCount(2)]).catch(() => {});
+      try { await expect(page.getByRole('banner')).toBeVisible(); expect(count).toBe(1); } catch {}
+      try { await expect(page.getByRole('link')).toBeVisible(); } catch (error) { log(error); } finally { done(); }
+    });
+    test('rejecting', async ({page}) => {
+      await expect(page).toHaveURL('/b').then(() => {}).finally(() => {});
+      await expect(page).toHaveURL('/c').catch();
+      await expect(page).toHaveURL('/d').then(() => {}, undefined);
+      await expect(page).toHaveURL('/e').catch(error => { throw error; });
+      await expect(page).toHaveURL('/f').catch(error => Promise.reject(error));
+      await Promise.all([expect(page.getByRole('row')).toHaveCount(3)]);
+      try { await expect(page.getByRole('nav')).toBeVisible(); } catch (error) { cleanup(); throw error; }
+      try { await expect(page.getByRole('main')).toBeVisible(); } finally { done(); }
+      try { return expect(page.getByRole('aside')).toBeVisible(); } catch {}
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught])), [
+    [[3, true], [4, true], [5, true], [6, true], [7, true], [8, true], [8, true], [9, true]],
+    [[12, false], [13, false], [14, false], [15, false], [16, false], [17, false], [18, false], [19, false], [20, false]],
+  ]);
+  // Every assertion is still recorded, with its matcher; the probe is no
+  // assertion, but its location stays visible.
+  assert.deepEqual(facts.tests[0].assertions.map(a => a.matcher), ['toContainText', 'toBeVisible', 'toHaveURL', 'toHaveCount', 'toHaveCount', 'toBeVisible', 'toBe', 'toBeVisible']);
+});
+
+test('a handler is classified after unwrapping parentheses and type wrappers', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('wrapped', async ({page}) => {
+      await expect(page).toHaveURL('/a').catch((error => { throw error; }));
+      await expect(page).toHaveURL('/b').catch((undefined));
+      await expect(page).toHaveURL('/c').catch(((error: Error) => Promise.reject(error)) as never);
+      await expect(page).toHaveURL('/d').then(() => {}, (undefined)!);
+      await expect(page).toHaveURL('/e').catch(void 0);
+      await expect(page).toHaveURL('/f').catch((null satisfies null));
+      await expect(page).toHaveURL('/g').catch((() => {}));
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught]), [[3, false], [4, false], [5, false], [6, false], [7, false], [8, false], [9, true]]);
+});
+
+test('promise handlers catch only asynchronous failures, and try/catch also catches synchronous throws', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    function checkSync(value) { expect(value).toBe(1); }
+    async function checkAsync(value) { expect(value).toBe(1); }
+    test('direct', async ({page}) => {
+      await Promise.allSettled([expect(actual).toEqual(expected)]);
+      await Promise.all([expect(actual).toBe(1)]).catch(() => {});
+      await Promise.allSettled([expect(page).toHaveURL('/a')]);
+      await expect.poll(() => count).toBe(3).catch(() => {});
+      await expect(pending).resolves.toBe(4).catch(() => {});
+      try { await Promise.allSettled([expect(actual).toBe(2)]); } catch {}
+    });
+    test('helpers', async ({page}) => {
+      await Promise.allSettled([checkSync(a)]);
+      await checkAsync(a).catch(() => {});
+      try { checkSync(b); } catch {}
+    });
+    test('custom', async ({page}) => {
+      await expect(page).toBeCustom().catch(() => {});
+      try { await expect(page).toBeCustom(); } catch {}
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught])), [
+    [[5, false], [6, false], [7, true], [8, true], [9, true], [10, true]],
+    [[2, false], [3, true], [2, true]],
+    [[18, false], [19, true]],
+  ]);
+  // A custom matcher's timing is unknown, so a handler that catches only one
+  // of a thrown failure and a rejected promise is a limit, not a probe. A
+  // promise method chained on a helper call stays an unresolved call.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[['conditional-flow', 10]], [['unresolved-helper', 14], ['conditional-flow', 15]], [['unknown-matcher', 18], ['conditional-flow', 19]]]);
+});
+
+test('a returned helper promise is caught only when awaited inside the try block', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    function check(page) { return expect(page).toHaveURL('/ok'); }
+    async function outer(page) { return check(page); }
+    // @9l-assertion-helper
+    function reviewed(page) { return expect(page).toHaveURL('/ok'); }
+    test('return', async ({page}) => { try { return check(page); } catch {} });
+    test('return await', async ({page}) => { try { return await check(page); } catch {} });
+    test('through an async helper', async ({page}) => { await outer(page).catch(() => {}); });
+    test('marked return', async ({page}) => { try { return reviewed(page); } catch {} });
+    test('marked return await', async ({page}) => { try { return await reviewed(page); } catch {} });
+    async function guarded(page) { try { return expect(page).toHaveURL('/x'); } catch {} }
+    async function guardedAwait(page) { try { return await expect(page).toHaveURL('/y'); } catch {} }
+    test('return inside a helper try', async ({page}) => { await guarded(page); await guardedAwait(page); });
+    async function each(rows) { rows.forEach(async row => { await expect(row).toBeVisible(); }); }
+    test('nested in a caught helper', async ({page}) => { try { await each(rows); } catch {} });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught])),
+    [[[2, false]], [[2, true]], [[2, true]], [[9, false]], [[10, true]], [[11, false], [12, true]], [[14, false]]]);
+  // A non-async marked helper may throw or return a promise; only one of them
+  // is caught by an unawaited return, so that call is a limit.
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)),
+    [['conditional-flow'], ['conditional-flow'], ['unresolved-helper'], ['conditional-flow', 'unknown-matcher'], ['conditional-flow'], ['conditional-flow'],
+      ['conditional-flow', 'unresolved-helper', 'nested-function']]);
+});
+
+test('a soft matcher fails the test whether or not it is caught', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function softCheck(page) { await expect.soft(page).toHaveURL('/y'); }
+    test('soft', async ({page}) => {
+      await expect.soft(page.getByRole('alert')).toBeVisible().catch(() => {});
+      try { await expect.soft(page).toHaveURL('/x'); } catch {}
+      await softCheck(page).catch(() => {});
+      await expect.configure({ soft: true })(page).toHaveURL('/z').catch(() => {});
+      await expect.configure({ timeout: 5 })(page).toHaveURL('/w').catch(() => {});
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught]), [[4, false], [5, false], [2, false], [7, false], [8, true]]);
+});
+
+test('a caught matcher whose expect may or may not be soft stays an assertion with a limit', () => {
+  // Options the analyzer cannot read may or may not set soft: crediting the
+  // matcher silently would overclaim, and calling it a probe would remove
+  // credit from a check that may still fail the test.
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('spread', async ({page}) => {
+      await expect.configure({ ...options })(page).toHaveURL('/a').catch(() => {});
+    });
+    test('variable', async ({page}) => {
+      await expect.configure(options)(page).toHaveURL('/b').catch(() => {});
+    });
+    test('runtime value', async ({page}) => {
+      await expect.configure({ soft: flag })(page).toHaveURL('/c').catch(() => {});
+    });
+    test('soft overridden by a later spread', async ({page}) => {
+      await expect.configure({ soft: true, ...options })(page).toHaveURL('/d').catch(() => {});
+    });
+    test('not caught', async ({page}) => {
+      await expect.configure({ ...options })(page).toHaveURL('/e');
+    });
+    test('soft set after the spread', async ({page}) => {
+      await expect.configure({ ...options, soft: true })(page).toHaveURL('/f').catch(() => {});
+    });
+    test('soft cleared after the spread', async ({page}) => {
+      await expect.configure({ ...options, soft: false })(page).toHaveURL('/g').catch(() => {});
+    });
+    test('a later configure decides', async ({page}) => {
+      await expect.configure({ soft: true }).configure({ soft: false })(page).toHaveURL('/h').catch(() => {});
+      await expect.configure({ soft: false }).configure({ timeout: 5 })(page).toHaveURL('/i').catch(() => {});
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.caught)),
+    [[false], [false], [false], [false], [false], [false], [true], [true, true]]);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[['possibly-soft', 3]], [['possibly-soft', 6]], [['possibly-soft', 9]], [['possibly-soft', 12]], [], [], [], []]);
+});
+
+test('a call on a configured expect is not a matcher', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('configured', async ({page}) => {
+      await expect.configure({ timeout: 5 }).configure({ soft: true })(page).toHaveURL('/a');
+      await expect.configure({ timeout: 5 }).soft(page).toHaveURL('/b');
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.matcher]), [[3, 'toHaveURL'], [4, 'toHaveURL']]);
+});
+
+test('a caught probe is no completion signal after a fixed wait and passes caught into helpers', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    // @9l-assertion-helper
+    import { expectSaved } from './checks';
+    async function confirm(page) { await expect(page.getByText('Saved')).toBeVisible(); }
+    test('probe then absence', async ({page}) => {
+      await page.waitForTimeout(500);
+      await expect(page.getByText('Saved')).toBeVisible().catch(() => {});
+      await expect(page.getByRole('alert')).toBeHidden();
+    });
+    test('caught helpers', async ({page}) => {
+      await confirm(page).catch(() => {});
+      try { await expectSaved(page); } catch {}
+      await confirm(page);
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught, a.afterWait, a.absence]), [[7, true, true, false], [8, false, true, true]]);
+  assert.deepEqual(facts.tests[1].assertions.map(a => [a.line, a.site?.line, a.caught, a.matcher]),
+    [[4, 11, true, 'toBeVisible'], [12, undefined, true, 'assertion-helper'], [4, 13, false, 'toBeVisible']]);
+});
+
+test('a loop is not conditional flow, and is a limit only when it repeats a fixed wait', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function settle(page) { await page.waitForTimeout(50); }
+    test('for of', async () => { for (const c of cases) { expect(c.input * 2).toEqual(c.output); } });
+    test('for and while', async ({page}) => {
+      for (let i = 0; i < 3; i++) await expect(page.getByRole('row').nth(i)).toBeVisible();
+      while (await page.getByRole('button').isVisible()) { await page.getByRole('button').click(); }
+      do { expect(n).toBeGreaterThan(0); } while (false);
+    });
+    test('wait in a loop', async ({page}) => {
+      for (const id of ids) { await page.waitForTimeout(100); await expect(page.getByRole('alert')).toBeHidden(); }
+    });
+    test('helper wait in a loop', async ({page}) => { for (const id of ids) { await settle(page); expect(id).toBeTruthy(); } });
+    test('branch in a loop', async ({page}) => { for (const c of cases) { if (c.skip) continue; expect(c.ok).toBe(true); } });
+    test('branch', async ({page}) => { if (mobile) await expect(page.getByRole('heading')).toBeVisible(); });`);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[], [], [['loop', 10]], [['loop', 12]], [['conditional-flow', 13]], [['conditional-flow', 14]]]);
+  assert.deepEqual(facts.tests.map(t => t.assertions.length), [1, 2, 1, 1, 1, 1]);
+});
+
+test('a wait that a loop header evaluates once does not make the loop a limit', () => {
+  // A for initializer and a for…of or for…in input run once; a for condition
+  // and update, and a while or do condition, repeat with the body.
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    async function loadRows(page) { await page.waitForTimeout(50); return rows; }
+    test('for of input', async ({page}) => { for (const row of await loadRows(page)) { expect(row.id).toBeDefined(); } });
+    test('for in input', async ({page}) => { for (const key in await loadRows(page)) { expect(key).toBeTruthy(); } });
+    test('for initializer', async ({page}) => { for (let rows = await loadRows(page), i = 0; i < rows.length; i++) { expect(rows[i]).toBeTruthy(); } });
+    test('for condition', async ({page}) => { for (let i = 0; i < (await loadRows(page)).length; i++) { expect(i).toBeGreaterThan(-1); } });
+    test('for update', async ({page}) => { for (let i = 0; i < 3; i++, await page.waitForTimeout(10)) { expect(i).toBeGreaterThan(-1); } });
+    test('while condition', async ({page}) => { while (await loadRows(page)) { expect(1).toBe(1); } });
+    test('do condition', async ({page}) => { do { expect(1).toBe(1); } while (await loadRows(page)); });
+    test('once, then repeated', async ({page}) => { for (const row of await loadRows(page)) { await page.waitForTimeout(5); expect(row).toBeTruthy(); } });`);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => [l.code, l.line])),
+    [[], [], [], [['loop', 6]], [['loop', 7]], [['loop', 8]], [['loop', 9]], [['loop', 10]]]);
+  // Scanning order is unchanged: every wait is still recorded, and a header
+  // wait is read before the body (a do condition after it).
+  assert.deepEqual(facts.tests.map(t => [t.sleeps.length, t.assertions.map(a => a.afterWait)]),
+    [[1, [true]], [1, [true]], [1, [true]], [1, [true]], [1, [true]], [1, [true]], [1, [false]], [2, [true]]]);
+});
+
+test('a non-callable rejection handler is ignored, so the matcher still rejects', () => {
+  // A promise ignores a handler that is not a function, so the rejection
+  // passes on down the chain. Identifiers and call results may be functions
+  // and are still taken to swallow it.
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('non-callable', async ({page}) => {
+      await expect(page).toHaveURL('/a').catch(false);
+      await expect(page).toHaveURL('/b').catch(0);
+      await expect(page).toHaveURL('/c').catch('x');
+      await expect(page).toHaveURL('/d').catch([]);
+      await expect(page).toHaveURL('/e').catch({});
+      await expect(page).toHaveURL('/f').then(() => {}, false);
+      await expect(page).toHaveURL('/g').catch(\`x\${y}\`);
+      await expect(page).toHaveURL('/h').catch(\`x\`);
+      await expect(page).toHaveURL('/i').catch((true as any));
+      await expect(page).toHaveURL('/j').catch(-1);
+      await expect(page).toHaveURL('/k').catch(/x/);
+      await expect(page).toHaveURL('/l').catch(10n);
+      await expect(page).toHaveURL('/m').then(() => {}, ({ handle() {} }));
+      await expect(page).toHaveURL('/n').catch(!flag);
+      await expect(page).toHaveURL('/o').catch(typeof handler);
+    });
+    test('possibly callable or caught later', async ({page}) => {
+      await expect(page).toHaveURL('/p').catch(false).catch(() => {});
+      await expect(page).toHaveURL('/q').catch(handleFailure);
+      await expect(page).toHaveURL('/r').catch(makeHandler());
+      await expect(page).toHaveURL('/s').then(false, () => {});
+      try { await expect(page).toHaveURL('/t').catch(false); } catch {}
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => a.caught)),
+    [Array(15).fill(false), [true, true, true, true, true]]);
+});
+
+test('a poll is recognized from its structure, however it is configured or spaced', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('polls', async () => {
+      await expect.configure({ timeout: 5 }).poll(() => count).toBe(3).catch(() => {});
+      await expect.poll (() => count).toBe(3).catch(() => {});
+      await expect
+        .poll(() => count).not.toBe(3).catch(() => {});
+      await expect.configure({ timeout: 5 }).configure({ intervals: [1] }).poll(() => count).toBe(3).catch(() => {});
+      expect.configure({ timeout: 5 }).poll(() => count).toBe(3);
+      try { expect.poll (() => count).toBe(3); } catch {}
+    });
+    test('not polls', async () => {
+      await expect.configure({ timeout: 5 })(count).toBe(3).catch(() => {});
+      await expect(poll(() => count)).toBe(3).catch(() => {});
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught, a.unawaited])), [
+    [[3, true, false], [4, true, false], [5, true, false], [7, true, false], [8, false, true], [9, false, true]],
+    [[12, false, false], [13, false, false]],
+  ]);
 });
 
 test('a nested function is a limit only when it holds an assertion or wait', () => {
@@ -697,7 +974,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 10);
+  assert.equal(facts.version, 11);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {

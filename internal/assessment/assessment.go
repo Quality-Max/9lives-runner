@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -25,7 +26,10 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v13"
+const Policy = "assessment-source-v14"
+
+// helperVersion is the version of the analyzer's facts.
+const helperVersion = 11
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -34,6 +38,10 @@ const (
 	CodeMapsNoOutcome  = "maps-no-outcome"
 	CodeUnmappedInFile = "unmapped-in-file"
 )
+
+// NoTestsLimit is the report limit of a file in which no test declaration was
+// recognized, such as a helper or fixture module.
+const NoTestsLimit = "no-tests: no test declaration was recognized in this file, so it holds nothing to assess; assertions in a helper or fixture module are not attributed to the tests in other files that import it."
 
 // ReportVersion is the version of a single-file assess report.
 const ReportVersion = 3
@@ -74,6 +82,14 @@ type Assertion struct {
 	// AfterWait marks the first recognized assertion after a fixed wait, in
 	// execution order through resolved helpers.
 	AfterWait bool `json:"afterWait"`
+	// Caught marks a matcher whose rejection is handled, by .catch, a .then
+	// rejection handler, Promise.allSettled or a try/catch that does not
+	// rethrow, so it cannot fail the test: a conditional probe, not an
+	// assertion.
+	Caught bool `json:"caught"`
+	// Matcher is a matcher name from the pinned Playwright API, "custom" for
+	// any other matcher, or "assertion-helper" for a marked helper call.
+	Matcher string `json:"matcher"`
 }
 type AnalysisLimit struct {
 	Location
@@ -155,11 +171,25 @@ type Finding struct {
 	// rule itself for every other finding.
 	Code string `json:"code"`
 }
+
+// AssertionSummary counts the recognized assertions credited to a test:
+// matchers in its body and in the same-file helpers resolved from it, and
+// marked assertion helper calls. Caught probes are not counted. It shows what
+// was recognized beside any analysis limit, such as an unresolved helper whose
+// own assertions stay unknown; it is not a measure of adequacy.
+type AssertionSummary struct {
+	Count int `json:"count"`
+	// Matchers are the distinct matcher names, sorted: names from the pinned
+	// Playwright API, "custom" for any other matcher and "assertion-helper"
+	// for a marked helper call.
+	Matchers []string `json:"matchers"`
+}
 type Test struct {
 	Location
 	Title        string            `json:"title,omitempty"`
 	Requirements []string          `json:"requirements"`
 	Dimensions   map[string]string `json:"dimensions"`
+	Assertions   AssertionSummary  `json:"assertions"`
 	Findings     []Finding         `json:"findings"`
 }
 type Report struct {
@@ -315,7 +345,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 10 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == helperVersion {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "typescript-in-javascript", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -349,8 +379,10 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
+var matcherName = regexp.MustCompile(`^(?:to[A-Z][A-Za-z]{0,62}|custom|assertion-helper)$`)
+
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 10 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != helperVersion || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {
@@ -388,7 +420,7 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 			codes[limit.Code] = true
 		}
 		for _, a := range t.Assertions {
-			if !valid(a.Location) || (a.Site != nil && !valid(*a.Site)) || !ids(a.Outcomes) {
+			if !valid(a.Location) || (a.Site != nil && !valid(*a.Site)) || !ids(a.Outcomes) || !matcherName.MatchString(a.Matcher) {
 				return false
 			}
 		}
@@ -429,6 +461,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 	if len(facts.UnrecognizedTestImports) > 0 {
 		report.UnrecognizedTestImports = facts.UnrecognizedTestImports
 		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise (only @playwright/test and @9l/playwright), so its tests were not assessed.")
+	}
+	if len(facts.Tests) == 0 && len(facts.UnrecognizedTestImports) == 0 {
+		report.Limits = append(report.Limits, NoTestsLimit)
 	}
 	if facts.HazardsTruncated {
 		report.Limits = append(report.Limits, "More than 512 debugging-leftover and fragile-selector findings: the rest were not reported.")
@@ -472,6 +507,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 				mapped[requirement] = map[string]bool{}
 			}
 			for _, a := range fact.Assertions {
+				if a.Caught {
+					continue
+				}
 				for _, id := range a.Outcomes {
 					mapped[requirement][id] = true
 				}
@@ -505,6 +543,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			}
 			own := map[string]bool{}
 			for _, a := range fact.Assertions {
+				if a.Caught {
+					continue
+				}
 				for _, outcome := range a.Outcomes {
 					own[outcome] = true
 				}
@@ -526,11 +567,35 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		if known {
 			t.Dimensions["purpose"] = "supported"
 		}
-		// Even complete declared mappings leave semantic alignment unknown.
-		if len(fact.Assertions) == 0 && !fact.Unsupported {
-			add("no-direct-assertion", "suspected", "assertionAdequacy", "", "", "No direct expect matcher was recognized; helper assertions remain unknown.", "Inspect helpers and add an attributable assertion for the requirement.", fact.Location)
+		// Even complete declared mappings leave semantic alignment unknown. A
+		// caught matcher cannot fail the test, so it is not an assertion here.
+		credited, probes := 0, 0
+		matchers := map[string]bool{}
+		for _, a := range fact.Assertions {
+			if a.Caught {
+				probes++
+			} else {
+				credited++
+				matchers[a.Matcher] = true
+			}
+		}
+		t.Assertions = AssertionSummary{Count: credited, Matchers: make([]string, 0, len(matchers))}
+		for matcher := range matchers {
+			t.Assertions.Matchers = append(t.Assertions.Matchers, matcher)
+		}
+		sort.Strings(t.Assertions.Matchers)
+		if credited == 0 && !fact.Unsupported {
+			message := "No direct expect matcher was recognized; helper assertions remain unknown."
+			if probes > 0 {
+				message = "Every recognized matcher has its failure caught, so none can fail the test; helper assertions remain unknown."
+			}
+			add("no-direct-assertion", "suspected", "assertionAdequacy", "", "", message, "Inspect helpers and add an attributable assertion for the requirement.", fact.Location)
 		}
 		for _, a := range fact.Assertions {
+			if a.Caught {
+				add("caught-assertion", "informational", "assertionAdequacy", "", "", "This matcher's failure is caught (by .catch, a .then rejection handler, Promise.allSettled or a try/catch that does not rethrow), so it cannot fail the test; it is read as a conditional probe, not an assertion.", "If the test relies on this check, let its failure propagate; otherwise assert the expected state after the probe.", a.Location)
+				t.Findings[len(t.Findings)-1].Site = a.Site
+			}
 			if a.Unawaited {
 				add("unawaited-assertion", "suspected", "engineeringQuality", "", "", "A recognized asynchronous assertion is neither directly awaited nor returned.", "Await or return the assertion, or verify how its promise is consumed.", a.Location)
 				t.Findings[len(t.Findings)-1].Site = a.Site
@@ -543,7 +608,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		// A fixed wait directly followed by an absence assertion passes when the
 		// application is merely slow, so it can hide the defect it should catch.
 		for _, next := range fact.Assertions {
-			if next.Absence && next.AfterWait {
+			if next.Absence && next.AfterWait && !next.Caught {
 				add("absence-after-wait", "suspected", "assertionAdequacy", "", "", "The first recognized assertion after a fixed wait checks that something is absent or did not happen; if the application is merely slow, it passes without the outcome having occurred.", "Assert a positive completion signal first, such as the response, a confirmation or the final URL, then check the absence.", next.Location)
 				t.Findings[len(t.Findings)-1].Site = next.Site
 			}
