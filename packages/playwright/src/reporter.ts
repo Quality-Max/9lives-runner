@@ -3,6 +3,13 @@ import {closeSync, openSync, writeSync} from 'node:fs';
 import type {Reporter, FullConfig, Suite, TestCase, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
 
+function insideAssertion(step: TestStep) {
+  for (let ancestor = step.parent; ancestor; ancestor = ancestor.parent) {
+    if (ancestor.category === 'expect') return true;
+  }
+  return false;
+}
+
 // Worker logs, error messages, step titles, URLs and attachment bodies never enter
 // the protocol. IDs are hashes; Go persists only this bounded metadata stream.
 export default class EngineReporter implements Reporter {
@@ -47,6 +54,11 @@ export default class EngineReporter implements Reporter {
     this.emit('test_begin', {testId: this.testId(test), retry: result.retry});
   }
   onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
+    // expect.poll, toPass and custom matchers report the assertions they run,
+    // on every retry, as expect steps beneath their own, sometimes inside a
+    // test.step. A retrying assertion counts once, including the assertions
+    // inside it; its own step carries the final outcome.
+    if (step.category === 'expect' && insideAssertion(step)) return;
     const categories: Record<string, string> = {'test.step': 'action', expect: 'assertion', 'pw:api': 'browser', fixture: 'fixture'};
     const operation = this.target && step.category === 'test.step' && step.location?.file === targetStepFile && step.title.startsWith('9l target ') ? step.title.slice('9l target '.length) : undefined;
     this.emit('step_end', {

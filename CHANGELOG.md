@@ -6,8 +6,56 @@ SDK versions.
 
 ## Unreleased
 
+### SDK
+
+- A retrying assertion (`expect.poll`, `toPass`, a custom matcher that calls
+  `expect`) counts once in `reportedAssertions`, including the assertions it
+  runs inside it on every retry, even inside a `test.step`. Previously each
+  passing inner assertion was counted as well, and failed retries were
+  reported as failed assertion steps. The count is of top-level assertion
+  steps, not of every `expect` in the source.
+- The prove channel applies two more opt-in faults. `redirect-cross-origin`
+  answers 302 with `Location: http://redirect.invalid/`, a reserved name that
+  never resolves, so the browser's redirect fails without contacting an
+  application host (DNS may still be asked for the name). `delay` holds the
+  real response for 35 s, longer than Playwright's default test and `expect`
+  timeouts, then lets it through; it is credited when the hold starts and the
+  hold ends as soon as the context closes, so a fault run never outlives its
+  test. A redirect is held as the server sent it and Chromium follows it
+  itself, so the page sees the same redirect as without the fault; one close
+  listener per context serves every hold, however often the page polls. The
+  manifest's `"9l".faults` lists both.
+- When the upstream request of an `empty-json`, `malformed-json` or `delay`
+  fault fails in a fault run, the request is now aborted after the
+  `not-applicable` (`unreachable`) record instead of being sent a second time,
+  which could repeat a request the application had already acted on.
+
 ### CLI
 
+- `9l run --wait-for <url|host:port>` (repeatable) and `--wait-timeout` (1s
+  to 30m, default 1m) wait, inside the started run and before any test
+  process starts, until an http(s) target answers without a server error
+  (5xx or 429) or a host:port accepts connections. A target still not ready
+  leaves the run incomplete (exit 3) with an error receipt per job reading
+  `not started: --wait-for target not ready (environment): …`, instead of a
+  test failure against an application that never came up; `9l result` and
+  `9l status` read the run back. The wait counts against `--deadline`, and
+  `9l cancel` or Ctrl-C during it reports the run canceled. Targets are
+  named only as `scheme://host:port` or `host:port`, never with a path,
+  query, fragment or credentials. A self-signed https target is reported as
+  `certificate not trusted`; wait for its `host:port` instead.
+- Agent provenance assessments carry `scope: "spec"` and the text output says
+  what a `matched` status compared: the selected spec, its path, branch,
+  commit and workspace root. Imported modules are not compared, and the
+  wording no longer invites reading `matched` as unchanged dependencies.
+- `9l prove --faults` accepts `redirect-cross-origin` and `delay`, planned
+  after the existing kinds for every observed request. Defaults stay
+  `abort,http-500,empty-json`. An installed SDK that does not report the new
+  kinds is refused for them after the baseline with exit 2, as before, and
+  `9l doctor --sdk` names them under `sdk/faults`. Reports use policy
+  `prove-network-v4`; the rules are unchanged from `v3`. The text output
+  widens the kind column so every kind aligns. The real Chromium smoke
+  qualifies both kinds on the shop fixture (#43).
 - `9l doctor` adds an `executable` check: it compares the file it runs from
   with the `9l` first on PATH, without running either, and warns when they
   differ, since terminals, scripts and MCP hosts start the one on PATH unless

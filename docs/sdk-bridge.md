@@ -92,7 +92,10 @@ not independently verified assertion coverage; receipts retain `unknown` coverag
 The receipt does count them: `reportedAssertions` is the number of assertion
 steps the worker reported as passed in each executed test's last completed
 attempt, and `passedWithoutAssertions` the tests that passed while reporting
-none. Both are the worker's report, so a green test that asserted nothing is
+none. A retrying assertion (`expect.poll`, `toPass`, a custom matcher)
+counts once, including the assertions it runs inside it on each retry, so
+the count is of top-level assertion steps, not of every `expect` in the
+source. Both are the worker's report, so a green test that asserted nothing is
 visible without any claim that what it asserted was verified. The ordinary
 JSON reporter serializes only `test.step` steps, so without `--sdk` these
 counts are absent. The SDK reporter runs on any spec once `@9l/playwright` is
@@ -133,7 +136,9 @@ test ID and retry index. A baseline records fetch/XHR method, origin and path
 (no query, headers or bodies) and response status and JSON media type; a fault
 run records only how often its one fault, from the closed
 `NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` or
-`malformed-json` fault was not applicable (`not-json` or `unreachable`). When
+`malformed-json` fault was not applicable (`not-json` or `unreachable`) or a
+`delay` fault had no response to hold (`unreachable`); a request whose upstream
+fetch failed is aborted, not sent again. When
 the engine sets `NINELIVES_PROVE_CAPABILITIES=1`, a baseline file also lists
 the fault kinds this SDK can apply, right after the handshake; an engine that
 does not ask never receives the record. These records never enter `9l.engine/1`. Go validates

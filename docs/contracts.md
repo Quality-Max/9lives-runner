@@ -39,7 +39,7 @@ its one-line text output.
 | 0 | `passed` | Every planned job has a validated passing receipt |
 | 1 | `failed` | Every planned job ran to a validated receipt and at least one reported a test failure |
 | 2 | — | Usage or setup error before execution: invalid flags, no specs, an unavailable provider, invalid provenance, provenance selecting several specs, or an invalid/over-budget supplied plan |
-| 3 | `incomplete` | The run proves neither: skipped inputs, cancellation, run or job timeouts, infrastructure errors, missing or invalid evidence, provenance drift, or a goal that did not complete |
+| 3 | `incomplete` | The run proves neither: skipped inputs, cancellation, run or job timeouts, infrastructure errors, missing or invalid evidence, provenance drift, a goal that did not complete, or a `--wait-for` target not ready (each job's receipt is an error reading `not started: --wait-for target not ready (environment): …`) |
 
 A goal that is policy-blocked, out of budget, interrupted or without a
 provider does not establish a defect in the test that called it. Failures in
