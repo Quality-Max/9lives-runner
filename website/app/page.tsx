@@ -62,6 +62,7 @@ export default function Home() {
           <p className="hero-copy">Your agent proposes a fix. Run the test, compare the results, and check what its assertions catch. Keep your Playwright suite and inspect the evidence locally.</p>
           <div className="actions"><a className="button primary" href="/demo.html#proof">Explore the real experiment <span aria-hidden="true">↗</span></a><a className="button secondary" href="#start">Run it yourself <span aria-hidden="true">↓</span></a></div>
           <p><a className="text-link" href="https://youtu.be/O5cpuKBSGsQ">Watch the 60-second launch film <span aria-hidden="true">↗</span></a></p>
+          <p><a className="text-link" href="/hunt.html">Play the great little hunt: Jev looks, 9lives checks <span aria-hidden="true">↗</span></a></p>
           <p className="small-note">No account needed · Apache-2.0 · macOS, Linux &amp; Windows</p>
         </div>
         <div className="evidence-card" aria-label="Recorded fix confirmation">

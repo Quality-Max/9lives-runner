@@ -7,6 +7,10 @@ on:
       - 'install/**'
       - 'docs/explainer/**'
       - 'scripts/site-smoke.cjs'
+      - 'scripts/sync-hunt.cjs'
+      - 'scripts/hunt-smoke.cjs'
+      - 'demo/jev/cats.html'
+      - 'demo/jev/cat-room.html'
       - 'scripts/export-overview.cjs'
       - '.github/workflows/website.yml'
   push:
@@ -16,6 +20,10 @@ on:
       - 'install/**'
       - 'docs/explainer/**'
       - 'scripts/site-smoke.cjs'
+      - 'scripts/sync-hunt.cjs'
+      - 'scripts/hunt-smoke.cjs'
+      - 'demo/jev/cats.html'
+      - 'demo/jev/cat-room.html'
       - 'scripts/export-overview.cjs'
       - '.github/workflows/website.yml'
   workflow_dispatch:
@@ -72,6 +80,9 @@ jobs:
             exit 1
           fi
           node scripts/site-smoke.cjs
+      - name: Qualify the website picture hunt under production headers
+        working-directory: .
+        run: node scripts/hunt-smoke.cjs
 
   installer:
     runs-on: ubuntu-latest

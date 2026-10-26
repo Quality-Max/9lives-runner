@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "scenario": "mice",
+  "broken": true,
+  "recordedAt": "2026-10-24T20:27:09.39256Z",
+  "runId": "run-20261024T202706Z-470b956583a1",
+  "outcome": "failed",
+  "fixtureSHA256": "85b36a389a6f3f60446db0af675c2c86ec396269ed93df7397df5c90327c74af",
+  "jev": {
+    "status": "answered",
+    "model": "jev-1.14.0",
+    "requestCount": 1,
+    "questionCount": 9,
+    "usage": {
+      "inputTokens": 3409,
+      "outputTokens": 157,
+      "available": true
+    }
+  },
+  "receipts": [
+    {
+      "status": "failed",
+      "validated": true,
+      "executedTests": 1,
+      "failureCount": 1,
+      "durationMs": 3117
+    }
+  ],
+  "steps": [
+    {
+      "stage": "looking",
+      "message": "Jev is checking close-ups of nine hiding spots…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-0.png",
+      "target": null
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 2…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-1.png",
+      "target": {
+        "X": 76.00188131893383,
+        "Y": 46.5,
+        "Width": 3.1002340877757355,
+        "Height": 4.263997395833333
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 1: score 0 → 1. Checked!",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-2.png",
+      "target": {
+        "X": 76.00188131893383,
+        "Y": 46.5,
+        "Width": 3.1002340877757355,
+        "Height": 4.263997395833333
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 3…",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-3.png",
+      "target": {
+        "X": 26.612705006318933,
+        "Y": 46.5,
+        "Width": 2.495312859030331,
+        "Height": 3.432001749674479
+      }
+    },
+    {
+      "stage": "failed",
+      "message": "Caught it! A correct click did not add one to the score.",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-4.png",
+      "target": {
+        "X": 26.612705006318933,
+        "Y": 46.5,
+        "Width": 2.495312859030331,
+        "Height": 3.432001749674479
+      }
+    }
+  ]
+}

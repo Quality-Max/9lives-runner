@@ -5,7 +5,7 @@
   "workspaces": ["packages/playwright", "packages/browser-checks", "testdata/sdk"],
   "scripts": {
     "build": "npm run build --workspace @9l/playwright && npm run build --workspace @9l/browser-checks",
-    "test": "npm run build && node --test packages/playwright/test/*.test.cjs packages/browser-checks/test/*.test.cjs internal/assessment/analyzer.test.cjs scripts/bundle-assessment-parser.test.cjs scripts/sdk-registry.test.cjs scripts/release-version.test.cjs scripts/check-blocked-terms.test.cjs",
+    "test": "npm run build && node --test packages/playwright/test/*.test.cjs packages/browser-checks/test/*.test.cjs internal/assessment/analyzer.test.cjs scripts/bundle-assessment-parser.test.cjs scripts/sdk-registry.test.cjs scripts/release-version.test.cjs scripts/check-blocked-terms.test.cjs scripts/sync-hunt.test.cjs",
     "smoke": "npm run build && node scripts/sdk-smoke.cjs",
     "smoke:targets": "npm run build && node scripts/target-smoke.cjs",
     "smoke:contracts": "npm run build && node scripts/contracts-smoke.cjs",
@@ -19,6 +19,8 @@
     "smoke:assessment-portability": "node scripts/assessment-portability-smoke.cjs",
     "parser:check": "node scripts/bundle-assessment-parser.cjs --check",
     "demo": "npm run build && go run ./cmd/9l run testdata/sdk/tests/checkout.spec.ts --sdk --format json",
+    "demo:jev": "go run ./demo/jev --serve --open",
+    "smoke:jev": "node demo/jev/interactive-smoke.cjs",
     "demo:bank": "node demo/bank/run-demo.cjs",
     "demo:lab": "node demo/release-lab/run-demo.cjs",
     "demo:first-run": "npm run build && node demo/first-run/run-demo.cjs",
