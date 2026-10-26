@@ -13,10 +13,18 @@ import (
 // startAndWait puts the adapter command in its own process group so Ctrl-C and
 // deadlines stop browser/test-runner children as well as the immediate process.
 func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) {
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.WaitDelay = 50 * time.Millisecond
-	if err := command.Start(); err != nil {
+	output, err := attachOwnedOutput(command)
+	if err != nil {
 		return err, nil
+	}
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Stdout and stderr are owned pipes drained after group cleanup; WaitDelay
+	// now only bounds feeding stdin to a process that stopped reading it.
+	command.WaitDelay = 50 * time.Millisecond
+	err = command.Start()
+	output.closeChildEnds()
+	if err != nil {
+		return output.finish(err), nil
 	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
@@ -29,13 +37,13 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 		// A test launcher can exit successfully while leaving browser children in
 		// its group. Clean those owned children before reporting completion.
 		if !groupAlive(command.Process.Pid) {
-			return err, observed
+			return output.finish(err), observed
 		}
 		termination := stopGroup(command.Process.Pid, "cleanup", "leader exited while owned children remained")
 		if observed != nil {
 			termination.ObservedSignal = observed.ObservedSignal
 		}
-		return err, termination
+		return output.finish(err), termination
 	case <-ctx.Done():
 		termination := &Termination{Detail: ctx.Err().Error()}
 		if ctx.Err() == context.DeadlineExceeded {
@@ -49,7 +57,7 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 		if observed := observedSignal(command); observed != nil {
 			termination.ObservedSignal = observed.ObservedSignal
 		}
-		return err, termination
+		return output.finish(err), termination
 	}
 }
 

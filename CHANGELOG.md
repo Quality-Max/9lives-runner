@@ -6,6 +6,17 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- Output a command wrote before it exited is no longer lost when the machine
+  is busy. Test-runner stdout and stderr, healing provider CLIs and the
+  helper processes the runner owns used to drop output the runner had not yet
+  read 50 ms after the process exited: a failing provider then reported no
+  reason (`codex provider failed (exit 1)`), and a successful exit could
+  return truncated output as complete. Output is now read until the process
+  group has been stopped; only a writer that left the group is cut off, after
+  5 s.
+
 ## 0.5.1 — 2026-10-26
 
 ### SDK
