@@ -449,16 +449,71 @@ function createAnalyzer(ts) {
                 const outer = carrier(child);
                 return !ctx.floating && (ts.isAwaitExpression(unparen(outer).parent) || returnedHere(outer));
               };
+              // A handler rethrows when its own body, outside nested functions,
+              // has a throw statement or a Promise.reject call. Any other handler,
+              // including a named function whose body is not visible, is taken
+              // to swallow the rejection.
+              const rethrows = body => {
+                let found = false;
+                (function walk(node) {
+                  if (found || (ts.isFunctionLike(node) && node !== body)) return;
+                  if (ts.isThrowStatement(node) || (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+                    && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'Promise' && node.expression.name.text === 'reject')) found = true;
+                  else ts.forEachChild(node, walk);
+                })(body);
+                return found;
+              };
+              const swallows = handler => !!handler && handler.kind !== ts.SyntaxKind.NullKeyword
+                && !(ts.isIdentifier(handler) && handler.text === 'undefined') && !(isFunction(handler) && rethrows(handler));
+              // Whether a then/catch/finally chain on the promise handles its
+              // rejection: .catch(handler), or .then(onFulfilled, onRejected).
+              const handledChain = child => {
+                while (true) {
+                  while (ts.isParenthesizedExpression(child.parent)) child = child.parent;
+                  const access = child.parent;
+                  if (!ts.isPropertyAccessExpression(access) || !['then', 'catch', 'finally'].includes(access.name.text)
+                    || !ts.isCallExpression(access.parent) || access.parent.expression !== access) return false;
+                  const call = access.parent;
+                  if ((access.name.text === 'catch' && swallows(call.arguments[0])) || (access.name.text === 'then' && swallows(call.arguments[1]))) return true;
+                  child = call;
+                }
+              };
+              // A failure that cannot fail the test: the promise's rejection is
+              // handled by its chain, by the chain of the Promise combinator
+              // carrying it, or by Promise.allSettled; or the call is inside a try
+              // block of this function whose catch does not rethrow, and an
+              // asynchronous call is awaited inside that block.
+              const caught = (child, asynchronous) => {
+                if (handledChain(child)) return true;
+                const outer = unparen(chained(child));
+                if (ts.isArrayLiteralExpression(outer.parent)) {
+                  const array = unparen(outer.parent);
+                  const call = array.parent;
+                  if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
+                    && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
+                    && (call.expression.name.text === 'allSettled' || (['all', 'race', 'any'].includes(call.expression.name.text) && handledChain(call)))) return true;
+                }
+                let awaited = false;
+                for (let node = child; node.parent && !ts.isFunctionLike(node.parent); node = node.parent) {
+                  if (ts.isAwaitExpression(node.parent)) awaited = true;
+                  const parent = node.parent;
+                  if (ts.isTryStatement(parent) && parent.tryBlock === node && parent.catchClause && !rethrows(parent.catchClause.block)
+                    && (awaited || !asynchronous)) return true;
+                }
+                return false;
+              };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
               // The outermost nested function being scanned, if any.
               let nested = null;
               const browserSide = child => ts.isCallExpression(child.parent) && child.parent.arguments.includes(child)
                 && ts.isPropertyAccessExpression(child.parent.expression) && browserMethods.has(child.parent.expression.name.text)
                 && roots.has(root(child.parent.expression));
-              const assertion = (child, outcomes, unawaited, isAbsence) => {
+              // A caught assertion is a conditional probe: it cannot fail the
+              // test, so it is no completion signal after a fixed wait.
+              const assertion = (child, outcomes, unawaited, isAbsence, matcher, isCaught) => {
                 record();
-                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited });
-                order.waited = false;
+                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited, caught: isCaught, matcher });
+                if (!isCaught) order.waited = false;
               };
               function scan(child) {
                 spend();
@@ -520,7 +575,8 @@ function createAnalyzer(ts) {
                       // other unconsumed marked helper the timing is unknown.
                       const pending = !settled && !ctx.floating;
                       if (pending && !(helper.fn && isAsync(helper.fn))) limited('unknown-matcher', child);
-                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false);
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false,
+                        'assertion-helper', ctx.caught || caught(child, !helper.fn || isAsync(helper.fn)));
                     } else {
                       // Inline a same-file helper. Parameters given a browser
                       // fixture value are fixture roots inside it.
@@ -534,7 +590,7 @@ function createAnalyzer(ts) {
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
-                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]) });
+                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]), caught: ctx.caught || caught(child, isAsync(helper.fn)) });
                       } catch (error) {
                         if (!(error instanceof Exhausted)) throw error;
                         fact.assertions.length = saved.assertions;
@@ -565,7 +621,11 @@ function createAnalyzer(ts) {
                         || child.getText(file).startsWith(root(child.expression) + '.poll(');
                       // An unawaited matcher of unknown timing may be an unawaited promise.
                       if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited && !ctx.floating) limited('unknown-matcher', child);
-                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments));
+                      // Matcher names outside the pinned API are source identifiers
+                      // and are reported only as custom.
+                      const known = asyncMatchers.has(matcher) || syncMatchers.has(matcher) ? matcher : 'custom';
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments),
+                        known, ctx.caught || caught(child, asyncMatcher || !syncMatchers.has(matcher)));
                     }
                   }
                 }
@@ -576,7 +636,7 @@ function createAnalyzer(ts) {
               if (ts.isBlock(fn.body)) ts.forEachChild(fn.body, scan);
               else scan(fn.body);
             }
-            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set() });
+            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: false });
           }
           results.push(fact);
           if (results.length > 256) throw new AnalysisError('limit');
@@ -603,7 +663,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 10, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 11, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -626,7 +686,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 10, error: code }));
+    process.stdout.write(JSON.stringify({ version: 11, error: code }));
     process.exitCode = 2;
   }
 }

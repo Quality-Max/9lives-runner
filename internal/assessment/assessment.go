@@ -25,7 +25,10 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v13"
+const Policy = "assessment-source-v14"
+
+// helperVersion is the version of the analyzer's facts.
+const helperVersion = 11
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -74,6 +77,14 @@ type Assertion struct {
 	// AfterWait marks the first recognized assertion after a fixed wait, in
 	// execution order through resolved helpers.
 	AfterWait bool `json:"afterWait"`
+	// Caught marks a matcher whose rejection is handled, by .catch, a .then
+	// rejection handler, Promise.allSettled or a try/catch that does not
+	// rethrow, so it cannot fail the test: a conditional probe, not an
+	// assertion.
+	Caught bool `json:"caught"`
+	// Matcher is a matcher name from the pinned Playwright API, "custom" for
+	// any other matcher, or "assertion-helper" for a marked helper call.
+	Matcher string `json:"matcher"`
 }
 type AnalysisLimit struct {
 	Location
@@ -315,7 +326,7 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			Version int    `json:"version"`
 			Error   string `json:"error"`
 		}
-		if Decode(output.Bytes(), &failure) == nil && failure.Version == 10 {
+		if Decode(output.Bytes(), &failure) == nil && failure.Version == helperVersion {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "typescript-in-javascript", "annotation", "limit", "helper-failed":
 				return empty, diagnostic(failure.Error)
@@ -349,8 +360,10 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
+var matcherName = regexp.MustCompile(`^(?:to[A-Z][A-Za-z]{0,62}|custom|assertion-helper)$`)
+
 func validFacts(f Facts, source []byte, titles bool) bool {
-	if f.Version != 10 || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
+	if f.Version != helperVersion || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
 		return false
 	}
 	for _, module := range f.UnrecognizedTestImports {
@@ -388,7 +401,7 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 			codes[limit.Code] = true
 		}
 		for _, a := range t.Assertions {
-			if !valid(a.Location) || (a.Site != nil && !valid(*a.Site)) || !ids(a.Outcomes) {
+			if !valid(a.Location) || (a.Site != nil && !valid(*a.Site)) || !ids(a.Outcomes) || !matcherName.MatchString(a.Matcher) {
 				return false
 			}
 		}
@@ -472,6 +485,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 				mapped[requirement] = map[string]bool{}
 			}
 			for _, a := range fact.Assertions {
+				if a.Caught {
+					continue
+				}
 				for _, id := range a.Outcomes {
 					mapped[requirement][id] = true
 				}
@@ -505,6 +521,9 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 			}
 			own := map[string]bool{}
 			for _, a := range fact.Assertions {
+				if a.Caught {
+					continue
+				}
 				for _, outcome := range a.Outcomes {
 					own[outcome] = true
 				}
@@ -526,11 +545,28 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		if known {
 			t.Dimensions["purpose"] = "supported"
 		}
-		// Even complete declared mappings leave semantic alignment unknown.
-		if len(fact.Assertions) == 0 && !fact.Unsupported {
-			add("no-direct-assertion", "suspected", "assertionAdequacy", "", "", "No direct expect matcher was recognized; helper assertions remain unknown.", "Inspect helpers and add an attributable assertion for the requirement.", fact.Location)
+		// Even complete declared mappings leave semantic alignment unknown. A
+		// caught matcher cannot fail the test, so it is not an assertion here.
+		credited, probes := 0, 0
+		for _, a := range fact.Assertions {
+			if a.Caught {
+				probes++
+			} else {
+				credited++
+			}
+		}
+		if credited == 0 && !fact.Unsupported {
+			message := "No direct expect matcher was recognized; helper assertions remain unknown."
+			if probes > 0 {
+				message = "Every recognized matcher has its failure caught, so none can fail the test; helper assertions remain unknown."
+			}
+			add("no-direct-assertion", "suspected", "assertionAdequacy", "", "", message, "Inspect helpers and add an attributable assertion for the requirement.", fact.Location)
 		}
 		for _, a := range fact.Assertions {
+			if a.Caught {
+				add("caught-assertion", "informational", "assertionAdequacy", "", "", "This matcher's failure is caught (by .catch, a .then rejection handler, Promise.allSettled or a try/catch that does not rethrow), so it cannot fail the test; it is read as a conditional probe, not an assertion.", "If the test relies on this check, let its failure propagate; otherwise assert the expected state after the probe.", a.Location)
+				t.Findings[len(t.Findings)-1].Site = a.Site
+			}
 			if a.Unawaited {
 				add("unawaited-assertion", "suspected", "engineeringQuality", "", "", "A recognized asynchronous assertion is neither directly awaited nor returned.", "Await or return the assertion, or verify how its promise is consumed.", a.Location)
 				t.Findings[len(t.Findings)-1].Site = a.Site
@@ -543,7 +579,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		// A fixed wait directly followed by an absence assertion passes when the
 		// application is merely slow, so it can hide the defect it should catch.
 		for _, next := range fact.Assertions {
-			if next.Absence && next.AfterWait {
+			if next.Absence && next.AfterWait && !next.Caught {
 				add("absence-after-wait", "suspected", "assertionAdequacy", "", "", "The first recognized assertion after a fixed wait checks that something is absent or did not happen; if the application is merely slow, it passes without the outcome having occurred.", "Assert a positive completion signal first, such as the response, a confirmation or the final URL, then check the absence.", next.Location)
 				t.Findings[len(t.Findings)-1].Site = next.Site
 			}

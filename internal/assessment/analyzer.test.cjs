@@ -411,9 +411,61 @@ test('an awaited then/catch/finally chain consumes the matcher', () => {
       expect(page).toHaveURL('/c').catch(() => {});
       showMonth(page.locator('.cal'), page.locator('.next'));
     });`);
-  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.unawaited])), [[[3, false], [7, false], [8, false]], [[11, true], [3, true]]]);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.unawaited, a.caught])),
+    [[[3, false, true], [7, false, false], [8, false, true]], [[11, true, true], [3, true, true]]]);
   // The callbacks hold no assertion, so they are not a limit.
   assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], []]);
+});
+
+test('a matcher whose failure is caught is a probe, and only a rejecting chain stays an assertion', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test('handled', async ({page}) => {
+      await expect(page.getByRole('heading')).not.toContainText('May').catch(() => page.getByRole('button').click());
+      await expect(page.getByRole('dialog')).toBeVisible().then(() => {}, () => {});
+      await (expect(page).toHaveURL('/a')).then(() => {}).catch(handleFailure);
+      await Promise.allSettled([expect(page.getByRole('row')).toHaveCount(1)]);
+      await Promise.all([expect(page.getByRole('row')).toHaveCount(2)]).catch(() => {});
+      try { await expect(page.getByRole('banner')).toBeVisible(); expect(count).toBe(1); } catch {}
+      try { await expect(page.getByRole('link')).toBeVisible(); } catch (error) { log(error); } finally { done(); }
+    });
+    test('rejecting', async ({page}) => {
+      await expect(page).toHaveURL('/b').then(() => {}).finally(() => {});
+      await expect(page).toHaveURL('/c').catch();
+      await expect(page).toHaveURL('/d').then(() => {}, undefined);
+      await expect(page).toHaveURL('/e').catch(error => { throw error; });
+      await expect(page).toHaveURL('/f').catch(error => Promise.reject(error));
+      await Promise.all([expect(page.getByRole('row')).toHaveCount(3)]);
+      try { await expect(page.getByRole('nav')).toBeVisible(); } catch (error) { cleanup(); throw error; }
+      try { await expect(page.getByRole('main')).toBeVisible(); } finally { done(); }
+      try { return expect(page.getByRole('aside')).toBeVisible(); } catch {}
+    });`);
+  assert.deepEqual(facts.tests.map(t => t.assertions.map(a => [a.line, a.caught])), [
+    [[3, true], [4, true], [5, true], [6, true], [7, true], [8, true], [8, true], [9, true]],
+    [[12, false], [13, false], [14, false], [15, false], [16, false], [17, false], [18, false], [19, false], [20, false]],
+  ]);
+  // Every assertion is still recorded, with its matcher; the probe is no
+  // assertion, but its location stays visible.
+  assert.deepEqual(facts.tests[0].assertions.map(a => a.matcher), ['toContainText', 'toBeVisible', 'toHaveURL', 'toHaveCount', 'toHaveCount', 'toBeVisible', 'toBe', 'toBeVisible']);
+});
+
+test('a caught probe is no completion signal after a fixed wait and passes caught into helpers', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    // @9l-assertion-helper
+    import { expectSaved } from './checks';
+    async function confirm(page) { await expect(page.getByText('Saved')).toBeVisible(); }
+    test('probe then absence', async ({page}) => {
+      await page.waitForTimeout(500);
+      await expect(page.getByText('Saved')).toBeVisible().catch(() => {});
+      await expect(page.getByRole('alert')).toBeHidden();
+    });
+    test('caught helpers', async ({page}) => {
+      await confirm(page).catch(() => {});
+      try { await expectSaved(page); } catch {}
+      await confirm(page);
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => [a.line, a.caught, a.afterWait, a.absence]), [[7, true, true, false], [8, false, true, true]]);
+  assert.deepEqual(facts.tests[1].assertions.map(a => [a.line, a.site?.line, a.caught, a.matcher]),
+    [[4, 11, true, 'toBeVisible'], [12, undefined, true, 'assertion-helper'], [4, 13, false, 'toBeVisible']]);
 });
 
 test('a nested function is a limit only when it holds an assertion or wait', () => {
@@ -697,7 +749,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 10);
+  assert.equal(facts.version, 11);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {

@@ -6,6 +6,23 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- `9l assess` reads a matcher whose failure is caught as a conditional
+  probe, not an assertion: one consumed through `.catch(handler)`, a `.then`
+  rejection handler, `Promise.allSettled`, a `.catch` on the `Promise.all`,
+  `race` or `any` call carrying it, or awaited inside a `try` block whose
+  `catch` does not rethrow, including through a helper called that way. Such a
+  matcher cannot fail the test, so it no longer satisfies
+  `no-direct-assertion`, counts toward outcome mapping or acts as the positive
+  completion signal that clears `absence-after-wait`. It gets the new
+  `caught-assertion` finding (informational, assertion adequacy) at the
+  matcher. A chain ending only in `.then(onFulfilled)` or `.finally`, a
+  `.catch()` with no handler, or a handler that throws or returns
+  `Promise.reject` still rejects and stays an assertion. Policy
+  `assessment-source-v14`; the analyzer helper version is 11, and report
+  version 3 and suite version 1 are unchanged (#21).
+
 ## 0.5.1 — 2026-10-26
 
 ### SDK

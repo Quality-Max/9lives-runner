@@ -229,6 +229,7 @@ with no recognized assertion still produces a suspected absence finding.
 | Required outcome lacks an assertion annotation | suspected | No test in the file maps it, or this test maps none of the requirement's outcomes; helpers may protect it. |
 | No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
+| Matcher whose failure is caught (`caught-assertion`) | informational | A conditional probe that cannot fail the test; it is not counted as an assertion. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
 | Absence assertion first after a fixed wait (`absence-after-wait`) | suspected | A slow application also passes it; assert a positive completion signal first. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
@@ -292,6 +293,27 @@ cases. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
+A matcher whose failure is caught cannot fail the test, so it is read as a
+conditional probe, such as
+`await expect(heading).not.toContainText('May').catch(() => next.click())`,
+not as an assertion. That is a matcher consumed through `.catch(handler)` or
+`.then(onFulfilled, onRejected)`, an element of `Promise.allSettled`, an
+element of `Promise.all`, `race` or `any` whose call has such a handler, or a
+matcher inside a `try` block of the same function whose `catch` does not
+rethrow (an asynchronous matcher must be awaited inside the block; a returned
+one is not caught there). A call to a resolved or marked helper consumed in
+one of these ways makes every assertion in it a probe. A handler rethrows when
+its own body, outside nested functions, has a `throw` statement or a
+`Promise.reject` call; any other handler, including a named function whose
+body is not visible, is taken to swallow the failure. A `.catch()` with no
+handler, a `null` or `undefined` handler, a chain ending only in
+`.then(onFulfilled)` or `.finally`, and a `try` with only `finally` still
+reject, so those matchers stay assertions. A probe gets `caught-assertion`
+(informational) at the matcher and does not count as an assertion for
+`no-direct-assertion`, for outcome mapping or as the positive completion
+signal between a fixed wait and an absence check. Rejections caught further
+away, such as by a caller of an unresolved helper or around a nested
+function, are not traced.
 Debugging leftovers and locators tied to page structure or element order are
 engineering-quality findings, reported once per test at their location, with
 `site` when they are in a helper the test calls. They are found wherever test
@@ -319,10 +341,13 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v13` parses
+inputs invalidate prior assessments. Policy `assessment-source-v14` reads a
+matcher whose failure is caught as a probe with the informational
+`caught-assertion` rule; the helper version is 11 and report version 3 is
+unchanged. Policy `assessment-source-v13` parses
 `.js`, `.mjs`, `.cjs` and `.jsx` specs as JavaScript, so TypeScript-only syntax
 in them is a `typescript-in-javascript` failure instead of a clean report; the
-helper version is 10 and report version 3 is unchanged. Policy
+helper version was 10 and report version 3 is unchanged. Policy
 `assessment-source-v12` removes
 the noisy `unnamed-role` advisory introduced in v11. The `debugging-leftover` and `fragile-selector` rules and
 `hazardsTruncated` limit remain; the helper version was 9 and report version 3
@@ -343,7 +368,7 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip`, `absence-after-wait`,
-`debugging-leftover` and `fragile-selector` rules, the `unknown-matcher` limit
+`debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the `unknown-matcher` limit
 code, an absent `requirementsSHA256`, an optional test `title` and an optional
 finding `site` before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
