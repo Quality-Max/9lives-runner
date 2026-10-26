@@ -19,6 +19,19 @@ SDK versions.
   still holds open, with nothing left unread, is closed after 5 s. A
   destination that rejects output, or a pipe the runner had to close without
   showing it was drained, fails an otherwise successful command.
+- `9l scan` and the `scan_url` MCP tool apply the network policy to the
+  address a Node-side link check connects to, not only to the answer seen
+  before the request. Links to another origin, and same-origin links the page
+  could not fetch itself, are requested with `node:http`/`node:https` and a
+  lookup that resolves the name again at connect time and refuses the
+  connection unless every answer passes, on each redirect hop. A hostname
+  whose DNS answer changes between the check and the connection (DNS
+  rebinding) can no longer reach a private, link-local or loopback address,
+  or a second loopback origin under `--allow-private-network`; the refusal
+  reads as before and names no address. Redirect re-validation, the response
+  size limit and the 10 s timeout are unchanged, and the timeout now also
+  ends a response body nobody reads. The browser's navigation, subrequests
+  and WebSockets are not yet pinned (#108).
 
 ### Release process
 
