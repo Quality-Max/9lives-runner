@@ -5,6 +5,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -85,6 +86,67 @@ func TestOwnedCommandBoundsOutputHeldOutsideTheGroup(t *testing.T) {
 	}
 	if pid, err := strconv.Atoi(lines[0]); err == nil {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+}
+
+// slowSink accepts every write but takes delay per call, as a sink behind a
+// slow consumer or a copy goroutine starved on a loaded machine does.
+type slowSink struct {
+	stalledSink
+	delay time.Duration
+}
+
+func (s *slowSink) Write(p []byte) (int, error) {
+	time.Sleep(s.delay)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.data.Write(p)
+}
+
+// The drain window bounds only a pipe a writer outside the group still holds
+// open. When every writer has exited, bytes already in the pipe must reach a
+// slow sink however long it takes; cutting them and reporting exit 0 as
+// success returned truncated output as complete.
+func TestOwnedCommandKeepsPendingOutputPastTheDrainWindow(t *testing.T) {
+	previous := outputDrainTimeout
+	outputDrainTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { outputDrainTimeout = previous })
+	stdout := &slowSink{delay: 400 * time.Millisecond}
+	command := exec.Command("/bin/sh", "-c", "printf 'out-1\\n'; sleep 0.05; printf 'out-2\\n'; sleep 0.05; printf 'out-3\\n'")
+	command.Stdout = stdout
+	if err := RunOwnedCommand(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.String() != "out-1\nout-2\nout-3\n" {
+		t.Fatalf("pending output was cut: stdout=%q", stdout.String())
+	}
+}
+
+var errSinkRejected = errors.New("sink rejected output")
+
+type failingSink struct{}
+
+func (failingSink) Write([]byte) (int, error) { return 0, errSinkRejected }
+
+// A sink that could not accept output fails an otherwise successful command,
+// even when a writer outside the group keeps the other stream open until the
+// drain window ends.
+func TestOwnedCommandReportsSinkFailureWhileAnotherStreamIsHeld(t *testing.T) {
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl provides setsid for the escaped writer")
+	}
+	previous := outputDrainTimeout
+	outputDrainTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { outputDrainTimeout = previous })
+	stderr := &slowSink{}
+	command := exec.Command("/bin/sh", "-c", `perl -MPOSIX -e 'POSIX::setsid(); print STDERR "$$\n"; STDERR->flush; sleep 30' >/dev/null & sleep 0.3; echo leader`)
+	command.Stdout, command.Stderr = failingSink{}, stderr
+	err := RunOwnedCommand(context.Background(), command)
+	if pid, convErr := strconv.Atoi(strings.TrimSpace(stderr.String())); convErr == nil {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+	if !errors.Is(err, errSinkRejected) {
+		t.Fatalf("sink failure was not reported: err=%v stderr=%q", err, stderr.String())
 	}
 }
 

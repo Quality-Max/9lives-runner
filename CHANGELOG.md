@@ -14,8 +14,11 @@ SDK versions.
   read 50 ms after the process exited: a failing provider then reported no
   reason (`codex provider failed (exit 1)`), and a successful exit could
   return truncated output as complete. Output is now read until the process
-  group has been stopped; only a writer that left the group is cut off, after
-  5 s.
+  group has been stopped and every byte already written has reached its
+  destination, however slowly. Only a pipe that a writer outside the group
+  still holds open, with nothing left unread, is closed after 5 s. A
+  destination that rejects output, or a pipe the runner had to close without
+  showing it was drained, fails an otherwise successful command.
 
 ## 0.5.1 — 2026-10-26
 
