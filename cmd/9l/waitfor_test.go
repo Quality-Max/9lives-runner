@@ -166,6 +166,18 @@ func TestNetReasonNamesErrnoCodes(t *testing.T) {
 			t.Fatalf("%v: %q, want %q", errno, got, want)
 		}
 	}
+	for _, dns := range []struct {
+		err  *net.DNSError
+		want string
+	}{
+		{&net.DNSError{Err: "no such host", Name: "fixture-name.invalid", IsNotFound: true}, "no such host"},
+		{&net.DNSError{Err: "i/o timeout", Name: "fixture-name.invalid", IsTimeout: true}, "dns lookup timed out"},
+		{&net.DNSError{Err: "server misbehaving", Name: "fixture-name.invalid", IsTemporary: true}, "dns lookup failed"},
+	} {
+		if got := netReason(&net.OpError{Op: "dial", Net: "tcp", Err: dns.err}); got != dns.want {
+			t.Fatalf("%v: %q, want %q", dns.err, got, dns.want)
+		}
+	}
 	if got := netReason(errors.New("fixture-secret text")); got != "unreachable" {
 		t.Fatalf("unknown error: %q", got)
 	}

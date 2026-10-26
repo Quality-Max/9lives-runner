@@ -222,9 +222,19 @@ func waitReason(err error) string {
 // netReason names the operating system's error code with a fixed phrase and
 // nothing a target could have supplied.
 func netReason(err error) string {
+	// Only a resolver answer that the name does not exist is "no such host";
+	// a resolver timeout or failure (SERVFAIL, unreachable server) says
+	// nothing about the target's name.
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return "no such host"
+		switch {
+		case dnsErr.IsNotFound:
+			return "no such host"
+		case dnsErr.Timeout():
+			return "dns lookup timed out"
+		default:
+			return "dns lookup failed"
+		}
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
