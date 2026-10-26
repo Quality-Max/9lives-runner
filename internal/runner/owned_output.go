@@ -8,13 +8,17 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // outputDrainTimeout is how long the runner waits, after the process group is
 // gone, for every output pipe to reach end of file before it looks for pipes
-// that a writer outside the group still holds open.
-var outputDrainTimeout = 5 * time.Second
+// that a writer outside the group still holds open. It is atomic so a test
+// that shortens it cannot race a drain running in another goroutine.
+var outputDrainTimeout atomic.Int64
+
+func init() { outputDrainTimeout.Store(int64(5 * time.Second)) }
 
 // outputReleasePoll is how often the runner rechecks a held pipe after the
 // drain window.
@@ -221,11 +225,19 @@ func (o *ownedOutput) drain(window time.Duration) error {
 // not turn the leader's exit status into a failure, but a sink that failed to
 // accept output, a failed read or possibly incomplete output does fail an
 // otherwise successful command.
+//
+// A command that already failed keeps its exit error, joined with any drain
+// error, so a sink failure or incomplete output is never hidden behind a
+// non-zero exit; callers read the exit code with errors.As.
 func (o *ownedOutput) finish(err error) error {
-	if drainErr := o.drain(outputDrainTimeout); err == nil {
+	drainErr := o.drain(time.Duration(outputDrainTimeout.Load()))
+	switch {
+	case drainErr == nil:
+		return err
+	case err == nil:
 		return drainErr
 	}
-	return err
+	return errors.Join(err, drainErr)
 }
 
 // interfaceEqual compares writers without panicking on non-comparable types,

@@ -67,9 +67,7 @@ func TestOwnedCommandBoundsOutputHeldOutsideTheGroup(t *testing.T) {
 	if _, err := exec.LookPath("perl"); err != nil {
 		t.Skip("perl provides setsid for the escaped writer")
 	}
-	previous := outputDrainTimeout
-	outputDrainTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { outputDrainTimeout = previous })
+	shortenOutputDrain(t, 200*time.Millisecond)
 	var stdout bytes.Buffer
 	command := exec.Command("/bin/sh", "-c", `perl -MPOSIX -e 'POSIX::setsid(); print "$$\n"; STDOUT->flush; sleep 30' & sleep 0.3; echo leader`)
 	command.Stdout = &stdout
@@ -108,9 +106,7 @@ func (s *slowSink) Write(p []byte) (int, error) {
 // slow sink however long it takes; cutting them and reporting exit 0 as
 // success returned truncated output as complete.
 func TestOwnedCommandKeepsPendingOutputPastTheDrainWindow(t *testing.T) {
-	previous := outputDrainTimeout
-	outputDrainTimeout = 100 * time.Millisecond
-	t.Cleanup(func() { outputDrainTimeout = previous })
+	shortenOutputDrain(t, 100*time.Millisecond)
 	stdout := &slowSink{delay: 400 * time.Millisecond}
 	command := exec.Command("/bin/sh", "-c", "printf 'out-1\\n'; sleep 0.05; printf 'out-2\\n'; sleep 0.05; printf 'out-3\\n'")
 	command.Stdout = stdout
@@ -135,9 +131,7 @@ func TestOwnedCommandReportsSinkFailureWhileAnotherStreamIsHeld(t *testing.T) {
 	if _, err := exec.LookPath("perl"); err != nil {
 		t.Skip("perl provides setsid for the escaped writer")
 	}
-	previous := outputDrainTimeout
-	outputDrainTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { outputDrainTimeout = previous })
+	shortenOutputDrain(t, 200*time.Millisecond)
 	stderr := &slowSink{}
 	command := exec.Command("/bin/sh", "-c", `perl -MPOSIX -e 'POSIX::setsid(); print STDERR "$$\n"; STDERR->flush; sleep 30' >/dev/null & sleep 0.3; echo leader`)
 	command.Stdout, command.Stderr = failingSink{}, stderr
@@ -188,4 +182,23 @@ func TestProcessExecutorEscalatesWhenTerminatedLeaderLeavesChild(t *testing.T) {
 		t.Fatalf("expected actual TERM then KILL evidence: %#v", output.Termination)
 	}
 	requireGone(t, childPID(t, output))
+}
+
+// shortenOutputDrain sets the drain window for one test and restores it.
+func shortenOutputDrain(t *testing.T, window time.Duration) {
+	t.Helper()
+	previous := outputDrainTimeout.Swap(int64(window))
+	t.Cleanup(func() { outputDrainTimeout.Store(previous) })
+}
+
+// A command that exits non-zero keeps its exit status for callers and also
+// reports a sink that rejected its output, instead of dropping the drain error.
+func TestOwnedCommandJoinsDrainErrorsWithAFailedExit(t *testing.T) {
+	command := exec.Command("/bin/sh", "-c", "echo out; exit 3")
+	command.Stdout = failingSink{}
+	err := RunOwnedCommand(context.Background(), command)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 3 || !errors.Is(err, errSinkRejected) {
+		t.Fatalf("err=%v, want exit status 3 joined with the sink failure", err)
+	}
 }
