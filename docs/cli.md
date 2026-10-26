@@ -149,7 +149,9 @@
 - `9l assess`: advisory source assessment of a spec, or a combined report for
   several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles
-  for local use. Static findings do not establish executed assertion coverage.
+  for local use. Text output sums analysis limits in one line per file,
+  counted per code; `--limits` lists each limit location instead. Static
+  findings do not establish executed assertion coverage.
 - Experimental `9l prove`: run one spec, then re-run it once per injected
   network fault (`abort`, `http-500`, `empty-json` by default; `http-401`,
   `http-403`, `http-429` and `malformed-json` with `--faults`) on each

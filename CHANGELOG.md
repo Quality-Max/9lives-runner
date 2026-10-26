@@ -33,6 +33,13 @@ SDK versions.
   what a `matched` status compared: the selected spec, its path, branch,
   commit and workspace root. Imported modules are not compared, and the
   wording no longer invites reading `matched` as unchanged dependencies.
+- `9l assess` text output no longer lists every `analysis-limit` finding
+  under its test. After a file's tests, one unindented line counts the limits
+  per code (`analysis limits in this file: unresolved-helper ×37,
+  nested-function ×12 (--limits lists them)`), counted as in the per-rule
+  summary so the two agree; rule findings keep their per-location lines.
+  `--limits` restores the per-location listing. The JSON report is unchanged
+  and identical with and without `--limits` (#23).
 
 ## 0.5.0 — 2026-10-23
 
