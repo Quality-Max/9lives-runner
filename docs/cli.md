@@ -52,8 +52,10 @@
   network error code, `timed out`, `certificate not trusted` or `tls
   handshake failed`. An https target with a self-signed certificate is not
   trusted and never becomes ready; wait for its `host:port` instead, which
-  checks only that it accepts connections. `plan` and `--dry-run` validate
-  the targets but do not wait.
+  checks only that it accepts connections. The host is a name, an IPv4
+  address or a bracketed IPv6 literal (`[::1]:8080`, `http://[fe80::1%25en0]/`);
+  any other host with a colon, such as `http://localhost:80:90`, is a usage
+  error. `plan` and `--dry-run` validate the targets but do not wait.
 - Retries: `--attempts <n>` is 9l's own retry of the whole job, with a receipt
   per attempt. The project's Playwright `retries` still apply inside each
   attempt, so a failing test can run several times within one receipt.

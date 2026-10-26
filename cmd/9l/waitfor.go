@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
@@ -40,8 +41,27 @@ func (err waitNotReadyError) Error() string {
 	return "--wait-for target not ready (environment): " + err.detail
 }
 
-// waitHost is a host name or an IP address: no user info, path or spaces.
-var waitHost = regexp.MustCompile(`^[A-Za-z0-9._:%-]+$`)
+// waitHostName is a host name or an IPv4 address: no user info, path,
+// spaces or colons.
+var waitHostName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// waitZone is an IPv6 zone identifier, such as en0 in fe80::1%en0.
+var waitZone = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// validWaitHost accepts a host name, an IPv4 address or, when the host has a
+// colon, only a valid IPv6 literal with an optional zone. So "localhost:80",
+// which url.Parse yields as the host of "http://localhost:80:90", is rejected
+// rather than probed.
+func validWaitHost(host string) bool {
+	if !strings.Contains(host, ":") {
+		return waitHostName.MatchString(host)
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil || !addr.Is6() {
+		return false
+	}
+	return addr.Zone() == "" || waitZone.MatchString(addr.Zone())
+}
 
 // validPort accepts only 1 to 5 decimal digits naming 1-65535, so "+80",
 // "-1" and " 80" are rejected rather than reinterpreted.
@@ -119,7 +139,9 @@ func targetProbe(target string) (waitProbe, error) {
 	lower := strings.ToLower(target)
 	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		parsed, err := url.Parse(target)
-		if err != nil || parsed.Hostname() == "" || !waitHost.MatchString(parsed.Hostname()) {
+		// An IPv6 host must be bracketed, so its colons are never read as a
+		// port separator.
+		if err != nil || parsed.Hostname() == "" || !validWaitHost(parsed.Hostname()) || strings.Contains(parsed.Hostname(), ":") != strings.HasPrefix(parsed.Host, "[") {
 			return waitProbe{}, errors.New("an http(s) target needs a host name or IP address")
 		}
 		if port := parsed.Port(); port != "" || strings.HasSuffix(parsed.Host, ":") {
@@ -148,7 +170,7 @@ func targetProbe(target string) (waitProbe, error) {
 		}}, nil
 	}
 	host, port, err := net.SplitHostPort(target)
-	if err != nil || host == "" || !waitHost.MatchString(host) || !validPort(port) {
+	if err != nil || host == "" || !validWaitHost(host) || !validPort(port) || strings.Contains(host, ":") != strings.HasPrefix(target, "[") {
 		return waitProbe{}, errors.New("a target is an http(s) URL or host:port, with a host name or IP address and a port of 1 to 65535")
 	}
 	address := net.JoinHostPort(host, port)

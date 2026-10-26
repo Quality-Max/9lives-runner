@@ -116,12 +116,14 @@ func TestWaitForTargetsNamesTheTargetAndReasonWithoutSecrets(t *testing.T) {
 	if err == nil || !closedPortReason(err.Error(), "--wait-for target not ready (environment): "+closedTarget+" was not ready after 1s: dial: ") {
 		t.Fatalf("tcp: %v", err)
 	}
-	for _, good := range []string{"[::1]:8080", "http://[::1]:8080/", "localhost:08080", "Https://example.test"} {
+	for _, good := range []string{"[::1]:8080", "http://[::1]:8080/", "localhost:08080", "Https://example.test", "http://[fe80::1%25en0]:8080/", "[fe80::1%en0]:8080", "[::ffff:127.0.0.1]:80", "http://127.0.0.1:8080"} {
 		if _, err := parseWaitTargets([]string{good}); err != nil {
 			t.Fatalf("%q rejected: %v", good, err)
 		}
 	}
-	for _, bad := range []string{"localhost", "ftp://x", "http://", "http://:8080", "http://localhost:65536", "http://localhost:", "127.0.0.1:0", "127.0.0.1:+1", "127.0.0.1:-1", "127.0.0.1: 80", "127.0.0.1:080800", "fixture-user@127.0.0.1:1", "a/b:80"} {
+	for _, bad := range []string{"localhost", "ftp://x", "http://", "http://:8080", "http://localhost:65536", "http://localhost:", "127.0.0.1:0", "127.0.0.1:+1", "127.0.0.1:-1", "127.0.0.1: 80", "127.0.0.1:080800", "fixture-user@127.0.0.1:1", "a/b:80",
+		// A colon in a host must belong to a bracketed IPv6 literal.
+		"http://localhost:80:90", "https://localhost:80:90/", "[localhost:80]:90", "[1.2.3.4]:80", "http://::1:8080", "http://[::1%25]:80", "http://[fe80::1%25a/b]:80", "[fe80::1%a b]:80", "local%host:80"} {
 		_, err := parseWaitTargets([]string{bad})
 		if err == nil || strings.Contains(err.Error(), "fixture-user") {
 			t.Fatalf("%q accepted or echoed: %v", bad, err)
