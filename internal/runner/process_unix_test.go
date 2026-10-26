@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -34,7 +35,13 @@ func TestUnixDetachedProcessHelper(t *testing.T) {
 	}
 	mode, dir := os.Args[len(os.Args)-2], os.Args[len(os.Args)-1]
 	if mode == "server" {
-		signal.Ignore(syscall.SIGTERM)
+		terminated := make(chan os.Signal, 1)
+		signal.Notify(terminated, syscall.SIGTERM)
+		go func() {
+			for range terminated {
+				_ = os.WriteFile(filepath.Join(dir, "term"), nil, 0600)
+			}
+		}()
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			os.Exit(7)
@@ -76,7 +83,7 @@ func unixDetachedHelper(mode, dir string) *exec.Cmd {
 }
 
 func TestUnixOwnedDetachedServer(t *testing.T) {
-	for _, mode := range []string{"cancel", "timeout", "normal-exit"} {
+	for _, mode := range []string{"cancel", "timeout", "normal-exit", "cancel-during-cleanup"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			// An unrelated listener must survive cleanup.
@@ -93,7 +100,7 @@ func TestUnixOwnedDetachedServer(t *testing.T) {
 				defer deadlineCancel()
 			}
 			leader := "leader"
-			if mode == "normal-exit" {
+			if mode == "normal-exit" || mode == "cancel-during-cleanup" {
 				leader = "exit-leader"
 			}
 			type result struct {
@@ -129,19 +136,37 @@ func TestUnixOwnedDetachedServer(t *testing.T) {
 			time.Sleep(150 * time.Millisecond)
 			if mode == "cancel" {
 				cancel()
-			} else if mode == "normal-exit" {
+			} else if mode == "normal-exit" || mode == "cancel-during-cleanup" {
 				if err := os.WriteFile(filepath.Join(dir, "exit"), nil, 0600); err != nil {
 					t.Fatal(err)
+				}
+				if mode == "cancel-during-cleanup" {
+					// TERM proves the successful leader's completion branch is
+					// already cleaning up the detached server before cancellation.
+					readyBy := time.Now().Add(3 * time.Second)
+					for {
+						if _, err := os.Stat(filepath.Join(dir, "term")); err == nil {
+							break
+						}
+						if time.Now().After(readyBy) {
+							t.Fatal("successful launcher did not begin detached server cleanup")
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+					cancel()
 				}
 			}
 			select {
 			case result := <-done:
-				kind := map[string]string{"cancel": "canceled", "timeout": "timeout", "normal-exit": "cleanup"}[mode]
+				kind := map[string]string{"cancel": "canceled", "timeout": "timeout", "normal-exit": "cleanup", "cancel-during-cleanup": "cleanup"}[mode]
 				if result.termination == nil || result.termination.Kind != kind || result.termination.EscalationSignal != "SIGKILL" {
 					t.Errorf("expected owned detached server cleanup for %s: %+v", mode, result.termination)
 				}
 				if mode == "normal-exit" && result.err != nil {
 					t.Errorf("successful launcher exit: %v", result.err)
+				}
+				if mode == "cancel-during-cleanup" && !errors.Is(result.err, context.Canceled) {
+					t.Errorf("cancellation during completion cleanup must not report success: %v", result.err)
 				}
 			case <-time.After(10 * time.Second):
 				t.Fatal("owned command did not finish")

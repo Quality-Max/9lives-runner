@@ -101,6 +101,9 @@ func unixProcessTable() (map[int]ownedUnixProcess, error) {
 	// Only numeric relationships, status, and birth time. No arguments, command
 	// output, environment, executable paths, or credentials are inspected.
 	command := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=,pgid=,stat=,lstart=")
+	// A PATH wrapper may exit while its children retain stdout. Bound pipe
+	// drain too: the context deadline alone only terminates the wrapper.
+	command.WaitDelay = 50 * time.Millisecond
 	command.Env = append(os.Environ(), "LC_ALL=C")
 	output := newLimitedBuffer(4 << 20)
 	command.Stdout = output

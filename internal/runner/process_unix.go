@@ -41,13 +41,13 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 			// A successful launcher can leave children in its group or a separate
 			// session. Clean owned children before reporting completion.
 			if !groupAlive(command.Process.Pid) && len(tree.live) == 0 {
-				return errors.Join(err, tree.err), observed
+				return errors.Join(err, tree.err, ctx.Err()), observed
 			}
 			termination := stopGroup(command.Process.Pid, "cleanup", "leader exited while owned children remained", tree)
 			if observed != nil {
 				termination.ObservedSignal = observed.ObservedSignal
 			}
-			return errors.Join(err, tree.err), termination
+			return errors.Join(err, tree.err, ctx.Err()), termination
 		case <-ctx.Done():
 			termination := &Termination{Detail: ctx.Err().Error()}
 			if ctx.Err() == context.DeadlineExceeded {
