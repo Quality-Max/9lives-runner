@@ -75,6 +75,27 @@ line ending stops the install instead of being trimmed. Keep the
 included `LICENSE` and `NOTICE`. macOS archives are not Apple notarized; the
 checksums verify downloaded bytes against the release's checksum file.
 
+### Verify build provenance
+
+A checksum shows that the archive matches the release's `SHA256SUMS`, but
+whoever can change the release can change both files. From v0.5.2, the
+release workflow also attests build provenance for every archive and for
+`SHA256SUMS`, signed through Sigstore. With GitHub CLI, check the archive you
+downloaded before extracting it:
+
+```sh
+gh attestation verify "$BUNDLE.tar.gz" --repo Quality-Max/9lives-runner
+```
+
+The command fails unless an attestation for the archive's exact SHA-256 was
+produced by a GitHub Actions workflow in `Quality-Max/9lives-runner`. To also
+require the release workflow and the version's tag, add
+`--signer-workflow Quality-Max/9lives-runner/.github/workflows/release.yml`
+and `--source-ref refs/tags/<version>`. The same command checks a Windows ZIP
+or `SHA256SUMS`. Releases up to and including v0.5.1 have no attestations,
+so the command fails for them; verify those with the checksum steps above.
+Without `gh`, the checksum steps remain the verification.
+
 ### Windows
 
 Choose the Windows ZIP for your CPU, download it with that release's
@@ -94,6 +115,9 @@ if ((Get-FileHash "$Bundle.zip" -Algorithm SHA256).Hash -ne $Expected) { throw '
 Expand-Archive "$Bundle.zip" -DestinationPath . -Force
 & ".\$Bundle\9l.exe" --version
 ```
+
+From v0.5.2, also run `gh attestation verify "$Bundle.zip" --repo Quality-Max/9lives-runner`
+before extracting; see [Verify build provenance](#verify-build-provenance).
 
 Keep `LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` with the binary. Add its directory to your user
 `PATH`, or invoke `9l.exe` by its full path. Install Node 24, project dependencies
