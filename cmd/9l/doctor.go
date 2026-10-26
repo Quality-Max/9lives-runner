@@ -97,21 +97,34 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 
 // executableFacts compares the file doctor runs from with the 9l that PATH
 // resolves to, without executing either. The paths travel to the helper only
-// under --paths; otherwise the report says just whether the two match.
+// under --paths; otherwise the report says just whether the two match, whether
+// 9l is on PATH at all and whether a relative PATH entry found it.
 func executableFacts(paths bool) map[string]any {
 	facts := map[string]any{"samePath": false, "otherOnPath": false}
 	self, err := os.Executable()
 	if err != nil {
+		facts["selfUnknown"] = true
 		return facts
+	}
+	if paths {
+		facts["self"] = realPath(self)
 	}
 	other, err := exec.LookPath("9l")
 	if err != nil && !errors.Is(err, exec.ErrDot) {
 		return facts
 	}
 	facts["otherOnPath"] = true
+	if !filepath.IsAbs(other) {
+		// A relative PATH entry resolves against the current directory, so
+		// what it finds depends on where a terminal or host starts.
+		facts["relative"] = true
+		if absolute, err := filepath.Abs(other); err == nil {
+			other = absolute
+		}
+	}
 	facts["samePath"] = sameFile(self, other)
 	if paths {
-		facts["self"], facts["other"] = realPath(self), realPath(other)
+		facts["other"] = realPath(other)
 	}
 	return facts
 }

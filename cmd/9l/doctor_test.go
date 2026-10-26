@@ -302,6 +302,139 @@ func TestDoctorSpecImportingPlaywrightTestExitsTwo(t *testing.T) {
 	}
 }
 
+// pathWithOnlyNode returns a PATH holding just a link to Node, so a test can
+// control which 9l, if any, PATH finds.
+func pathWithOnlyNode(t *testing.T) string {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node not installed")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(node, filepath.Join(dir, filepath.Base(node))); err != nil {
+		t.Skipf("cannot link Node: %v", err)
+	}
+	return dir
+}
+
+type doctorCheck struct{ Name, Status, Message, Fix string }
+
+func doctorChecks(t *testing.T, args ...string) (int, string, map[string]doctorCheck) {
+	t.Helper()
+	var out, stderr bytes.Buffer
+	code := run(append([]string{"doctor", "--format", "json"}, args...), &out, &stderr)
+	var report struct{ Checks []doctorCheck }
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatalf("exit %d: %s %s", code, out.String(), stderr.String())
+	}
+	found := map[string]doctorCheck{}
+	for _, check := range report.Checks {
+		found[check.Name] = check
+	}
+	return code, out.String(), found
+}
+
+// A 9l missing from PATH is a warning: a host configured with plain 9l
+// cannot start the executable doctor runs from.
+func TestDoctorWarnsWhenNoNineLIsOnPath(t *testing.T) {
+	t.Setenv("PATH", pathWithOnlyNode(t))
+	t.Chdir(t.TempDir())
+	if facts := executableFacts(false); facts["otherOnPath"] != false || facts["self"] != nil {
+		t.Fatalf("facts: %v", facts)
+	}
+	_, _, found := doctorChecks(t)
+	if check := found["executable"]; check.Status != "warning" || !strings.Contains(check.Message, "no 9l on PATH") || !strings.Contains(check.Fix, "full path") {
+		t.Fatalf("executable: %+v", check)
+	}
+}
+
+// A relative PATH entry resolves against the current directory, so doctor
+// reports the absolute file it found and warns that hosts started elsewhere
+// find another 9l or none.
+func TestDoctorReportsARelativePathEntry(t *testing.T) {
+	nodeDir := pathWithOnlyNode(t)
+	work := t.TempDir()
+	name, script := "9l", "#!/bin/sh\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		name, script = "9l.cmd", "@exit /b 0\r\n"
+	}
+	if err := os.MkdirAll(filepath.Join(work, "rel"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "rel", name), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "rel"+string(os.PathListSeparator)+nodeDir)
+	t.Chdir(work)
+	facts := executableFacts(true)
+	other, _ := facts["other"].(string)
+	if facts["relative"] != true || facts["otherOnPath"] != true || !filepath.IsAbs(other) || filepath.Base(other) != name {
+		t.Fatalf("facts: %v", facts)
+	}
+	_, raw, found := doctorChecks(t)
+	if check := found["executable"]; check.Status != "warning" || !strings.Contains(check.Message, "relative PATH entry") || strings.Contains(check.Message, "First on PATH") {
+		t.Fatalf("executable: %+v", check)
+	}
+	if strings.Contains(raw, work) {
+		t.Fatal("doctor printed paths without --paths")
+	}
+}
+
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// With a spec, the workspace and package checks describe the project prove
+// would use for it, found by walking up from the spec, not the directory
+// doctor runs in. Without a spec they still describe the current directory.
+func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node not installed")
+	}
+	project := t.TempDir()
+	writeFiles(t, project, map[string]string{
+		"package.json": `{"devDependencies":{"@playwright/test":"1.64.0","@9l/playwright":"0.5.0"}}`,
+		"node_modules/@playwright/test/package.json": `{"name":"@playwright/test","version":"1.64.0"}`,
+		"node_modules/@9l/playwright/package.json":   `{"name":"@9l/playwright","version":"0.5.0"}`,
+		"node_modules/@playwright/test/index.js":     "throw new Error('fixture-entry-must-not-run');\n",
+		"node_modules/@9l/playwright/index.js":       "throw new Error('fixture-entry-must-not-run');\n",
+		"tests/a.spec.ts":                            "import { test } from './fixtures';\nimport { test as pwTest } from '@playwright/test';\ntest('x', async ({ page }, testInfo) => {});\n",
+	})
+	t.Chdir(t.TempDir())
+	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
+	for _, name := range []string{"workspace", "playwright-test"} {
+		if found[name].Status != "ok" {
+			t.Fatalf("%s: %+v", name, found[name])
+		}
+	}
+	if found["sdk"].Status == "missing" {
+		t.Fatalf("sdk: %+v", found["sdk"])
+	}
+	// A test from a local fixtures module is not followed: a warning, never
+	// missing, even beside an aliased @playwright/test import.
+	if check := found["spec/import"]; check.Status != "warning" || !strings.Contains(check.Message, "another module") {
+		t.Fatalf("spec/import: %+v", check)
+	}
+	if check := found["spec/fixtures"]; check.Status != "ok" {
+		t.Fatalf("spec/fixtures: %+v", check)
+	}
+	if strings.Contains(raw, project) {
+		t.Fatal("doctor printed the project path without --paths")
+	}
+	_, _, cwd := doctorChecks(t)
+	if cwd["workspace"].Status != "missing" || !strings.Contains(cwd["workspace"].Message, "current directory") {
+		t.Fatalf("without a spec: %+v", cwd["workspace"])
+	}
+}
+
 // The SDK's package metadata is what doctor compares against this engine,
 // so it must declare exactly what the Go side admits and can request.
 func TestSDKPackageDeclaresTheEngineContract(t *testing.T) {

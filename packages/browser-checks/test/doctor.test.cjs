@@ -147,7 +147,7 @@ test('spec/import and spec/fixtures are read from the spec text without executin
     const api = specChecks(path.join(root, 'api.spec.ts'));
     assert.equal(byName(api, 'spec/import').status, 'ok');
     assert.equal(byName(api, 'spec/fixtures').status, 'warning');
-    assert.match(byName(api, 'spec/fixtures').message, /this spec uses neither/);
+    assert.match(byName(api, 'spec/fixtures').message, /no destructured page or context parameter found in a test or hook callback/);
     for (const name of fs.readdirSync(root)) {
       const report = specChecks(path.join(root, name));
       assert.equal(byName(report, 'spec/config').status, 'warning', name);
@@ -187,7 +187,7 @@ test('spec checks ignore comments, strings and object arguments', () => {
     assert.match(commentedDir.message, /outside its literal testDir/);
     const projects = byName(specChecks(path.join(root, 'projects', 'tests', 'a.spec.ts')), 'spec/config');
     assert.equal(projects.status, 'ok');
-    assert.match(projects.message, /testDir not verified: the config sets testDir more than once/);
+    assert.match(projects.message, /testDir not verified: the config defines projects/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -256,7 +256,17 @@ test('the executable check reports only what the CLI compared', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), '9l-doctor-exe-'));
   try {
     const check = executable => byName(diagnose({ cliVersion: '0.5.0', executable }, root).checks, 'executable');
-    assert.deepEqual(check({ samePath: false, otherOnPath: false }), { name: 'executable', status: 'ok', message: 'no other 9l on PATH.' });
+    const absent = check({ samePath: false, otherOnPath: false });
+    assert.equal(absent.status, 'warning', 'hosts configured with plain 9l cannot start it');
+    assert.match(absent.message, /^no 9l on PATH; terminals, scripts and MCP hosts configured with plain 9l cannot start it\.$/);
+    assert.match(absent.fix, /full path$/);
+    for (const samePath of [true, false]) {
+      const relative = check({ samePath, otherOnPath: true, relative: true });
+      assert.equal(relative.status, 'warning', `relative entry, samePath ${samePath}`);
+      assert.match(relative.message, /relative PATH entry that resolves against the current directory/);
+      assert.match(relative.fix, /absolute directory/);
+    }
+    assert.equal(check({ samePath: false, otherOnPath: true, selfUnknown: true }).status, 'warning');
     assert.equal(check({ samePath: true, otherOnPath: true }).status, 'ok');
     const differs = check({ samePath: false, otherOnPath: true });
     assert.equal(differs.status, 'warning');
@@ -267,4 +277,125 @@ test('the executable check reports only what the CLI compared', () => {
     assert.equal(byName(diagnose({ cliVersion: '0.5.0' }, root).checks, 'executable'), undefined);
     assert.equal(diagnose({ cliVersion: '0.5.0', executable: { samePath: true, otherOnPath: true } }, root).checks[0].name, 'executable', 'a stale PATH is the first line a user reads');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// spec/import reads local bindings. Only a `test` bound from @playwright/test
+// with nothing else that could provide it is missing (exit 2); a test from a
+// fixtures module is not followed, so it is a warning, never missing.
+test('spec/import reads bindings and never fails a spec it cannot follow', () => {
+  const root = specProject({
+    'aliased-pw.spec.ts': poison + "import { test } from './fixtures';\nimport { test as pwTest, expect } from '@playwright/test';\ntest('x', async ({ page }) => {});\n",
+    'only-alias.spec.ts': poison + "import { test as pwTest } from '@playwright/test';\npwTest('x', async ({ page }) => {});\n",
+    'namespace.spec.ts': poison + "import * as n9l from '@9l/playwright';\nimport { test } from '@playwright/test';\nn9l.test('x', async ({ page }) => {});\n",
+    'string.spec.ts': poison + "import { test } from './fixtures';\nconst snippet = \"import { test } from '@playwright/test'\";\nconst more = `const { test } = require('@playwright/test')`;\ntest('x', async ({ page }) => {});\n",
+    'regex-quote.spec.ts': poison + "const quotes = /['\"]/;\n// import { test } from '@playwright/test'\nimport { test } from './fixtures';\ntest('x', async ({ page }) => {});\n",
+    'base.spec.ts': poison + "import { test as base } from '@9l/playwright';\nconst test = base.extend({});\ntest('x', async ({ page }) => {});\n",
+    'member.spec.js': poison + "const test = require('@9l/playwright').test;\ntest('x', async ({ page }) => {});\n",
+    'dynamic.spec.mjs': poison + "const { test } = await import('@9l/playwright');\ntest('x', async ({ page }) => {});\n",
+    'default.spec.ts': poison + "import n9l, { test } from '@9l/playwright';\ntest('x', async ({ page }) => {});\n",
+    'type-only.spec.ts': poison + "import type { test } from '@playwright/test';\nimport { test as t } from './fixtures';\nt('x', async ({ page }) => {});\n",
+    'local-ns.spec.ts': poison + "import * as fixtures from './fixtures';\nimport { test } from '@playwright/test';\nfixtures.test('x', async ({ page }) => {});\n",
+    'plain.spec.ts': poison + "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});\n",
+  });
+  try {
+    const status = name => byName(specChecks(path.join(root, name)), 'spec/import');
+    for (const name of ['namespace.spec.ts', 'base.spec.ts', 'member.spec.js', 'dynamic.spec.mjs', 'default.spec.ts']) assert.equal(status(name).status, 'ok', name);
+    for (const name of ['aliased-pw.spec.ts', 'only-alias.spec.ts', 'string.spec.ts', 'regex-quote.spec.ts', 'type-only.spec.ts', 'local-ns.spec.ts']) assert.equal(status(name).status, 'warning', name);
+    assert.match(status('aliased-pw.spec.ts').message, /imports test from another module; fixture modules are not followed/);
+    assert.match(byName(specChecks(path.join(root, 'aliased-pw.spec.ts'), true), 'spec/import').message, /imports test from \.\/fixtures;/);
+    assert.match(status('local-ns.spec.ts').message, /also imports from another module, which is not followed/);
+    const plain = status('plain.spec.ts');
+    assert.equal(plain.status, 'missing');
+    assert.match(plain.message, /prove would run its baseline uninstrumented and exit 1 because no browser context was instrumented/);
+    assert.doesNotMatch(plain.message, /refuses/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Fixtures count only as the destructured first parameter of a test or hook
+// callback, whatever follows it: more parameters, a type or nested patterns.
+test('spec/fixtures reads test and hook callbacks with any parameter shape', () => {
+  const root = specProject({
+    'info.spec.ts': poison + "import { test } from '@9l/playwright';\ntest('x', async ({ page, n9l }, testInfo) => {});\n",
+    'typed.spec.ts': poison + "import { test, type Page } from '@9l/playwright';\ntest('x', async ({ page }: { page: Page }) => {});\n",
+    'nested.spec.ts': poison + "import { test } from '@9l/playwright';\ntest('x', async ({ request, context: { pages } }) => { pages(); });\n",
+    'hook.spec.ts': poison + "import { test } from '@9l/playwright';\ntest.describe.serial('d', () => {\n  test.beforeEach(async function ({ context }) {});\n  test('x', async () => {});\n});\n",
+    'alias.spec.ts': poison + "import { test as it } from '@9l/playwright';\nit(`t ${1}`, async ({ page }) => {});\n",
+    'namespace.spec.ts': poison + "import * as n9l from '@9l/playwright';\nn9l.test.only('x', ({ page }) => {});\n",
+    'map.spec.ts': poison + "import { test } from '@9l/playwright';\ntest('x', async ({ request }) => { [{ page: 1 }].map(({ page }) => page); const f = ({ context }) => context; });\n",
+    'extend.spec.ts': poison + "import { test as base } from '@9l/playwright';\nconst test = base.extend({ login: async ({ page }, use) => { await use(page); } });\ntest('x', async ({ login }) => {});\n",
+  });
+  try {
+    const fixtures = name => byName(specChecks(path.join(root, name)), 'spec/fixtures');
+    for (const name of ['info.spec.ts', 'typed.spec.ts', 'nested.spec.ts', 'hook.spec.ts', 'alias.spec.ts', 'namespace.spec.ts']) assert.equal(fixtures(name).status, 'ok', name);
+    for (const name of ['map.spec.ts', 'extend.spec.ts']) {
+      assert.equal(fixtures(name).status, 'warning', name);
+      assert.match(fixtures(name).message, /no destructured page or context parameter found in a test or hook callback/);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Regex literals are not comments or strings: a `/*` or a quote inside one
+// must not swallow the code after it.
+test('regex literals do not start comments or strings', () => {
+  const root = specProject({
+    'glob.spec.ts': poison + "const api = /^\\/api\\/*/; import { test } from '@9l/playwright';\ntest('x', async ({ page }) => {});\n",
+    'slashes.spec.ts': poison + "const re = /\\/\\//g, q = /['\"]/, cls = /[/*]/;\nimport { test } from '@9l/playwright';\ntest('x', async ({ page }) => {});\n",
+    'divide.spec.ts': poison + "const half = (1) / 2, rate = total / count /* ratio */;\nimport { test } from '@9l/playwright';\ntest('x', async ({ page }) => {});\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'ok', name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', name);
+    }
+    const { scan } = require('../dist/source-text.js');
+    const source = "x = /a'b/; return /\\/\\*/.test(s) ? `${'//'}` : 'c' // d\n";
+    const scanned = scan(source);
+    assert.equal(scanned.code.length, source.length);
+    assert.doesNotMatch(scanned.code, /\/\/ d/, 'the trailing comment is removed');
+    assert.deepEqual([...scanned.literals.values()].map(literal => literal.text), ['//', 'c']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Projects inherit the config's testDir unless they set their own, so any
+// config with projects leaves containment unverified rather than warning.
+test('a config with projects leaves testDir unverified', () => {
+  const root = specProject({
+    'playwright.config.ts': poison + "export default { projects: [{ name: 'api', testDir: './api' }, { name: 'web' }] };\n",
+    'tests/a.spec.ts': sdkSpec,
+  });
+  try {
+    const config = byName(specChecks(path.join(root, 'tests', 'a.spec.ts')), 'spec/config');
+    assert.equal(config.status, 'ok');
+    assert.match(config.message, /testDir not verified: the config defines projects/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// With a spec, workspace and packages are judged for the project prove uses,
+// found by the adapter's walk up from the spec, not for the current directory.
+test('spec mode judges the project prove would use for the spec', () => {
+  const project = specProject({
+    'package.json': JSON.stringify({ devDependencies: { '@playwright/test': '1.64.0' } }),
+    'node_modules/@playwright/test/package.json': JSON.stringify({ name: '@playwright/test', version: '1.64.0' }),
+    'node_modules/@playwright/test/index.js': poison,
+    'tests/a.spec.ts': sdkSpec,
+    'orphan/b.spec.ts': sdkSpec,
+  });
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), '9l-doctor-cwd-'));
+  try {
+    const spec = path.join(project, 'tests', 'a.spec.ts');
+    const report = diagnose({ cliVersion: '0.5.0', sdk: true, spec }, elsewhere);
+    assert.equal(byName(report.checks, 'workspace').status, 'ok');
+    assert.equal(byName(report.checks, 'playwright-test').status, 'ok');
+    assert.doesNotMatch(JSON.stringify(report), /9l-doctor-spec|fixture-/);
+    assert.ok(byName(diagnose({ cliVersion: '0.5.0', sdk: true, spec, paths: true }, elsewhere).checks, 'workspace').message.includes(project));
+    assert.equal(byName(diagnose({ cliVersion: '0.5.0', sdk: true }, elsewhere).checks, 'workspace').status, 'missing', 'without a spec, the current directory');
+    fs.writeFileSync(path.join(project, 'package.json'), '{}');
+    const orphan = byName(diagnose({ cliVersion: '0.5.0', sdk: true, spec: path.join(project, 'orphan', 'b.spec.ts') }, elsewhere).checks, 'workspace');
+    assert.equal(orphan.status, 'missing');
+    assert.match(orphan.message, /above the spec, so prove cannot run it/);
+  } finally {
+    fs.rmSync(project, { recursive: true, force: true });
+    fs.rmSync(elsewhere, { recursive: true, force: true });
+  }
 });

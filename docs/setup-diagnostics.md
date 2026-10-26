@@ -29,9 +29,13 @@ PATH resolves to, without running either. Usually they are the same file.
 When they differ, terminals, scripts and MCP hosts start the one on PATH
 unless configured with a full path, so the check warns and names the fix:
 put this build's directory first on PATH, or configure the host with this
-executable's full path. Without `--paths` the report says only that the two
-differ; `--paths` adds both resolved paths. Doctor cannot see which binary a
-running MCP host selected; that stays unverified.
+executable's full path. It also warns when no `9l` is on PATH at all, since
+hosts configured with plain `9l` cannot start it, and when a relative PATH
+entry (such as `.` or an empty entry) found it: that entry resolves against
+the current directory, so a host started elsewhere finds another `9l` or none.
+Without `--paths` the report says only which case applies; `--paths` adds both
+resolved, absolute paths. Doctor cannot see which binary a running MCP host
+selected; that stays unverified.
 
 Node below 22 is missing and gets the install step. Node 24 is qualified. Any
 other release from 22 up is supported but outside the qualified matrix: a
@@ -68,33 +72,48 @@ are installed, or that a target is reachable. A real scan verifies those paths.
 
 With `--sdk`, one spec path adds three checks read from the file as text, at
 most 1 MiB. Nothing is executed: not the spec, not the config, and local
-fixture modules the spec imports are not followed.
+fixture modules the spec imports are not followed. The `workspace`,
+`playwright-test` and `sdk` checks then describe the project `prove` would use
+for that spec, found by the same walk up from the spec as the SDK adapter (the
+directory of the nearest `playwright.config.*`, or else the nearest
+`package.json` declaring `@playwright/test`), rather than the current
+directory.
 
-- `spec/import`: `ok` when the spec imports `test` from `@9l/playwright`
-  (`import { test } from '@9l/playwright'` or
-  `const { test } = require('@9l/playwright')`); `missing` when it takes
-  `test` from `@playwright/test`, which `prove` refuses, so the report is not
-  ready and the command exits 2; a warning when neither import is in the
-  file, for example a `test` extended in a local fixtures module.
-- `spec/fixtures`: `ok` when a test signature destructures `page` or
-  `context`; otherwise a warning, because prove faults reach only fetch and
-  XHR made through those fixtures.
+- `spec/import`: reads the names the spec's static imports and requires
+  bind. `ok` when `test` comes from `@9l/playwright`, including
+  `import { test as base }`, `require('@9l/playwright').test`, a dynamic
+  `await import()` and a namespace import such as `n9l.test`. `missing` only
+  when the binding `test` comes from `@playwright/test` and nothing else in
+  the file could provide it: `prove` would then run its baseline
+  uninstrumented and exit 1 because no browser context was instrumented, so
+  the report is not ready and doctor exits 2. A `test` from a local fixtures
+  module, `test as pwTest` from `@playwright/test`, or a file doctor cannot
+  read an import from is a warning: not verified, never missing.
+- `spec/fixtures`: `ok` when the first parameter of a `test` or `test.*` hook
+  callback destructures `page` or `context`, whatever follows it
+  (`async ({ page }, testInfo)`, a type annotation, nested patterns).
+  Otherwise a warning that no such parameter was found, because prove faults
+  reach only fetch and XHR made through those fixtures. Other functions, such
+  as `.map(({ page }) => page)`, do not count.
 - `spec/config`: names the nearest `playwright.config.{ts,js,mts,mjs,cts,cjs}`
   above the spec, in that order, which is the config `prove` picks without
   `--config`. When the config contains exactly one literal `testDir: '…'`
   as a whole property value, the check reports whether the spec is under it
   (`ok`) or outside it (a warning, with `prove --config` as the way out). A
-  computed `testDir`, or several (one per project), is reported as not
-  verified, and `testMatch` is never read. No config above the spec is a
+  computed `testDir`, several, or any config that defines `projects` (a
+  project without its own `testDir` inherits the config's) is reported as
+  not verified, and `testMatch` is never read. No config above the spec is a
   warning.
 
-The spec and config are read as text with comments removed, so a commented-out
-import or `testDir` does not count, while string contents are kept. The
-fixture check recognises only a destructured callback parameter such as
-`async ({ page }) =>`, not an object argument like `.toMatchObject({ page: 1 })`.
+The spec and config are read as text by a lexical scan that sets aside
+comments and the contents of string, template and regex literals, so a
+commented-out import, import-looking text inside a string, or a `/*` or quote
+inside a regex does not change a verdict. It is not a parser, so unusual
+syntax can still be misread; an import it cannot read is reported as a
+warning, never as missing.
 
-Messages name basenames only; `--paths` adds the config directory and the
-literal `testDir`. "testDir and testMatch unless literal" is listed as
+Messages name basenames only; `--paths` adds the project and config
+directories, the literal `testDir` and the module a `test` was imported from. "testDir and testMatch unless literal" is listed as
 unverified whenever a spec was given. Passing a spec without `--sdk`, or a
 path that is not a file, is a usage error.
 
@@ -141,8 +160,9 @@ that a spec's assertions passed. Use the execution receipt for that.
 
 Automated checks cover an empty workspace, missing Node, package/config
 non-disclosure, installed and absent Chromium/headless-shell builds, a stale
-`9l` on PATH that is reported but never run, spec checks for every import,
-fixture and `testDir` case, and shared CLI/MCP unreachable-target guidance. CI requires real browser checks
+`9l` on PATH that is reported but never run, spec checks for the import,
+fixture and `testDir` forms the tests name, and shared CLI/MCP
+unreachable-target guidance. CI requires real browser checks
 on Linux and native Windows, and checks the registry across every qualified
 Playwright version. Treat a CI configuration as planned coverage until its
 run succeeds. Local execution evidence and its actual platform are recorded

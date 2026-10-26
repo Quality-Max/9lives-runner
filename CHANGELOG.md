@@ -11,14 +11,19 @@ SDK versions.
 - `9l doctor` adds an `executable` check: it compares the file it runs from
   with the `9l` first on PATH, without running either, and warns when they
   differ, since terminals, scripts and MCP hosts start the one on PATH unless
-  configured with a full path. The two paths appear only with the new
+  configured with a full path. It also warns when no `9l` is on PATH, or
+  when a relative PATH entry found it. The paths appear only with the new
   `--paths` flag, which is for local reading and never persisted.
   `9l doctor --sdk <spec>` reads one spec as text and adds `spec/import`
-  (`missing`, so exit 2, when `test` comes from `@playwright/test`),
-  `spec/fixtures` (whether `page` or `context` is used) and `spec/config`
-  (the nearest `playwright.config.*` and, for a literal `testDir`, whether the
-  spec lies under it). Neither the spec nor the config is executed; basenames
-  only unless `--paths`. (#165)
+  (`missing`, so exit 2, only when the binding `test` comes from
+  `@playwright/test` and nothing else could provide it; a `test` from a local
+  fixtures module is a warning), `spec/fixtures` (whether a `test` or hook
+  callback destructures `page` or `context`) and `spec/config` (the nearest
+  `playwright.config.*` and, for a single literal `testDir` in a config
+  without `projects`, whether the spec lies under it). In spec mode the
+  workspace and package checks describe the project `prove` would use for
+  the spec. Neither the spec nor the config is executed; basenames only
+  unless `--paths`. (#165)
 
 ## 0.5.0 — 2026-10-23
 
