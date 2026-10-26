@@ -6,8 +6,20 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.2 — 2026-10-27
+
 ### CLI
 
+- On Unix, owned process cleanup tracks detached Playwright `webServer`
+  descendants as well as the original process group. Deadline, cancellation
+  and normal completion stop observed owned children before returning, so
+  the server does not retain its listening port for the next run. Process
+  observations run every 500 ms during execution and every 50 ms during
+  cleanup. Temporary inspection failures can recover; startup and cleanup
+  still require fresh successful snapshots and persistent failures remain
+  unsuccessful. Tracking is sampled, not kernel containment: a process that
+  detaches and loses its parent entirely between observations can escape it
+  (#191).
 - `9l assess` reads a matcher whose failure is caught as a conditional
   probe, not an assertion: one consumed through `.catch(handler)`, a `.then`
   rejection handler, `Promise.allSettled`, a `.catch` on the `Promise.all`,
