@@ -79,11 +79,16 @@ jobs:
           path: ${{ env.BUNDLE }}.${{ matrix.goos == 'windows' && 'zip' || 'tar.gz' }}
           if-no-files-found: error
 
+  # Only this job attests the CLI release: id-token mints the Sigstore
+  # signing certificate and attestations stores the provenance for the
+  # archives and SHA256SUMS.
   github-release:
     needs: [check-tag, binaries]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -95,6 +100,15 @@ jobs:
           merge-multiple: true
       - name: Verify archive contents and write SHA-256 checksums
         run: python3 scripts/check-cli-archives.py dist
+      # Attest before publishing, from the same files the next step uploads,
+      # so every published asset carries provenance for its exact bytes.
+      - name: Attest build provenance for the archives and SHA256SUMS
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/9l-*.tar.gz
+            dist/9l-*.zip
+            dist/SHA256SUMS
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
@@ -104,6 +118,25 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           generate_release_notes: true
+      # Download what the release now serves and check it the way users do:
+      # the same names and bytes as this run attested, and a provenance
+      # attestation from this workflow at this tag. A failure stops the run
+      # before the npm job.
+      - name: Verify the published assets and their attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir published
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir published --pattern '9l-*' --pattern SHA256SUMS
+          diff <(ls dist) <(ls published)
+          for file in dist/*; do
+            name=$(basename "$file")
+            cmp "$file" "published/$name"
+            gh attestation verify "published/$name" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" --deny-self-hosted-runners
+          done
 
   # Runs after the GitHub Release so the SDK never reaches npm without its
   # CLI. A rerun skips when npm already holds these exact bytes.

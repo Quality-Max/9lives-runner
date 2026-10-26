@@ -6,6 +6,20 @@ SDK versions.
 
 ## Unreleased
 
+### Release process
+
+- The release workflow attests SLSA build provenance for every CLI archive
+  and for `SHA256SUMS` before publishing them, then downloads the published
+  assets, requires the bytes it attested and checks each with
+  `gh attestation verify`; a mismatch stops the run before npm publication.
+  Only the GitHub Release job gains `attestations: write` and
+  `id-token: write`; no permission is added at the workflow level. [Installation](docs/install.md#verify-build-provenance)
+  shows the `gh attestation verify` command; the checksum steps remain for
+  users without `gh`, and releases up to 0.5.1 have no attestations (#112).
+- Every action in the repository's workflows is pinned to a full commit SHA
+  with its version in a comment, including CI, which the release runs as its
+  qualification gate, and the Pages deployment.
+
 ## 0.5.1 — 2026-10-26
 
 ### SDK
