@@ -115,13 +115,14 @@ test('empty-json replaces a JSON body, says why it could not, and leaves other r
       const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'empty-json'});
       let handler;
       await instrument({route: async (_pattern, h) => { handler = h; }}, channel);
-      const calls = {fulfill: [], continued: 0, fallback: 0};
+      const calls = {fulfill: [], continued: 0, aborted: [], fallback: 0};
       const response = {text: async () => upstream.text};
       const route = {
         request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
         fetch: async () => { if (upstream.fetchFails) throw new Error('ECONNREFUSED'); return response; },
         fulfill: async options => { calls.fulfill.push(options.body === undefined ? {} : {body: options.body}); },
         continue: async () => { calls.continued++; },
+        abort: async code => { calls.aborted.push(code); },
         fallback: async () => { calls.fallback++; },
       };
       await handler(route);
@@ -130,7 +131,9 @@ test('empty-json replaces a JSON body, says why it could not, and leaves other r
       const written = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
       assert.deepEqual(written, records, name);
       assert.deepEqual(calls.fulfill, fulfilled, name);
-      assert.equal(calls.continued, upstream.fetchFails ? 1 : 0, name);
+      // A failed upstream request is aborted, never sent a second time.
+      assert.equal(calls.continued, 0, name);
+      assert.deepEqual(calls.aborted, upstream.fetchFails ? ['failed'] : [], name);
       assert.equal(calls.fallback, 0, name);
     }
     // A request the fault does not match is handed to the test's own routes.
@@ -245,46 +248,59 @@ test('redirect-cross-origin points at a reserved origin that never resolves', ()
   assert(!matches({...fault, method: 'GET'}, requestTarget(request(redirectLocation, 'GET'))));
 });
 
+// A browser context stand-in: the route handler, and close listeners counted
+// the way an EventEmitter counts them.
+function fakeContext() {
+  const {EventEmitter} = require('node:events');
+  const emitter = new EventEmitter();
+  const context = {
+    route: async (_pattern, h) => { context.handler = h; },
+    on: (event, fn) => emitter.on(event, fn),
+    once: (event, fn) => emitter.once(event, fn),
+    off: (event, fn) => emitter.off(event, fn),
+    close: () => emitter.emit('close'),
+    listeners: () => emitter.listenerCount('close'),
+  };
+  return context;
+}
+
 test('delay holds the response, is credited when the hold starts, then lets the real response through', async () => {
   const {instrument, ProveChannel} = require('../dist/prove.js');
   assert(delayHoldMs > 30000, 'the hold must outlast Playwright\'s default test timeout');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-delay-'));
   try {
-    const listeners = new Map();
-    const context = {
-      route: async (_pattern, h) => { context.handler = h; },
-      on: (event, fn) => { listeners.set(event, fn); },
-      off: (event, fn) => { if (listeners.get(event) === fn) listeners.delete(event); },
-    };
-    // The request is dispatched at once; only its response is held, then
-    // delivered as fetched.
+    // The request is dispatched at once, without following redirects; only
+    // its response is held, then delivered as fetched.
     let file = path.join(dir, 'elapsed.ndjson');
     let channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
+    let context = fakeContext();
     await instrument(context, channel, {holdMs: 50});
     const upstream = {status: () => 200};
-    const calls = {fetched: 0, fulfilled: [], continued: 0};
+    const calls = {fetched: [], fulfilled: [], continued: 0, aborted: 0};
     const started = Date.now();
     const pending = context.handler({
       request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
-      fetch: async () => { calls.fetched++; return upstream; },
+      fetch: async options => { calls.fetched.push(options); return upstream; },
       fulfill: async (options) => { calls.fulfilled.push(options); },
       continue: async () => { calls.continued++; },
+      abort: async () => { calls.aborted++; },
     });
     await new Promise(resolve => setTimeout(resolve, 10));
-    assert.equal(calls.fetched, 1, 'the request reaches the application before the hold');
+    assert.equal(calls.fetched.length, 1, 'the request reaches the application before the hold');
     assert.equal(calls.fulfilled.length, 0, 'the response must still be held');
     assert(fs.readFileSync(file, 'utf8').includes('"applied"'), 'credited when the hold starts');
     await pending;
     assert(Date.now() - started >= 45, 'the hold must last the configured time');
-    assert.deepEqual(calls, {fetched: 1, fulfilled: [{response: upstream}], continued: 0});
-    assert.equal(listeners.size, 0, 'the close listener is removed after the hold');
+    // A redirect is delivered to the browser to follow, not followed here.
+    assert.deepEqual(calls, {fetched: [{maxRedirects: 0}], fulfilled: [{response: upstream}], continued: 0, aborted: 0});
     channel.close();
     assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}]);
 
     // The context closes mid-hold: the hold ends at once and a route that can
-    // no longer be continued is not an error.
+    // no longer be fulfilled is not an error.
     file = path.join(dir, 'closed.ndjson');
     channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
+    context = fakeContext();
     await instrument(context, channel, {holdMs: 60_000});
     let fulfilled = 0;
     const held = context.handler({
@@ -294,23 +310,26 @@ test('delay holds the response, is credited when the hold starts, then lets the 
     });
     await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(fulfilled, 0);
-    listeners.get('close')();
+    context.close();
     await held;
     assert.equal(fulfilled, 1);
     channel.close();
     assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}]);
 
-    // An application that cannot be reached has no response to hold.
+    // An application that cannot be reached has no response to hold. The
+    // request is aborted, not sent again: the upstream may have acted on it.
     file = path.join(dir, 'unreachable.ndjson');
     channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {...fault, kind: 'delay'});
+    context = fakeContext();
     await instrument(context, channel, {holdMs: 60_000});
-    let continued = 0;
+    const failed = {continued: 0, aborted: []};
     await context.handler({
       request: () => request('http://127.0.0.1:4100/api/orders', 'POST'),
       fetch: async () => { throw new Error('ECONNREFUSED'); },
-      continue: async () => { continued++; },
+      continue: async () => { failed.continued++; },
+      abort: async code => { failed.aborted.push(code); },
     });
-    assert.equal(continued, 1);
+    assert.deepEqual(failed, {continued: 0, aborted: ['failed']});
     channel.close();
     assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'not-applicable', fault: 'fault-1', reason: 'unreachable'}]);
 
@@ -319,6 +338,42 @@ test('delay holds the response, is credited when the hold starts, then lets the 
     await context.handler({request: () => request('http://127.0.0.1:4100/api/cart', 'GET'), fallback: async () => { fallback++; }});
     assert.equal(fallback, 1);
   } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('delay holds a polled request many times with one close listener, and closing releases every hold', async () => {
+  const {instrument, ProveChannel} = require('../dist/prove.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-prove-poll-'));
+  const warnings = [];
+  const warn = warning => warnings.push(warning.name);
+  process.on('warning', warn);
+  try {
+    const channel = new ProveChannel(fs.openSync(path.join(dir, 'poll.ndjson'), 'wx', 0o600), {...fault, kind: 'delay', method: 'GET', path: '/api/status'});
+    const context = fakeContext();
+    await instrument(context, channel, {holdMs: 60_000});
+    let fulfilled = 0;
+    // More held requests than an EventEmitter's default limit of 10 listeners.
+    const held = Array.from({length: 25}, () => context.handler({
+      request: () => request('http://127.0.0.1:4100/api/status', 'GET'),
+      fetch: async () => ({status: () => 200}),
+      fulfill: async () => { fulfilled++; },
+    }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(fulfilled, 0, 'every response is still held');
+    assert.equal(context.listeners(), 1, 'one close listener serves every hold');
+    context.close();
+    await Promise.all(held);
+    assert.equal(fulfilled, 25);
+    assert.equal(context.listeners(), 0);
+    // A request matched after the context closed is not held either.
+    await context.handler({request: () => request('http://127.0.0.1:4100/api/status', 'GET'), fetch: async () => ({}), fulfill: async () => { fulfilled++; }});
+    assert.equal(fulfilled, 26);
+    channel.close();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(warnings, []);
+  } finally {
+    process.off('warning', warn);
     fs.rmSync(dir, {recursive: true, force: true});
   }
 });

@@ -21,11 +21,13 @@ const (
 	KindHTTP429       = "http-429"
 	KindMalformedJSON = "malformed-json"
 	// KindRedirectCrossOrigin answers 302 with a Location on a reserved,
-	// never-resolving origin, so following it fails without reaching a host.
+	// never-resolving origin, so following it fails without reaching an
+	// application host (DNS may still be asked for the name).
 	KindRedirectCrossOrigin = "redirect-cross-origin"
 	// KindDelay holds the real response for longer than Playwright's default
-	// test timeout (35s in the SDK), then lets it through; the hold ends when
-	// the test's context closes, so it never outlives the run.
+	// test timeout (35s in the SDK), then lets it through, redirects
+	// included, for the browser to follow; the hold ends when the test's
+	// context closes, so it never outlives the run.
 	KindDelay = "delay"
 )
 
@@ -158,9 +160,10 @@ type TestResult struct {
 	TestID  string `json:"testId"`
 	Result  string `json:"result"`
 	Applied int    `json:"applied"`
-	// Reason says why an empty-json or malformed-json fault was not
-	// applicable: the response was not a JSON object or array, or the
-	// upstream request failed.
+	// Reason says why a fault was not applicable: an empty-json or
+	// malformed-json response was not a JSON object or array (not-json), or
+	// the upstream request of an empty-json, malformed-json or delay fault
+	// failed (unreachable).
 	Reason string `json:"reason,omitempty"`
 }
 

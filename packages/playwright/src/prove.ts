@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {closeSync, openSync, writeSync} from 'node:fs';
 import {isAbsolute, join} from 'node:path';
-import type {BrowserContext, Request} from '@playwright/test';
+import type {BrowserContext, Request, Route} from '@playwright/test';
 import {engineIdentity} from './protocol';
 
 // `9l prove` runs a spec once to observe its fetch/XHR requests, then once per
@@ -107,7 +107,7 @@ export function openProveChannel(env: NodeJS.ProcessEnv, testInfo: {testId: stri
 
 // redirect-cross-origin sends the page to a fixed origin on a reserved,
 // never-resolving name (RFC 2606), so following the redirect always fails
-// and no real host is contacted.
+// and no application host is contacted; DNS may still be asked for the name.
 export const redirectLocation = 'http://redirect.invalid/';
 // delay holds the response this long before letting it through: longer than
 // Playwright's default 30s test timeout and 5s expect timeout, so a test that
@@ -123,15 +123,31 @@ const statusFaults: Partial<Record<FaultKind, {status: number; headers?: Record<
   'redirect-cross-origin': {status: 302, headers: {location: redirectLocation}},
 };
 
-// Resolves after ms, or as soon as the context closes. The timer never keeps
-// the worker process alive on its own.
-function hold(context: Pick<BrowserContext, 'on' | 'off'>, ms: number) {
-  return new Promise<void>(resolve => {
-    const done = () => { clearTimeout(timer); context.off('close', done); resolve(); };
-    const timer = setTimeout(done, ms);
-    timer.unref?.();
-    context.on('close', done);
+// Holds for one context. Each hold resolves after ms, or as soon as the
+// context closes. One close listener serves every hold, so a page that polls
+// the delayed request never piles up listeners. The timers never keep the
+// worker process alive on their own.
+function holds(context: Pick<BrowserContext, 'once'>) {
+  const waiting = new Set<() => void>();
+  let closed = false;
+  context.once('close', () => {
+    closed = true;
+    for (const release of [...waiting]) release();
   });
+  return (ms: number) => new Promise<void>(resolve => {
+    if (closed) return resolve();
+    const release = () => { clearTimeout(timer); waiting.delete(release); resolve(); };
+    const timer = setTimeout(release, ms);
+    timer.unref?.();
+    waiting.add(release);
+  });
+}
+
+// The fault cannot replace a response the upstream never gave. The request is
+// aborted rather than sent again: the upstream may already have acted on it.
+function unreachable(route: Route, channel: ProveChannel, fault: Fault) {
+  channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
+  return route.abort('failed').catch(() => {});
 }
 
 // The replacement body for a JSON object or array, or undefined when the
@@ -166,6 +182,7 @@ export async function instrument(context: BrowserContext, channel: ProveChannel,
     });
     return;
   }
+  const hold = fault.kind === 'delay' ? holds(context) : undefined;
   // Registered when the context is created, so routes the test adds later run
   // first; a request the test fulfills itself is never faulted.
   await context.route('**/*', async route => {
@@ -176,20 +193,21 @@ export async function instrument(context: BrowserContext, channel: ProveChannel,
     if (fault.kind === 'abort') return route.abort('failed').then(applied);
     const status = statusFaults[fault.kind];
     if (status) return route.fulfill({...status, body: ''}).then(applied);
-    if (fault.kind === 'delay') {
+    if (hold) {
       // The request is dispatched first, so the application receives it as
       // usual; only its response is held. The hold is the fault, so it is
       // credited as soon as it starts, and the response follows once it ends
-      // unless the test is already over.
+      // unless the test is already over. A redirect is held and delivered as
+      // it came, not followed here, so the browser follows it itself and the
+      // page sees the same redirect as without the fault.
       let response;
       try {
-        response = await route.fetch();
+        response = await route.fetch({maxRedirects: 0});
       } catch {
-        channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
-        return route.continue().catch(() => {});
+        return unreachable(route, channel, fault);
       }
       applied();
-      await hold(context, holdMs);
+      await hold(holdMs);
       return route.fulfill({response}).catch(() => {});
     }
     const kind = fault.kind as 'empty-json' | 'malformed-json';
@@ -200,8 +218,7 @@ export async function instrument(context: BrowserContext, channel: ProveChannel,
     try {
       response = await route.fetch();
     } catch {
-      channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
-      return route.continue().catch(() => {});
+      return unreachable(route, channel, fault);
     }
     const body = replaceJSON(kind, await response.text().catch(() => ''));
     if (body === undefined) {

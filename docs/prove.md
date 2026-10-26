@@ -54,7 +54,8 @@ cannot parse. Faults are planned in the table's order, whatever order you list.
 
 `redirect-cross-origin` answers a request with a redirect to another origin,
 `redirect.invalid`, a reserved name that never resolves. The browser follows
-it, the page's `fetch` rejects, and no real host is contacted. A test whose
+it, the page's `fetch` rejects, and no application host is contacted (DNS
+may still be asked for `redirect.invalid`). A test whose
 assertion depends on that request's result therefore reports `caught`, which
 shows that the test notices the failed request, not that it checks where
 redirects lead: a test that follows redirects without inspecting them is told
@@ -65,13 +66,26 @@ XHR requests are redirected.
 `delay` checks that a test notices a request that does not come back in time.
 The request is dispatched to the application as usual; the SDK holds its
 response for 35 s, longer than Playwright's default
-30 s test timeout and 5 s `expect` timeout, then lets it through. An `expect`
-that waits for the response fails first and gives `caught`; a test that only
-times out, or that never waited for the request, gives
-`failed-without-assertion` or `survived` as for every other kind. A test whose
-own timeouts exceed 35 s receives the real response. The hold ends as soon as
-the test's browser context closes, so a fault run lasts as long as the test,
-never 35 s per request, and `--timeout` still bounds the run as a whole. The
+30 s test timeout and 5 s `expect` timeout, then lets it through. A redirect
+is held and delivered as the server sent it, so the browser follows it itself
+and the page sees the same redirect as without the fault. A test that fails
+inside an `expect` gives `caught`, whether the `expect`'s own timeout ran out
+first or the test timeout interrupted it: either way an assertion step failed.
+A test that times out while waiting outside an `expect`, for example in
+`page.waitForResponse`, `page.goto` or a click, gives
+`failed-without-assertion`, and a test that never waited for the request gives
+`survived`, as for every other kind. A test whose own timeouts exceed 35 s
+receives the real response. When the upstream request itself fails in the
+fault run there is no response to hold: the fault is `not-applicable`
+(`unreachable`) and the request is aborted, not sent again.
+
+The hold ends as soon as the test's browser context closes, so a held test
+lasts at most its own timeout, never 35 s per request. Every test in the spec
+that waits for the held request can cost up to its test timeout, though, so
+several of them can together exceed the per-run `--timeout` (2 minutes by
+default; four tests at Playwright's default 30 s already reach it). That
+fault run is then stopped and the fault is `incomplete`, which is
+inconclusive, not caught. Raise `--timeout` for such specs. The
 hold length is fixed in the SDK; the route handler cannot see the test's
 timeouts.
 
@@ -115,7 +129,7 @@ the intended behavior, only that it is not indifferent to this request.
 | `failed-without-assertion` | The fault was applied and the test failed, but no assertion step failed (for example an action timed out) |
 | `retried` | Playwright ran the test more than once in the fault run; a later attempt can hide what the first detected, so nothing is concluded |
 | `not-exercised` | The fault was never applied to this test's requests, so nothing is credited to it, whatever the test did |
-| `not-applicable` | `empty-json` or `malformed-json` met a response that was not a JSON object or array (`not-json`), or the upstream request failed in the fault run (`unreachable`) |
+| `not-applicable` | `empty-json` or `malformed-json` met a response that was not a JSON object or array (`not-json`), or the upstream request of an `empty-json`, `malformed-json` or `delay` fault failed in the fault run (`unreachable`); such a request is aborted, not sent again |
 
 The fault's result follows from its tests, counting only those the fault was
 applied to: `retried` if any was retried; otherwise `survived` if any passed,
@@ -259,7 +273,11 @@ Six isolated fault runs, every fault applied and the proof complete. Chromium
 follows the fulfilled redirect to `redirect.invalid` and the page's `fetch`
 rejects; the fixture's 2 s `expect` timeout fails the asserted requests under
 `delay` long before the 35 s hold ends, and the smoke checks that no delay run
-lasted 30 s, so the hold was released when the test's context closed.
+lasted 30 s, so the hold was released when the test's context closed. The
+smoke also drives the SDK's `delay` directly in Chromium against an endpoint
+that answers 302: for both `fetch` and XHR the held redirect is followed by the
+browser, and the page sees `redirected` and the final URL as without the
+fault.
 
 A second control, run by hand with the same fixture plus
 `test.describe.configure({retries: 1})`, gives `retried` for all six cart and

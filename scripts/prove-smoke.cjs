@@ -120,7 +120,56 @@ async function main() {
   // No delay run waited out the 35s hold: the context closing released it.
   assert(thirdReport.faults.filter(fault => fault.kind === 'delay').every(fault => fault.durationMs < 30000), 'a delay fault run outlasted the test');
   const thirdSeconds = Math.round((Date.now() - startedThird) / 1000);
-  console.log(`Prove: real Chromium baselines; 9 default fault runs (6 caught on asserted requests, 3 survived on the unasserted one), 12 opt-in fault runs (8 caught, 4 survived) and 6 redirect/delay fault runs (4 caught, 2 survived, ${thirdSeconds}s in all); persisted report has no URLs`);
+
+  stage = 'delay keeps a server redirect';
+  await delayKeepsRedirects();
+  console.log(`Prove: real Chromium baselines; 9 default fault runs (6 caught on asserted requests, 3 survived on the unasserted one), 12 opt-in fault runs (8 caught, 4 survived) and 6 redirect/delay fault runs (4 caught, 2 survived, ${thirdSeconds}s in all); a held redirect is followed by Chromium's fetch and XHR; persisted report has no URLs`);
+}
+
+// delay holds a redirect as the server sent it, so Chromium follows it itself
+// and the page sees the same redirect it sees without the fault, for fetch and
+// XHR alike. The SDK's instrument is driven directly with a short hold.
+async function delayKeepsRedirects() {
+  const http = require('node:http');
+  const {chromium} = require('@playwright/test');
+  const {instrument, ProveChannel} = require('../packages/playwright/dist/prove.js');
+  const server = http.createServer((request, response) => {
+    if (request.url === '/') return response.writeHead(200, {'content-type': 'text/html'}).end('<p>shop</p>');
+    if (request.url === '/api/old') return response.writeHead(302, {location: '/api/new'}).end();
+    if (request.url === '/api/new') return response.writeHead(200, {'content-type': 'application/json'}).end('{"ok":true}');
+    response.writeHead(404).end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const browser = await chromium.launch();
+  try {
+    for (const via of ['fetch', 'xhr']) {
+      const file = path.join(work, `held-redirect-${via}.ndjson`);
+      const channel = new ProveChannel(fs.openSync(file, 'wx', 0o600), {id: 'fault-1', kind: 'delay', method: 'GET', origin, path: '/api/old'});
+      const context = await browser.newContext();
+      await instrument(context, channel, {holdMs: 300});
+      const page = await context.newPage();
+      await page.goto(origin + '/');
+      const started = Date.now();
+      const seen = await page.evaluate(via => via === 'fetch'
+        ? fetch('/api/old').then(async r => ({redirected: r.redirected, path: new URL(r.url).pathname, body: await r.text()}))
+        : new Promise(resolve => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', '/api/old');
+          xhr.onload = () => resolve({redirected: new URL(xhr.responseURL).pathname !== '/api/old', path: new URL(xhr.responseURL).pathname, body: xhr.responseText});
+          xhr.send();
+        }), via);
+      const held = Date.now() - started;
+      await context.close();
+      channel.close();
+      assert.deepEqual(seen, {redirected: true, path: '/api/new', body: '{"ok":true}'}, via);
+      assert(held >= 250, `${via} response was not held`);
+      assert.deepEqual(fs.readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)), [{type: 'applied', fault: 'fault-1'}], via);
+    }
+  } finally {
+    await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
 }
 
 main().catch(error => {

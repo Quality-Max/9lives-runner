@@ -10,11 +10,19 @@ SDK versions.
 
 - The prove channel applies two more opt-in faults. `redirect-cross-origin`
   answers 302 with `Location: http://redirect.invalid/`, a reserved name that
-  never resolves, so the browser's redirect fails without contacting a host.
-  `delay` holds the real response for 35 s, longer than Playwright's default
-  test and `expect` timeouts, then lets it through; it is credited when the
-  hold starts and the hold ends as soon as the context closes, so a fault run
-  never outlives its test. The manifest's `"9l".faults` lists both.
+  never resolves, so the browser's redirect fails without contacting an
+  application host (DNS may still be asked for the name). `delay` holds the
+  real response for 35 s, longer than Playwright's default test and `expect`
+  timeouts, then lets it through; it is credited when the hold starts and the
+  hold ends as soon as the context closes, so a fault run never outlives its
+  test. A redirect is held as the server sent it and Chromium follows it
+  itself, so the page sees the same redirect as without the fault; one close
+  listener per context serves every hold, however often the page polls. The
+  manifest's `"9l".faults` lists both.
+- When the upstream request of an `empty-json`, `malformed-json` or `delay`
+  fault fails in a fault run, the request is now aborted after the
+  `not-applicable` (`unreachable`) record instead of being sent a second time,
+  which could repeat a request the application had already acted on.
 
 ### CLI
 
