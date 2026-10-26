@@ -14,6 +14,21 @@ SDK versions.
   passing inner assertion was counted as well, and failed retries were
   reported as failed assertion steps. The count is of top-level assertion
   steps, not of every `expect` in the source.
+- The prove channel applies two more opt-in faults. `redirect-cross-origin`
+  answers 302 with `Location: http://redirect.invalid/`, a reserved name that
+  never resolves, so the browser's redirect fails without contacting an
+  application host (DNS may still be asked for the name). `delay` holds the
+  real response for 35 s, longer than Playwright's default test and `expect`
+  timeouts, then lets it through; it is credited when the hold starts and the
+  hold ends as soon as the context closes, so a fault run never outlives its
+  test. A redirect is held as the server sent it and Chromium follows it
+  itself, so the page sees the same redirect as without the fault; one close
+  listener per context serves every hold, however often the page polls. The
+  manifest's `"9l".faults` lists both.
+- When the upstream request of an `empty-json`, `malformed-json` or `delay`
+  fault fails in a fault run, the request is now aborted after the
+  `not-applicable` (`unreachable`) record instead of being sent a second time,
+  which could repeat a request the application had already acted on.
 
 ### CLI
 
@@ -33,6 +48,14 @@ SDK versions.
   what a `matched` status compared: the selected spec, its path, branch,
   commit and workspace root. Imported modules are not compared, and the
   wording no longer invites reading `matched` as unchanged dependencies.
+- `9l prove --faults` accepts `redirect-cross-origin` and `delay`, planned
+  after the existing kinds for every observed request. Defaults stay
+  `abort,http-500,empty-json`. An installed SDK that does not report the new
+  kinds is refused for them after the baseline with exit 2, as before, and
+  `9l doctor --sdk` names them under `sdk/faults`. Reports use policy
+  `prove-network-v4`; the rules are unchanged from `v3`. The text output
+  widens the kind column so every kind aligns. The real Chromium smoke
+  qualifies both kinds on the shop fixture (#43).
 - `9l assess` text output no longer lists every `analysis-limit` finding
   under its test. After a file's tests, one unindented line counts the limits
   per code (`analysis limits in this file: unresolved-helper ×37,

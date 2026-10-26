@@ -132,13 +132,16 @@ func TestDoctorJudgesTheSDKPairByDeclaredProtocol(t *testing.T) {
 		}
 	}
 	t.Chdir(root)
-	report := func(protocol string) (int, string, struct {
+	report := func(protocol string, faults ...string) (int, string, struct {
 		Ready  bool
 		Checks []struct{ Name, Status, Message, Fix string }
 	}) {
 		t.Helper()
+		if faults == nil {
+			faults = prove.Kinds
+		}
 		manifest, _ := json.Marshal(map[string]any{"name": "@9l/playwright", "version": "0.0.1", "main": "index.js",
-			"9l": map[string]any{"protocol": protocol, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}})
+			"9l": map[string]any{"protocol": protocol, "capabilities": playwrightsdk.Capabilities, "faults": faults}})
 		if err := os.WriteFile(filepath.Join(pkg, "package.json"), manifest, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -171,6 +174,12 @@ func TestDoctorJudgesTheSDKPairByDeclaredProtocol(t *testing.T) {
 	}
 	if strings.Contains(raw, "fixture-") || strings.Contains(raw, "node_modules") {
 		t.Fatal("doctor disclosed fixture paths or ran the SDK entry")
+	}
+	// An SDK that predates redirect-cross-origin and delay is admitted, and the
+	// kinds it cannot apply are named before any prove run.
+	_, _, older := report(playwrightsdk.Version, "abort", "http-500", "empty-json", "http-401", "http-403", "http-429", "malformed-json")
+	if faults := find(older.Checks, "sdk/faults"); faults.Status != "warning" || !strings.Contains(faults.Message, "Not applied by this SDK: redirect-cross-origin, delay.") {
+		t.Fatalf("older fault kinds: %+v", faults)
 	}
 	code, _, foreign := report("9l.engine/0")
 	if sdk := find(foreign.Checks, "sdk"); code != 2 || foreign.Ready || sdk.Status != "missing" || !strings.Contains(sdk.Message, "Incompatible") {

@@ -221,7 +221,7 @@ func TestProveClassifiesEachFaultAndPersistsAReportWithoutURLs(t *testing.T) {
 	}
 	report := proveReport(t, stdout, stderr)
 	want := "req-1:abort:caught req-1:http-500:caught req-1:empty-json:caught req-2:abort:survived req-2:http-500:survived req-2:empty-json:survived"
-	if faultResults(report) != want || !report.Complete || report.IncompleteReason != "" || report.Policy != "prove-network-v3" || strings.Join(report.FaultKinds, ",") != "abort,http-500,empty-json" || report.Summary != (prove.Summary{Faults: 6, Caught: 3, Survived: 3, Exercised: 6}) {
+	if faultResults(report) != want || !report.Complete || report.IncompleteReason != "" || report.Policy != "prove-network-v4" || strings.Join(report.FaultKinds, ",") != "abort,http-500,empty-json" || report.Summary != (prove.Summary{Faults: 6, Caught: 3, Survived: 3, Exercised: 6}) {
 		t.Fatalf("results %q\nreport %+v", faultResults(report), report)
 	}
 	if tests := report.Faults[0].Tests; len(tests) != 1 || tests[0].TestID != strings.Repeat("a", 64) || tests[0].Result != prove.Caught || tests[0].Applied != 1 {
@@ -443,8 +443,33 @@ func TestProveAppliesSelectedFaultKindsTheSDKReports(t *testing.T) {
 		t.Fatalf("runs=%d", len(worker.commands))
 	}
 	_, text, _ := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--faults", "malformed-json", "--receipt-dir", t.TempDir())
-	if !strings.Contains(text, "CAUGHT                     malformed-json req-1 GET") {
+	if !strings.Contains(text, "CAUGHT                     malformed-json        req-1 GET") {
 		t.Fatalf("text output misaligns the longest kind:\n%s", text)
+	}
+}
+
+// redirect-cross-origin and delay apply to every observed request, JSON or
+// not, and are classified like any other kind: caught on an asserted request,
+// survived on an unasserted one. They are planned last, after the JSON kinds.
+func TestProveAppliesRedirectAndDelayKinds(t *testing.T) {
+	project := proveProject(t)
+	worker := shopWorker()
+	worker.capabilities = prove.Kinds
+	code, stdout, stderr := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--faults", "delay,redirect-cross-origin,abort", "--format", "json", "--receipt-dir", t.TempDir())
+	report := proveReport(t, stdout, stderr)
+	want := "req-1:abort:caught req-1:redirect-cross-origin:caught req-1:delay:caught req-2:abort:survived req-2:redirect-cross-origin:survived req-2:delay:survived"
+	if code != 0 || faultResults(report) != want || strings.Join(report.FaultKinds, ",") != "abort,redirect-cross-origin,delay" || !report.Complete || report.Policy != "prove-network-v4" {
+		t.Fatalf("code=%d results %q kinds %v policy %s stderr=%s", code, faultResults(report), report.FaultKinds, report.Policy, stderr)
+	}
+	if report.Summary != (prove.Summary{Faults: 6, Caught: 3, Survived: 3, Exercised: 6}) || len(worker.commands) != 7 {
+		t.Fatalf("summary %+v runs=%d", report.Summary, len(worker.commands))
+	}
+	// The text output keeps the longest kind aligned with the others.
+	_, text, _ := runProve(t, worker, filepath.Join(project, "tests/shop.spec.ts"), "--faults", "redirect-cross-origin,delay", "--receipt-dir", t.TempDir())
+	for _, line := range []string{"CAUGHT                     redirect-cross-origin req-1 GET", "CAUGHT                     delay                 req-1 GET", "SURVIVED                   delay                 req-2 GET"} {
+		if !strings.Contains(text, line) {
+			t.Fatalf("text output lacks %q:\n%s", line, text)
+		}
 	}
 }
 
@@ -468,6 +493,12 @@ func TestProveRefusesKindsAnOlderSDKCannotApply(t *testing.T) {
 	worker.capabilities = []string{"abort", "http-500", "empty-json", "http-401"}
 	if code, _, stderr := runProve(t, worker, spec, "--faults", "http-401,http-429", "--receipt-dir", t.TempDir()); code != 2 || !strings.Contains(stderr, "--faults http-429 needs") || len(worker.commands) != 1 {
 		t.Fatalf("partly capable SDK: code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
+	}
+	// The 0.5.0 SDK reports the status and JSON kinds but not redirect-cross-origin or delay.
+	worker = shopWorker()
+	worker.capabilities = []string{"abort", "http-500", "empty-json", "http-401", "http-403", "http-429", "malformed-json"}
+	if code, _, stderr := runProve(t, worker, spec, "--faults", "http-401,redirect-cross-origin,delay", "--receipt-dir", t.TempDir()); code != 2 || !strings.Contains(stderr, "--faults redirect-cross-origin,delay needs a newer @9l/playwright") || len(worker.commands) != 1 {
+		t.Fatalf("0.5.0 SDK: code=%d runs=%d stderr=%s", code, len(worker.commands), stderr)
 	}
 }
 

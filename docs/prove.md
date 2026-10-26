@@ -2,8 +2,9 @@
 
 Status: experimental. `9l prove` needs `@9l/playwright` 0.1.1 or newer, the
 first release with the prove channel, and CLI 0.1.5 or newer. The opt-in kinds
-selected with `--faults` need CLI 0.2.0 and `@9l/playwright` 0.1.3 or newer. Qualified with real Chromium
-on one synthetic fixture and one retry control, see
+selected with `--faults` need CLI 0.2.0 and `@9l/playwright` 0.1.3 or newer;
+`redirect-cross-origin` and `delay` need a CLI and SDK newer than 0.5.0.
+Qualified with real Chromium on one synthetic fixture and one retry control, see
 [Qualification](#qualification). No accuracy, latency or cost claim is made
 for other applications.
 
@@ -40,6 +41,8 @@ Summary: 9 fault(s): 6 caught, 3 survived, 0 inconclusive, 0 not run
 | `http-403` | Status 403, empty body | Every request | no |
 | `http-429` | Status 429, `Retry-After: 1`, empty body | Every request | no |
 | `malformed-json` | The real response with its JSON cut to the first half, so it no longer parses | Successful JSON baseline responses | no |
+| `redirect-cross-origin` | Status 302 with `Location: http://redirect.invalid/`, empty body | Every request | no |
+| `delay` | The real response, held for 35 s first | Every request | no |
 
 Select kinds with `--faults`, for example
 `9l prove tests/checkout.spec.ts --faults http-401,http-403,malformed-json`.
@@ -48,6 +51,45 @@ rate-limit kinds check that a test notices a rejected session or a throttled
 dependency instead of continuing as if the request had succeeded;
 `malformed-json` checks that a test notices a response the application
 cannot parse. Faults are planned in the table's order, whatever order you list.
+
+`redirect-cross-origin` answers a request with a redirect to another origin,
+`redirect.invalid`, a reserved name that never resolves. The browser follows
+it, the page's `fetch` rejects, and no application host is contacted (DNS
+may still be asked for `redirect.invalid`). A test whose
+assertion depends on that request's result therefore reports `caught`, which
+shows that the test notices the failed request, not that it checks where
+redirects lead: a test that follows redirects without inspecting them is told
+apart only when it never waits for or asserts on the request, which gives
+`survived`. Document requests are not observed, so only the spec's fetch and
+XHR requests are redirected.
+
+`delay` checks that a test notices a request that does not come back in time.
+The request is dispatched to the application as usual; the SDK holds its
+response for 35 s, longer than Playwright's default
+30 s test timeout and 5 s `expect` timeout, then lets it through. A redirect
+is held and delivered as the server sent it, so the browser follows it itself
+and the page sees the same redirect as without the fault. Only that first hop
+is held: the request the browser makes to the redirect's target is not routed
+(see the limits below). A test that fails
+inside an `expect` gives `caught`, whether the `expect`'s own timeout ran out
+first or the test timeout interrupted it: either way an assertion step failed.
+A test that times out while waiting outside an `expect`, for example in
+`page.waitForResponse`, `page.goto` or a click, gives
+`failed-without-assertion`, and a test that never waited for the request gives
+`survived`, as for every other kind. A test whose own timeouts exceed 35 s
+receives the real response. When the upstream request itself fails in the
+fault run there is no response to hold: the fault is `not-applicable`
+(`unreachable`) and the request is aborted, not sent again.
+
+The hold ends as soon as the test's browser context closes, so a held test
+lasts at most its own timeout, never 35 s per request. Every test in the spec
+that waits for the held request can cost up to its test timeout, though, so
+several of them can together exceed the per-run `--timeout` (2 minutes by
+default; four tests at Playwright's default 30 s already reach it). That
+fault run is then stopped and the fault is `incomplete`, which is
+inconclusive, not caught. Raise `--timeout` for such specs. The
+hold length is fixed in the SDK; the route handler cannot see the test's
+timeouts.
 
 The SDK reports in the baseline which kinds it can apply. An SDK that
 predates this applies only the defaults, so selecting another kind exits 2
@@ -89,7 +131,7 @@ the intended behavior, only that it is not indifferent to this request.
 | `failed-without-assertion` | The fault was applied and the test failed, but no assertion step failed (for example an action timed out) |
 | `retried` | Playwright ran the test more than once in the fault run; a later attempt can hide what the first detected, so nothing is concluded |
 | `not-exercised` | The fault was never applied to this test's requests, so nothing is credited to it, whatever the test did |
-| `not-applicable` | `empty-json` or `malformed-json` met a response that was not a JSON object or array (`not-json`), or the upstream request failed in the fault run (`unreachable`) |
+| `not-applicable` | `empty-json` or `malformed-json` met a response that was not a JSON object or array (`not-json`), or the upstream request of an `empty-json`, `malformed-json` or `delay` fault failed in the fault run (`unreachable`); such a request is aborted, not sent again |
 
 The fault's result follows from its tests, counting only those the fault was
 applied to: `retried` if any was retried; otherwise `survived` if any passed,
@@ -169,15 +211,21 @@ through unchanged.
   routes run first. A test route must call `route.fallback()` for the fault
   to apply; a catch-all route that calls `route.continue()`, as request
   loggers often do, makes every fault `not-exercised`.
-- Faults are network-level only. Delays, redirects, changed fields and
-  application-side mutations are not implemented; `malformed-json` truncates
-  a body but never changes individual fields.
+- Playwright does not route the request a browser makes to follow a server
+  redirect, so only a redirect's first hop can be faulted. A fault of any kind,
+  `delay` included, planned on a redirect's target is never applied and
+  reports `not-exercised`.
+- Faults are network-level only. Changed fields and application-side
+  mutations are not implemented; `malformed-json` truncates a body but never
+  changes individual fields, `delay` holds a response for a fixed 35 s, not a
+  chosen one, and `redirect-cross-origin` redirects to one fixed origin.
 - Results describe one execution per fault. A nondeterministic application
   can produce a different result on another run.
 
-The policy name `prove-network-v3` in each report identifies the available
+The policy name `prove-network-v4` in each report identifies the available
 fault kinds and rules, and `faultKinds` lists the kinds selected for that
-proof; the policy changes whenever the kinds or rules do.
+proof; the policy changes whenever the kinds or rules do (`v3` was the same
+rules without `redirect-cross-origin` and `delay`).
 
 ## Qualification
 
@@ -202,7 +250,7 @@ report, the receipts and the persisted file:
 | `GET /api/recommendations` | no | survived | survived | survived |
 
 Nine isolated fault runs, every fault applied, the proof complete with policy
-`prove-network-v3`, each fault carrying one per-test result, all ten receipts
+`prove-network-v4`, each fault carrying one per-test result, all ten receipts
 validated with one executed test, and no URL in the saved report.
 
 A second proof selects the opt-in kinds with
@@ -218,6 +266,24 @@ Twelve isolated fault runs, every fault applied and the proof complete. The
 fixture treats any unsuccessful status alike, so this qualifies that each kind
 is delivered to the page and classified, not that an application
 distinguishes 401 from 429.
+
+A third proof selects `--faults redirect-cross-origin,delay`:
+
+| Request | Asserted | `redirect-cross-origin` | `delay` |
+| --- | --- | --- | --- |
+| `GET /api/cart` | yes | caught | caught |
+| `POST /api/orders` | yes | caught | caught |
+| `GET /api/recommendations` | no | survived | survived |
+
+Six isolated fault runs, every fault applied and the proof complete. Chromium
+follows the fulfilled redirect to `redirect.invalid` and the page's `fetch`
+rejects; the fixture's 2 s `expect` timeout fails the asserted requests under
+`delay` long before the 35 s hold ends, and the smoke checks that no delay run
+lasted 30 s, so the hold was released when the test's context closed. The
+smoke also drives the SDK's `delay` directly in Chromium against an endpoint
+that answers 302: for both `fetch` and XHR the held redirect is followed by the
+browser, and the page sees `redirected` and the final URL as without the
+fault.
 
 A second control, run by hand with the same fixture plus
 `test.describe.configure({retries: 1})`, gives `retried` for all six cart and

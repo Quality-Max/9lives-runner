@@ -154,11 +154,12 @@
   findings do not establish executed assertion coverage.
 - Experimental `9l prove`: run one spec, then re-run it once per injected
   network fault (`abort`, `http-500`, `empty-json` by default; `http-401`,
-  `http-403`, `http-429` and `malformed-json` with `--faults`) on each
-  fetch/XHR request it made, and report which faults an assertion caught and
-  which survived.
-  Requires `@9l/playwright` 0.1.1 or newer, and 0.1.3 or newer for the
-  `--faults` opt-in kinds; see [Prove](prove.md).
+  `http-403`, `http-429`, `malformed-json`, `redirect-cross-origin` and
+  `delay` with `--faults`) on each fetch/XHR request it made, and report
+  which faults an assertion caught and which survived.
+  Requires `@9l/playwright` 0.1.1 or newer, 0.1.3 or newer for the
+  `--faults` opt-in kinds and newer than 0.5.0 for `redirect-cross-origin`
+  and `delay`; see [Prove](prove.md).
 - Experimental `9l confirm`: run one reproduction spec on the revision a
   finding was reported against (`--unfixed`) and on the fixing revision
   (`--fixed`, default the working tree), each in its own Git worktree, and
