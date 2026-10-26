@@ -3,7 +3,7 @@
 Status: experimental. `9l prove` needs `@9l/playwright` 0.1.1 or newer, the
 first release with the prove channel, and CLI 0.1.5 or newer. The opt-in kinds
 selected with `--faults` need CLI 0.2.0 and `@9l/playwright` 0.1.3 or newer;
-`redirect-cross-origin` and `delay` need a CLI and SDK newer than 0.5.0.
+`redirect-cross-origin` and `delay` need CLI and SDK 0.5.1 or newer.
 Qualified with real Chromium on one synthetic fixture and one retry control, see
 [Qualification](#qualification). No accuracy, latency or cost claim is made
 for other applications.
