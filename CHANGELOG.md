@@ -6,6 +6,8 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.1 — 2026-10-26
+
 ### SDK
 
 - A retrying assertion (`expect.poll`, `toPass`, a custom matcher that calls
