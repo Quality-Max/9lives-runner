@@ -34,6 +34,13 @@ SDK versions.
   `prove-network-v4`; the rules are unchanged from `v3`. The text output
   widens the kind column so every kind aligns. The real Chromium smoke
   qualifies both kinds on the shop fixture (#43).
+- `9l assess` text output no longer lists every `analysis-limit` finding
+  under its test. After a file's tests, one unindented line counts the limits
+  per code (`analysis limits in this file: unresolved-helper ×37,
+  nested-function ×12 (--limits lists them)`), counted as in the per-rule
+  summary so the two agree; rule findings keep their per-location lines.
+  `--limits` restores the per-location listing. The JSON report is unchanged
+  and identical with and without `--limits` (#23).
 
 ## 0.5.0 — 2026-10-23
 

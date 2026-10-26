@@ -34,6 +34,21 @@ counts once per requirement and outcome. `--titles` adds literal test titles (fi
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
 
+Analysis limits repeat for every test that calls the same unresolved helper
+or passes the same callback, so on a large suite they would crowd out the
+rule findings. The text report therefore leaves `analysis-limit` findings out
+of the test lines and sums them in one unindented line after the file's
+tests, one count per limit code by descending count, for example
+`analysis limits in this file: unresolved-helper ×37, nested-function ×12 (--limits lists them)`.
+The line belongs to the file, not to the test printed above it. It counts
+limits with the same rule as the per-rule summary: a location counts once
+however many tests report it, and the call site is not part of the count, so
+a limit inside a helper counts once for the helper's own line rather than once
+per calling test. The per-file counts therefore add up to the summary's.
+`--limits` restores one line per limit finding under its test, as for other
+rules. Both are text options only: the JSON report lists every limit finding
+either way and is identical with and without `--limits`.
+
 Only `test` imported by name from `@playwright/test` or `@9l/playwright` is
 recognised. A file that imports `test` only from another module, such as a
 fixture file that re-exports it or another test runner's package, reports no
