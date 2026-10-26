@@ -26,9 +26,20 @@ test('a nested expect step is not counted as a second assertion', () => {
     reporter.onStepEnd(testCase, result, poll);
     reporter.onStepEnd(testCase, result, {category: 'expect', title: 'expect.toBe', parent: poll});
     reporter.onStepEnd(testCase, result, {category: 'pw:api', title: 'locator.click', parent: {category: 'test.step', title: 'checkout'}});
+    // toPass runs its callback, here a test.step, on every retry: the expect
+    // inside it is two levels below the toPass step, and failed retries
+    // must not become failed assertion frames either.
+    const toPass = {category: 'expect', title: 'expect.toPass'};
+    const body = {category: 'test.step', title: 'retry body', parent: toPass};
+    reporter.onStepEnd(testCase, result, {category: 'expect', title: 'expect.toBe', parent: body, error: {message: 'retry'}});
+    reporter.onStepEnd(testCase, result, {category: 'expect', title: 'expect.toBe', parent: body});
+    reporter.onStepEnd(testCase, result, toPass);
+    // An expect inside an ordinary test.step is still its own assertion.
+    reporter.onStepEnd(testCase, result, {category: 'expect', title: 'expect.toBe', parent: {category: 'test.step', title: 'checkout'}});
     const frames = fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-    assert.deepEqual(frames.map(frame => frame.category), ['assertion', 'assertion', 'browser']);
-    assert.deepEqual(frames.map(frame => frame.stepId), ['step-1', 'step-2', 'step-3'], 'skipped steps do not consume step ids');
+    assert.deepEqual(frames.map(frame => frame.category), ['assertion', 'assertion', 'browser', 'assertion', 'assertion']);
+    assert.deepEqual(frames.map(frame => frame.status), ['passed', 'passed', 'passed', 'passed', 'passed']);
+    assert.deepEqual(frames.map(frame => frame.stepId), ['step-1', 'step-2', 'step-3', 'step-4', 'step-5'], 'skipped steps do not consume step ids');
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
