@@ -9,12 +9,12 @@ SDK versions.
 ### CLI
 
 - `9l assess` text output no longer lists every `analysis-limit` finding
-  under its test. Each file ends with one line that counts the limits per
-  code (`  analysis limits: unresolved-helper ×37, nested-function ×12`), a
-  location counting once however many tests report it, as in the per-rule
-  summary; rule findings keep their per-location lines. `--limits` restores
-  the per-location listing. The JSON report is unchanged and identical with
-  and without `--limits` (#23).
+  under its test. After a file's tests, one unindented line counts the limits
+  per code (`analysis limits in this file: unresolved-helper ×37,
+  nested-function ×12 (--limits lists them)`), counted as in the per-rule
+  summary so the two agree; rule findings keep their per-location lines.
+  `--limits` restores the per-location listing. The JSON report is unchanged
+  and identical with and without `--limits` (#23).
 
 ## 0.5.0 — 2026-10-23
 

@@ -309,17 +309,11 @@ func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 // writeAssessmentTests lists each test with its findings. Analysis limits
 // repeat for every test that calls the same unresolved helper or passes the
 // same callback, so unless limits is set they are left out of the test lines
-// and summed in one line per file: one count per limit code, in which a
-// location counts once however many tests report it, as in the summary. Limit
-// findings carry no call site (only assertions, waits and hazards do), so a
-// limit inside a helper counts once for the helper line, not per calling test.
+// and summed in one unindented line after the file's tests: one count per
+// limit code, counted under assessment.FindingCountKey so that the line agrees
+// with the per-rule summary.
 func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) {
-	type limitKey struct {
-		code string
-		at   assessment.Location
-		site assessment.Location
-	}
-	seen := map[limitKey]bool{}
+	seen := map[assessment.CountKey]bool{}
 	grouped := map[string]int{}
 	for _, test := range report.Tests {
 		title := ""
@@ -330,11 +324,7 @@ func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) 
 		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
 		for _, finding := range test.Findings {
 			if finding.Rule == "analysis-limit" && !limits {
-				k := limitKey{code: finding.Code, at: finding.Location}
-				if finding.Site != nil {
-					k.site = *finding.Site
-				}
-				if !seen[k] {
+				if k := assessment.FindingCountKey(finding); !seen[k] {
 					seen[k] = true
 					grouped[finding.Code]++
 				}
@@ -355,7 +345,7 @@ func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) 
 		}
 	}
 	if len(grouped) > 0 {
-		fmt.Fprintf(out, "  analysis limits: %s\n", strings.Join(countedCodes(grouped), ", "))
+		fmt.Fprintf(out, "analysis limits in this file: %s (--limits lists them)\n", strings.Join(countedCodes(grouped), ", "))
 	}
 }
 
