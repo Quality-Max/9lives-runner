@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const net = require('node:net');
 const {spawn, spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
@@ -41,12 +42,25 @@ function processTable() {
     return match ? {pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), state: match[4], name: match[5]} : null;
   }).filter(Boolean);
 }
-async function interrupted(kind) {
-  smokeCase = `owned-${kind}`;
-  const marker = path.join(work, `${kind}.json`);
-  const receipts = path.join(work, kind);
-  const child = spawn(engine, ['run', 'testdata/sdk/tests/slow.spec.ts', '--sdk', '--format', 'json', '--timeout', kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s', '--pass-env', 'NINELIVES_SMOKE_MARKER', '--receipt-dir', receipts], {
-    cwd: root, env: {...process.env, NINELIVES_SMOKE_MARKER: marker}, stdio: ['ignore', 'pipe', 'pipe'],
+async function unusedPort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const port = server.address().port;
+  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  return port;
+}
+async function interrupted(kind, webServer = false) {
+  smokeCase = `owned-${webServer ? 'webserver-' : ''}${kind}`;
+  const marker = path.join(work, `${smokeCase}.json`);
+  const receipts = path.join(work, smokeCase);
+  const spec = webServer ? 'testdata/sdk/tests/webserver-cleanup/owned.spec.ts' : 'testdata/sdk/tests/slow.spec.ts';
+  const selection = webServer ? ['--config', path.join(root, 'testdata/sdk/tests/webserver-cleanup/playwright.config.ts')] : [];
+  const port = webServer ? String(await unusedPort()) : '';
+  const environment = {...process.env, NINELIVES_SMOKE_MARKER: marker, NINELIVES_SMOKE_PORT: port, NINELIVES_SMOKE_WAIT: '1'};
+  const passedEnv = ['--pass-env', 'NINELIVES_SMOKE_MARKER', '--pass-env', 'NINELIVES_SMOKE_PORT', '--pass-env', 'NINELIVES_SMOKE_WAIT'];
+  const budget = kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s';
+  const child = spawn(engine, ['run', spec, '--sdk', '--format', 'json', webServer ? '--deadline' : '--timeout', budget, ...selection, ...passedEnv, '--receipt-dir', receipts], {
+    cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
   // Engine diagnostics are not needed for this synthetic smoke.
@@ -68,6 +82,13 @@ async function interrupted(kind) {
     // Chromium starts a separate group; include descendants as well as the
     // engine group so a leaked browser cannot hide behind a successful exit.
     const ownedIds = new Set(process.platform === 'win32' ? [workerPID] : table.filter(item => item.group === worker.group).map(item => item.pid));
+    if (webServer) {
+      const {serverPID} = JSON.parse(fs.readFileSync(`${marker}.server`));
+      const server = table.find(item => item.pid === serverPID);
+      assert(server, 'real webServer is running');
+      if (process.platform !== 'win32') assert.notEqual(server.group, worker.group, 'webServer exercises a detached process group');
+      ownedIds.add(serverPID);
+    }
     for (let changed = true; changed;) {
       changed = false;
       for (const item of table) {
@@ -76,6 +97,7 @@ async function interrupted(kind) {
     }
     const owned = table.filter(item => ownedIds.has(item.pid));
     assert(owned.some(item => /chrom(e|ium)/i.test(item.name)), 'real Chromium is owned by the test worker');
+    if (webServer) console.log(`${smokeCase} ps before: ${JSON.stringify(owned.map(({pid, parent, group, state}) => ({pid, parent, group, state})))}`);
     if (kind === 'cancel') {
       const states = fs.readdirSync(receipts).filter(name => name.startsWith('run-'));
       assert.equal(states.length, 1);
@@ -95,7 +117,20 @@ async function interrupted(kind) {
       assert(Date.now() < deadline, 'owned worker/browser processes survived cancellation');
       await sleep(100);
     }
-    console.log(`SDK ${kind}: real worker/browser cleanup and terminal receipt verified`);
+    if (webServer) {
+      // Reuse the identical port without allowing Playwright to reuse a server.
+      // Also exercise ordinary Playwright execution independently of --sdk.
+      for (const sdk of [true, false]) {
+        const rerun = sync(engine, ['run', spec, ...(sdk ? ['--sdk'] : []), '--format', 'json', ...selection, ...passedEnv, '--receipt-dir', receipts], {
+          env: {...environment, NINELIVES_SMOKE_WAIT: '0'},
+        });
+        assert.equal(rerun.status, 0, 'healthy rerun on the same port succeeds');
+        const result = JSON.parse(rerun.stdout);
+        assert.equal(result.outcome, 'passed');
+        assert.equal(result.receipts[0].executedTests, 1);
+      }
+    }
+    console.log(`SDK ${webServer ? 'webServer ' : ''}${kind}: ps verified no live owned processes${webServer ? `, same-port ${port} SDK/ordinary reruns passed` : ''} and terminal receipt verified`);
   } finally {
     clearTimeout(guard);
     if (child.exitCode === null) { child.kill('SIGTERM'); await completion; }
@@ -286,6 +321,8 @@ async function main() {
   console.log('Goals: real Chromium multi-step execution, delayed controls, style drift, policy rejection and state redaction verified');
   await interrupted('timeout');
   await interrupted('cancel');
+  await interrupted('timeout', true);
+  await interrupted('cancel', true);
 }
 main().catch(error => {
   const kind = error instanceof assert.AssertionError ? 'assertion' : error instanceof SyntaxError ? 'invalid-json' : error instanceof TypeError ? 'invalid-result' : 'execution';
