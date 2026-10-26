@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -35,13 +34,13 @@ func closedPort(t *testing.T) string {
 }
 
 // closedPortReason reports whether reason is what a wait on a closed port
-// ends with. Windows retries a refused connection for about two seconds
-// before reporting it, so within a one-second wait the dial times out there.
+// ends with: "connection refused", or "timed out" when no dial completed
+// within the one-second wait. Windows retries a refused connection for about
+// two seconds before reporting it, and a loaded CI runner can delay the dial
+// past the wait on any platform. Either way the reason is a fixed phrase;
+// TestNetReasonNamesErrnoCodes checks the refused mapping itself.
 func closedPortReason(reason, prefix string) bool {
-	if reason == prefix+"connection refused" {
-		return true
-	}
-	return runtime.GOOS == "windows" && reason == prefix+"timed out"
+	return reason == prefix+"connection refused" || reason == prefix+"timed out"
 }
 
 func waitFor(ctx context.Context, t *testing.T, targets []string, timeout time.Duration) error {
