@@ -35,6 +35,31 @@
       ],
       "type": "object"
     },
+    "AssertionSummary": {
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "matchers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "count",
+        "matchers"
+      ],
+      "type": "object"
+    },
     "Finding": {
       "properties": {
         "classification": {
@@ -240,6 +265,9 @@
         "findings": {
           "type": "integer"
         },
+        "noTests": {
+          "type": "integer"
+        },
         "rules": {
           "anyOf": [
             {
@@ -265,6 +293,7 @@
         "assessed",
         "failed",
         "unrecognized",
+        "noTests",
         "tests",
         "findings",
         "rules"
@@ -273,6 +302,9 @@
     },
     "Test": {
       "properties": {
+        "assertions": {
+          "$ref": "#/$defs/AssertionSummary"
+        },
         "column": {
           "type": "integer"
         },
@@ -327,6 +359,7 @@
         "column",
         "requirements",
         "dimensions",
+        "assertions",
         "findings"
       ],
       "type": "object"

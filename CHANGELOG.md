@@ -19,6 +19,65 @@ SDK versions.
   still holds open, with nothing left unread, is closed after 5 s. A
   destination that rejects output, or a pipe the runner had to close without
   showing it was drained, fails an otherwise successful command.
+- `9l assess` reads a matcher whose failure is caught as a conditional
+  probe, not an assertion: one consumed through `.catch(handler)`, a `.then`
+  rejection handler, `Promise.allSettled`, a `.catch` on the `Promise.all`,
+  `race` or `any` call carrying it, or awaited inside a `try` block whose
+  `catch` does not rethrow, including through a helper called that way. Such a
+  matcher cannot fail the test, so it no longer satisfies
+  `no-direct-assertion`, counts toward outcome mapping or acts as the positive
+  completion signal that clears `absence-after-wait`. It gets the new
+  `caught-assertion` finding (informational, assertion adequacy) at the
+  matcher. Promise handlers catch only an asynchronous matcher's rejection,
+  not a synchronous matcher's throw, which a `try` block catches with or
+  without `await`; a promise returned from a `try` block without `await`, by
+  a matcher or a helper, is not caught there. `expect.soft` matchers, and
+  those through `expect.configure` whose outermost `soft` option is `true`,
+  are never probes, since Playwright records their failure on the test either
+  way; a caught matcher whose `soft` option cannot be read (a variable, a
+  spread, a computed key or a non-literal value) stays an assertion and gives
+  the new `possibly-soft` limit. A call made on `expect.configure(...)`, such
+  as `.configure(...)` or `.soft(...)`, is no longer counted as a matcher. A
+  matcher of unknown timing, or a marked helper not declared `async`, caught
+  for only one of a throw and a rejection stays an assertion and gives
+  `unknown-matcher`. A chain ending only in `.then(onFulfilled)` or
+  `.finally`, a `.catch()` with no handler, a handler that is not a function
+  (a literal of any kind, an array or object literal, a template, `null`,
+  `undefined`, `void`, `typeof` or a prefix operator), or a handler that
+  throws or returns `Promise.reject`, including through parentheses or type
+  wrappers, still rejects and stays an assertion. A matcher on
+  `expect.poll(...)` is asynchronous however it is spaced and also on an
+  `expect.configure(...)` chain, so a caught poll is a probe. Policy
+  `assessment-source-v14`; the analyzer helper version is 11, and report
+  version 3 and suite version 1 are unchanged (#21).
+- `9l assess` no longer reports a plain `for`, `for…of`, `for…in`, `while`
+  or `do` loop as `analysis-limit/conditional-flow`, which stays for
+  branches that can skip an assertion (`if`, `switch`, `try`, `?:`, `&&`,
+  `||`, `??`). A loop gives no limit of its own unless it repeats a fixed
+  wait in its body or in a condition or update, directly or through an
+  inlined helper (a wait in a `for` initializer or a `for…of` or `for…in`
+  input runs once and does not count); that gives the new
+  `analysis-limit/loop`, since the order of waits and assertions across
+  iterations is not analyzed. Whether a loop runs at all is not evaluated
+  (#141).
+- Each test in the `9l assess` JSON report lists the assertions it is
+  credited with, as `assertions: {"count", "matchers"}`, whatever its limits:
+  recognized matchers in its body and resolved same-file helpers, and marked
+  helper calls, excluding caught probes. Matcher names come from the pinned
+  Playwright API; anything else is `custom` or `assertion-helper`. The text
+  report prints `recognized assertions: 2 (toBe, toEqual)` under such a
+  test, so direct assertions beside an unresolved helper call are visible
+  while the `unresolved-helper` limit stays at that call. No dimension
+  changes: static rules still never mark assertion adequacy or runtime
+  evidence `supported` (#141).
+- A file in which no test declaration is recognized, such as a helper module
+  passed as a path, is no longer counted as assessed. Suite summaries count
+  it in the new `noTests` field and the text summary as `N with no tests`;
+  the file is listed as `file "<path>": no tests`, and its report, like a
+  single-file report, carries a `no-tests` limit. Exit codes are unchanged
+  (#141).
+- The `assess` and `assess-suite` schemas add the test `assertions` summary
+  and the summary's `noTests` count (additive).
 - `9l scan` and the `scan_url` MCP tool apply the network policy to the
   address a Node-side link check connects to, not only to the answer seen
   before the request. Links to another origin, and same-origin links the page
