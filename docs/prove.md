@@ -154,7 +154,10 @@ An API-level spec that calls the application with Node's `fetch`, Playwright's
 `request` fixture or a database client gives `prove` nothing to inject: those
 requests never pass through a browser context. When `@9l/playwright` or
 `@playwright/test` is not installed in the project, `prove` stops before
-running anything and names the missing package.
+running anything and names the missing package. `9l doctor --sdk <spec>`
+checks the import, the fixtures and the nearest config's literal `testDir`
+from the file text before a run, without executing either; see
+[setup diagnostics](setup-diagnostics.md#check-a-spec-for-prove).
 
 - **Stable origin.** A fault targets the baseline's exact origin. An
   application started on a random port in each run is never matched, and every

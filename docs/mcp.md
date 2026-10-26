@@ -43,7 +43,9 @@ If only four appear, the host may still be running a Go release from before
 restart the server and refresh discovery. If the identity differs, check for
 the separate Python CLI. A terminal's `9l --version` alone does not establish
 which executable an already running GUI host selected. `9l doctor` checks
-local prerequisites; it cannot inspect the host's selected binary or tool cache.
+local prerequisites and warns when the `9l` first on PATH is not the
+executable it runs from; it cannot inspect the binary a running host
+selected or its tool cache.
 
 ## Tools
 
