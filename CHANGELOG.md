@@ -20,8 +20,12 @@ SDK versions.
   wrapper inside a test, do not count, so a plain spec that uses them is
   still `missing`; a local alias or extension of the plain test, such as
   `const t = test.extend({})`, is the plain test. The callback may be a
-  function the spec declares once and passes by name, `it('x', body)`.
-  `spec/fixtures` reads the callbacks of such a test function too.
+  function the spec declares once and passes by name, `it('x', body)`,
+  typed or not; a named function expression's own name declares nothing
+  outside it. A function passed by name to the plain test or a hook,
+  `test('x', body)` or `test.beforeEach(seed)`, is a test body, so a step
+  wrapper in it does not count either. `spec/fixtures` reads the callbacks
+  of such a test function too.
 - `9l assess` reads a matcher whose failure is caught as a conditional
   probe, not an assertion: one consumed through `.catch(handler)`, a `.then`
   rejection handler, `Promise.allSettled`, a `.catch` on the `Promise.all`,

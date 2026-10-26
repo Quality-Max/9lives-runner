@@ -97,13 +97,19 @@ directory.
   (`it.describe(…)`, `it.beforeEach(…)`, `base.extend(…)`), or `it.only('x',
   fn)` and the like. The callback may be inline or the name of a function
   the spec declares once, `function body({ page }) {}` or `const body =
-  async ({ page }) => {}`. Helpers called any other way, such as
+  async ({ page }) => {}`, with or without a type annotation such as
+  `const body: (f: { page: Page }) => Promise<void> = …`. A named function
+  expression's own name, `const body = async function body() {}`, is bound
+  only inside it and declares nothing outside. Helpers called any other way, such as
   `login(page)`, `login('admin', page)`, a member call `api.it(…)` however
   spaced, a step wrapper `step('x', fn)` inside a test, or
   `expect.extend(…)`, do not count, so a spec that only adds them to the
   plain `test` is still `missing`. A local alias or extension of the plain
   `test`, such as `const t = test.extend({ … })`, is the plain `test`, so a
-  step wrapper inside its callbacks does not count either. A spec that takes the SDK under another name but also
+  step wrapper inside its callbacks does not count either, nor does one
+  inside a function the spec passes by name to the plain `test`, an alias or
+  a hook, such as `test('x', body)` or `test.beforeEach(seed)`; a function
+  passed to `describe` registers tests and is not a test body. A spec that takes the SDK under another name but also
   registers tests through a binding from `@playwright/test`, such as
   `n9l.expect` with a plain `test(…)`, is a warning too, since those tests
   are uninstrumented. So are `test as pwTest` from `@playwright/test` and a

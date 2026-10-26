@@ -379,7 +379,61 @@ function insideTestBody(code, open, registrars) {
 function memberAt(code, index) {
     return /\.\s*$/.test(code.slice(Math.max(0, index - 4096), index));
 }
-const declaration = /(?<![.\w$])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]{0,256}?)?=(?![=>])\s*/g;
+// The index of the `=` that ends a type annotation starting at `from`, or
+// undefined when the annotation ends without an initializer. The annotation
+// may hold arrow types, generics, object and tuple types, `(x: A) => B`,
+// `Fn<{ a: A }, B>` or `{ (f: F): R }`; an `=` inside brackets, such as a
+// default type argument, does not end it.
+function annotationEnd(code, from, limit = 1024) {
+    let depth = 0;
+    for (let j = from; j < Math.min(code.length, from + limit); j++) {
+        const c = code[j];
+        if (c === '=') {
+            if (code[j + 1] === '>') {
+                j++;
+                continue;
+            }
+            if (depth === 0)
+                return code[j + 1] === '=' ? undefined : j;
+        }
+        else if (c === '(' || c === '[' || c === '{' || c === '<')
+            depth++;
+        else if (c === ')' || c === ']' || c === '}' || c === '>') {
+            if (depth === 0)
+                return undefined;
+            depth--;
+        }
+        else if (depth === 0 && (c === ';' || c === ','))
+            return undefined;
+    }
+    return undefined;
+}
+// `const`, `let` and `var` bindings of a single name with an initializer,
+// typed or not: the keyword, the name and the index where the value starts.
+function declarations(code) {
+    const result = [];
+    for (const match of code.matchAll(/(?<![.\w$])(const|let|var)\s+([A-Za-z_$][\w$]*)\s*/g)) {
+        let j = (match.index ?? 0) + match[0].length;
+        if (code[j] === ':') {
+            const end = annotationEnd(code, j + 1);
+            if (end === undefined)
+                continue;
+            j = end;
+        }
+        const value = code.slice(j, j + 64).match(/^=(?![=>])\s*/);
+        if (value)
+            result.push({ keyword: match[1], name: match[2], at: j + value[0].length });
+    }
+    return result;
+}
+// After these, `function` starts an expression, whose own name is bound only
+// inside it, rather than a declaration.
+const expressionAfterChar = new Set('=(,:[!&|?+-*/%<>~^'.split(''));
+const expressionAfterWord = new Set(['return', 'typeof', 'await', 'yield', 'void', 'new', 'in', 'of', 'case', 'delete', 'throw', 'instanceof', 'extends']);
+function functionExpressionAt(code, index) {
+    const before = code.slice(Math.max(0, index - 256), index).match(/(?:([A-Za-z_$][\w$]*)|(\S))\s*$/);
+    return Boolean(before && (before[1] ? expressionAfterWord.has(before[1]) : expressionAfterChar.has(before[2])));
+}
 // The expression starting at `at` when it is an obvious alias or extension of
 // a name: `name`, `ns.test`, or either followed by `.extend(…)` any number
 // of times, ending the declaration. Returns the name, or undefined.
@@ -410,10 +464,10 @@ function aliasOf(code, at) {
 function testAliases(code, names) {
     const result = new Set(names);
     const declared = [];
-    for (const match of code.matchAll(declaration)) {
-        const origin = aliasOf(code, (match.index ?? 0) + match[0].length);
+    for (const { name, at } of declarations(code)) {
+        const origin = aliasOf(code, at);
         if (origin)
-            declared.push([match[1], origin]);
+            declared.push([name, origin]);
     }
     for (let grew = true; grew;) {
         grew = false;
@@ -426,30 +480,75 @@ function testAliases(code, names) {
     }
     return result;
 }
-// Functions declared once in the file, by name, each with the index of the
-// `(` of its parameter list, or -1 for a bare arrow parameter:
-// `function body({ page }) {}`, or a const bound to a function expression or
-// arrow, `const body = async ({ page }) => {}`. A name declared more than
-// once, or also imported, is left out.
+// The index after the body of a function whose parameter list ends just
+// before `from`: a block after an optional return type (and `=>` for an
+// arrow), or an arrow's expression body up to the end of its statement.
+function functionEnd(code, from, arrow) {
+    const head = code.slice(from, from + 300).match(arrow ? /^\s*(?::[^=;{}()]{0,256}?)?\s*=>\s*/ : /^\s*(?::[^=;{}()]{0,256}?)?\s*(?=\{)/);
+    if (!head)
+        return undefined;
+    const at = from + head[0].length;
+    if (code[at] === '{') {
+        const close = matching(code, at, code.length);
+        return close === undefined ? undefined : close + 1;
+    }
+    if (!arrow)
+        return undefined;
+    let depth = 0;
+    for (let j = at; j < code.length; j++) {
+        const c = code[j];
+        if (opens[c])
+            depth++;
+        else if (closes.has(c)) {
+            if (depth === 0)
+                return j;
+            depth--;
+        }
+        else if (depth === 0 && (c === ';' || c === ','))
+            return j;
+        else if (depth === 0 && (c === '\n' || c === '\r')) {
+            // A line break after a complete value, before the next statement.
+            const next = code.slice(j, j + 64);
+            if (/[\w$)\]}'"`]\s*$/.test(code.slice(Math.max(at, j - 64), j)) && /^\s*[A-Za-z_$}]/.test(next)
+                && !/^\s*(?:as|satisfies|in|instanceof)(?![\w$])/.test(next))
+                return j;
+        }
+    }
+    return code.length;
+}
+// Functions declared once in the file, by name: `function body({ page }) {}`,
+// or a const bound to a function expression or arrow, typed or not,
+// `const body = async ({ page }) => {}`. A name declared more than once, or
+// also imported, is left out. A function expression's own name, as in
+// `const body = async function body() {}` or `wrap(function body() {})`, is
+// bound only inside it, so it declares nothing here.
 function localFunctions(code, bindings) {
-    const declarations = new Map();
-    const count = (name) => declarations.set(name, (declarations.get(name) ?? 0) + 1);
-    for (const match of code.matchAll(/(?<![.\w$])(?:(?:const|let|var|class)\s+|function\b\s*\*?\s*)([A-Za-z_$][\w$]*)/g))
+    const declared = new Map();
+    const count = (name) => declared.set(name, (declared.get(name) ?? 0) + 1);
+    for (const match of code.matchAll(/(?<![.\w$])(?:const|let|var|class)\s+([A-Za-z_$][\w$]*)/g))
         count(match[1]);
+    for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)/g)) {
+        if (!functionExpressionAt(code, match.index ?? 0))
+            count(match[1]);
+    }
     const functions = new Map();
     for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^<>()]{0,128}>\s*)?\(/g)) {
-        functions.set(match[1], (match.index ?? 0) + match[0].length - 1);
-    }
-    for (const match of code.matchAll(declaration)) {
-        if (!match[0].startsWith('const'))
+        const start = match.index ?? 0;
+        if (functionExpressionAt(code, start))
             continue;
-        const at = (match.index ?? 0) + match[0].length;
+        const open = start + match[0].length - 1;
+        const close = matching(code, open);
+        functions.set(match[1], { open, start, end: close === undefined ? undefined : functionEnd(code, close + 1, false) });
+    }
+    for (const { keyword, name, at } of declarations(code)) {
+        if (keyword !== 'const')
+            continue;
         const value = code.slice(at, at + 512).match(/^(?:async\b\s*)?(?:(function\b\s*\*?\s*[\w$]*\s*)?(?:<[^<>()]{0,128}>\s*)?\(|[A-Za-z_$][\w$]*\s*=>)/);
         if (!value)
             continue;
         // `async page => …` has no parameter list to read fixtures from.
         if (value[0].endsWith('>')) {
-            functions.set(match[1], -1);
+            functions.set(name, { open: -1, start: at, end: functionEnd(code, at + value[0].length - 2, true) });
             continue;
         }
         const open = at + value[0].length - 1;
@@ -457,14 +556,36 @@ function localFunctions(code, bindings) {
         // A parenthesized value, `(1, 2)`, is not a function.
         if (!value[1] && (close === undefined || !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(code.slice(close + 1, close + 300))))
             continue;
-        functions.set(match[1], open);
+        functions.set(name, { open, start: at, end: close === undefined ? undefined : functionEnd(code, close + 1, !value[1]) });
     }
     const imported = new Set(bindings.map(binding => binding.local));
     for (const name of [...functions.keys()]) {
-        if (declarations.get(name) !== 1 || imported.has(name))
+        if (declared.get(name) !== 1 || imported.has(name))
             functions.delete(name);
     }
     return functions;
+}
+// The extents of the functions in `functions` passed by name to a test or
+// hook of one of `registrars`: `test('x', body)`, `t.only('x', { tag }, body)`
+// or `test.beforeEach(seed)`. Their bodies are test or hook bodies. A
+// `describe` callback registers tests, and `extend` takes fixtures, so a
+// function passed to either is not one.
+function namedTestBodies(code, registrars, functions) {
+    const bodies = [];
+    const seen = new Set();
+    for (const reference of functions.size ? code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)(?=\s*[,)])/g) : []) {
+        const fn = functions.get(reference[1]);
+        const at = reference.index ?? 0;
+        if (!fn || fn.end === undefined || seen.has(reference[1]) || !/[(,]\s*$/.test(code.slice(Math.max(0, at - 256), at)))
+            continue;
+        const call = enclosingCall(code, at);
+        const chain = call === undefined ? undefined : calledChain(code, call);
+        if (chain && (registrars.has(chain[0]) || registrars.has(chain.slice(0, 2).join('.'))) && !chain.includes('describe') && !chain.includes('extend')) {
+            bodies.push([fn.start, fn.end]);
+            seen.add(reference[1]);
+        }
+    }
+    return bodies;
 }
 const titled = /^\s*['"`]/;
 const callback = /^\s*(?:async\b\s*)?(?:function\b|\([\s\S]*?\)\s*(?::[^=;{}()]{0,256})?=>|[A-Za-z_$][\w$]*\s*=>)/;
@@ -483,7 +604,9 @@ const titledMembers = new Set(['only', 'skip', 'fixme', 'fail', 'slow', 'step'])
 // as `login(page)`, `login('admin', page)` or `logger.info('x')`, is not,
 // and neither is a member of another object, `o.it(…)` or `o . it(…)`. The
 // callback may be inline or the name of a function in `functions`.
-// `registrars` names the bindings already known to be test functions.
+// `registrars` names the bindings already known to be test functions. A
+// function passed by name to one of them, or to `local`, as a test or hook
+// callback is a test body too, so a titled call inside it is a helper.
 function registersTests(code, local, registrars, functions = new Map()) {
     const name = local.replace(/\$/g, '\\$');
     const use = new RegExp(`(?<![.\\w$])${name}\\s*((?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*)(?:<[^<>()]{0,128}>\\s*)?\\(`, 'g');
@@ -502,7 +625,9 @@ function registersTests(code, local, registrars, functions = new Map()) {
             titledCalls.push(match.index ?? 0);
     }
     const nesting = new Set([...registrars, local]);
-    return openBrackets(code, titledCalls).some(open => !insideTestBody(code, open, nesting));
+    const bodies = namedTestBodies(code, nesting, functions);
+    return openBrackets(code, titledCalls).some((open, k) => !insideTestBody(code, open, nesting)
+        && !bodies.some(([start, end]) => titledCalls[k] >= start && titledCalls[k] < end));
 }
 // Top-level comma-separated parts of a bracket's contents.
 function topLevel(text) {
@@ -579,7 +704,7 @@ function callbackFixtures(scanned, bindings, providers = [], functions = new Map
     // `it('x', { tag }, body)`.
     const read = new Set();
     for (const reference of functions.size ? code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)(?=\s*[,)])/g) : []) {
-        const open = functions.get(reference[1]);
+        const open = functions.get(reference[1])?.open;
         const at = reference.index ?? 0;
         if (open === undefined || open < 0 || read.has(reference[1]) || !/[(,]\s*$/.test(code.slice(Math.max(0, at - 256), at)))
             continue;

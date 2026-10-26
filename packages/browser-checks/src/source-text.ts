@@ -326,7 +326,52 @@ function memberAt(code: string, index: number): boolean {
   return /\.\s*$/.test(code.slice(Math.max(0, index - 4096), index));
 }
 
-const declaration = /(?<![.\w$])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]{0,256}?)?=(?![=>])\s*/g;
+// The index of the `=` that ends a type annotation starting at `from`, or
+// undefined when the annotation ends without an initializer. The annotation
+// may hold arrow types, generics, object and tuple types, `(x: A) => B`,
+// `Fn<{ a: A }, B>` or `{ (f: F): R }`; an `=` inside brackets, such as a
+// default type argument, does not end it.
+function annotationEnd(code: string, from: number, limit = 1024): number | undefined {
+  let depth = 0;
+  for (let j = from; j < Math.min(code.length, from + limit); j++) {
+    const c = code[j];
+    if (c === '=') {
+      if (code[j + 1] === '>') { j++; continue; }
+      if (depth === 0) return code[j + 1] === '=' ? undefined : j;
+    } else if (c === '(' || c === '[' || c === '{' || c === '<') depth++;
+    else if (c === ')' || c === ']' || c === '}' || c === '>') {
+      if (depth === 0) return undefined;
+      depth--;
+    } else if (depth === 0 && (c === ';' || c === ',')) return undefined;
+  }
+  return undefined;
+}
+
+// `const`, `let` and `var` bindings of a single name with an initializer,
+// typed or not: the keyword, the name and the index where the value starts.
+function declarations(code: string): { keyword: string; name: string; at: number }[] {
+  const result: { keyword: string; name: string; at: number }[] = [];
+  for (const match of code.matchAll(/(?<![.\w$])(const|let|var)\s+([A-Za-z_$][\w$]*)\s*/g)) {
+    let j = (match.index ?? 0) + match[0].length;
+    if (code[j] === ':') {
+      const end = annotationEnd(code, j + 1);
+      if (end === undefined) continue;
+      j = end;
+    }
+    const value = code.slice(j, j + 64).match(/^=(?![=>])\s*/);
+    if (value) result.push({ keyword: match[1], name: match[2], at: j + value[0].length });
+  }
+  return result;
+}
+
+// After these, `function` starts an expression, whose own name is bound only
+// inside it, rather than a declaration.
+const expressionAfterChar = new Set('=(,:[!&|?+-*/%<>~^'.split(''));
+const expressionAfterWord = new Set(['return', 'typeof', 'await', 'yield', 'void', 'new', 'in', 'of', 'case', 'delete', 'throw', 'instanceof', 'extends']);
+function functionExpressionAt(code: string, index: number): boolean {
+  const before = code.slice(Math.max(0, index - 256), index).match(/(?:([A-Za-z_$][\w$]*)|(\S))\s*$/);
+  return Boolean(before && (before[1] ? expressionAfterWord.has(before[1]) : expressionAfterChar.has(before[2])));
+}
 
 // The expression starting at `at` when it is an obvious alias or extension of
 // a name: `name`, `ns.test`, or either followed by `.extend(…)` any number
@@ -356,9 +401,9 @@ function aliasOf(code: string, at: number): string | undefined {
 export function testAliases(code: string, names: Iterable<string>): Set<string> {
   const result = new Set(names);
   const declared: [string, string][] = [];
-  for (const match of code.matchAll(declaration)) {
-    const origin = aliasOf(code, (match.index ?? 0) + match[0].length);
-    if (origin) declared.push([match[1], origin]);
+  for (const { name, at } of declarations(code)) {
+    const origin = aliasOf(code, at);
+    if (origin) declared.push([name, origin]);
   }
   for (let grew = true; grew;) {
     grew = false;
@@ -369,43 +414,110 @@ export function testAliases(code: string, names: Iterable<string>): Set<string> 
   return result;
 }
 
-// Functions declared once in the file, by name, each with the index of the
-// `(` of its parameter list, or -1 for a bare arrow parameter:
-// `function body({ page }) {}`, or a const bound to a function expression or
-// arrow, `const body = async ({ page }) => {}`. A name declared more than
-// once, or also imported, is left out.
-export function localFunctions(code: string, bindings: Binding[]): Map<string, number> {
-  const declarations = new Map<string, number>();
-  const count = (name: string) => declarations.set(name, (declarations.get(name) ?? 0) + 1);
-  for (const match of code.matchAll(/(?<![.\w$])(?:(?:const|let|var|class)\s+|function\b\s*\*?\s*)([A-Za-z_$][\w$]*)/g)) count(match[1]);
-  const functions = new Map<string, number>();
-  for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^<>()]{0,128}>\s*)?\(/g)) {
-    functions.set(match[1], (match.index ?? 0) + match[0].length - 1);
+// A function the spec declares once: the index of the `(` of its parameter
+// list, or -1 for a bare arrow parameter, where its text starts and the index
+// after its body, undefined when the body cannot be read.
+export type LocalFunction = { open: number; start: number; end?: number };
+
+// The index after the body of a function whose parameter list ends just
+// before `from`: a block after an optional return type (and `=>` for an
+// arrow), or an arrow's expression body up to the end of its statement.
+function functionEnd(code: string, from: number, arrow: boolean): number | undefined {
+  const head = code.slice(from, from + 300).match(arrow ? /^\s*(?::[^=;{}()]{0,256}?)?\s*=>\s*/ : /^\s*(?::[^=;{}()]{0,256}?)?\s*(?=\{)/);
+  if (!head) return undefined;
+  const at = from + head[0].length;
+  if (code[at] === '{') {
+    const close = matching(code, at, code.length);
+    return close === undefined ? undefined : close + 1;
   }
-  for (const match of code.matchAll(declaration)) {
-    if (!match[0].startsWith('const')) continue;
-    const at = (match.index ?? 0) + match[0].length;
+  if (!arrow) return undefined;
+  let depth = 0;
+  for (let j = at; j < code.length; j++) {
+    const c = code[j];
+    if (opens[c]) depth++;
+    else if (closes.has(c)) {
+      if (depth === 0) return j;
+      depth--;
+    } else if (depth === 0 && (c === ';' || c === ',')) return j;
+    else if (depth === 0 && (c === '\n' || c === '\r')) {
+      // A line break after a complete value, before the next statement.
+      const next = code.slice(j, j + 64);
+      if (/[\w$)\]}'"`]\s*$/.test(code.slice(Math.max(at, j - 64), j)) && /^\s*[A-Za-z_$}]/.test(next)
+        && !/^\s*(?:as|satisfies|in|instanceof)(?![\w$])/.test(next)) return j;
+    }
+  }
+  return code.length;
+}
+
+// Functions declared once in the file, by name: `function body({ page }) {}`,
+// or a const bound to a function expression or arrow, typed or not,
+// `const body = async ({ page }) => {}`. A name declared more than once, or
+// also imported, is left out. A function expression's own name, as in
+// `const body = async function body() {}` or `wrap(function body() {})`, is
+// bound only inside it, so it declares nothing here.
+export function localFunctions(code: string, bindings: Binding[]): Map<string, LocalFunction> {
+  const declared = new Map<string, number>();
+  const count = (name: string) => declared.set(name, (declared.get(name) ?? 0) + 1);
+  for (const match of code.matchAll(/(?<![.\w$])(?:const|let|var|class)\s+([A-Za-z_$][\w$]*)/g)) count(match[1]);
+  for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)/g)) {
+    if (!functionExpressionAt(code, match.index ?? 0)) count(match[1]);
+  }
+  const functions = new Map<string, LocalFunction>();
+  for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^<>()]{0,128}>\s*)?\(/g)) {
+    const start = match.index ?? 0;
+    if (functionExpressionAt(code, start)) continue;
+    const open = start + match[0].length - 1;
+    const close = matching(code, open);
+    functions.set(match[1], { open, start, end: close === undefined ? undefined : functionEnd(code, close + 1, false) });
+  }
+  for (const { keyword, name, at } of declarations(code)) {
+    if (keyword !== 'const') continue;
     const value = code.slice(at, at + 512).match(/^(?:async\b\s*)?(?:(function\b\s*\*?\s*[\w$]*\s*)?(?:<[^<>()]{0,128}>\s*)?\(|[A-Za-z_$][\w$]*\s*=>)/);
     if (!value) continue;
     // `async page => …` has no parameter list to read fixtures from.
-    if (value[0].endsWith('>')) { functions.set(match[1], -1); continue; }
+    if (value[0].endsWith('>')) {
+      functions.set(name, { open: -1, start: at, end: functionEnd(code, at + value[0].length - 2, true) });
+      continue;
+    }
     const open = at + value[0].length - 1;
     const close = matching(code, open);
     // A parenthesized value, `(1, 2)`, is not a function.
     if (!value[1] && (close === undefined || !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(code.slice(close + 1, close + 300)))) continue;
-    functions.set(match[1], open);
+    functions.set(name, { open, start: at, end: close === undefined ? undefined : functionEnd(code, close + 1, !value[1]) });
   }
   const imported = new Set(bindings.map(binding => binding.local));
   for (const name of [...functions.keys()]) {
-    if (declarations.get(name) !== 1 || imported.has(name)) functions.delete(name);
+    if (declared.get(name) !== 1 || imported.has(name)) functions.delete(name);
   }
   return functions;
+}
+
+// The extents of the functions in `functions` passed by name to a test or
+// hook of one of `registrars`: `test('x', body)`, `t.only('x', { tag }, body)`
+// or `test.beforeEach(seed)`. Their bodies are test or hook bodies. A
+// `describe` callback registers tests, and `extend` takes fixtures, so a
+// function passed to either is not one.
+function namedTestBodies(code: string, registrars: Set<string>, functions: Map<string, LocalFunction>): [number, number][] {
+  const bodies: [number, number][] = [];
+  const seen = new Set<string>();
+  for (const reference of functions.size ? code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)(?=\s*[,)])/g) : []) {
+    const fn = functions.get(reference[1]);
+    const at = reference.index ?? 0;
+    if (!fn || fn.end === undefined || seen.has(reference[1]) || !/[(,]\s*$/.test(code.slice(Math.max(0, at - 256), at))) continue;
+    const call = enclosingCall(code, at);
+    const chain = call === undefined ? undefined : calledChain(code, call);
+    if (chain && (registrars.has(chain[0]) || registrars.has(chain.slice(0, 2).join('.'))) && !chain.includes('describe') && !chain.includes('extend')) {
+      bodies.push([fn.start, fn.end]);
+      seen.add(reference[1]);
+    }
+  }
+  return bodies;
 }
 
 const titled = /^\s*['"`]/;
 const callback = /^\s*(?:async\b\s*)?(?:function\b|\([\s\S]*?\)\s*(?::[^=;{}()]{0,256})?=>|[A-Za-z_$][\w$]*\s*=>)/;
 // A callback argument: inline, or the name of a function in `functions`.
-const callbackArgument = (arg: string, functions: Map<string, number>) => callback.test(arg) || functions.has(arg.trim());
+const callbackArgument = (arg: string, functions: Map<string, LocalFunction>) => callback.test(arg) || functions.has(arg.trim());
 // Members of Playwright's test function. These declare tests or hooks with
 // any arguments; `extend` builds a test from it.
 const declaring = new Set(['describe', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'extend']);
@@ -420,8 +532,10 @@ const titledMembers = new Set(['only', 'skip', 'fixme', 'fail', 'slow', 'step'])
 // as `login(page)`, `login('admin', page)` or `logger.info('x')`, is not,
 // and neither is a member of another object, `o.it(…)` or `o . it(…)`. The
 // callback may be inline or the name of a function in `functions`.
-// `registrars` names the bindings already known to be test functions.
-export function registersTests(code: string, local: string, registrars: Set<string>, functions = new Map<string, number>()): boolean {
+// `registrars` names the bindings already known to be test functions. A
+// function passed by name to one of them, or to `local`, as a test or hook
+// callback is a test body too, so a titled call inside it is a helper.
+export function registersTests(code: string, local: string, registrars: Set<string>, functions = new Map<string, LocalFunction>()): boolean {
   const name = local.replace(/\$/g, '\\$');
   const use = new RegExp(`(?<![.\\w$])${name}\\s*((?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*)(?:<[^<>()]{0,128}>\\s*)?\\(`, 'g');
   // Titled calls with a callback, kept until their nesting is known.
@@ -435,7 +549,9 @@ export function registersTests(code: string, local: string, registrars: Set<stri
     if (titled.test(title) && rest.some(arg => callbackArgument(arg, functions))) titledCalls.push(match.index ?? 0);
   }
   const nesting = new Set([...registrars, local]);
-  return openBrackets(code, titledCalls).some(open => !insideTestBody(code, open, nesting));
+  const bodies = namedTestBodies(code, nesting, functions);
+  return openBrackets(code, titledCalls).some((open, k) => !insideTestBody(code, open, nesting)
+    && !bodies.some(([start, end]) => titledCalls[k] >= start && titledCalls[k] < end));
 }
 
 // Top-level comma-separated parts of a bracket's contents.
@@ -474,7 +590,7 @@ function destructured(code: string, open: number, fixtures: Set<string>): void {
 // as a test function, such as `it` from a fixtures module), `<namespace>.test`,
 // or an obvious alias or extension of any of them, with any member such as
 // `.beforeEach` or `.describe.serial`.
-export function callbackFixtures(scanned: Scanned, bindings: Binding[], providers: string[] = [], functions = new Map<string, number>()): Set<string> {
+export function callbackFixtures(scanned: Scanned, bindings: Binding[], providers: string[] = [], functions = new Map<string, LocalFunction>()): Set<string> {
   const { code } = scanned;
   const namespaces = bindings.filter(binding => binding.imported === '*' || binding.imported === 'default').map(binding => `${binding.local}.test`);
   const tests = testAliases(code, ['test', ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local), ...providers, ...namespaces]);
@@ -503,7 +619,7 @@ export function callbackFixtures(scanned: Scanned, bindings: Binding[], provider
   // `it('x', { tag }, body)`.
   const read = new Set<string>();
   for (const reference of functions.size ? code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)(?=\s*[,)])/g) : []) {
-    const open = functions.get(reference[1]);
+    const open = functions.get(reference[1])?.open;
     const at = reference.index ?? 0;
     if (open === undefined || open < 0 || read.has(reference[1]) || !/[(,]\s*$/.test(code.slice(Math.max(0, at - 256), at))) continue;
     const call = enclosingCall(code, at);

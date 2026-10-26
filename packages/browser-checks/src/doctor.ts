@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { Binding, callbackFixtures, calls, importBindings, localFunctions, mergesValues, readsTest, registersTests, scan, testAliases } from './source-text';
+import { Binding, LocalFunction, callbackFixtures, calls, importBindings, localFunctions, mergesValues, readsTest, registersTests, scan, testAliases } from './source-text';
 
 export type Diagnostic = { name: string; status: 'ok' | 'warning' | 'missing'; message: string; fix?: string };
 // Engine is what the CLI admits (protocol and capabilities) and can request
@@ -134,7 +134,7 @@ export function proveProject(spec: string): { config?: string; project?: string 
 // be a test from @9l/playwright; a helper such as `login(page)` is not one.
 // Local aliases and extensions, `const t = test.extend(…)`, are the test they
 // come from, so a helper called in their callbacks is inside a test body.
-function testProviders(code: string, bindings: Binding[], functions: Map<string, number>): Binding[] {
+function testProviders(code: string, bindings: Binding[], functions: Map<string, LocalFunction>): Binding[] {
   const registrars = testAliases(code, [
     ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local),
     ...bindings.filter(binding => ['*', 'default'].includes(binding.imported)).map(binding => `${binding.local}.test`),
