@@ -11,7 +11,7 @@ test('an isolated empty workspace gives installation steps without writes or con
     const report = diagnose({ cliVersion: '0.4.7', sdk: true }, root);
     assert.equal(report.ready, false);
     assert.equal(report.checks.find(c => c.name === 'workspace').status, 'missing');
-    assert.equal(report.checks.find(c => c.name === 'playwright-test').fix, 'npm install --save-dev @playwright/test@1.64.0');
+    assert.equal(report.checks.find(c => c.name === 'playwright-test').fix, 'npm install --save-dev @playwright/test@1.64.1');
     assert.equal(report.checks.find(c => c.name === 'sdk').fix, 'npm install --save-dev @9l/playwright@0.4.7');
     assert.deepEqual(fs.readdirSync(root), []);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -25,15 +25,15 @@ test('package metadata is bounded and redacted, and project config is never load
     fs.writeFileSync(path.join(root, 'package.json'), '{}');
     fs.writeFileSync(path.join(root, 'playwright.config.js'), 'throw new Error("fixture-config-must-not-run")');
     fs.writeFileSync(path.join(pkg, 'index.js'), 'throw new Error("fixture-package-entry-must-not-run")');
-    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.0', privateData: 'fixture-metadata-canary' }));
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1', privateData: 'fixture-metadata-canary' }));
     const report = diagnose({ cliVersion: '0.4.7' }, root);
     assert.equal(report.checks.find(c => c.name === 'playwright-test').status, 'ok');
     assert.equal(report.ready, false, 'unknown browser registry is never ready');
-    assert.equal(report.checks.find(c => c.name === 'run/browser').fix, 'npx --yes playwright@1.64.0 install chromium');
+    assert.equal(report.checks.find(c => c.name === 'run/browser').fix, 'npx --yes playwright@1.64.1 install chromium');
     assert.doesNotMatch(JSON.stringify(report), /fixture-|node_modules|9l-doctor-package/);
     fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: 'fixture-invalid-metadata-canary' }));
     assert.doesNotMatch(JSON.stringify(diagnose({}, root)), /fixture-/);
-    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.0', oversized: 'x'.repeat(256 * 1024) }));
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@playwright/test', version: '1.64.1', oversized: 'x'.repeat(256 * 1024) }));
     assert.equal(diagnose({}, root).checks.find(c => c.name === 'playwright-test').status, 'missing');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
@@ -380,8 +380,8 @@ test('a config with projects leaves testDir unverified', () => {
 // found by the adapter's walk up from the spec, not for the current directory.
 test('spec mode judges the project prove would use for the spec', () => {
   const project = specProject({
-    'package.json': JSON.stringify({ devDependencies: { '@playwright/test': '1.64.0' } }),
-    'node_modules/@playwright/test/package.json': JSON.stringify({ name: '@playwright/test', version: '1.64.0' }),
+    'package.json': JSON.stringify({ devDependencies: { '@playwright/test': '1.64.1' } }),
+    'node_modules/@playwright/test/package.json': JSON.stringify({ name: '@playwright/test', version: '1.64.1' }),
     'node_modules/@playwright/test/index.js': poison,
     'tests/a.spec.ts': sdkSpec,
     'orphan/b.spec.ts': sdkSpec,

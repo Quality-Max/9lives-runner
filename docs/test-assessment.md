@@ -282,7 +282,7 @@ recognized test in that suite, including tests declared before them.
 ignored; any other condition, a modifier under a branch, or one in an
 `afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
 location. After hooks run once test bodies have run: Playwright 1.61.1 through
-1.64.0 report a passing test skipped from `afterEach` and only some results
+1.64.1 report a passing test skipped from `afterEach` and only some results
 skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
 cannot be attributed from source and are ignored. Playwright treats a string
 followed by a function as a declaration at runtime, so only calls that cannot
@@ -308,7 +308,7 @@ and any other matcher negated with `.not`; negating an absence matcher, such as
 between the wait and the absence check counts as a completion signal. An
 unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the Playwright 1.61.1 API, whose matchers are
-unchanged through 1.64.0 (CI checks each release's type declarations),
+unchanged through 1.64.1 (CI checks each release's type declarations),
 including locator, page, API-response and function assertions, any
 matcher chained through `resolves` or `rejects`, and any matcher on
 `expect.poll(...)`, including one called on an `expect.configure(...)` chain.

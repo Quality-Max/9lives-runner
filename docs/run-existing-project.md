@@ -7,7 +7,7 @@ runner needs no SDK, model key or QualityMax account.
 ## 1. Check prerequisites
 
 - Use Node 24 (Node 22 minimum) and your project's installed Playwright.
-  The qualified range is Playwright 1.61.1–1.64.0 with Chromium.
+  The qualified range is Playwright 1.61.1–1.64.1 with Chromium.
 - Install your application's dependencies using its existing lockfile and setup
   instructions. Start its local or approved staging server, or let its existing
   Playwright `webServer` configuration start it.

@@ -28,7 +28,7 @@ func TestDoctorEmptyProjectAndMissingNode(t *testing.T) {
 	if code := run([]string{"doctor", "--sdk", "--format", "json"}, &out, &stderr); code != 2 {
 		t.Fatalf("doctor exit %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(out.String(), "npm install --save-dev @playwright/test@1.64.0") || !strings.Contains(out.String(), `"ready":false`) {
+	if !strings.Contains(out.String(), "npm install --save-dev @playwright/test@1.64.1") || !strings.Contains(out.String(), `"ready":false`) {
 		t.Fatalf("missing repair: %s", out.String())
 	}
 	files, err := os.ReadDir(".")
@@ -454,8 +454,8 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 	}
 	project := t.TempDir()
 	writeFiles(t, project, map[string]string{
-		"package.json": `{"devDependencies":{"@playwright/test":"1.64.0","@9l/playwright":"0.5.0"}}`,
-		"node_modules/@playwright/test/package.json": `{"name":"@playwright/test","version":"1.64.0"}`,
+		"package.json": `{"devDependencies":{"@playwright/test":"1.64.1","@9l/playwright":"0.5.0"}}`,
+		"node_modules/@playwright/test/package.json": `{"name":"@playwright/test","version":"1.64.1"}`,
 		"node_modules/@9l/playwright/package.json":   `{"name":"@9l/playwright","version":"0.5.0"}`,
 		"node_modules/@playwright/test/index.js":     "throw new Error('fixture-entry-must-not-run');\n",
 		"node_modules/@9l/playwright/index.js":       "throw new Error('fixture-entry-must-not-run');\n",
