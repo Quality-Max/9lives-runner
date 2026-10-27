@@ -28,10 +28,16 @@ SDK versions.
   of such a test function too. Type arguments are read in balance, so
   `base.extend<{ values: Array<string> }>(…)` from a fixtures module may
   register tests, and `test.extend<{ get: () => string }>(…)` is still the
-  plain test. Doctor reads call arguments, annotations and type arguments
-  only within a bound; a call or callback it reads only in part, such as one
-  behind a 5,000-character comment, is not verified and counts as a possible
-  test registration rather than as proof that there is none.
+  plain test. Every declarator of a `const`, `let` or `var` list is read, so
+  `const other = 1, body = async ({ page }) => {}` declares `body` and
+  `const other = 1, t = test.extend({})` is still the plain test. A callback
+  may declare type parameters, inline, `it('x', async <T,>({ page }) => {})`,
+  or by name, `async function body<T extends Record<string, unknown>>(…)`.
+  Doctor reads call arguments, annotations, type arguments and a declared
+  callback's head only within a bound; a call or callback it reads only in
+  part, such as one behind a 5,000-character comment or a 600-character one
+  between `async` and its parameters, is not verified and counts as a
+  possible test registration rather than as proof that there is none.
 
 ### SDK
 

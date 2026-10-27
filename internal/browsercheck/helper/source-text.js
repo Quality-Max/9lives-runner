@@ -272,9 +272,10 @@ function enclosing(code, start) {
 // A spec read only in part is not verified: each caller treats `cut` as
 // whichever answer cannot make a valid spec fail.
 const cut = 'cut';
-// The index after the type arguments whose `<` is at `start`, read in
-// balance with any nested angle brackets, parentheses, braces and brackets
-// and with `=>` inside them, as in `<{ values: Array<string>; get: () => T }>`.
+// The index after the type arguments or type parameters whose `<` is at
+// `start`, read in balance with any nested angle brackets, parentheses,
+// braces and brackets and with `=>` inside them, as in
+// `<{ values: Array<string>; get: () => T }>` or `<T extends Map<K, V>,>`.
 // Undefined when the text is not balanced type arguments, such as a
 // comparison, and `cut` when they run past `limit` characters.
 function typeArguments(code, start, limit = 1024) {
@@ -365,17 +366,41 @@ function readsTest(code, local) {
     const name = local.replace(/\$/g, '\\$');
     return new RegExp(`(?<![.\\w$])${name}\\s*\\.\\s*test(?![\\w$])`).test(code);
 }
+// The index after balanced type arguments or parameters whose `<` is at
+// `start` when a parameter list or call follows them, as in `f<A, B>(x)` or
+// `async <T,>({ page }) => …`; `cut` when they are longer than doctor reads,
+// and undefined for anything else, such as a comparison.
+function typedOpen(code, start) {
+    const end = typeArguments(code, start);
+    if (end === undefined || end === cut)
+        return end;
+    let j = end;
+    while (/\s/.test(code[j] ?? ''))
+        j++;
+    return code[j] === '(' ? end : undefined;
+}
 // The leading top-level arguments of the call whose `(` is at `open`, at most
-// `count`. Reading stops after `limit` characters; then `complete` is false,
-// the last argument may be cut short and later ones are unread. Callers only
-// look at how each argument starts.
+// `count`. Type arguments and parameters are read whole, so the comma in
+// `async <T,>(…) => …` does not split an argument. Reading stops after
+// `limit` characters, or at type parameters longer than doctor reads; then
+// `complete` is false, the last argument may be cut short and later ones are
+// unread. Callers only look at how each argument starts.
 function leadingArguments(code, open, count, limit = 4096) {
     const args = [];
     let depth = 0;
     let from = open + 1;
     const end = Math.min(code.length, open + limit);
     for (let j = open + 1; j < end; j++) {
-        if (opens[code[j]])
+        if (code[j] === '<' && depth === 0) {
+            const after = typedOpen(code, j);
+            if (after === cut) {
+                args.push(code.slice(from, j));
+                return { args, complete: false };
+            }
+            if (after !== undefined)
+                j = after - 1;
+        }
+        else if (opens[code[j]])
             depth++;
         else if (closes.has(code[j])) {
             if (depth === 0) {
@@ -436,12 +461,13 @@ function insideTestBody(code, open, registrars) {
 function memberAt(code, index) {
     return /\.\s*$/.test(code.slice(Math.max(0, index - 4096), index));
 }
-// The index of the `=` that ends a type annotation starting at `from`, or
-// undefined when the annotation ends without an initializer. The annotation
+// The index of the character that ends a type annotation starting at
+// `from`: the `=` of an initializer, or the `,`, `;` or closing bracket after
+// a binding without one; undefined when it ends otherwise. The annotation
 // may hold arrow types, generics, object and tuple types, `(x: A) => B`,
-// `Fn<{ a: A }, B>` or `{ (f: F): R }`; an `=` inside brackets, such as a
-// default type argument, does not end it. `cut` when the annotation runs past
-// `limit` characters.
+// `Fn<{ a: A }, B>` or `{ (f: F): R }`; an `=` or `,` inside brackets, such
+// as a default type argument, does not end it. `cut` when the annotation
+// runs past `limit` characters.
 function annotationEnd(code, from, limit = 1024) {
     let depth = 0;
     for (let j = from; j < Math.min(code.length, from + limit); j++) {
@@ -458,36 +484,93 @@ function annotationEnd(code, from, limit = 1024) {
             depth++;
         else if (c === ')' || c === ']' || c === '}' || c === '>') {
             if (depth === 0)
-                return undefined;
+                return c === '>' ? undefined : j;
             depth--;
         }
         else if (depth === 0 && (c === ';' || c === ','))
-            return undefined;
+            return j;
     }
     return from + limit < code.length ? cut : undefined;
 }
+// The index where the expression starting at `at` ends: at a top-level `,`
+// or `;`, at a bracket closing one it is inside, or at a line break after a
+// complete value before the next statement. Brackets, and type arguments
+// before a call, `make<A, B>(1)`, are read whole; comments and the contents
+// of literals are already blanked.
+function expressionEnd(code, at) {
+    let depth = 0;
+    for (let j = at; j < code.length; j++) {
+        const c = code[j];
+        if (opens[c])
+            depth++;
+        else if (closes.has(c)) {
+            if (depth === 0)
+                return j;
+            depth--;
+        }
+        else if (depth === 0 && (c === ';' || c === ','))
+            return j;
+        else if (depth === 0 && c === '<') {
+            const after = typedOpen(code, j);
+            if (typeof after === 'number')
+                j = after - 1;
+        }
+        else if (depth === 0 && (c === '\n' || c === '\r')) {
+            // A line break after a complete value, before the next statement.
+            const next = code.slice(j, j + 64);
+            if (/[\w$)\]}'"`]\s*$/.test(code.slice(Math.max(at, j - 64), j)) && /^\s*[A-Za-z_$}]/.test(next)
+                && !/^\s*(?:as|satisfies|in|instanceof)(?![\w$])/.test(next))
+                return j;
+        }
+    }
+    return code.length;
+}
 function declarations(code) {
     const result = [];
-    for (const match of code.matchAll(/(?<![.\w$])(const|let|var)\s+([A-Za-z_$][\w$]*)\s*/g)) {
-        let j = (match.index ?? 0) + match[0].length;
-        if (code[j] === ':') {
-            const end = annotationEnd(code, j + 1);
-            if (end === cut) {
-                result.push({ keyword: match[1], name: match[2], at: j + 1, unread: true });
-                continue;
+    const space = (j) => { while (/\s/.test(code[j] ?? ''))
+        j++; return j; };
+    for (const match of code.matchAll(/(?<![.\w$])(const|let|var)\s+/g)) {
+        const keyword = match[1];
+        for (let j = (match.index ?? 0) + match[0].length;;) {
+            let name;
+            const identifier = code.slice(j, j + 256).match(/^[A-Za-z_$][\w$]*/);
+            if (identifier) {
+                name = identifier[0];
+                j += name.length;
             }
-            if (end === undefined)
-                continue;
-            j = end;
+            else if (code[j] === '{' || code[j] === '[') {
+                const close = matching(code, j, code.length);
+                if (close === undefined)
+                    break;
+                j = close + 1;
+            }
+            else
+                break;
+            j = space(j);
+            if (code[j] === ':') {
+                const end = annotationEnd(code, j + 1);
+                if (end === cut) {
+                    if (name)
+                        result.push({ keyword, name, at: j + 1, unread: true });
+                    break;
+                }
+                if (end === undefined)
+                    break;
+                j = end;
+            }
+            let at;
+            if (code[j] === '=' && code[j + 1] !== '=' && code[j + 1] !== '>') {
+                // Comments are blanked, so a long one between `=` and the value is
+                // whitespace to skip, not a value.
+                at = space(j + 1);
+                j = space(expressionEnd(code, at));
+            }
+            if (name)
+                result.push({ keyword, name, at });
+            if (code[j] !== ',')
+                break;
+            j = space(j + 1);
         }
-        if (code[j] !== '=' || code[j + 1] === '=' || code[j + 1] === '>')
-            continue;
-        // Comments are blanked, so a long one between `=` and the value is
-        // whitespace to skip, not a value.
-        let at = j + 1;
-        while (/\s/.test(code[at] ?? ''))
-            at++;
-        result.push({ keyword: match[1], name: match[2], at });
     }
     return result;
 }
@@ -547,6 +630,8 @@ function testAliases(code, names, possible = false) {
                 declared.push([name, undefined]);
             continue;
         }
+        if (at === undefined)
+            continue;
         const alias = aliasOf(code, at);
         if (alias && (alias.certain || possible))
             declared.push([name, alias.origin]);
@@ -574,83 +659,123 @@ function functionEnd(code, from, arrow) {
         const close = matching(code, at, code.length);
         return close === undefined ? undefined : close + 1;
     }
-    if (!arrow)
-        return undefined;
-    let depth = 0;
-    for (let j = at; j < code.length; j++) {
-        const c = code[j];
-        if (opens[c])
-            depth++;
-        else if (closes.has(c)) {
-            if (depth === 0)
-                return j;
-            depth--;
+    return arrow ? expressionEnd(code, at) : undefined;
+}
+function functionHead(code, at, limit = 512) {
+    const end = Math.min(code.length, at + limit);
+    let j = at;
+    const unread = () => end < code.length ? cut : undefined;
+    const word = (text) => code.startsWith(text, j) && !/[\w$]/.test(code[j + text.length] ?? '');
+    const identifier = () => code.slice(j, Math.min(end, j + 256)).match(/^[A-Za-z_$][\w$]*/)?.[0];
+    const space = () => { while (j < end && /\s/.test(code[j]))
+        j++; };
+    if (word('async')) {
+        j += 5;
+        space();
+        // `async => …` is an arrow whose parameter is named async.
+        if (code.startsWith('=>', j))
+            return { open: -1, keyword: false, arrow: j };
+    }
+    const keyword = word('function');
+    if (keyword) {
+        j += 8;
+        space();
+        if (code[j] === '*') {
+            j++;
+            space();
         }
-        else if (depth === 0 && (c === ';' || c === ','))
-            return j;
-        else if (depth === 0 && (c === '\n' || c === '\r')) {
-            // A line break after a complete value, before the next statement.
-            const next = code.slice(j, j + 64);
-            if (/[\w$)\]}'"`]\s*$/.test(code.slice(Math.max(at, j - 64), j)) && /^\s*[A-Za-z_$}]/.test(next)
-                && !/^\s*(?:as|satisfies|in|instanceof)(?![\w$])/.test(next))
-                return j;
+        j += identifier()?.length ?? 0;
+        space();
+    }
+    else {
+        const parameter = identifier();
+        if (parameter) {
+            j += parameter.length;
+            space();
+            if (j >= end)
+                return unread();
+            return code.startsWith('=>', j) ? { open: -1, keyword, arrow: j } : undefined;
         }
     }
-    return code.length;
+    if (j >= end)
+        return unread();
+    if (code[j] === '<') {
+        const close = typeArguments(code, j);
+        if (close === undefined || close === cut)
+            return close;
+        j = close;
+        space();
+        if (j >= end)
+            return unread();
+    }
+    return code[j] === '(' ? { open: j, keyword } : undefined;
 }
 // Functions declared once in the file, by name: `function body({ page }) {}`,
-// or a const bound to a function expression or arrow, typed or not,
-// `const body = async ({ page }) => {}`. A name declared more than once, or
-// also imported, is left out. A function expression's own name, as in
-// `const body = async function body() {}` or `wrap(function body() {})`, is
-// bound only inside it, so it declares nothing here. A const doctor reads
-// only in part, behind a long annotation or with a parameter list longer
-// than it reads, may be a function: it is kept, with no known body.
+// or a const bound to a function expression or arrow, typed or not, in any
+// declarator of its list, `const other = 1, body = async ({ page }) => {}`;
+// either may have type parameters, `function body<T>({ page }) {}`. A name
+// declared more than once, or also imported, is left out. A function
+// expression's own name, as in `const body = async function body() {}` or
+// `wrap(function body() {})`, is bound only inside it, so it declares
+// nothing here. A const doctor reads only in part, behind a long annotation,
+// with a head, type parameters or a parameter list longer than it reads, may
+// be a function: it is kept, with no known parameters or body.
 function localFunctions(code, bindings) {
     const declared = new Map();
     const count = (name) => declared.set(name, (declared.get(name) ?? 0) + 1);
-    for (const match of code.matchAll(/(?<![.\w$])(?:const|let|var|class)\s+([A-Za-z_$][\w$]*)/g))
+    const values = declarations(code);
+    for (const { name } of values)
+        count(name);
+    for (const match of code.matchAll(/(?<![.\w$])class\s+([A-Za-z_$][\w$]*)/g))
         count(match[1]);
-    for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)/g)) {
-        if (!functionExpressionAt(code, match.index ?? 0))
-            count(match[1]);
-    }
     const functions = new Map();
-    for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^<>()]{0,128}>\s*)?\(/g)) {
+    for (const match of code.matchAll(/(?<![.\w$])(?:async\s+)?function\b\s*\*?\s*([A-Za-z_$][\w$]*)/g)) {
         const start = match.index ?? 0;
         if (functionExpressionAt(code, start))
             continue;
-        const open = start + match[0].length - 1;
-        const close = matching(code, open);
-        functions.set(match[1], { open, start, end: close === undefined ? undefined : functionEnd(code, close + 1, false) });
+        count(match[1]);
+        // A declaration's head is read to its end; only its type parameters
+        // have a bound.
+        const head = functionHead(code, start, code.length - start);
+        if (head === cut) {
+            functions.set(match[1], { open: -1, start });
+            continue;
+        }
+        if (head === undefined || head.open < 0)
+            continue;
+        const close = matching(code, head.open);
+        functions.set(match[1], { open: head.open, start, end: close === undefined ? undefined : functionEnd(code, close + 1, false) });
     }
-    for (const { keyword, name, at, unread } of declarations(code)) {
-        if (keyword !== 'const')
+    for (const { keyword, name, at, unread } of values) {
+        if (keyword !== 'const' || at === undefined)
             continue;
         if (unread) {
             functions.set(name, { open: -1, start: at });
             continue;
         }
-        const value = code.slice(at, at + 512).match(/^(?:async\b\s*)?(?:(function\b\s*\*?\s*[\w$]*\s*)?(?:<[^<>()]{0,128}>\s*)?\(|[A-Za-z_$][\w$]*\s*=>)/);
-        if (!value)
+        const head = functionHead(code, at);
+        if (head === undefined)
             continue;
-        // `async page => …` has no parameter list to read fixtures from.
-        if (value[0].endsWith('>')) {
-            functions.set(name, { open: -1, start: at, end: functionEnd(code, at + value[0].length - 2, true) });
+        if (head === cut) {
+            functions.set(name, { open: -1, start: at });
             continue;
         }
-        const open = at + value[0].length - 1;
-        const close = matching(code, open);
+        // `async page => …` has no parameter list to read fixtures from.
+        if (head.arrow !== undefined) {
+            functions.set(name, { open: -1, start: at, end: functionEnd(code, head.arrow, true) });
+            continue;
+        }
+        const close = matching(code, head.open);
         if (close === undefined) {
-            functions.set(name, { open, start: at });
+            functions.set(name, { open: head.open, start: at });
             continue;
         }
         // A parenthesized value, `(1, 2)`, is not a function; one followed by
         // more space or return type than doctor reads may be.
         const after = code.slice(close + 1, close + 300);
-        if (!value[1] && !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(after) && !(close + 300 < code.length && /^\s*(?::[^=;{}()]*)?$/.test(after)))
+        if (!head.keyword && !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(after) && !(close + 300 < code.length && /^\s*(?::[^=;{}()]*)?$/.test(after)))
             continue;
-        functions.set(name, { open, start: at, end: functionEnd(code, close + 1, !value[1]) });
+        functions.set(name, { open: head.open, start: at, end: functionEnd(code, close + 1, !head.keyword) });
     }
     const imported = new Set(bindings.map(binding => binding.local));
     for (const name of [...functions.keys()]) {
@@ -683,8 +808,20 @@ function namedTestBodies(code, registrars, functions) {
 }
 const titled = /^\s*['"`]/;
 const callback = /^\s*(?:async\b\s*)?(?:function\b|\([\s\S]*?\)\s*(?::[^=;{}()]{0,256})?=>|[A-Za-z_$][\w$]*\s*=>)/;
+// Whether an argument is an inline callback, with or without type
+// parameters, `async <T,>({ page }) => …`; type parameters longer than
+// doctor reads leave a possible one.
+function inlineCallback(arg) {
+    if (callback.test(arg))
+        return true;
+    const typed = arg.match(/^\s*(?:async\b\s*)?(?=<)/);
+    if (!typed)
+        return false;
+    const end = typeArguments(arg, typed[0].length);
+    return end === cut || (end !== undefined && callback.test(arg.slice(end)));
+}
 // A callback argument: inline, or the name of a function in `functions`.
-const callbackArgument = (arg, functions) => callback.test(arg) || functions.has(arg.trim());
+const callbackArgument = (arg, functions) => inlineCallback(arg) || functions.has(arg.trim());
 // Members of Playwright's test function. These declare tests or hooks with
 // any arguments; `extend` builds a test from it.
 const declaring = new Set(['describe', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'extend']);

@@ -470,6 +470,11 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 		"tests/long-comment.spec.ts":                 "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', /*" + strings.Repeat("c", 4996) + "*/ async ({ page }) => {});\ntest('y', async ({ page }) => {});\n",
 		"tests/typed-base.spec.ts":                   "import { test } from '@playwright/test';\nimport { base } from './fixtures';\nconst t = base.extend<{ values: Array<string> }>({});\nt('x', async ({ page }) => {});\n",
 		"tests/typed-extended.spec.ts":               "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend<{ getValue: () => string }>({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/second-declarator.spec.ts":            "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst other = 1, body = async ({ page }) => {};\nit('x', body);\n",
+		"tests/second-extended.spec.ts":              "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst other = 1, t = test.extend({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/long-head.spec.ts":                    "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async /*" + strings.Repeat("c", 596) + "*/ ({ page }) => {};\nit('x', body);\n",
+		"tests/generic-inline.spec.ts":               "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', async <T,>({ page }) => {});\n",
+		"tests/generic-named.spec.ts":                "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nasync function body<T extends Record<string, unknown>>({ page }) {}\nit('x', body);\n",
 	})
 	t.Chdir(t.TempDir())
 	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
@@ -500,8 +505,12 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 	// helper inside a locally extended plain test, typed or not, or inside a
 	// callback passed by name to the plain test, is inside a test body. A
 	// call doctor reads only in part, here behind a long comment, and a
-	// typed extension of a fixtures test may register tests too.
-	for _, spec := range []string{"it.spec.ts", "named.spec.ts", "annotated.spec.ts", "self-named.spec.ts", "long-comment.spec.ts", "typed-base.spec.ts"} {
+	// typed extension of a fixtures test may register tests too. So may a
+	// callback declared after another name in one list, or with type
+	// parameters, inline or by name; a later declarator extending the plain
+	// test is still the plain test.
+	for _, spec := range []string{"it.spec.ts", "named.spec.ts", "annotated.spec.ts", "self-named.spec.ts", "long-comment.spec.ts", "typed-base.spec.ts",
+		"second-declarator.spec.ts", "generic-inline.spec.ts", "generic-named.spec.ts"} {
 		_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
 		if check := it["spec/import"]; check.Status != "warning" || !regexp.MustCompile(`registers tests with (it|base) from another module`).MatchString(check.Message) {
 			t.Fatalf("spec/import with it from fixtures in %s: %+v", spec, check)
@@ -510,7 +519,12 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 			t.Fatalf("spec/fixtures with it from fixtures in %s: %+v", spec, check)
 		}
 	}
-	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts", "named-step.spec.ts", "typed-extended.spec.ts"} {
+	// A callback whose head doctor reads only in part, behind a long comment
+	// between async and its parameters, is not verified: still a warning.
+	if _, _, cut := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "long-head.spec.ts")); cut["spec/import"].Status != "warning" {
+		t.Fatalf("spec/import with a callback head read in part: %+v", cut["spec/import"])
+	}
+	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts", "named-step.spec.ts", "typed-extended.spec.ts", "second-extended.spec.ts"} {
 		_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
 		if check := helper["spec/import"]; check.Status != "missing" {
 			t.Fatalf("spec/import with a helper in %s: %+v", spec, check)
