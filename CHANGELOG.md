@@ -20,6 +20,19 @@ SDK versions.
   destination that rejects output, or a pipe the runner had to close without
   showing it was drained, fails an otherwise successful command.
 
+### Release process
+
+- `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub
+  marks Latest instead of a version pinned in the script, so a release no
+  longer needs an installer or website change. The release workflow creates
+  each release without marking it Latest and marks it only after the
+  published archives, checksums and provenance attestations were verified and
+  the SDK was published, and only if it is the highest stable version; a run
+  that fails earlier leaves installs on the previous release. The installer
+  follows the github.com redirect, not the GitHub API, and accepts only a
+  stable tag of this repository; `NINELIVES_VERSION=vX.Y.Z` still installs a
+  specific release. The homepage no longer names a CLI version.
+
 ## 0.5.2 — 2026-10-27
 
 ### CLI

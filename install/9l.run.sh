@@ -4,18 +4,37 @@
 # Python compatibility: pip install 9lives / uv tool install 9lives.
 set -eu
 
-VERSION="${NINELIVES_VERSION:-v0.5.1}"
 INSTALL_DIR="${NINELIVES_INSTALL_DIR:-$HOME/.local/share/9lives-runner/bin}"
 REPOSITORY="https://github.com/Quality-Max/9lives-runner"
 
 fail() { printf '9lives: %s\n' "$1" >&2; exit 1; }
 say() { printf '9lives: %s\n' "$1"; }
 
+# Without NINELIVES_VERSION, install the release GitHub marks Latest. The
+# release workflow marks a release Latest only after its published archives,
+# checksums and provenance attestations have been verified and the matching
+# SDK has been published, so a release that failed those checks is never
+# picked here. The lookup follows the github.com redirect rather than calling
+# the GitHub API, so the API's unauthenticated rate limit does not apply, and
+# only a stable tag of this repository is accepted.
+if [ -n "${NINELIVES_VERSION:-}" ]; then
+  VERSION="$NINELIVES_VERSION"
+  version_source="NINELIVES_VERSION"
+else
+  latest="$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSLI "$REPOSITORY/releases/latest" -o /dev/null -w '%{url_effective}')" ||
+    fail "could not find the latest release; set NINELIVES_VERSION to a tag such as v0.5.2"
+  case "$latest" in
+    "$REPOSITORY/releases/tag/"*) VERSION="${latest#"$REPOSITORY/releases/tag/"}" ;;
+    *) fail "the latest release did not resolve to a tag of this repository; set NINELIVES_VERSION to a tag such as v0.5.2" ;;
+  esac
+  version_source="the latest release"
+fi
+
 case "$VERSION" in
-  *[!v0-9.]*) fail "NINELIVES_VERSION must be a stable tag such as v0.5.1" ;;
+  *[!v0-9.]*) fail "$version_source must be a stable tag such as v0.5.2" ;;
 esac
 printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' ||
-  fail "NINELIVES_VERSION must be a stable tag such as v0.5.1"
+  fail "$version_source must be a stable tag such as v0.5.2"
 case "$INSTALL_DIR" in
   /*) ;;
   *) fail "NINELIVES_INSTALL_DIR must be an absolute directory path" ;;
