@@ -8,6 +8,21 @@ SDK versions.
 
 ### CLI
 
+- Output a command wrote before it exited is no longer lost when the machine
+  is busy. Test-runner stdout and stderr, healing provider CLIs and the
+  helper processes the runner owns used to drop output the runner had not yet
+  read 50 ms after the process exited: a failing provider then reported no
+  reason (`codex provider failed (exit 1)`), and a successful exit could
+  return truncated output as complete. Output is now read until the process
+  group has been stopped and every byte already written has reached its
+  destination, however slowly. Only a pipe that a writer outside the group
+  still holds open, with nothing left unread, is closed after 5 s. After that
+  the runner reads at most what an exited writer can have left in a pipe
+  (1 MiB) for at most 30 s, so a writer outside the group that never stops
+  writing cannot keep the command from returning. Cancelling the run or
+  reaching its deadline ends the 5 s wait at once and fails the command. A
+  destination that rejects output, or a pipe the runner had to close without
+  showing it was drained, fails an otherwise successful command.
 - `9l doctor --sdk <spec>` no longer reports `spec/import` as `missing`, and
   so exits 2, for a valid spec that registers its tests through a named
   import from a fixtures module, such as `import { it } from './fixtures'`
