@@ -14,39 +14,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
-
-// stalledSink holds its first write long enough that the process has exited
-// before the copy reads the rest of the pipe, as a descheduled copying
-// goroutine on a loaded machine does.
-type stalledSink struct {
-	mu     sync.Mutex
-	data   bytes.Buffer
-	writes int
-}
-
-func (s *stalledSink) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	s.writes++
-	first := s.writes == 1
-	s.mu.Unlock()
-	if first {
-		time.Sleep(600 * time.Millisecond)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.data.Write(p)
-}
-
-func (s *stalledSink) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.data.String()
-}
 
 // Output an exited process already wrote must reach the caller even when the
 // reader falls behind; exec.Cmd.WaitDelay used to discard it 50ms after exit,
@@ -102,20 +73,6 @@ func TestOwnedCommandBoundsOutputHeldOutsideTheGroup(t *testing.T) {
 	}
 }
 
-// slowSink accepts every write but takes delay per call, as a sink behind a
-// slow consumer or a copy goroutine starved on a loaded machine does.
-type slowSink struct {
-	stalledSink
-	delay time.Duration
-}
-
-func (s *slowSink) Write(p []byte) (int, error) {
-	time.Sleep(s.delay)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.data.Write(p)
-}
-
 // The drain window bounds only a pipe a writer outside the group still holds
 // open. When every writer has exited, bytes already in the pipe must reach a
 // slow sink however long it takes; cutting them and reporting exit 0 as
@@ -132,12 +89,6 @@ func TestOwnedCommandKeepsPendingOutputPastTheDrainWindow(t *testing.T) {
 		t.Fatalf("pending output was cut: stdout=%q", stdout.String())
 	}
 }
-
-var errSinkRejected = errors.New("sink rejected output")
-
-type failingSink struct{}
-
-func (failingSink) Write([]byte) (int, error) { return 0, errSinkRejected }
 
 // A sink that could not accept output fails an otherwise successful command,
 // even when a writer outside the group keeps the other stream open until the
@@ -156,6 +107,83 @@ func TestOwnedCommandReportsSinkFailureWhileAnotherStreamIsHeld(t *testing.T) {
 	}
 	if !errors.Is(err, errSinkRejected) {
 		t.Fatalf("sink failure was not reported: err=%v stderr=%q", err, stderr.String())
+	}
+}
+
+// escapedWriter returns a leader command that starts perl, running body, in a
+// new session the owned process tree cannot adopt: the leader waits out the
+// start-up ancestry snapshot, double-forks so perl's parent is gone, and runs
+// after only once perl has left the group. Perl records its PID first; the
+// test's cleanup kills it.
+func escapedWriter(t *testing.T, body, after string) *exec.Cmd {
+	t.Helper()
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl provides setsid for the escaped writer")
+	}
+	pidFile := filepath.Join(t.TempDir(), "escaped.pid")
+	t.Cleanup(func() {
+		if data, err := os.ReadFile(pidFile); err == nil {
+			if pid, err := strconv.Atoi(string(data)); err == nil && pid > 0 {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	script := `sleep 0.1
+(perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", "$ARGV[0].tmp") or die; print $f $$; close $f; rename("$ARGV[0].tmp", $ARGV[0]) or die; $| = 1; ` + body + `' "$0" &)
+while [ ! -s "$0" ]; do sleep 0.01; done
+` + after
+	return exec.Command("/bin/sh", "-c", script, pidFile)
+}
+
+// An escaped process that keeps writing faster than the sink consumes keeps
+// the pipe readable forever. The drain must still return within its bounds
+// and report incomplete output rather than wait for it or claim success.
+func TestOwnedCommandBoundsAnEscapedWriterThatNeverStops(t *testing.T) {
+	shortenOutputDrain(t, 200*time.Millisecond)
+	limitOutputBacklog(t, 2*time.Second, 256<<10)
+	command := escapedWriter(t, `exec "yes"`, "echo leader")
+	stdout := &slowSink{delay: 20 * time.Millisecond}
+	command.Stdout = stdout
+	result := make(chan error, 1)
+	started := time.Now()
+	go func() { result <- RunOwnedCommand(context.Background(), command) }()
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrOutputIncomplete) {
+			t.Fatalf("err=%v, want ErrOutputIncomplete", err)
+		}
+		if elapsed := time.Since(started); elapsed > 8*time.Second {
+			t.Fatalf("drain took %s", elapsed)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("drain kept reading an escaped writer that never stops")
+	}
+	if !strings.Contains(stdout.String(), "leader\n") {
+		t.Fatalf("leader output lost: %d bytes", stdout.Len())
+	}
+}
+
+// Cancelling while the drain waits for an escaped writer to close the pipe
+// ends the wait and fails the command, keeping the leader's output.
+func TestOwnedCommandCancellationEndsTheDrainWindow(t *testing.T) {
+	shortenOutputDrain(t, 30*time.Second)
+	command := escapedWriter(t, "sleep 30", "echo leader")
+	var stdout bytes.Buffer
+	command.Stdout = &stdout
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	timer := time.AfterFunc(time.Second, cancel)
+	defer timer.Stop()
+	started := time.Now()
+	err := RunOwnedCommand(ctx, command)
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("cancellation did not end the drain window: %s", elapsed)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v, want context.Canceled", err)
+	}
+	if stdout.String() != "leader\n" {
+		t.Fatalf("stdout=%q", stdout.String())
 	}
 }
 
@@ -363,13 +391,6 @@ func TestProcessExecutorEscalatesWhenTerminatedLeaderLeavesChild(t *testing.T) {
 		t.Fatalf("expected actual TERM then KILL evidence: %#v", output.Termination)
 	}
 	requireGone(t, childPID(t, output))
-}
-
-// shortenOutputDrain sets the drain window for one test and restores it.
-func shortenOutputDrain(t *testing.T, window time.Duration) {
-	t.Helper()
-	previous := outputDrainTimeout.Swap(int64(window))
-	t.Cleanup(func() { outputDrainTimeout.Store(previous) })
 }
 
 // A command that exits non-zero keeps its exit status for callers and also

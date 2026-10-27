@@ -3,6 +3,7 @@
 package runner
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -18,7 +19,26 @@ import (
 // that shortens it cannot race a drain running in another goroutine.
 var outputDrainTimeout atomic.Int64
 
-func init() { outputDrainTimeout.Store(int64(5 * time.Second)) }
+// After the window, the only output still owed to a sink is the backlog an
+// exited writer left in the pipe: at most one pipe buffer, which an
+// unprivileged writer can grow to 1 MiB on Linux and is smaller elsewhere.
+// outputBacklogBytes bounds what the copy may read past the window, one copy
+// buffer more than that because the copy counts a read only after it returns;
+// anything beyond can only come from a writer outside the stopped group that
+// is still writing. outputBacklogTimeout bounds how long the backlog may take
+// to reach a slow sink, so a writer that trickles just fast enough to keep the
+// pipe readable cannot hold the drain open either. Reaching either bound
+// closes the pipe and reports ErrOutputIncomplete unless the pipe was shown
+// to be empty. Both are atomic for the same reason as the window.
+var outputBacklogTimeout, outputBacklogBytes atomic.Int64
+
+const outputCopyBuffer = 32 * 1024
+
+func init() {
+	outputDrainTimeout.Store(int64(5 * time.Second))
+	outputBacklogTimeout.Store(int64(30 * time.Second))
+	outputBacklogBytes.Store(1<<20 + outputCopyBuffer)
+}
 
 // outputReleasePoll is how often the runner rechecks a held pipe after the
 // drain window.
@@ -50,6 +70,11 @@ type ownedStream struct {
 	reader        *os.File
 	closed        bool
 	closedByDrain bool
+	// read counts bytes the copy has taken from the pipe. allowance is the
+	// count past which, after the drain window, the drain stops reading; only
+	// the drain goroutine uses it.
+	read      atomic.Int64
+	allowance int64
 }
 
 // copyResult keeps a sink that rejected output apart from a pipe that failed
@@ -102,10 +127,11 @@ func (o *ownedOutput) attach(w io.Writer) (io.Writer, error) {
 func (s *ownedStream) copyTo(w io.Writer) copyResult {
 	// Closing on a sink failure lets writers fail instead of filling the pipe.
 	defer s.close(false)
-	buffer := make([]byte, 32*1024)
+	buffer := make([]byte, outputCopyBuffer)
 	for {
 		n, err := s.reader.Read(buffer)
 		if n > 0 {
+			s.read.Add(int64(n))
 			written, writeErr := w.Write(buffer[:n])
 			if writeErr == nil && written != n {
 				writeErr = io.ErrShortWrite
@@ -143,9 +169,11 @@ func (s *ownedStream) releasedByDrain() bool {
 // release closes the read end once nothing written to it is left unread and
 // a writer still holds it open. Only a process outside the stopped group can
 // hold it then, and closing loses nothing it wrote before this check. While
-// bytes or end of file are pending the copy still owns them, however slowly
-// its sink accepts them. It reports whether it closed a pipe it could not
-// inspect, which may have cut pending output.
+// bytes or end of file are pending the copy still owns them, until it has
+// read past its allowance: those bytes come from a writer that is still
+// writing, so release closes the pipe instead of reading on. It reports
+// whether it closed a pipe that may have held unread output: one it could not
+// inspect or one cut at the allowance.
 func (s *ownedStream) release() (cut bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,12 +181,28 @@ func (s *ownedStream) release() (cut bool) {
 		return false
 	}
 	held, err := pipeHeldEmpty(s.reader)
-	if err == nil && !held {
+	if err == nil && !held && s.read.Load() <= s.allowance {
 		return false
 	}
 	s.closed, s.closedByDrain = true, true
 	_ = s.reader.Close()
-	return err != nil
+	return err != nil || !held
+}
+
+// cut closes the read end when the backlog time limit has passed. Only a pipe
+// shown to be empty is closed without reporting possible loss.
+func (s *ownedStream) cut() bool {
+	if s.release() {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	s.closed, s.closedByDrain = true, true
+	_ = s.reader.Close()
+	return true
 }
 
 // closeChildEnds closes the parent's copies of the child's pipe ends, so each
@@ -171,46 +215,76 @@ func (o *ownedOutput) closeChildEnds() {
 
 func (o *ownedOutput) abort() {
 	o.closeChildEnds()
-	_ = o.drain(0)
+	_ = o.drain(context.Background(), 0)
 }
 
 // drain waits for every copy to finish and reports sink failures, read
-// failures and pipes closed without proof that they were drained. After
-// window it releases pipes that are empty but still held open by an escaped
-// writer; that alone is not an error. It never abandons bytes already in a
-// pipe, so a slow sink delays the drain rather than truncating it.
-func (o *ownedOutput) drain(window time.Duration) error {
+// failures and pipes closed without proof that they were drained.
+//
+// Until window ends it waits for every pipe to reach end of file. After it,
+// it releases pipes that are empty but still held open by an escaped writer;
+// that alone is not an error. It keeps reading bytes already in a pipe, so a
+// slow sink delays the drain rather than truncating it, but only within the
+// outputBacklogBytes and outputBacklogTimeout bounds: a writer outside the
+// group that keeps the pipe readable is cut off with ErrOutputIncomplete.
+//
+// The window also ends when ctx is done. A context that ends during the
+// window is reported, so a deadline or cancellation can interrupt waiting for
+// an escaped writer and the command does not count as successful; a context
+// already done when the drain starts, as after a timeout or cancellation
+// stopped the group, is already part of the command's result. The backlog is
+// not cut by ctx: it is bounded, and it is the output that explains why the
+// command was stopped.
+//
+// The drain does not return while a copy is inside its sink's Write, which
+// would let the copy write into the caller's sink after the command returned.
+// A sink that never returns blocks the drain, as it would block exec.Cmd.
+func (o *ownedOutput) drain(ctx context.Context, window time.Duration) error {
 	var errs []error
 	cut := false
+	pending := len(o.streams)
 	collect := func(result copyResult) {
 		errs = append(errs, result.sinkErr, result.readErr)
+		pending--
 	}
-	pending := len(o.streams)
+	interruptible := ctx.Err() == nil
 	timer := time.NewTimer(window)
 	defer timer.Stop()
 	for waiting := true; waiting && pending > 0; {
 		select {
 		case result := <-o.done:
 			collect(result)
-			pending--
 		case <-timer.C:
 			waiting = false
+		case <-ctx.Done():
+			waiting = false
+			if interruptible {
+				errs = append(errs, ctx.Err())
+			}
 		}
 	}
 	if pending > 0 {
+		allowance := outputBacklogBytes.Load()
+		for _, stream := range o.streams {
+			stream.allowance = stream.read.Load() + allowance
+		}
+		limit := time.NewTimer(time.Duration(outputBacklogTimeout.Load()))
+		defer limit.Stop()
 		ticker := time.NewTicker(outputReleasePoll)
 		defer ticker.Stop()
+		release := (*ownedStream).release
 		for pending > 0 {
 			for _, stream := range o.streams {
-				if stream.release() {
+				if release(stream) {
 					cut = true
 				}
 			}
 			select {
 			case result := <-o.done:
 				collect(result)
-				pending--
 			case <-ticker.C:
+			case <-limit.C:
+				release = (*ownedStream).cut
 			}
 		}
 	}
@@ -223,14 +297,14 @@ func (o *ownedOutput) drain(window time.Duration) error {
 // finish drains output and merges the result into the command's error the way
 // startAndWait reports exec.Cmd.Wait. A pipe an escaped writer held open does
 // not turn the leader's exit status into a failure, but a sink that failed to
-// accept output, a failed read or possibly incomplete output does fail an
-// otherwise successful command.
+// accept output, a failed read, possibly incomplete output or a context that
+// ended during the drain window does fail an otherwise successful command.
 //
 // A command that already failed keeps its exit error, joined with any drain
 // error, so a sink failure or incomplete output is never hidden behind a
 // non-zero exit; callers read the exit code with errors.As.
-func (o *ownedOutput) finish(err error) error {
-	drainErr := o.drain(time.Duration(outputDrainTimeout.Load()))
+func (o *ownedOutput) finish(ctx context.Context, err error) error {
+	drainErr := o.drain(ctx, time.Duration(outputDrainTimeout.Load()))
 	switch {
 	case drainErr == nil:
 		return err

@@ -46,12 +46,12 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 	err = command.Start()
 	output.closeChildEnds()
 	if err != nil {
-		return output.finish(err), nil
+		return output.finish(ctx, err), nil
 	}
 	abort := func(err error) (error, *Termination) {
 		_ = command.Process.Kill()
 		_ = command.Wait()
-		_ = output.finish(nil)
+		_ = output.finish(ctx, nil)
 		return err, nil
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(command.Process.Pid))
@@ -75,13 +75,13 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 		}
 		active, queryErr := activeJobProcesses(job)
 		if queryErr != nil {
-			return output.finish(errors.Join(err, queryErr)), nil
+			return output.finish(ctx, errors.Join(err, queryErr)), nil
 		}
 		if active == 0 {
-			return output.finish(err), nil
+			return output.finish(ctx, err), nil
 		}
 		termination := &Termination{Kind: "cleanup", Detail: "leader exited while owned children remained"}
-		return output.finish(errors.Join(err, stopJob(job, termination))), termination
+		return output.finish(ctx, errors.Join(err, stopJob(job, termination))), termination
 	case <-ctx.Done():
 		termination := &Termination{Kind: "canceled", Detail: ctx.Err().Error()}
 		if ctx.Err() == context.DeadlineExceeded {
@@ -95,7 +95,7 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 			job = 0
 			_ = command.Process.Kill()
 		}
-		return output.finish(errors.Join(<-done, stopErr)), termination
+		return output.finish(ctx, errors.Join(<-done, stopErr)), termination
 	}
 }
 
