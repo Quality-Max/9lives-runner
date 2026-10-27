@@ -118,6 +118,9 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           generate_release_notes: true
+          # The installer at 9lives.run installs the release marked Latest; the
+          # latest job sets it only after verification and SDK publication.
+          make_latest: 'false'
       # Download what the release now serves and check it the way users do:
       # the same names and bytes as this run attested, and a provenance
       # attestation from this workflow at this tag. A failure stops the run
@@ -161,3 +164,31 @@ jobs:
           path: .context/npm-pack/
       - name: Publish the qualified SDK tarball using npm trusted publishing
         run: node scripts/publish-sdk.cjs
+
+  # Mark the release Latest only after the published assets and attestations
+  # were verified (github-release) and the matching SDK was published (npm).
+  # `curl -fsSL https://9lives.run/install.sh | sh` installs the release marked
+  # Latest, so a run that fails earlier leaves installs on the previous
+  # verified release, and no installer change is needed per release.
+  latest:
+    needs: [check-tag, github-release, npm]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Mark this release Latest if it is the highest stable version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Only the highest stable version may be Latest, so rerunning an
+          # older tag's release never moves installs back to it.
+          highest="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | sort -V | tail -n 1)"
+          if [ "$highest" != "$TAG" ]; then
+            echo "$TAG is not the highest stable release ($highest); Latest is unchanged."
+            exit 0
+          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest
+          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          test "$latest" = "$TAG" || { echo "Latest is $latest, expected $TAG" >&2; exit 1; }
+          echo "$TAG is Latest; https://9lives.run/install.sh now installs it."

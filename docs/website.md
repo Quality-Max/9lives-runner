@@ -11,7 +11,8 @@ not one of the repository's npm workspaces.
 `install/9l.run.sh` is the canonical installer. `website/public/install.sh`
 must be a byte-identical copy: `curl -fsSL https://9lives.run/install.sh | sh`
 serves it, and the site's proxy sends non-HTML requests for `/` to it. The
-installer downloads one pinned, checksum-verified release and installs `9l`,
+installer downloads one checksum-verified release, the one GitHub marks Latest
+unless `NINELIVES_VERSION=vX.Y.Z` pins another, and installs `9l`,
 `LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` by renaming them from a fresh
 staging directory. It refuses a destination `9l` that is a symlink or another
 CLI, and legal-file destinations that are not regular files.
@@ -27,13 +28,20 @@ node --test website/scripts/indexnow.check.mjs
 The `Website` workflow runs the same checks for changes to `website/` or
 `install/`. The installer tests use fixture releases and no network.
 
-## Bumping the installed release
+## Which release the installer installs
 
-Change the installer's default `NINELIVES_VERSION` only after the release is
-published and verified (see [Releasing](releases.md)): production serves the
-installer as soon as the change merges. Update `install/9l.run.sh`, copy it to
-`website/public/install.sh`, and update the version the site and
-`website/test_site.py` show.
+Without `NINELIVES_VERSION`, the installer follows the
+`https://github.com/Quality-Max/9lives-runner/releases/latest` redirect and
+accepts only a stable `vX.Y.Z` tag of this repository; it does not call the
+GitHub API, so the API's rate limit does not apply. The release workflow
+creates each release without marking it Latest, and its final `latest` job
+marks it Latest only after the published archives, checksums and provenance
+attestations were verified and the SDK was published, and only if it is the
+highest stable version (see [Releasing](releases.md)). A release that fails
+before then never reaches `curl -fsSL https://9lives.run/install.sh | sh`, and
+no installer or website change is needed per release. The homepage names no
+version for the same reason. `NINELIVES_VERSION=vX.Y.Z` still installs a
+specific release, and the downloaded binary must report that version.
 
 Search-engine submission after deploys is described in [IndexNow](indexnow.md).
 Campaign images are listed in [meme assets](marketing/meme-assets.md).

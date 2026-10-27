@@ -38,7 +38,10 @@ def test_landing_page_presents_the_page_checks_built_into_the_runner():
 def test_installer_defaults_to_the_release_with_page_checks():
     installer = (ROOT / "install" / "9l.run.sh").read_text()
 
-    assert 'VERSION="${NINELIVES_VERSION:-v0.5.1}"' in installer
+    # The installer follows the release marked Latest, which the release
+    # workflow sets only after verification; no version is pinned here.
+    assert 'NINELIVES_VERSION:-v' not in installer
+    assert '"$REPOSITORY/releases/latest"' in installer
     assert "9l scan" in installer
 
 
