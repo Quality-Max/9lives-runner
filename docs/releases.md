@@ -86,9 +86,15 @@ alone is not native runtime qualification. If a release is defective, stop
 recommending it and publish a fixed version; do not silently replace its bytes
 or reuse a version number.
 
-Once the release is verified, bump the version that
-`curl -fsSL https://9lives.run/install.sh | sh` installs in a separate change;
-see [Website and installer](website.md#bumping-the-installed-release).
+The release is created without being marked Latest. The workflow's final
+`latest` job marks it Latest once the `github-release` job has verified the
+published assets and attestations and the `npm` job has published the SDK,
+and only if it is the highest stable version, so rerunning an older tag
+never moves Latest back. `curl -fsSL https://9lives.run/install.sh | sh`
+installs the release marked Latest, so no installer change follows a release;
+see [Website and installer](website.md#which-release-the-installer-installs).
+If the `latest` job does not run, installs stay on the previous release until
+a rerun completes it.
 
 ## Qualify the SDK
 
