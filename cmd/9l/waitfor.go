@@ -110,17 +110,23 @@ func waitForTargets(ctx context.Context, probes []waitProbe, timeout time.Durati
 			if err == nil {
 				break
 			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			// A probe cut short by the wait deadline keeps the last real
-			// reason, such as "connection refused", rather than "timed out".
-			if reason == "" || waitCtx.Err() == nil {
-				reason = waitReason(err)
-			}
+			// waitCtx ends either at the wait timeout or because ctx ended
+			// (cancellation or the run's deadline). Ask ctx only after seeing
+			// waitCtx end: a parent's error is set before its children are
+			// canceled, so this order cannot report a run deadline that passed
+			// between two checks as a target that was not ready.
 			if waitCtx.Err() != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				// A probe cut short by the wait deadline keeps the last real
+				// reason, such as "connection refused", rather than "timed out".
+				if reason == "" {
+					reason = waitReason(err)
+				}
 				return waitNotReadyError{fmt.Sprintf("%s was not ready after %s: %s", probe.name, timeout.Round(time.Second), reason)}
 			}
+			reason = waitReason(err)
 			select {
 			case <-waitCtx.Done():
 				if ctx.Err() != nil {
