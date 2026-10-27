@@ -9,10 +9,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func newOwnedOutputPipe() (*os.File, *os.File, error) {
-	return os.Pipe()
-}
-
 // pipeHeldEmpty reports whether reader has no unread byte while some process
 // still holds the pipe's write end. A zero-timeout poll finds the pipe
 // unreadable only in that state: buffered bytes set POLLIN, and a closed

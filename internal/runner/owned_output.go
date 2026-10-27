@@ -112,7 +112,7 @@ func (o *ownedOutput) attach(w io.Writer) (io.Writer, error) {
 	if _, ok := w.(*os.File); ok {
 		return w, nil
 	}
-	reader, writer, err := newOwnedOutputPipe()
+	reader, writer, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}

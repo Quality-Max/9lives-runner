@@ -10,9 +10,6 @@ SDK versions.
 
 ### CLI
 
-- Windows output pipes use an asynchronous read handle so checking an empty
-  pipe held open by another writer cannot block behind its pending read.
-  Cleanup can close the pipe and finish draining instead of hanging.
 - A run deadline reached during `--wait-for` is reported as the run's
   deadline, rather than as an environment failure saying the target was not
   ready. The run remains `timed_out` (#190).
