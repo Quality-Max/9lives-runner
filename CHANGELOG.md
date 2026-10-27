@@ -10,6 +10,10 @@ SDK versions.
 
 ### CLI
 
+- A Windows output drain no longer hangs when its initial wait ends while
+  another goroutine is reading a synchronous pipe. After stopping the owned
+  process job, Windows drains to end of file without inspecting the pipe;
+  the byte and time bounds remain as backstops (#198).
 - A run deadline reached during `--wait-for` is reported as the run's
   deadline, rather than as an environment failure saying the target was not
   ready. The run remains `timed_out` (#190).
