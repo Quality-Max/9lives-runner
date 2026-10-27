@@ -59,8 +59,7 @@ func TestWindowsOwnedCommandKeepsOutputWrittenBeforeExit(t *testing.T) {
 }
 
 // Every writer has exited, so bytes left in the pipe after the drain window
-// still reach a slow sink: PeekNamedPipe must tell the pending end of file
-// from a pipe an escaped writer holds.
+// still reach a slow sink: the drain keeps reading until end of file.
 func TestWindowsOwnedCommandKeepsPendingOutputPastTheDrainWindow(t *testing.T) {
 	shortenOutputDrain(t, 100*time.Millisecond)
 	stdout := &slowSink{delay: 400 * time.Millisecond}
