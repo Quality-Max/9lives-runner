@@ -94,7 +94,7 @@ func limitOutputBacklog(t *testing.T, limit time.Duration, bytes int64) {
 // each of its three states is checked on the platform's own primitive: poll
 // on Unix, PeekNamedPipe on Windows.
 func TestPipeHeldEmptyTellsPendingDataHeldEmptyAndEndOfFile(t *testing.T) {
-	reader, writer, err := os.Pipe()
+	reader, writer, err := newOwnedOutputPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,8 +126,8 @@ func TestPipeHeldEmptyTellsPendingDataHeldEmptyAndEndOfFile(t *testing.T) {
 
 // Releasing a held, empty pipe must end a copy blocked in Read on it, and that
 // read error is the drain's own close rather than a read failure. On Windows
-// this relies on closing a synchronous pipe handle cancelling the pending
-// ReadFile.
+// this requires an overlapped read handle: PeekNamedPipe must not wait for
+// the pending ReadFile before the drain can close it.
 func TestOwnedStreamReleaseEndsAPendingRead(t *testing.T) {
 	output := &ownedOutput{done: make(chan copyResult, 2)}
 	sink := &slowSink{}
@@ -149,8 +149,16 @@ func TestOwnedStreamReleaseEndsAPendingRead(t *testing.T) {
 	}
 	// The copy is now blocked reading a pipe whose write end is still open.
 	time.Sleep(50 * time.Millisecond)
-	if cut := output.streams[0].release(); cut {
-		t.Fatal("releasing a pipe shown to be empty reported a cut")
+	released := make(chan bool, 1)
+	go func() { released <- output.streams[0].release() }()
+	select {
+	case cut := <-released:
+		if cut {
+			t.Fatal("releasing a pipe shown to be empty reported a cut")
+		}
+	case <-time.After(5 * time.Second):
+		_ = writer.Close()
+		t.Fatal("inspecting the held pipe blocked behind its pending read")
 	}
 	select {
 	case result := <-output.done:
