@@ -6,8 +6,13 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.3 — 2026-10-27
+
 ### CLI
 
+- A run deadline reached during `--wait-for` is reported as the run's
+  deadline, rather than as an environment failure saying the target was not
+  ready. The run remains `timed_out` (#190).
 - Output a command wrote before it exited is no longer lost when the machine
   is busy. Test-runner stdout and stderr, healing provider CLIs and the
   helper processes the runner owns used to drop output the runner had not yet
@@ -53,15 +58,6 @@ SDK versions.
   part, such as one behind a 5,000-character comment or a 600-character one
   between `async` and its parameters, is not verified and counts as a
   possible test registration rather than as proof that there is none.
-
-### SDK
-
-- Qualified with `@playwright/test` 1.64.1, which fixes Chromium 155 and
-  later aborting a preflighted cross-origin redirect with `net::ERR_ABORTED`
-  whenever any route is registered. The `playwright-compat` CI job runs the
-  unit, browser, assessment and packed-consumer checks on it, and install
-  examples and `9l doctor` repair commands now name 1.64.1. 1.64.0 stays
-  qualified; the peer range is unchanged (`>=1.61.1 <2`).
 
 ### SDK
 
