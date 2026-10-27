@@ -446,6 +446,343 @@ test('spec/import never fails a spec whose test may come from a default or packa
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+// A named import used the way a test function is used, called with a title
+// and a callback or through describe, a hook or extend, may be a test built
+// from @9l/playwright in a module doctor does not follow: a warning, never
+// missing. Helpers called any other way do not hide the plain test.
+test('spec/import never fails a spec that registers tests through a named import from a fixtures module', () => {
+  const plain = "import { test } from '@playwright/test';\n";
+  const root = specProject({
+    'it.spec.ts': poison + plain + "import { it } from './fixtures';\nit('x', async ({ page }) => { await page.goto('/'); });\n",
+    'describe.spec.ts': poison + plain + "import { it } from './fixtures';\nit.describe('d', () => {\n  it.beforeEach(async ({ context }) => {});\n});\n",
+    'serial.spec.ts': poison + plain + "import { it } from '../support/fixtures';\nit.describe.serial('d', () => {});\n",
+    'extend.spec.ts': poison + plain + "import { base } from './fixtures';\nconst t = base.extend({});\nt('x', async ({ page }) => {});\n",
+    'details.spec.ts': poison + plain + "import { it } from './fixtures';\nit('x', { tag: '@smoke' }, async function ({ page }) {});\n",
+    'template.spec.ts': poison + plain + "import { it } from './fixtures';\n['a', 'b'].forEach(name => { it(`x ${name}`, async ({ page }) => {}); });\n",
+    'only.spec.ts': poison + plain + "import { it } from './fixtures';\nit.only('x', async ({ page }) => {});\n",
+    'required.spec.cjs': poison + "const { test } = require('@playwright/test');\nconst { it: check } = require('./fixtures');\ncheck('x', async ({ page }) => {});\n",
+    'package.spec.ts': poison + plain + "import { it } from '@company/test-fixtures';\nit('x', async ({ page }) => {});\n",
+    'alone.spec.ts': poison + "import { it } from './fixtures';\nit('x', async ({ page }) => {});\n",
+    'both.spec.ts': poison + plain + "import { it } from './fixtures';\nit('x', async ({ page }) => {});\ntest('y', async ({ page }) => {});\n",
+  });
+  try {
+    const checks = name => specChecks(path.join(root, name));
+    for (const name of fs.readdirSync(root)) {
+      const check = byName(checks(name), 'spec/import');
+      assert.equal(check.status, 'warning', name);
+      assert.match(check.message, /registers tests with \w+ from another module, which is not followed; whether those tests come from @9l\/playwright is not verified/, name);
+    }
+    assert.match(byName(checks('it.spec.ts'), 'spec/import').message, /^it\.spec\.ts imports test from @playwright\/test but registers tests with it from another module/);
+    assert.match(byName(specChecks(path.join(root, 'serial.spec.ts'), true), 'spec/import').message, /with it from \.\.\/support\/fixtures,/);
+    assert.match(byName(checks('required.spec.cjs'), 'spec/import').message, /with check from another module/);
+    assert.match(byName(checks('both.spec.ts'), 'spec/import').message, /Tests the spec registers with the plain test from @playwright\/test are not instrumented\.$/);
+    assert.doesNotMatch(byName(checks('it.spec.ts'), 'spec/import').message, /plain test/);
+    for (const name of ['it.spec.ts', 'describe.spec.ts', 'details.spec.ts', 'template.spec.ts', 'only.spec.ts', 'required.spec.cjs', 'alone.spec.ts']) {
+      assert.equal(byName(checks(name), 'spec/fixtures').status, 'ok', `${name}: callbacks of a fixtures-module test count`);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('spec/import still fails a plain spec that only calls helpers from a local module', () => {
+  const plain = "import { test } from '@playwright/test';\n";
+  const root = specProject({
+    'login.spec.ts': poison + plain + "import { login } from './helpers';\ntest('x', async ({ page }) => { await login(page); });\n",
+    'titled.spec.ts': poison + plain + "import { login, fill } from './helpers';\ntest('x', async ({ page }) => { await login('admin', page); await fill('#q', 'text'); });\nlogin('top level', 'no callback');\n",
+    'step.spec.ts': poison + plain + "import { step } from './helpers';\ntest('x', async ({ page }) => {\n  await step('fill the form', async () => { await page.goto('/'); });\n});\ntest.describe('d', () => {\n  test.beforeEach(async () => { await step('seed', async () => {}); });\n});\n",
+    'members.spec.ts': poison + plain + "import { api, logger, server } from './helpers';\nserver.use(handler);\nlogger.info('x', () => 1);\ntest('x', async ({ page }) => { await api.login(page); api.only('y'); });\n",
+    'expect.spec.ts': poison + plain + "import { expect } from './fixtures';\nexpect.extend({ toBeShown() { return { pass: true }; } });\ntest('x', async ({ page }) => { expect(page).toBeTruthy(); });\n",
+    'comment.spec.ts': poison + plain + "import { it } from './fixtures';\n// it('x', async ({ page }) => {});\nconst s = \"it.describe('d', () => {})\";\ntest('x', async ({ page }) => {});\n",
+    'member-of.spec.ts': poison + plain + "import { it } from './fixtures';\nconst o = { it };\no.it('x', async () => {});\nx.it.describe('d', () => {});\ntest('x', async ({ page }) => {});\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const check = byName(specChecks(path.join(root, name)), 'spec/import');
+      assert.equal(check.status, 'missing', name);
+      assert.equal(check.fix, 'import test from @9l/playwright; prove instruments only its page and context fixtures', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A local alias or extension of the plain test is the plain test: a step
+// helper inside its callback is inside a test body, not a test provider.
+test('spec/import still fails a spec whose plain test is aliased or extended locally', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { step } from './helpers';\n";
+  const inside = "('x', async ({ page }) => { await step('fill', async () => {}); });\n";
+  const root = specProject({
+    'extended.spec.ts': poison + plain + 'const t = test.extend({});\nt' + inside,
+    'chained.spec.ts': poison + plain + "const t = test.extend({ a: async ({}, use) => { await use(1); } })\n  .extend<{ b: number }>({ b: 2 });\nt" + inside,
+    'alias.spec.ts': poison + plain + 'const t = test;\nt' + inside,
+    'typed.spec.ts': poison + plain + 'const t: typeof test = test\nt' + inside,
+    'twice.spec.ts': poison + plain + 'const base = test.extend({});\nexport const t = base.extend({});\nt.describe(\'d\', () => {\n  t' + inside + '});\n',
+    'namespace.spec.ts': poison + "import * as pw from '@playwright/test';\nimport { step } from './helpers';\nconst t = pw.test.extend({});\nt" + inside,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, name === 'namespace.spec.ts' ? 'warning' : 'missing', name);
+      assert.doesNotMatch(byName(checks, 'spec/import').message, /registers tests with step/, name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', `${name}: callbacks of an aliased test count`);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A member access is not a call of the import, however it is spaced.
+test('spec/import still fails a plain spec whose member call shares a fixtures import name', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const tail = "test('y', async ({ page }) => {});\n";
+  const root = specProject({
+    'spaced.spec.ts': poison + plain + "o . it('x', async () => {});\n" + tail,
+    'newline.spec.ts': poison + plain + "o\n  .it('x', async () => {});\n" + tail,
+    'after-dot.spec.ts': poison + plain + "o.\n  it('x', async () => {});\n" + tail,
+    'comment.spec.ts': poison + plain + "o./* member */it('x', async () => {});\no // note\n  .it.describe('d', () => {});\n" + tail,
+    'optional.spec.ts': poison + plain + "o?. it('x', async () => {});\no ?.it.extend({});\n" + tail,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      assert.equal(byName(specChecks(path.join(root, name)), 'spec/import').status, 'missing', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A callback may be a function the spec declares and passes by name.
+test('spec/import never fails a spec that passes a declared function to a fixtures-module test', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const root = specProject({
+    'arrow.spec.ts': poison + plain + "const body = async ({ page }) => { await page.goto('/'); };\nit('x', body);\n",
+    'expression.spec.ts': poison + plain + "const body = async function ({ context }) {};\nit('x', { tag: '@smoke' }, body);\n",
+    'declaration.spec.ts': poison + plain + "it.only('x', body);\nasync function body({ page }: { page: Page }) {}\n",
+    'typed.spec.ts': poison + plain + "const body: Body = async ({ page }): Promise<void> => {};\nit(`x`, body);\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'warning', name);
+      assert.match(byName(checks, 'spec/import').message, /registers tests with it from another module/, name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', `${name}: a referenced callback's fixtures count`);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Only an unambiguous function declared in the spec counts; values, unknown
+// names, redeclared names and helpers inside a test body do not.
+test('spec/import still fails a plain spec that passes values or helpers by name', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it, step } from './fixtures';\n";
+  const tail = "test('y', async ({ page }) => {});\n";
+  const root = specProject({
+    'value.spec.ts': poison + plain + "const body = { page: 1 };\nit('x', body);\n" + tail,
+    'unknown.spec.ts': poison + plain + "it('x', page);\n" + tail,
+    'paren.spec.ts': poison + plain + "const body = (1, 2);\nit('x', body);\n" + tail,
+    'redeclared.spec.ts': poison + plain + "function body() {}\nlet body2 = 1;\n{ const body = 2; }\nit('x', body);\n" + tail,
+    'imported.spec.ts': poison + plain + "import { body } from './helpers';\nit('x', body);\n" + tail,
+    'step.spec.ts': poison + plain + "const fill = async () => {};\ntest('x', async ({ page }) => { await step('fill', fill); });\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      assert.equal(byName(specChecks(path.join(root, name)), 'spec/import').status, 'missing', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A type annotation between the name and `=` may hold arrow types, generics
+// and object types; the callback it types is still a declared function.
+test('spec/import reads a declared callback or alias whose binding has a type annotation', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const root = specProject({
+    'arrow-type.spec.ts': poison + plain + "const body: (fixtures: { page: unknown }) => Promise<void> = async ({ page }) => {};\nit('x', body);\n",
+    'generic-type.spec.ts': poison + plain + "const body: Callback<{ page: Page }, Promise<void>> = async ({ page }) => {};\nit('x', body);\n",
+    'object-type.spec.ts': poison + plain + "const body: { (fixtures: { page: Page }): Promise<void> } = async function ({ page }) {};\nit('x', body);\n",
+    'default-type.spec.ts': poison + plain + "const body: Callback<{ page: Page }, (x?: number) => void> = async ({ page }): Promise<void> => {};\nit('x', body);\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'warning', name);
+      assert.match(byName(checks, 'spec/import').message, /registers tests with it from another module/, name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', `${name}: an annotated callback's fixtures count`);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // An annotated local extension of the plain test is still the plain test.
+  const step = "import { test } from '@playwright/test';\nimport { step } from './helpers';\n";
+  const aliased = specProject({
+    'typed.spec.ts': poison + step + "const t: TestType<{ run: (x: number) => void }, {}> = test.extend({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+  });
+  try {
+    assert.equal(byName(specChecks(path.join(aliased, 'typed.spec.ts')), 'spec/import').status, 'missing');
+  } finally { fs.rmSync(aliased, { recursive: true, force: true }); }
+});
+
+// A named function expression's own name is bound only inside it: it neither
+// makes its outer binding ambiguous nor declares a function outside.
+test('spec/import reads a function expression by its binding, not its own name', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const root = specProject({
+    'self-named.spec.ts': poison + plain + "const body = async function body({ page }) {};\nit('x', body);\n",
+    'self-named-generator.spec.ts': poison + plain + "const body = function* body({ page }) {};\nit('x', body);\n",
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'warning', name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', `${name}: a self-named callback's fixtures count`);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  const tail = "test('y', async ({ page }) => {});\n";
+  const hidden = specProject({
+    'inner-name.spec.ts': poison + plain + "const run = async function body({ page }) {};\nit('x', body);\n" + tail,
+    'argument-name.spec.ts': poison + plain + "wrap(function body({ page }) {});\nit('x', body);\n" + tail,
+  });
+  try {
+    for (const name of fs.readdirSync(hidden)) {
+      assert.equal(byName(specChecks(path.join(hidden, name)), 'spec/import').status, 'missing', name);
+    }
+  } finally { fs.rmSync(hidden, { recursive: true, force: true }); }
+});
+
+// A function passed by name to the plain test, its aliases or a hook is a
+// test body: a titled helper call inside it is not a top-level test provider.
+test('spec/import still fails a plain spec whose named test or hook callback calls a step helper', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { step } from './helpers';\n";
+  const filled = "async ({ page }) => { await step('fill', async () => {}); }";
+  const root = specProject({
+    'arrow.spec.ts': poison + plain + `const body = ${filled};\ntest('x', body);\n`,
+    'declaration.spec.ts': poison + plain + "test('x', { tag: '@a' }, body);\nasync function body({ page }) { await step('fill', async () => {}); }\n",
+    'expression.spec.ts': poison + plain + "const body = async ({ page }) => step('fill', async () => {});\ntest('x', body);\n",
+    'hook.spec.ts': poison + plain + "const seed = async () => { await step('seed', async () => {}); };\ntest.beforeEach(seed);\ntest('x', async ({ page }) => {});\n",
+    'nested-hook.spec.ts': poison + plain + "const seed = async () => { await step('seed', async () => {}); };\ntest.describe('d', () => {\n  test.afterAll(seed);\n  test('x', async ({ page }) => {});\n});\n",
+    'alias.spec.ts': poison + plain + `const t = test.extend({});\nconst body = ${filled};\nt.only('x', body);\n`,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'missing', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // A describe callback registers tests: it is not a test body, so a fixtures
+  // test called in it is still a possible provider.
+  const suites = specProject({
+    'suite.spec.ts': poison + "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst suite = () => { it('x', async ({ page }) => {}); };\ntest.describe('d', suite);\n",
+  });
+  try {
+    assert.equal(byName(specChecks(path.join(suites, 'suite.spec.ts')), 'spec/import').status, 'warning');
+  } finally { fs.rmSync(suites, { recursive: true, force: true }); }
+});
+
+// Doctor reads a call's arguments, a type annotation and a parameter list
+// within a bound. A spec it reads only in part is not verified: the call may
+// register a test, so spec/import is a warning, never missing. A block
+// comment of `length` characters stands in for any long text.
+const comment = length => `/*${'c'.repeat(length - 4)}*/`;
+test('spec/import treats a test call doctor reads only in part as a possible registration', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const tail = "test('y', async ({ page }) => {});\n";
+  // `('x', ` takes 6 characters from the `(`, the callback 22 and `)` 1, so
+  // with a 4,067-character comment the call ends on the last character read.
+  const titled = length => `it('x', ${comment(length)}async ({ page }) => {});\n`;
+  const root = specProject({
+    'complete-4067.spec.ts': poison + plain + titled(4067) + tail,
+    'cut-after-callback-4068.spec.ts': poison + plain + titled(4068) + tail,
+    'cut-in-callback-4089.spec.ts': poison + plain + titled(4089) + tail,
+    'cut-before-callback-4090.spec.ts': poison + plain + titled(4090) + tail,
+    'cut-before-callback-5000.spec.ts': poison + plain + titled(5000) + tail,
+    'cut-before-title.spec.ts': poison + plain + `it(${comment(5000)}'x', async ({ page }) => {});\n` + tail,
+    'cut-in-details.spec.ts': poison + plain + `it('x', { tag: '@a', ${comment(5000)} }, async ({ page }) => {});\n` + tail,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const check = byName(specChecks(path.join(root, name)), 'spec/import');
+      assert.equal(check.status, 'warning', name);
+      assert.match(check.message, /registers tests with it from another module/, name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // Reading in part does not turn a helper into a test: a cut-off step
+  // wrapper in a test body, an untitled call, or a fixtures name never
+  // called, still leaves the plain spec missing.
+  const step = "import { test } from '@playwright/test';\nimport { step, login, it } from './helpers';\n";
+  const helpers = specProject({
+    'step.spec.ts': poison + step + `test('x', async ({ page }) => { await step('fill', ${comment(5000)}async () => {}); });\n`,
+    'untitled.spec.ts': poison + step + `login(page, ${comment(5000)}async () => {});\n` + tail,
+    'plain-cut.spec.ts': poison + step + `test('x', ${comment(5000)}async ({ page }) => { it; });\n`,
+  });
+  try {
+    for (const name of fs.readdirSync(helpers)) {
+      assert.equal(byName(specChecks(path.join(helpers, name)), 'spec/import').status, 'missing', name);
+    }
+  } finally { fs.rmSync(helpers, { recursive: true, force: true }); }
+});
+
+// A callback declared with an annotation, a parameter list or a gap doctor
+// reads only in part may still be a function passed to a fixtures test.
+test('spec/import treats a declared callback doctor reads only in part as a possible callback', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const call = "it('x', body);\n";
+  const root = specProject({
+    'annotation-1000.spec.ts': poison + plain + `const body: ${comment(1000)}Body = async ({ page }) => {};\n` + call,
+    'annotation-1100.spec.ts': poison + plain + `const body: ${comment(1100)}Body = async ({ page }) => {};\n` + call,
+    'after-equals.spec.ts': poison + plain + `const body = ${comment(100)}async ({ page }) => {};\n` + call,
+    'parameters.spec.ts': poison + plain + `const body = async ({ page, ${comment(5000)} }) => {};\n` + call,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      assert.equal(byName(specChecks(path.join(root, name)), 'spec/import').status, 'warning', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Type arguments may nest angle brackets, parentheses, braces, brackets and
+// arrow types: `base.extend<{ values: Array<string> }>(…)`.
+test('spec/import reads typed extensions of a fixtures test and of the plain test', () => {
+  const plain = "import { test } from '@playwright/test';\n";
+  const typed = ['{ values: Array<string> }', '{ getValue: () => string }', '{ map: Map<string, [number, (x: { a: 1 }) => void]> }'];
+  const root = specProject(Object.fromEntries(typed.map((type, k) => [`base-${k}.spec.ts`,
+    poison + plain + `import { base } from './fixtures';\nconst t = base.extend<${type}>({});\nt('x', async ({ page }) => {});\n`])));
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'warning', name);
+      assert.match(byName(checks, 'spec/import').message, /registers tests with base from another module/, name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // A typed extension of the plain test is the plain test: a step helper in
+  // its callback is inside a test body.
+  const step = plain + "import { step } from './helpers';\n";
+  const inside = "('x', async ({ page }) => { await step('fill', async () => {}); });\n";
+  const aliased = specProject({
+    ...Object.fromEntries(typed.map((type, k) => [`plain-${k}.spec.ts`, poison + step + `const t = test.extend<${type}>({});\nt` + inside])),
+    'chained.spec.ts': poison + step + "const t = test.extend<{ a: () => void }>({})\n  .extend<{ b: Array<() => string> }>({});\nt" + inside,
+  });
+  try {
+    for (const name of fs.readdirSync(aliased)) {
+      const checks = specChecks(path.join(aliased, name));
+      assert.equal(byName(checks, 'spec/import').status, 'missing', name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', name);
+    }
+  } finally { fs.rmSync(aliased, { recursive: true, force: true }); }
+  // Beside the SDK, a typed extension of the plain test still registers
+  // uninstrumented tests.
+  const mixed = specProject({
+    'mixed.spec.ts': poison + "import { test } from '@9l/playwright';\nimport { test as pw } from '@playwright/test';\nconst t = pw.extend<{ getValue: () => string }>({});\nt('x', async ({ page }) => {});\n",
+  });
+  try {
+    const check = byName(specChecks(path.join(mixed, 'mixed.spec.ts')), 'spec/import');
+    assert.equal(check.status, 'warning');
+    assert.match(check.message, /also registers tests with test from @playwright\/test/);
+  } finally { fs.rmSync(mixed, { recursive: true, force: true }); }
+  // Type arguments longer than doctor reads are not verified either way: a
+  // fixtures extension may register tests, and a plain extension is not
+  // proven to be the plain test.
+  const long = `{ ${comment(2000)} a: Array<string> }`;
+  const cut = specProject({
+    'base.spec.ts': poison + plain + `import { base } from './fixtures';\nconst t = base.extend<${long}>({});\nt('x', async ({ page }) => {});\n`,
+    'plain.spec.ts': poison + step + `const t = test.extend<${long}>({});\nt` + inside,
+  });
+  try {
+    for (const name of fs.readdirSync(cut)) {
+      assert.equal(byName(specChecks(path.join(cut, name)), 'spec/import').status, 'warning', name);
+    }
+  } finally { fs.rmSync(cut, { recursive: true, force: true }); }
+});
+
 // projects and spreads can change which testDir applies, however written.
 test('spec/config leaves testDir unverified for shorthand projects, spreads and merges', () => {
   const config = body => poison + "import { defineConfig, devices } from '@playwright/test';\nimport shared from './shared';\n" + body;
