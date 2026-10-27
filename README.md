@@ -104,12 +104,12 @@ that can run standalone or connect to QualityMax.
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.5.2 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.5.2 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
 Use Node 24 for the qualified runtime (Node 22 minimum) and Playwright 1.61.1
-through 1.64.0; an existing project can keep its version in that range. On Linux, use
+through 1.64.1; an existing project can keep its version in that range. On Linux, use
 `npm exec playwright install --with-deps chromium` for browser dependencies.
 
 Install the Go CLI separately. With Go 1.27.3 or newer:
@@ -296,8 +296,8 @@ the spec or prove its assertions protect the requirement. See the
 
 | Component | Qualified | Boundary |
 | --- | --- | --- |
-| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
-| `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
+| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
+| `9l assess` matchers | Playwright 1.61.1 through 1.64.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
 | CLI | 0.5.2 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |

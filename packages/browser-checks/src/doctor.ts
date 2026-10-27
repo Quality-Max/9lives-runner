@@ -8,7 +8,7 @@ export type Diagnostic = { name: string; status: 'ok' | 'warning' | 'missing'; m
 // (prove fault kinds); an SDK declares the same three under "9l" in its
 // package.json, so the pair is judged without loading either.
 export type Engine = { protocol: string; capabilities: string[]; faults: string[] };
-const qualified = new Set(['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0']);
+const qualified = new Set(['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1']);
 const safeVersion = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/;
 const safeToken = /^[a-z0-9][a-z0-9./-]{0,63}$/;
 
@@ -287,7 +287,7 @@ export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: En
   const runtime = metadata(load, 'playwright') ?? testRuntime;
   checks.push({ name: 'playwright-test', status: !test ? 'missing' : qualified.has(test.version) ? 'ok' : 'warning',
     message: test ? `@playwright/test ${test.version}${qualified.has(test.version) ? ' is qualified.' : ' is outside the qualified matrix.'}` : '@playwright/test is not installed locally.',
-    ...(!test ? { fix: 'npm install --save-dev @playwright/test@1.64.0' } : {}) });
+    ...(!test ? { fix: 'npm install --save-dev @playwright/test@1.64.1' } : {}) });
   const sdk = metadata(load, '@9l/playwright');
   const align = args.cliVersion && safeVersion.test(args.cliVersion) ? { fix: `npm install --save-dev @9l/playwright@${args.cliVersion}` } : {};
   if (!sdk) {

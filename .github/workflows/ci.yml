@@ -205,14 +205,14 @@ jobs:
           if-no-files-found: error
 
   # The SDK peer range admits later Playwright 1.x releases. Qualify every
-  # published release up to 1.64 with the sdk job's checks; that job covers
+  # published release up to 1.64.1 with the sdk job's checks; that job covers
   # the 1.61.1 workspace pin and alone produces the publishable tarball.
   playwright-compat:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        playwright: ['1.62.0', '1.62.1', '1.63.0', '1.64.0']
+        playwright: ['1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1']
     env:
       PLAYWRIGHT_VERSION: ${{ matrix.playwright }}
     steps:

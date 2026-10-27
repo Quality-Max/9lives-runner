@@ -33,6 +33,15 @@ SDK versions.
   behind a 5,000-character comment, is not verified and counts as a possible
   test registration rather than as proof that there is none.
 
+### SDK
+
+- Qualified with `@playwright/test` 1.64.1, which fixes Chromium 155 and
+  later aborting a preflighted cross-origin redirect with `net::ERR_ABORTED`
+  whenever any route is registered. The `playwright-compat` CI job runs the
+  unit, browser, assessment and packed-consumer checks on it, and install
+  examples and `9l doctor` repair commands now name 1.64.1. 1.64.0 stays
+  qualified; the peer range is unchanged (`>=1.61.1 <2`).
+
 ### Release process
 
 - `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub
