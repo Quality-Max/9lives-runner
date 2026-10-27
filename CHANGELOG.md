@@ -74,6 +74,10 @@ SDK versions.
 
 ### Release process
 
+- SDK qualification publishes worker and server readiness records by rename,
+  so the smoke cannot parse a partially written PID record while checking
+  owned timeout and cancellation. A controlled subprocess test checks that
+  readiness stays unpublished until its JSON is complete.
 - `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub
   marks Latest instead of a version pinned in the script, so a release no
   longer needs an installer or website change. The release workflow creates
