@@ -134,13 +134,15 @@ export function proveProject(spec: string): { config?: string; project?: string 
 // be a test from @9l/playwright; a helper such as `login(page)` is not one.
 // Local aliases and extensions, `const t = test.extend(…)`, are the test they
 // come from, so a helper called in their callbacks is inside a test body.
+// A binding doctor reads only in part may be a test it registers with, but
+// is not known to be the plain test, so neither hides a provider.
 function testProviders(code: string, bindings: Binding[], functions: Map<string, LocalFunction>): Binding[] {
   const registrars = testAliases(code, [
     ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local),
     ...bindings.filter(binding => ['*', 'default'].includes(binding.imported)).map(binding => `${binding.local}.test`),
   ]);
   return bindings.filter(binding => ![testModule, sdkModule].includes(binding.module) && !['test', 'expect', '*', 'default'].includes(binding.imported)
-    && [...testAliases(code, [binding.local])].some(local => registersTests(code, local, registrars, functions)));
+    && [...testAliases(code, [binding.local], true)].some(local => registersTests(code, local, registrars, functions)));
 }
 
 function importCheck(name: string, code: string, bindings: Binding[], providers: Binding[], paths: boolean): Diagnostic {

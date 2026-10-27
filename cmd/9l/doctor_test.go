@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -466,6 +467,9 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 		"tests/annotated.spec.ts":                    "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body: (fixtures: { page: unknown }) => Promise<void> = async ({ page }) => {};\nit('x', body);\n",
 		"tests/self-named.spec.ts":                   "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async function body({ page }) {};\nit('x', body);\n",
 		"tests/named-step.spec.ts":                   "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst body = async ({ page }) => { await step('fill', async () => {}); };\ntest('x', body);\n",
+		"tests/long-comment.spec.ts":                 "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', /*" + strings.Repeat("c", 4996) + "*/ async ({ page }) => {});\ntest('y', async ({ page }) => {});\n",
+		"tests/typed-base.spec.ts":                   "import { test } from '@playwright/test';\nimport { base } from './fixtures';\nconst t = base.extend<{ values: Array<string> }>({});\nt('x', async ({ page }) => {});\n",
+		"tests/typed-extended.spec.ts":               "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend<{ getValue: () => string }>({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
 	})
 	t.Chdir(t.TempDir())
 	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
@@ -493,18 +497,20 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 	// not a test function, so that spec still fails.
 	// So is one that passes a callback declared in the spec by name, typed
 	// with an arrow type or as a self-named function expression. A step
-	// helper inside a locally extended plain test, or inside a callback
-	// passed by name to the plain test, is inside a test body.
-	for _, spec := range []string{"it.spec.ts", "named.spec.ts", "annotated.spec.ts", "self-named.spec.ts"} {
+	// helper inside a locally extended plain test, typed or not, or inside a
+	// callback passed by name to the plain test, is inside a test body. A
+	// call doctor reads only in part, here behind a long comment, and a
+	// typed extension of a fixtures test may register tests too.
+	for _, spec := range []string{"it.spec.ts", "named.spec.ts", "annotated.spec.ts", "self-named.spec.ts", "long-comment.spec.ts", "typed-base.spec.ts"} {
 		_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
-		if check := it["spec/import"]; check.Status != "warning" || !strings.Contains(check.Message, "registers tests with it from another module") {
+		if check := it["spec/import"]; check.Status != "warning" || !regexp.MustCompile(`registers tests with (it|base) from another module`).MatchString(check.Message) {
 			t.Fatalf("spec/import with it from fixtures in %s: %+v", spec, check)
 		}
 		if check := it["spec/fixtures"]; check.Status != "ok" {
 			t.Fatalf("spec/fixtures with it from fixtures in %s: %+v", spec, check)
 		}
 	}
-	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts", "named-step.spec.ts"} {
+	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts", "named-step.spec.ts", "typed-extended.spec.ts"} {
 		_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
 		if check := helper["spec/import"]; check.Status != "missing" {
 			t.Fatalf("spec/import with a helper in %s: %+v", spec, check)

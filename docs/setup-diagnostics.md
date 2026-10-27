@@ -109,7 +109,12 @@ directory.
   step wrapper inside its callbacks does not count either, nor does one
   inside a function the spec passes by name to the plain `test`, an alias or
   a hook, such as `test('x', body)` or `test.beforeEach(seed)`; a function
-  passed to `describe` registers tests and is not a test body. A spec that takes the SDK under another name but also
+  passed to `describe` registers tests and is not a test body. Type
+  arguments such as `test.extend<{ get: () => string }>(…)` do not change
+  either reading. Doctor reads arguments, annotations and type arguments
+  only within a bound; a call it reads only in part, such as one behind a
+  very long comment, is not verified and counts as a possible
+  registration, never as proof that there is none. A spec that takes the SDK under another name but also
   registers tests through a binding from `@playwright/test`, such as
   `n9l.expect` with a plain `test(…)`, is a warning too, since those tests
   are uninstrumented. So are `test as pwTest` from `@playwright/test` and a

@@ -25,7 +25,13 @@ SDK versions.
   outside it. A function passed by name to the plain test or a hook,
   `test('x', body)` or `test.beforeEach(seed)`, is a test body, so a step
   wrapper in it does not count either. `spec/fixtures` reads the callbacks
-  of such a test function too.
+  of such a test function too. Type arguments are read in balance, so
+  `base.extend<{ values: Array<string> }>(…)` from a fixtures module may
+  register tests, and `test.extend<{ get: () => string }>(…)` is still the
+  plain test. Doctor reads call arguments, annotations and type arguments
+  only within a bound; a call or callback it reads only in part, such as one
+  behind a 5,000-character comment, is not verified and counts as a possible
+  test registration rather than as proof that there is none.
 
 ### Release process
 

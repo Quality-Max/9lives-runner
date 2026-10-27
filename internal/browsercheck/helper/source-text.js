@@ -267,6 +267,56 @@ function enclosing(code, start) {
     }
     return undefined;
 }
+// Doctor reads some constructs only within a bound, to keep its work small;
+// a reader that reaches its bound before the construct ends returns `cut`.
+// A spec read only in part is not verified: each caller treats `cut` as
+// whichever answer cannot make a valid spec fail.
+const cut = 'cut';
+// The index after the type arguments whose `<` is at `start`, read in
+// balance with any nested angle brackets, parentheses, braces and brackets
+// and with `=>` inside them, as in `<{ values: Array<string>; get: () => T }>`.
+// Undefined when the text is not balanced type arguments, such as a
+// comparison, and `cut` when they run past `limit` characters.
+function typeArguments(code, start, limit = 1024) {
+    const expected = [];
+    const end = Math.min(code.length, start + limit);
+    for (let j = start; j < end; j++) {
+        const c = code[j];
+        if (c === '=' && code[j + 1] === '>') {
+            j++;
+            continue;
+        }
+        if (c === '<')
+            expected.push('>');
+        else if (opens[c])
+            expected.push(opens[c]);
+        else if (c === '>' || closes.has(c)) {
+            if (expected.pop() !== c)
+                return undefined;
+            if (!expected.length)
+                return j + 1;
+        }
+        else if (c === ';' && expected.every(close => close === '>'))
+            return undefined;
+    }
+    return end < code.length ? cut : undefined;
+}
+// The `(` of the call of a name or member chain ending at `from`, after
+// optional type arguments, `extend<{ a: () => void }>(`; `cut` when the type
+// arguments are longer than doctor reads, undefined when no call follows.
+function callOpen(code, from) {
+    let j = from;
+    while (/\s/.test(code[j] ?? ''))
+        j++;
+    if (code[j] === '<') {
+        const end = typeArguments(code, j);
+        if (end === undefined || end === cut)
+            return end;
+        for (j = end; /\s/.test(code[j] ?? ''); j++)
+            ;
+    }
+    return code[j] === '(' ? j : undefined;
+}
 // Whether a config may take testDir or projects from values doctor cannot
 // read: a spread into an object or a call, or a call that merges several
 // configs, such as `defineConfig(base, { … })` or `Object.assign`. A spread
@@ -299,10 +349,16 @@ function mergesValues(code) {
 }
 // Whether `local` is called, as in `test('x', …)`, or with `members` also
 // through them, as in `test.describe(…)` or `test.extend(…)`.
+// Type arguments may come before the call, `test.extend<{ a: () => void }>(…)`;
+// ones too long to read count as a call, since the spec is not verified.
 function calls(code, local, members = true) {
     const name = local.replace(/\$/g, '\\$');
     const chain = members ? '(?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*' : '';
-    return new RegExp(`(?<![.\\w$])${name}\\s*${chain}(?:<[^<>()]{0,128}>\\s*)?\\(`).test(code);
+    for (const match of code.matchAll(new RegExp(`(?<![.\\w$])${name}\\s*${chain}`, 'g'))) {
+        if (callOpen(code, (match.index ?? 0) + match[0].length) !== undefined)
+            return true;
+    }
+    return false;
 }
 // Whether `local.test` is read, as in `fixtures.test('x', …)`.
 function readsTest(code, local) {
@@ -310,8 +366,9 @@ function readsTest(code, local) {
     return new RegExp(`(?<![.\\w$])${name}\\s*\\.\\s*test(?![\\w$])`).test(code);
 }
 // The leading top-level arguments of the call whose `(` is at `open`, at most
-// `count`. Reading stops after `limit` characters, so the last argument may be
-// cut short; callers only look at how each argument starts.
+// `count`. Reading stops after `limit` characters; then `complete` is false,
+// the last argument may be cut short and later ones are unread. Callers only
+// look at how each argument starts.
 function leadingArguments(code, open, count, limit = 4096) {
     const args = [];
     let depth = 0;
@@ -323,19 +380,19 @@ function leadingArguments(code, open, count, limit = 4096) {
         else if (closes.has(code[j])) {
             if (depth === 0) {
                 args.push(code.slice(from, j));
-                return args;
+                return { args, complete: true };
             }
             depth--;
         }
         else if (code[j] === ',' && depth === 0) {
             args.push(code.slice(from, j));
             if (args.length === count)
-                return args;
+                return { args, complete: true };
             from = j + 1;
         }
     }
     args.push(code.slice(from, end));
-    return args;
+    return { args, complete: end === code.length };
 }
 // The identifier chain called by the `(` at `open`, such as `test.describe`,
 // or undefined when the bracket is not a call.
@@ -383,7 +440,8 @@ function memberAt(code, index) {
 // undefined when the annotation ends without an initializer. The annotation
 // may hold arrow types, generics, object and tuple types, `(x: A) => B`,
 // `Fn<{ a: A }, B>` or `{ (f: F): R }`; an `=` inside brackets, such as a
-// default type argument, does not end it.
+// default type argument, does not end it. `cut` when the annotation runs past
+// `limit` characters.
 function annotationEnd(code, from, limit = 1024) {
     let depth = 0;
     for (let j = from; j < Math.min(code.length, from + limit); j++) {
@@ -406,23 +464,30 @@ function annotationEnd(code, from, limit = 1024) {
         else if (depth === 0 && (c === ';' || c === ','))
             return undefined;
     }
-    return undefined;
+    return from + limit < code.length ? cut : undefined;
 }
-// `const`, `let` and `var` bindings of a single name with an initializer,
-// typed or not: the keyword, the name and the index where the value starts.
 function declarations(code) {
     const result = [];
     for (const match of code.matchAll(/(?<![.\w$])(const|let|var)\s+([A-Za-z_$][\w$]*)\s*/g)) {
         let j = (match.index ?? 0) + match[0].length;
         if (code[j] === ':') {
             const end = annotationEnd(code, j + 1);
+            if (end === cut) {
+                result.push({ keyword: match[1], name: match[2], at: j + 1, unread: true });
+                continue;
+            }
             if (end === undefined)
                 continue;
             j = end;
         }
-        const value = code.slice(j, j + 64).match(/^=(?![=>])\s*/);
-        if (value)
-            result.push({ keyword: match[1], name: match[2], at: j + value[0].length });
+        if (code[j] !== '=' || code[j + 1] === '=' || code[j + 1] === '>')
+            continue;
+        // Comments are blanked, so a long one between `=` and the value is
+        // whitespace to skip, not a value.
+        let at = j + 1;
+        while (/\s/.test(code[at] ?? ''))
+            at++;
+        result.push({ keyword: match[1], name: match[2], at });
     }
     return result;
 }
@@ -436,17 +501,25 @@ function functionExpressionAt(code, index) {
 }
 // The expression starting at `at` when it is an obvious alias or extension of
 // a name: `name`, `ns.test`, or either followed by `.extend(…)` any number
-// of times, ending the declaration. Returns the name, or undefined.
+// of times, typed or not, as in `.extend<{ get: () => string }>(…)`, ending
+// the declaration. Returns the name, not `certain` when type arguments are
+// longer than doctor reads, or undefined.
 function aliasOf(code, at) {
     const head = code.slice(at, at + 256).match(/^([A-Za-z_$][\w$]*)(?:\s*\.\s*(test)(?![\w$]))?/);
     if (!head)
         return undefined;
+    const origin = head[2] ? `${head[1]}.test` : head[1];
     let j = at + head[0].length;
     for (;;) {
-        const extend = code.slice(j, j + 256).match(/^\s*\.\s*extend\s*(?:<[^<>()]{0,128}>\s*)?\(/);
+        const extend = code.slice(j, j + 256).match(/^\s*\.\s*extend(?![\w$])/);
         if (!extend)
             break;
-        const close = matching(code, j + extend[0].length - 1, code.length);
+        const open = callOpen(code, j + extend[0].length);
+        if (open === cut)
+            return { origin, certain: false };
+        if (open === undefined)
+            return undefined;
+        const close = matching(code, open, code.length);
         if (close === undefined)
             return undefined;
         j = close + 1;
@@ -456,23 +529,32 @@ function aliasOf(code, at) {
     const rest = code.slice(j, j + 256).match(/^(\s*)(\S?)([\w$]*)/);
     const ends = !rest || !rest[2] || ';,)}]'.includes(rest[2])
         || (/[\r\n]/.test(rest[1]) && /[A-Za-z_$}]/.test(rest[2]) && !['as', 'satisfies', 'in', 'instanceof'].includes(rest[2] + rest[3]));
-    return ends ? (head[2] ? `${head[1]}.test` : head[1]) : undefined;
+    return ends ? { origin, certain: true } : undefined;
 }
 // `names` with every local declared as an obvious alias or extension of one
 // of them, transitively: `const t = test`, `const t = test.extend({ … })`,
 // `const t = base.extend(…).extend(…)` or `const t = pw.test.extend(…)`.
-function testAliases(code, names) {
+// With `possible`, a binding doctor reads only in part, behind type
+// arguments or an annotation longer than it reads, counts as one too: use
+// it to find what may register tests. Without it such a binding does not
+// count: use that for what is known to be a test, such as a test body.
+function testAliases(code, names, possible = false) {
     const result = new Set(names);
     const declared = [];
-    for (const { name, at } of declarations(code)) {
-        const origin = aliasOf(code, at);
-        if (origin)
-            declared.push([name, origin]);
+    for (const { name, at, unread } of declarations(code)) {
+        if (unread) {
+            if (possible)
+                declared.push([name, undefined]);
+            continue;
+        }
+        const alias = aliasOf(code, at);
+        if (alias && (alias.certain || possible))
+            declared.push([name, alias.origin]);
     }
     for (let grew = true; grew;) {
         grew = false;
         for (const [local, origin] of declared) {
-            if (!result.has(local) && result.has(origin)) {
+            if (!result.has(local) && (origin === undefined || result.has(origin))) {
                 result.add(local);
                 grew = true;
             }
@@ -521,7 +603,9 @@ function functionEnd(code, from, arrow) {
 // `const body = async ({ page }) => {}`. A name declared more than once, or
 // also imported, is left out. A function expression's own name, as in
 // `const body = async function body() {}` or `wrap(function body() {})`, is
-// bound only inside it, so it declares nothing here.
+// bound only inside it, so it declares nothing here. A const doctor reads
+// only in part, behind a long annotation or with a parameter list longer
+// than it reads, may be a function: it is kept, with no known body.
 function localFunctions(code, bindings) {
     const declared = new Map();
     const count = (name) => declared.set(name, (declared.get(name) ?? 0) + 1);
@@ -540,9 +624,13 @@ function localFunctions(code, bindings) {
         const close = matching(code, open);
         functions.set(match[1], { open, start, end: close === undefined ? undefined : functionEnd(code, close + 1, false) });
     }
-    for (const { keyword, name, at } of declarations(code)) {
+    for (const { keyword, name, at, unread } of declarations(code)) {
         if (keyword !== 'const')
             continue;
+        if (unread) {
+            functions.set(name, { open: -1, start: at });
+            continue;
+        }
         const value = code.slice(at, at + 512).match(/^(?:async\b\s*)?(?:(function\b\s*\*?\s*[\w$]*\s*)?(?:<[^<>()]{0,128}>\s*)?\(|[A-Za-z_$][\w$]*\s*=>)/);
         if (!value)
             continue;
@@ -553,10 +641,16 @@ function localFunctions(code, bindings) {
         }
         const open = at + value[0].length - 1;
         const close = matching(code, open);
-        // A parenthesized value, `(1, 2)`, is not a function.
-        if (!value[1] && (close === undefined || !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(code.slice(close + 1, close + 300))))
+        if (close === undefined) {
+            functions.set(name, { open, start: at });
             continue;
-        functions.set(name, { open, start: at, end: close === undefined ? undefined : functionEnd(code, close + 1, !value[1]) });
+        }
+        // A parenthesized value, `(1, 2)`, is not a function; one followed by
+        // more space or return type than doctor reads may be.
+        const after = code.slice(close + 1, close + 300);
+        if (!value[1] && !/^\s*(?::[^=;{}()]{0,256})?\s*=>/.test(after) && !(close + 300 < code.length && /^\s*(?::[^=;{}()]*)?$/.test(after)))
+            continue;
+        functions.set(name, { open, start: at, end: functionEnd(code, close + 1, !value[1]) });
     }
     const imported = new Set(bindings.map(binding => binding.local));
     for (const name of [...functions.keys()]) {
@@ -607,22 +701,33 @@ const titledMembers = new Set(['only', 'skip', 'fixme', 'fail', 'slow', 'step'])
 // `registrars` names the bindings already known to be test functions. A
 // function passed by name to one of them, or to `local`, as a test or hook
 // callback is a test body too, so a titled call inside it is a helper.
+// Type arguments, `it.extend<{ a: () => void }>(…)`, may come before the
+// call. A call doctor reads only in part, behind type arguments or with
+// arguments longer than it reads, may be titled and take a callback after
+// what was read, so it counts unless what was read rules it out.
 function registersTests(code, local, registrars, functions = new Map()) {
     const name = local.replace(/\$/g, '\\$');
-    const use = new RegExp(`(?<![.\\w$])${name}\\s*((?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*)(?:<[^<>()]{0,128}>\\s*)?\\(`, 'g');
+    const use = new RegExp(`(?<![.\\w$])${name}\\s*((?:\\.\\s*[A-Za-z_$][\\w$]*\\s*)*)`, 'g');
     // Titled calls with a callback, kept until their nesting is known.
     const titledCalls = [];
     for (const match of code.matchAll(use)) {
-        if (memberAt(code, match.index ?? 0))
+        const at = match.index ?? 0;
+        const open = callOpen(code, at + match[0].length);
+        if (open === undefined || memberAt(code, at))
             continue;
         const members = match[1].split('.').map(member => member.trim()).filter(Boolean);
         if (members.length && declaring.has(members[0]))
             return true;
         if (members.length && !titledMembers.has(members[0]))
             continue;
-        const [title, ...rest] = leadingArguments(code, (match.index ?? 0) + match[0].length - 1, 3);
-        if (titled.test(title) && rest.some(arg => callbackArgument(arg, functions)))
-            titledCalls.push(match.index ?? 0);
+        if (open === cut) {
+            titledCalls.push(at);
+            continue;
+        }
+        const { args: [title, ...rest], complete } = leadingArguments(code, open, 3);
+        const mayBeTitled = titled.test(title) || (!complete && !rest.length && !title.trim());
+        if (mayBeTitled && (!complete || rest.some(arg => callbackArgument(arg, functions))))
+            titledCalls.push(at);
     }
     const nesting = new Set([...registrars, local]);
     const bodies = namedTestBodies(code, nesting, functions);

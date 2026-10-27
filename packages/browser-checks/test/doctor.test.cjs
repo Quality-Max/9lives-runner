@@ -667,6 +667,122 @@ test('spec/import still fails a plain spec whose named test or hook callback cal
   } finally { fs.rmSync(suites, { recursive: true, force: true }); }
 });
 
+// Doctor reads a call's arguments, a type annotation and a parameter list
+// within a bound. A spec it reads only in part is not verified: the call may
+// register a test, so spec/import is a warning, never missing. A block
+// comment of `length` characters stands in for any long text.
+const comment = length => `/*${'c'.repeat(length - 4)}*/`;
+test('spec/import treats a test call doctor reads only in part as a possible registration', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const tail = "test('y', async ({ page }) => {});\n";
+  // `('x', ` takes 6 characters from the `(`, the callback 22 and `)` 1, so
+  // with a 4,067-character comment the call ends on the last character read.
+  const titled = length => `it('x', ${comment(length)}async ({ page }) => {});\n`;
+  const root = specProject({
+    'complete-4067.spec.ts': poison + plain + titled(4067) + tail,
+    'cut-after-callback-4068.spec.ts': poison + plain + titled(4068) + tail,
+    'cut-in-callback-4089.spec.ts': poison + plain + titled(4089) + tail,
+    'cut-before-callback-4090.spec.ts': poison + plain + titled(4090) + tail,
+    'cut-before-callback-5000.spec.ts': poison + plain + titled(5000) + tail,
+    'cut-before-title.spec.ts': poison + plain + `it(${comment(5000)}'x', async ({ page }) => {});\n` + tail,
+    'cut-in-details.spec.ts': poison + plain + `it('x', { tag: '@a', ${comment(5000)} }, async ({ page }) => {});\n` + tail,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const check = byName(specChecks(path.join(root, name)), 'spec/import');
+      assert.equal(check.status, 'warning', name);
+      assert.match(check.message, /registers tests with it from another module/, name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // Reading in part does not turn a helper into a test: a cut-off step
+  // wrapper in a test body, an untitled call, or a fixtures name never
+  // called, still leaves the plain spec missing.
+  const step = "import { test } from '@playwright/test';\nimport { step, login, it } from './helpers';\n";
+  const helpers = specProject({
+    'step.spec.ts': poison + step + `test('x', async ({ page }) => { await step('fill', ${comment(5000)}async () => {}); });\n`,
+    'untitled.spec.ts': poison + step + `login(page, ${comment(5000)}async () => {});\n` + tail,
+    'plain-cut.spec.ts': poison + step + `test('x', ${comment(5000)}async ({ page }) => { it; });\n`,
+  });
+  try {
+    for (const name of fs.readdirSync(helpers)) {
+      assert.equal(byName(specChecks(path.join(helpers, name)), 'spec/import').status, 'missing', name);
+    }
+  } finally { fs.rmSync(helpers, { recursive: true, force: true }); }
+});
+
+// A callback declared with an annotation, a parameter list or a gap doctor
+// reads only in part may still be a function passed to a fixtures test.
+test('spec/import treats a declared callback doctor reads only in part as a possible callback', () => {
+  const plain = "import { test } from '@playwright/test';\nimport { it } from './fixtures';\n";
+  const call = "it('x', body);\n";
+  const root = specProject({
+    'annotation-1000.spec.ts': poison + plain + `const body: ${comment(1000)}Body = async ({ page }) => {};\n` + call,
+    'annotation-1100.spec.ts': poison + plain + `const body: ${comment(1100)}Body = async ({ page }) => {};\n` + call,
+    'after-equals.spec.ts': poison + plain + `const body = ${comment(100)}async ({ page }) => {};\n` + call,
+    'parameters.spec.ts': poison + plain + `const body = async ({ page, ${comment(5000)} }) => {};\n` + call,
+  });
+  try {
+    for (const name of fs.readdirSync(root)) {
+      assert.equal(byName(specChecks(path.join(root, name)), 'spec/import').status, 'warning', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Type arguments may nest angle brackets, parentheses, braces, brackets and
+// arrow types: `base.extend<{ values: Array<string> }>(…)`.
+test('spec/import reads typed extensions of a fixtures test and of the plain test', () => {
+  const plain = "import { test } from '@playwright/test';\n";
+  const typed = ['{ values: Array<string> }', '{ getValue: () => string }', '{ map: Map<string, [number, (x: { a: 1 }) => void]> }'];
+  const root = specProject(Object.fromEntries(typed.map((type, k) => [`base-${k}.spec.ts`,
+    poison + plain + `import { base } from './fixtures';\nconst t = base.extend<${type}>({});\nt('x', async ({ page }) => {});\n`])));
+  try {
+    for (const name of fs.readdirSync(root)) {
+      const checks = specChecks(path.join(root, name));
+      assert.equal(byName(checks, 'spec/import').status, 'warning', name);
+      assert.match(byName(checks, 'spec/import').message, /registers tests with base from another module/, name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', name);
+    }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  // A typed extension of the plain test is the plain test: a step helper in
+  // its callback is inside a test body.
+  const step = plain + "import { step } from './helpers';\n";
+  const inside = "('x', async ({ page }) => { await step('fill', async () => {}); });\n";
+  const aliased = specProject({
+    ...Object.fromEntries(typed.map((type, k) => [`plain-${k}.spec.ts`, poison + step + `const t = test.extend<${type}>({});\nt` + inside])),
+    'chained.spec.ts': poison + step + "const t = test.extend<{ a: () => void }>({})\n  .extend<{ b: Array<() => string> }>({});\nt" + inside,
+  });
+  try {
+    for (const name of fs.readdirSync(aliased)) {
+      const checks = specChecks(path.join(aliased, name));
+      assert.equal(byName(checks, 'spec/import').status, 'missing', name);
+      assert.equal(byName(checks, 'spec/fixtures').status, 'ok', name);
+    }
+  } finally { fs.rmSync(aliased, { recursive: true, force: true }); }
+  // Beside the SDK, a typed extension of the plain test still registers
+  // uninstrumented tests.
+  const mixed = specProject({
+    'mixed.spec.ts': poison + "import { test } from '@9l/playwright';\nimport { test as pw } from '@playwright/test';\nconst t = pw.extend<{ getValue: () => string }>({});\nt('x', async ({ page }) => {});\n",
+  });
+  try {
+    const check = byName(specChecks(path.join(mixed, 'mixed.spec.ts')), 'spec/import');
+    assert.equal(check.status, 'warning');
+    assert.match(check.message, /also registers tests with test from @playwright\/test/);
+  } finally { fs.rmSync(mixed, { recursive: true, force: true }); }
+  // Type arguments longer than doctor reads are not verified either way: a
+  // fixtures extension may register tests, and a plain extension is not
+  // proven to be the plain test.
+  const long = `{ ${comment(2000)} a: Array<string> }`;
+  const cut = specProject({
+    'base.spec.ts': poison + plain + `import { base } from './fixtures';\nconst t = base.extend<${long}>({});\nt('x', async ({ page }) => {});\n`,
+    'plain.spec.ts': poison + step + `const t = test.extend<${long}>({});\nt` + inside,
+  });
+  try {
+    for (const name of fs.readdirSync(cut)) {
+      assert.equal(byName(specChecks(path.join(cut, name)), 'spec/import').status, 'warning', name);
+    }
+  } finally { fs.rmSync(cut, { recursive: true, force: true }); }
+});
+
 // projects and spreads can change which testDir applies, however written.
 test('spec/config leaves testDir unverified for shorthand projects, spreads and merges', () => {
   const config = body => poison + "import { defineConfig, devices } from '@playwright/test';\nimport shared from './shared';\n" + body;
