@@ -35,14 +35,23 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
 		return fmt.Errorf("configure owned process job: %w", err), nil
 	}
-	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
-	command.WaitDelay = 50 * time.Millisecond
-	if err := command.Start(); err != nil {
+	output, err := attachOwnedOutput(command)
+	if err != nil {
 		return err, nil
+	}
+	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
+	// Stdout and stderr are owned pipes drained after job cleanup; WaitDelay
+	// now only bounds feeding stdin to a process that stopped reading it.
+	command.WaitDelay = 50 * time.Millisecond
+	err = command.Start()
+	output.closeChildEnds()
+	if err != nil {
+		return output.finish(ctx, err), nil
 	}
 	abort := func(err error) (error, *Termination) {
 		_ = command.Process.Kill()
 		_ = command.Wait()
+		_ = output.finish(ctx, nil)
 		return err, nil
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(command.Process.Pid))
@@ -66,13 +75,13 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 		}
 		active, queryErr := activeJobProcesses(job)
 		if queryErr != nil {
-			return errors.Join(err, queryErr), nil
+			return output.finish(ctx, errors.Join(err, queryErr)), nil
 		}
 		if active == 0 {
-			return err, nil
+			return output.finish(ctx, err), nil
 		}
 		termination := &Termination{Kind: "cleanup", Detail: "leader exited while owned children remained"}
-		return errors.Join(err, stopJob(job, termination)), termination
+		return output.finish(ctx, errors.Join(err, stopJob(job, termination))), termination
 	case <-ctx.Done():
 		termination := &Termination{Kind: "canceled", Detail: ctx.Err().Error()}
 		if ctx.Err() == context.DeadlineExceeded {
@@ -86,7 +95,7 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 			job = 0
 			_ = command.Process.Kill()
 		}
-		return errors.Join(<-done, stopErr), termination
+		return output.finish(ctx, errors.Join(<-done, stopErr)), termination
 	}
 }
 

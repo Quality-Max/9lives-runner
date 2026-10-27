@@ -8,6 +8,21 @@ SDK versions.
 
 ### CLI
 
+- Output a command wrote before it exited is no longer lost when the machine
+  is busy. Test-runner stdout and stderr, healing provider CLIs and the
+  helper processes the runner owns used to drop output the runner had not yet
+  read 50 ms after the process exited: a failing provider then reported no
+  reason (`codex provider failed (exit 1)`), and a successful exit could
+  return truncated output as complete. Output is now read until the process
+  group has been stopped and every byte already written has reached its
+  destination, however slowly. Only a pipe that a writer outside the group
+  still holds open, with nothing left unread, is closed after 5 s. After that
+  the runner reads at most what an exited writer can have left in a pipe
+  (1 MiB) for at most 30 s, so a writer outside the group that never stops
+  writing cannot keep the command from returning. Cancelling the run or
+  reaching its deadline ends the 5 s wait at once and fails the command. A
+  destination that rejects output, or a pipe the runner had to close without
+  showing it was drained, fails an otherwise successful command.
 - `9l doctor --sdk <spec>` no longer reports `spec/import` as `missing`, and
   so exits 2, for a valid spec that registers its tests through a named
   import from a fixtures module, such as `import { it } from './fixtures'`
@@ -28,10 +43,25 @@ SDK versions.
   of such a test function too. Type arguments are read in balance, so
   `base.extend<{ values: Array<string> }>(…)` from a fixtures module may
   register tests, and `test.extend<{ get: () => string }>(…)` is still the
-  plain test. Doctor reads call arguments, annotations and type arguments
-  only within a bound; a call or callback it reads only in part, such as one
-  behind a 5,000-character comment, is not verified and counts as a possible
-  test registration rather than as proof that there is none.
+  plain test. Every declarator of a `const`, `let` or `var` list is read, so
+  `const other = 1, body = async ({ page }) => {}` declares `body` and
+  `const other = 1, t = test.extend({})` is still the plain test. A callback
+  may declare type parameters, inline, `it('x', async <T,>({ page }) => {})`,
+  or by name, `async function body<T extends Record<string, unknown>>(…)`.
+  Doctor reads call arguments, annotations, type arguments and a declared
+  callback's head only within a bound; a call or callback it reads only in
+  part, such as one behind a 5,000-character comment or a 600-character one
+  between `async` and its parameters, is not verified and counts as a
+  possible test registration rather than as proof that there is none.
+
+### SDK
+
+- Qualified with `@playwright/test` 1.64.1, which fixes Chromium 155 and
+  later aborting a preflighted cross-origin redirect with `net::ERR_ABORTED`
+  whenever any route is registered. The `playwright-compat` CI job runs the
+  unit, browser, assessment and packed-consumer checks on it, and install
+  examples and `9l doctor` repair commands now name 1.64.1. 1.64.0 stays
+  qualified; the peer range is unchanged (`>=1.61.1 <2`).
 
 ### SDK
 

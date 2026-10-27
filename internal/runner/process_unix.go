@@ -17,10 +17,18 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 	if err := ctx.Err(); err != nil {
 		return err, nil
 	}
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.WaitDelay = 50 * time.Millisecond
-	if err := command.Start(); err != nil {
+	output, err := attachOwnedOutput(command)
+	if err != nil {
 		return err, nil
+	}
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Stdout and stderr are owned pipes drained after cleanup; WaitDelay now
+	// only bounds feeding stdin to a process that stopped reading it.
+	command.WaitDelay = 50 * time.Millisecond
+	err = command.Start()
+	output.closeChildEnds()
+	if err != nil {
+		return output.finish(ctx, err), nil
 	}
 	tree := newUnixProcessTree(command.Process.Pid)
 	tree.refreshRequired()
@@ -43,13 +51,13 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 			// A successful launcher can leave children in its group or a separate
 			// session. Clean owned children before reporting completion.
 			if !groupAlive(command.Process.Pid) && len(tree.live) == 0 {
-				return errors.Join(err, tree.err, ctx.Err()), observed
+				return output.finish(ctx, errors.Join(err, tree.err, ctx.Err())), observed
 			}
 			termination := stopGroup(command.Process.Pid, "cleanup", "leader exited while owned children remained", tree)
 			if observed != nil {
 				termination.ObservedSignal = observed.ObservedSignal
 			}
-			return errors.Join(err, tree.err, ctx.Err()), termination
+			return output.finish(ctx, errors.Join(err, tree.err, ctx.Err())), termination
 		case <-ctx.Done():
 			termination := &Termination{Detail: ctx.Err().Error()}
 			if ctx.Err() == context.DeadlineExceeded {
@@ -63,7 +71,7 @@ func startAndWait(ctx context.Context, command *exec.Cmd) (error, *Termination) 
 			if observed := observedSignal(command); observed != nil {
 				termination.ObservedSignal = observed.ObservedSignal
 			}
-			return errors.Join(err, tree.err, ctx.Err()), termination
+			return output.finish(ctx, errors.Join(err, tree.err, ctx.Err())), termination
 		}
 	}
 }
