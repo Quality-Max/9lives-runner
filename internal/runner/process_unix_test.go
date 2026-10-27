@@ -83,12 +83,22 @@ func TestOwnedCommandBoundsOutputHeldOutsideTheGroup(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("drain was not bounded: %s", elapsed)
 	}
-	lines := strings.Fields(stdout.String())
-	if len(lines) != 2 || lines[1] != "leader" {
-		t.Fatalf("stdout=%q", stdout.String())
+	// Both writers' lines are kept; their order depends on when perl starts,
+	// which on a loaded machine can be after the leader has printed.
+	var pid int
+	leader := false
+	for _, line := range strings.Fields(stdout.String()) {
+		if line == "leader" {
+			leader = true
+		} else if n, err := strconv.Atoi(line); err == nil {
+			pid = n
+		}
 	}
-	if pid, err := strconv.Atoi(lines[0]); err == nil {
+	if pid > 0 {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+	if len(strings.Fields(stdout.String())) != 2 || !leader || pid == 0 {
+		t.Fatalf("stdout=%q", stdout.String())
 	}
 }
 
