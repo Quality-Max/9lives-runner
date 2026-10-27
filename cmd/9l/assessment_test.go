@@ -166,7 +166,7 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := assessCommand([]string{"tests"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
-		t.Fatalf("suite failed: code=%d stderr=%q", code, stderr.String())
+		t.Fatalf("suite failed: code=%d stderr=%q report=%s", code, stderr.String(), stdout.String())
 	}
 	for _, want := range []string{"file \"tests/a.spec.ts\":\n", "file \"tests/nested/b.test.ts\":\n", "Summary: 2 files (2 assessed, 0 not assessed), 2 tests, 2 findings\n  absence-after-wait: 1\n  fixed-wait: 1\n"} {
 		if !strings.Contains(stdout.String(), want) {

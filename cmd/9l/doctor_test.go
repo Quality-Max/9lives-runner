@@ -311,9 +311,8 @@ func TestDoctorSpecImportingPlaywrightTestExitsTwo(t *testing.T) {
 	}
 }
 
-// pathWithOnlyNode returns a PATH holding just a link to Node, so a test can
-// control which 9l, if any, PATH finds.
-func pathWithOnlyNode(t *testing.T) string {
+// pathWithOnlyRuntimeTools excludes 9l while retaining Node and Unix supervision.
+func pathWithOnlyRuntimeTools(t *testing.T) string {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -322,6 +321,15 @@ func pathWithOnlyNode(t *testing.T) string {
 	dir := t.TempDir()
 	if err := os.Symlink(node, filepath.Join(dir, filepath.Base(node))); err != nil {
 		t.Skipf("cannot link Node: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		ps, err := exec.LookPath("ps")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(ps, filepath.Join(dir, "ps")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return dir
 }
@@ -346,7 +354,7 @@ func doctorChecks(t *testing.T, args ...string) (int, string, map[string]doctorC
 // A 9l missing from PATH is a warning: a host configured with plain 9l
 // cannot start the executable doctor runs from.
 func TestDoctorWarnsWhenNoNineLIsOnPath(t *testing.T) {
-	t.Setenv("PATH", pathWithOnlyNode(t))
+	t.Setenv("PATH", pathWithOnlyRuntimeTools(t))
 	t.Chdir(t.TempDir())
 	if facts := executableFacts(false); facts["otherOnPath"] != false || facts["self"] != nil {
 		t.Fatalf("facts: %v", facts)
@@ -361,7 +369,7 @@ func TestDoctorWarnsWhenNoNineLIsOnPath(t *testing.T) {
 // reports the absolute file it found and warns that hosts started elsewhere
 // find another 9l or none.
 func TestDoctorReportsARelativePathEntry(t *testing.T) {
-	nodeDir := pathWithOnlyNode(t)
+	nodeDir := pathWithOnlyRuntimeTools(t)
 	work := t.TempDir()
 	name, script := "9l", "#!/bin/sh\nexit 0\n"
 	if runtime.GOOS == "windows" {
@@ -392,7 +400,7 @@ func TestDoctorReportsARelativePathEntry(t *testing.T) {
 // When PATH finds this very executable the check is ok, and --paths still
 // names the file, so a user can see which build that is.
 func TestDoctorNamesTheExecutableOnPathWithPaths(t *testing.T) {
-	nodeDir := pathWithOnlyNode(t)
+	nodeDir := pathWithOnlyRuntimeTools(t)
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
