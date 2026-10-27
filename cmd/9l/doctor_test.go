@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -459,6 +460,16 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 		"node_modules/@playwright/test/index.js":     "throw new Error('fixture-entry-must-not-run');\n",
 		"node_modules/@9l/playwright/index.js":       "throw new Error('fixture-entry-must-not-run');\n",
 		"tests/a.spec.ts":                            "import { test } from './fixtures';\nimport { test as pwTest } from '@playwright/test';\ntest('x', async ({ page }, testInfo) => {});\n",
+		"tests/it.spec.ts":                           "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', async ({ page }) => {});\n",
+		"tests/helper.spec.ts":                       "import { test } from '@playwright/test';\nimport { login } from './helpers';\ntest('x', async ({ page }) => { await login(page); });\n",
+		"tests/extended.spec.ts":                     "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/named.spec.ts":                        "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async ({ page }) => {};\nit('x', body);\n",
+		"tests/annotated.spec.ts":                    "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body: (fixtures: { page: unknown }) => Promise<void> = async ({ page }) => {};\nit('x', body);\n",
+		"tests/self-named.spec.ts":                   "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async function body({ page }) {};\nit('x', body);\n",
+		"tests/named-step.spec.ts":                   "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst body = async ({ page }) => { await step('fill', async () => {}); };\ntest('x', body);\n",
+		"tests/long-comment.spec.ts":                 "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', /*" + strings.Repeat("c", 4996) + "*/ async ({ page }) => {});\ntest('y', async ({ page }) => {});\n",
+		"tests/typed-base.spec.ts":                   "import { test } from '@playwright/test';\nimport { base } from './fixtures';\nconst t = base.extend<{ values: Array<string> }>({});\nt('x', async ({ page }) => {});\n",
+		"tests/typed-extended.spec.ts":               "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend<{ getValue: () => string }>({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
 	})
 	t.Chdir(t.TempDir())
 	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
@@ -480,6 +491,30 @@ func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
 	}
 	if strings.Contains(raw, project) {
 		t.Fatal("doctor printed the project path without --paths")
+	}
+	// A test function imported from a fixtures module under another name,
+	// used as one, is not followed either; a helper beside the plain test is
+	// not a test function, so that spec still fails.
+	// So is one that passes a callback declared in the spec by name, typed
+	// with an arrow type or as a self-named function expression. A step
+	// helper inside a locally extended plain test, typed or not, or inside a
+	// callback passed by name to the plain test, is inside a test body. A
+	// call doctor reads only in part, here behind a long comment, and a
+	// typed extension of a fixtures test may register tests too.
+	for _, spec := range []string{"it.spec.ts", "named.spec.ts", "annotated.spec.ts", "self-named.spec.ts", "long-comment.spec.ts", "typed-base.spec.ts"} {
+		_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
+		if check := it["spec/import"]; check.Status != "warning" || !regexp.MustCompile(`registers tests with (it|base) from another module`).MatchString(check.Message) {
+			t.Fatalf("spec/import with it from fixtures in %s: %+v", spec, check)
+		}
+		if check := it["spec/fixtures"]; check.Status != "ok" {
+			t.Fatalf("spec/fixtures with it from fixtures in %s: %+v", spec, check)
+		}
+	}
+	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts", "named-step.spec.ts", "typed-extended.spec.ts"} {
+		_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
+		if check := helper["spec/import"]; check.Status != "missing" {
+			t.Fatalf("spec/import with a helper in %s: %+v", spec, check)
+		}
 	}
 	_, _, cwd := doctorChecks(t)
 	if cwd["workspace"].Status != "missing" || !strings.Contains(cwd["workspace"].Message, "current directory") {

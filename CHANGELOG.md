@@ -6,6 +6,33 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- `9l doctor --sdk <spec>` no longer reports `spec/import` as `missing`, and
+  so exits 2, for a valid spec that registers its tests through a named
+  import from a fixtures module, such as `import { it } from './fixtures'`
+  where the module exports `base.extend(…)` from `@9l/playwright`, beside an
+  unused `test` from `@playwright/test`. A named import the spec uses the way
+  a test function is used (called with a title and a callback outside any
+  test or hook body, or through `describe`, a hook, `extend` or `only`) is
+  now a warning that the module is not followed. Helpers called any other
+  way, such as `login(page)`, a member call `api.it(…)` or a `step('x', fn)`
+  wrapper inside a test, do not count, so a plain spec that uses them is
+  still `missing`; a local alias or extension of the plain test, such as
+  `const t = test.extend({})`, is the plain test. The callback may be a
+  function the spec declares once and passes by name, `it('x', body)`,
+  typed or not; a named function expression's own name declares nothing
+  outside it. A function passed by name to the plain test or a hook,
+  `test('x', body)` or `test.beforeEach(seed)`, is a test body, so a step
+  wrapper in it does not count either. `spec/fixtures` reads the callbacks
+  of such a test function too. Type arguments are read in balance, so
+  `base.extend<{ values: Array<string> }>(…)` from a fixtures module may
+  register tests, and `test.extend<{ get: () => string }>(…)` is still the
+  plain test. Doctor reads call arguments, annotations and type arguments
+  only within a bound; a call or callback it reads only in part, such as one
+  behind a 5,000-character comment, is not verified and counts as a possible
+  test registration rather than as proof that there is none.
+
 ### Release process
 
 - `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub

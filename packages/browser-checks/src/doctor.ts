@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { Binding, callbackFixtures, calls, importBindings, mergesValues, readsTest, scan } from './source-text';
+import { Binding, LocalFunction, callbackFixtures, calls, importBindings, localFunctions, mergesValues, readsTest, registersTests, scan, testAliases } from './source-text';
 
 export type Diagnostic = { name: string; status: 'ok' | 'warning' | 'missing'; message: string; fix?: string };
 // Engine is what the CLI admits (protocol and capabilities) and can request
@@ -128,13 +128,31 @@ export function proveProject(spec: string): { config?: string; project?: string 
   return { config, project: config ? path.dirname(config) : project };
 }
 
-function importCheck(name: string, code: string, bindings: Binding[], paths: boolean): Diagnostic {
+// Named imports, other than test and expect, that the spec uses the way a
+// test function is used, such as `it` from `export const it = base.extend(…)`
+// in a fixtures module. Doctor does not follow the module, so such a name may
+// be a test from @9l/playwright; a helper such as `login(page)` is not one.
+// Local aliases and extensions, `const t = test.extend(…)`, are the test they
+// come from, so a helper called in their callbacks is inside a test body.
+// A binding doctor reads only in part may be a test it registers with, but
+// is not known to be the plain test, so neither hides a provider.
+function testProviders(code: string, bindings: Binding[], functions: Map<string, LocalFunction>): Binding[] {
+  const registrars = testAliases(code, [
+    ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local),
+    ...bindings.filter(binding => ['*', 'default'].includes(binding.imported)).map(binding => `${binding.local}.test`),
+  ]);
+  return bindings.filter(binding => ![testModule, sdkModule].includes(binding.module) && !['test', 'expect', '*', 'default'].includes(binding.imported)
+    && [...testAliases(code, [binding.local], true)].some(local => registersTests(code, local, registrars, functions)));
+}
+
+function importCheck(name: string, code: string, bindings: Binding[], providers: Binding[], paths: boolean): Diagnostic {
   const local = (module: string) => paths ? module : 'another module';
   const test = bindings.find(binding => binding.local === 'test');
   // Tests registered through a binding from @playwright/test are not
   // instrumented, even when the SDK is imported too, say for its expect.
   const plain = bindings.filter(binding => binding.module === testModule);
   const plainRegisters = plain.some(binding => binding.imported === 'test' ? calls(code, binding.local) : ['*', 'default'].includes(binding.imported) && readsTest(code, binding.local));
+  const provided = (provider: Binding) => `registers tests with ${provider.local} from ${local(provider.module)}, which is not followed; whether those tests come from @9l/playwright is not verified.${plainRegisters ? ' Tests the spec registers with the plain test from @playwright/test are not instrumented.' : ''}`;
   const mixed = { name: 'spec/import', status: 'warning' as const, message: `${name} takes test from @9l/playwright but also registers tests with test from @playwright/test, which prove does not instrument; which tests use which is not verified.` };
   if (test?.module === sdkModule) return plainRegisters ? mixed : { name: 'spec/import', status: 'ok', message: `${name} imports test from @9l/playwright.` };
   // `import { test as base }` then `base.extend`, or `n9l.test` through a namespace.
@@ -150,6 +168,9 @@ function importCheck(name: string, code: string, bindings: Binding[], paths: boo
     if (other) {
       return { name: 'spec/import', status: 'warning', message: `${name} imports test from @playwright/test and also imports from ${local(other.module)}, which is not followed; whether its tests come from @9l/playwright is not verified.` };
     }
+    if (providers.length) {
+      return { name: 'spec/import', status: 'warning', message: `${name} imports test from @playwright/test but ${provided(providers[0])}` };
+    }
     return { name: 'spec/import', status: 'missing',
       message: `${name} imports test from @playwright/test; prove would run its baseline uninstrumented and exit 1 because no browser context was instrumented.`,
       fix: 'import test from @9l/playwright; prove instruments only its page and context fixtures' };
@@ -157,6 +178,7 @@ function importCheck(name: string, code: string, bindings: Binding[], paths: boo
   if (test) {
     return { name: 'spec/import', status: 'warning', message: `${name} imports test from ${local(test.module)}; fixture modules are not followed, so whether that test comes from @9l/playwright is not verified.` };
   }
+  if (providers.length) return { name: 'spec/import', status: 'warning', message: `${name} ${provided(providers[0])}` };
   return { name: 'spec/import', status: 'warning', message: `${name} has no test import doctor can read from @9l/playwright, @playwright/test or a fixtures module; not verified.` };
 }
 
@@ -175,8 +197,10 @@ export function specChecks(spec: string, paths = false): Diagnostic[] {
   } else {
     const scanned = scan(source.text ?? '');
     const bindings = importBindings(scanned);
-    checks.push(importCheck(name, scanned.code, bindings, paths));
-    const fixtures = callbackFixtures(scanned, bindings);
+    const functions = localFunctions(scanned.code, bindings);
+    const providers = testProviders(scanned.code, bindings, functions);
+    checks.push(importCheck(name, scanned.code, bindings, providers, paths));
+    const fixtures = callbackFixtures(scanned, bindings, providers.map(provider => provider.local), functions);
     checks.push(fixtures.has('page') || fixtures.has('context')
       ? { name: 'spec/fixtures', status: 'ok', message: `${name} takes the page or context fixture in a test or hook callback.` }
       : { name: 'spec/fixtures', status: 'warning', message: `${name}: no destructured page or context parameter found in a test or hook callback; prove faults reach only fetch and XHR made through those fixtures.` });
