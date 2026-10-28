@@ -6,6 +6,10 @@ expected behavior and a minimal reproduction. Sanitize receipts before
 sharing; omit credentials, page content and private application data.
 Security reports belong in the [private reporting channel](SECURITY.md).
 
+Participation follows the [code of conduct](CODE_OF_CONDUCT.md). For questions
+and setup help, see [SUPPORT.md](SUPPORT.md). Accessibility feedback is welcome;
+see [ACCESSIBILITY.md](ACCESSIBILITY.md).
+
 Work from current `main` on a focused branch. Preserve existing Playwright
 specs, configuration, test intent and assertions. Keep Go scheduling and
 receipt ownership separate from TypeScript browser fixtures. Read

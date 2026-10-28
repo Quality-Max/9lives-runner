@@ -9,10 +9,10 @@ and a proposed fix when available. Use synthetic data and redact secret values.
 
 ## Supported versions
 
-This early project focuses fixes on current `main` and the latest release,
-currently 0.5.1 (CLI v0.5.1 and `@9l/playwright` 0.5.1, which share one
-version). Older releases and development snapshots have no
-separate security maintenance commitment.
+This early project focuses fixes on current `main` and the
+[latest release](https://github.com/Quality-Max/9lives-runner/releases/latest).
+The CLI and `@9l/playwright` share one version. Older releases and development
+snapshots have no separate security maintenance commitment.
 
 ## Local execution boundaries
 

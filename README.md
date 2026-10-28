@@ -384,9 +384,11 @@ from Playwright and browser costs.
 
 ## Support and responsible disclosure
 
-Use [GitHub Issues](https://github.com/Quality-Max/9lives-runner/issues) for
-non-sensitive usage and documentation questions. Report vulnerabilities
-privately using the [security policy](SECURITY.md).
+Use [Discussions](https://github.com/Quality-Max/9lives-runner/discussions) for
+questions and [GitHub Issues](https://github.com/Quality-Max/9lives-runner/issues/new/choose)
+for bugs and feature proposals. See the [support guide](SUPPORT.md),
+[code of conduct](CODE_OF_CONDUCT.md), and [accessibility statement](ACCESSIBILITY.md).
+Report vulnerabilities privately using the [security policy](SECURITY.md).
 
 ## Development
 
