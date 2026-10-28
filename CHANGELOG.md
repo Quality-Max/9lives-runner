@@ -6,6 +6,8 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.5 — 2026-10-28
+
 ### Security
 
 - `9l scan`, `9l inspect` and the `scan_url` and `inspect_page` MCP tools no
