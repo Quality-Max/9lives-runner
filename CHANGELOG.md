@@ -6,6 +6,30 @@ SDK versions.
 
 ## Unreleased
 
+### Security
+
+- `9l scan`, `9l inspect` and the `scan_url` and `inspect_page` MCP tools no
+  longer let a redirect inside the browser reach a destination the network
+  policy refuses. Chromium follows redirects without asking the browser
+  context's route handler again, so a navigation, image, script, in-page
+  fetch or same-origin link check whose first URL passed the policy could be
+  redirected to a private, link-local or another loopback address (a cloud
+  metadata endpoint, for example) and was requested. A navigation redirected
+  that way loaded, and `inspect` could return what it showed. The browser now
+  reaches the network only through a local proxy in the helper, which checks
+  every hop of every request and connects only to an address that passed the
+  policy when it resolved the name. This also pins the browser's connections
+  against DNS rebinding, closing the browser half of #108. A hop the proxy
+  refuses, or cannot connect to, ends as a network failure in the page:
+  `net::ERR_TUNNEL_CONNECTION_FAILED` for HTTPS, which goes through a CONNECT
+  tunnel, and `net::ERR_EMPTY_RESPONSE` for plain HTTP, rather than the
+  browser's own connection error. A first URL the policy refuses is still
+  blocked before it leaves the browser, as before.
+- `golang.org/x/net` is 0.62.0, which fixes GO-2026-6860 (quadratic time
+  coalescing text nodes when parsing HTML, reachable through the page snapshot
+  healing parses) and GO-2026-6866. The HTTP/2 advisories fixed in 0.60.0 did
+  not reach code 9l calls.
+
 ## 0.5.4 — 2026-10-28
 
 ### CLI

@@ -222,14 +222,13 @@ scan checks same-origin links with the session, except links whose path or
 query names a sign-out or data change (`logout`, `sign_out`, `delete`,
 `remove`, `unsubscribe` and similar): those are reported as skipped `info`
 findings rather than requested. Use `--max-links 0` to request none.
-Destinations are checked before each request. Link checks requested from
-Node check the address they connect to as well, on every redirect, so a
-hostname whose DNS answer changes after the first check (DNS rebinding) is
-still refused; the browser's navigation, subrequests and WebSockets are not
-yet pinned that way (#108). One more gap: same-origin links the page itself requests are followed
-through redirects inside Chromium, where only the first URL is checked, so
-such a link that redirects to a private or another loopback address is not
-yet refused (#108).
+Destinations are checked before each request and again for the address
+each connection is made to, on every redirect, so a hostname whose DNS answer
+changes after the first check (DNS rebinding) is still refused. Link checks
+requested from Node do this themselves; the browser reaches the network only
+through a local proxy in the helper that does the same for its navigation,
+subrequests, in-page fetches and WebSockets, so a redirect inside the browser
+is checked hop by hop as well.
 
 `scan` and `inspect` are observations from one cold page load on this
 machine, not field data. They run in a Node helper embedded in the binary,

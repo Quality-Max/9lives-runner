@@ -39,7 +39,7 @@ export async function assertSafeNetworkUrl(input: string | URL, options: Network
 /** A refusal by the policy, kept apart from transport failures so its text reaches the caller. */
 class NetworkPolicyRefusal extends Error {}
 
-function bareHostname(url: URL): string {
+export function bareHostname(url: URL): string {
   return url.hostname.replace(/^\[|\]$/g, '');
 }
 
@@ -72,7 +72,7 @@ function assertPermittedAddresses(
  * failed lookup reads the same as a private answer. Address literals are not
  * looked up by the socket; the check already covered them.
  */
-function pinnedLookup(url: URL, options: NetworkPolicyOptions): LookupFunction {
+export function pinnedLookup(url: URL, options: NetworkPolicyOptions): LookupFunction {
   const hostname = bareHostname(url);
   return (host, lookupOptions, callback) => {
     void (async () => {

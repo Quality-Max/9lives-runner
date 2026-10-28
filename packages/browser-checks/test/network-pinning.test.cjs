@@ -238,3 +238,112 @@ test('too many redirects fail with the redirect limit', async (t) => {
   );
   assert.equal(target.hits.length, 3);
 });
+
+// The browser's side (#108): every hop the browser requests goes through the
+// policy proxy, which resolves the name when it connects and refuses unless
+// every answer passes the policy, so the address checked is the address used.
+const { startPolicyProxy } = require('../dist/policy-proxy.js');
+
+async function proxy(t, policy) {
+  const started = await startPolicyProxy(policy);
+  t.after(() => started.close());
+  const { port } = new URL(started.server);
+  return { port };
+}
+
+/** A plain HTTP request sent the way a browser sends it to a proxy: the absolute URL as the request target. */
+function viaProxy(proxyPort, url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({ host: '127.0.0.1', port: proxyPort, path: url, headers: { host: new URL(url).host, ...headers } });
+    request.on('response', (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => (body += chunk));
+      response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body }));
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+/** A CONNECT to `authority`; resolves with the proxy's status and, when it is 200, the tunnelled socket. */
+function connectViaProxy(t, proxyPort, authority) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({ host: '127.0.0.1', port: proxyPort, method: 'CONNECT', path: authority });
+    request.on('connect', (response, socket) => {
+      t.after(() => socket.destroy());
+      resolve({ status: response.statusCode, socket });
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+test('the proxy refuses a plain request whose name answers loopback when it connects', async (t) => {
+  const target = await server(t, ok);
+  const { port } = await proxy(t, { lookup: loopbackResolver });
+  await assert.rejects(viaProxy(port, `${target.origin}/secret`), /socket hang up|ECONNRESET/);
+  assert.deepEqual(target.hits, [], 'the loopback server was never reached');
+});
+
+test('the proxy refuses an address literal it does not resolve', async (t) => {
+  const target = await server(t, ok);
+  const { port } = await proxy(t, {});
+  await assert.rejects(viaProxy(port, `${target.origin.replace('localhost', '127.0.0.1')}/secret`), /socket hang up|ECONNRESET/);
+  const tunnel = await connectViaProxy(t, port, `127.0.0.1:${new URL(target.origin).port}`);
+  assert.equal(tunnel.status, 403);
+  assert.deepEqual(target.hits, []);
+});
+
+test('the proxy forwards the approved origin end to end and refuses another loopback origin', async (t) => {
+  const approved = await server(t, (req, res) => {
+    res.writeHead(201, { 'content-type': 'text/plain', 'x-probe': req.headers['x-probe'] ?? 'missing', connection: 'x-hop', 'x-hop': 'dropped' });
+    res.end(`seen ${req.headers['proxy-authorization'] ? 'proxy credentials' : 'no proxy credentials'}`);
+  });
+  const other = await server(t, ok);
+  const { port } = await proxy(t, { allowPrivateNetwork: true, privateNetworkOrigin: approved.origin, lookup: loopbackResolver });
+
+  const response = await viaProxy(port, `${approved.origin}/page?x=1`, { 'x-probe': 'kept', 'proxy-authorization': 'Basic eDp5' });
+  assert.equal(response.status, 201);
+  assert.equal(response.headers['x-probe'], 'kept');
+  assert.equal(response.headers['x-hop'], undefined, 'a header the Connection header names is not forwarded');
+  assert.equal(response.body, 'seen no proxy credentials');
+  assert.deepEqual(approved.hits, ['/page?x=1']);
+
+  await assert.rejects(viaProxy(port, `${other.origin}/page`), /socket hang up|ECONNRESET/);
+  assert.deepEqual(other.hits, [], 'the second loopback origin was never reached');
+});
+
+test('the proxy tunnels CONNECT only to a destination the policy permits when it connects', async (t) => {
+  const tunnelled = new Set();
+  const echo = net.createServer((socket) => {
+    tunnelled.add(socket);
+    socket.on('error', () => {});
+    socket.pipe(socket);
+  });
+  await new Promise((resolve) => echo.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    for (const socket of tunnelled) socket.destroy();
+    return new Promise((resolve) => echo.close(resolve));
+  });
+  const echoPort = echo.address().port;
+
+  // CONNECT carries no scheme; the origin it is judged as is https.
+  const consented = await proxy(t, { allowPrivateNetwork: true, privateNetworkOrigin: `https://localhost:${echoPort}`, lookup: loopbackResolver });
+  const tunnel = await connectViaProxy(t, consented.port, `localhost:${echoPort}`);
+  assert.equal(tunnel.status, 200);
+  tunnel.socket.write('ping');
+  const [echoed] = await Promise.race([
+    require('node:events').once(tunnel.socket, 'data'),
+    new Promise((_resolve, reject) => setTimeout(() => reject(new Error('no data through the tunnel')), 2_000)),
+  ]);
+  assert.equal(echoed.toString(), 'ping');
+
+  const httpOnly = await proxy(t, { allowPrivateNetwork: true, privateNetworkOrigin: `http://localhost:${echoPort}`, lookup: loopbackResolver });
+  assert.equal((await connectViaProxy(t, httpOnly.port, `localhost:${echoPort}`)).status, 502, 'consent for http does not cover https');
+  const none = await proxy(t, { lookup: loopbackResolver });
+  assert.equal((await connectViaProxy(t, none.port, `localhost:${echoPort}`)).status, 502);
+  // The default https port is still a port: refused when it connects (502), not unparsed (403).
+  assert.equal((await connectViaProxy(t, none.port, 'localhost:443')).status, 502);
+  assert.equal((await connectViaProxy(t, none.port, 'localhost')).status, 403);
+});
