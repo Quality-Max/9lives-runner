@@ -91,13 +91,9 @@ helper as [`9l scan` and `9l inspect`](cli.md), with the project's Playwright
 and Chromium, and share their network policy: private, link-local and
 loopback destinations are refused, through DNS, redirects and subrequests,
 and `allow_private_network: true` permits only a loopback target's origin.
-Link checks requested from Node check the address they connect to as well,
-so a hostname whose DNS answer changes after the first check (DNS rebinding)
-is still refused; the browser's navigation, subrequests and WebSockets are
-not yet pinned that way (#108). One more gap: same-origin links the page itself requests are followed
-through redirects inside Chromium, where only the first URL is checked, so
-such a link that redirects to a private or another loopback address is not
-yet refused (#108).
+Each connection is checked for the address it is made to as well, on every
+redirect and in the browser too, so a hostname whose DNS answer changes after
+the first check (DNS rebinding) is still refused.
 `storage_state_path` loads a Playwright storage-state file inside the working
 directory into a throwaway browser context; its credentials are not returned,
 but findings and inspected structure may reflect private account data, so
