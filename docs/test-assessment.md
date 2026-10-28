@@ -283,7 +283,13 @@ ignored; any other condition, a modifier under a branch, or one in an
 `afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
 location. After hooks run once test bodies have run: Playwright 1.61.1 through
 1.64.1 report a passing test skipped from `afterEach` and only some results
-skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
+skipped from `afterAll`, so neither disables the suite. The same relabeling
+reaches `test.fail()`: Playwright 1.61.1, 1.64.1 and 1.65.0-alpha 2026-10-28
+let a `test.fail()` in an `afterEach`/`afterAll` hook or a fixture teardown
+change an executed test's `expectedStatus`, so a genuine failure is reported
+as an expected failure and the process exits 0, while a passing test becomes
+unexpected; the proposed Playwright fix #43713 only rejects skip/fixme
+(`TestSkipError`), so the `fail` modifier stays unguarded behind it. Modifiers inside other functions
 cannot be attributed from source and are ignored. Playwright treats a string
 followed by a function as a declaration at runtime, so only calls that cannot
 be one are modifiers: no arguments, one non-title argument, a fixture callback
