@@ -497,3 +497,43 @@ func TestServiceStartFailureIsInfrastructureError(t *testing.T) {
 		t.Fatalf("attempt was never finished in the event log: %#v", events)
 	}
 }
+
+// Native artifacts must disappear even when the worker exits before SDK teardown.
+type nativeScratchExecutor struct {
+	scratch string
+	t       *testing.T
+}
+
+func (e *nativeScratchExecutor) Run(_ context.Context, job Job, _ int) ProcessOutput {
+	e.scratch = job.Env["NINELIVES_TARGET_SCRATCH_DIR"]
+	if e.scratch == "" || job.Env["PLAYWRIGHT_NO_COPY_PROMPT"] != "1" {
+		e.t.Fatal("native attempt did not receive private artifact output")
+	}
+	output := "--output=" + filepath.Join(e.scratch, "playwright-output")
+	found := false
+	for _, arg := range job.Command {
+		if arg == output {
+			found = true
+		}
+	}
+	if !found {
+		e.t.Fatal("Playwright output was not redirected into owned scratch")
+	}
+	if err := os.WriteFile(filepath.Join(e.scratch, "worker-artifact"), []byte("synthetic transient output"), 0600); err != nil {
+		e.t.Fatal(err)
+	}
+	return ProcessOutput{Executed: true, ExitCode: 1, Err: errors.New("worker exited")}
+}
+func TestNativeScratchRemovedAfterWorkerFailure(t *testing.T) {
+	executor := &nativeScratchExecutor{t: t}
+	job := fakeJob("job-001", "success", 0)
+	job.Target = "android:finance"
+	plan := Plan{Version: 1, RunID: "run-native-scratch", Jobs: []Job{job}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Timeout: time.Second, ReceiptDir: t.TempDir(), Executor: executor, Adapters: []Adapter{channelAdapter{}}})
+	if len(summary.Receipts) != 1 || summary.Receipts[0].Status == StatusPassed {
+		t.Fatal("failed worker became passing")
+	}
+	if _, err := os.Stat(executor.scratch); !os.IsNotExist(err) {
+		t.Fatal("worker artifacts survived attempt cleanup")
+	}
+}

@@ -35,6 +35,58 @@
       ],
       "type": "object"
     },
+    "AndroidRuntime": {
+      "properties": {
+        "abi": {
+          "type": "string"
+        },
+        "api": {
+          "type": "string"
+        },
+        "apkSHA256": {
+          "type": "string"
+        },
+        "appPackage": {
+          "type": "string"
+        },
+        "appium": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "deviceHash": {
+          "type": "string"
+        },
+        "emulator": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "uiautomator2": {
+          "type": "string"
+        },
+        "worker": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "testId",
+        "appPackage",
+        "apkSHA256",
+        "api",
+        "release",
+        "abi",
+        "appium",
+        "uiautomator2",
+        "worker"
+      ],
+      "type": "object"
+    },
     "ArtifactReference": {
       "properties": {
         "bytes": {
@@ -353,6 +405,12 @@
     },
     "agentProvenance": {
       "$ref": "#/$defs/ProvenanceAssessment"
+    },
+    "androidRuntimes": {
+      "items": {
+        "$ref": "#/$defs/AndroidRuntime"
+      },
+      "type": "array"
     },
     "annotations": {
       "items": {

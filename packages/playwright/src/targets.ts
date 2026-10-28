@@ -1,9 +1,10 @@
 import {test as base, type Locator, type Page, type TestInfo} from '@playwright/test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
+import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state'] as const;
-export type TargetIdentity = {kind: 'web' | 'android-fake'; appId: string};
+export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android'; appId: string};
 export type TargetContext = {signal: AbortSignal; deadlineMs: number};
 export type TargetState = 'enabled' | 'checked';
 /** Per-call bound, capped by Go's worker deadline. */
@@ -27,6 +28,7 @@ export interface TargetDriver extends TargetIdentity {
   /** Observe at most two matches; two means ambiguous and must fail. */
   observeTestId(id: string, context: TargetContext): Promise<readonly TargetHandle[]>;
   close(): Promise<void>;
+  runtime?(): AndroidRuntime | undefined;
 }
 
 const defaultOperationMs = 5_000;
@@ -46,7 +48,7 @@ class TargetStopped extends Error {
 const stopped = (reason: string, cause?: unknown) => new TargetStopped(reason, cause);
 const boundedText = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max;
 
-/** Deterministic shared operations. No semantic judge, replay or native driver. */
+/** Deterministic shared operations; browser/device handles stay in the worker. */
 export class TargetApp {
   private controller = new AbortController();
   private timer: NodeJS.Timeout;
@@ -94,12 +96,12 @@ export class TargetApp {
   /** Permanently stop this session, including a pending mutation. */
   cancel() { this.stop('canceled'); }
 
-  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs): Promise<T> {
+  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs, maxTimeoutMs = maxOperationMs, deadlineReason = () => 'deadline'): Promise<T> {
     // The SDK location marks this as a typed target step for the reporter.
     return base.step(`9l target ${operation}`, async () => {
       if (this.controller.signal.aborted) throw stopped(this.reason);
       if (this.busy) { this.stop('concurrent_operation'); throw stopped(this.reason); }
-      if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxOperationMs) {
+      if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
         this.stop('invalid_timeout', false); throw stopped(this.reason);
       }
       this.busy = true;
@@ -109,14 +111,16 @@ export class TargetApp {
       let settled = false;
       void work.then(() => { settled = true; }, () => { settled = true; });
       // Abort and reject at the deadline: a late result never succeeds. The
-      // grace only decides whether to close the driver, if work is still pending.
-      const timer = setTimeout(() => {
-        this.stop('deadline', false);
-        setTimeout(() => { if (!settled) this.release(); }, settleMs);
-      }, Math.max(0, deadlineMs - Date.now()));
+      // Android close stops native work; web retains its artifact-preservation grace.
+      const expire = () => {
+        this.stop(deadlineMs < this.options.deadlineMs ? deadlineReason() : 'deadline', false);
+        if (this.driver.kind === 'android') this.release();
+        else setTimeout(() => { if (!settled) this.release(); }, settleMs);
+      };
+      const timer = setTimeout(expire, Math.max(0, deadlineMs - Date.now()));
       let abort: () => void = () => {};
       try {
-        return await Promise.race([
+        const result = await Promise.race([
           work,
           new Promise<never>((_, reject) => {
             abort = () => reject(stopped(this.reason));
@@ -124,9 +128,15 @@ export class TargetApp {
             if (signal.aborted) abort();
           }),
         ]);
+        // A driver completion can run before an overdue timer. Enforce the
+        // bound here too, so late success or transport failure cannot win.
+        if (!signal.aborted && Date.now() >= deadlineMs) expire();
+        if (signal.aborted) throw stopped(this.reason);
+        return result;
       } catch (error) {
         // Keep the first reason (deadline, cancellation, a missing control...)
         // and the local cause. Neither crosses the engine bridge.
+        if (!signal.aborted && Date.now() >= deadlineMs) expire();
         if (signal.aborted) throw error instanceof TargetStopped ? error : stopped(this.reason, error);
         this.stop(error instanceof TargetStopped ? error.reason : 'operation_failed', false);
         throw error instanceof TargetStopped ? error : stopped(this.reason, error);
@@ -138,7 +148,14 @@ export class TargetApp {
     }, {location: stepLocation});
   }
 
-  open(options: TargetOperationOptions = {}) { return this.perform('open', context => this.driver.open(context), options.timeoutMs); }
+  open(options: TargetOperationOptions = {}) { return this.perform('open', async context => {
+    await this.driver.open(context);
+    if (this.driver.kind === 'android') {
+      const runtime = this.driver.runtime?.();
+      if (!validAndroidRuntime(runtime)) throw stopped('missing_android_runtime');
+      await base.info().attach('9l.android-runtime', {body: Buffer.from(JSON.stringify(runtime)), contentType: androidRuntimeType});
+    }
+  }, options.timeoutMs ?? (this.driver.kind === 'android' ? 180_000 : undefined), this.driver.kind === 'android' ? 180_000 : maxOperationMs); }
   reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs); }
 
   getByTestId(id: string) {
@@ -154,17 +171,22 @@ export class TargetApp {
       if (!handle) throw stopped('missing_test_id');
       return handle;
     };
-    const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) =>
-      this.perform(operation, async context => {
-        // At most maxObservations polls within the bound; the poll ends before
-        // the deadline so a false assertion fails by itself.
+    const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) => {
+      let observedFalse = false;
+      return this.perform(operation, async context => {
+        // A completed mismatch is an assertion failure at this polling bound,
+        // even if a later read stalls. Without one, a deadline is inconclusive.
         const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
         let last: unknown;
         for (let poll = 0; poll < maxObservations; poll++) {
           context.signal.throwIfAborted();
           try {
             const handle = await observe(context);
-            if (handle && await check(handle, context)) return;
+            if (handle) {
+              if (await check(handle, context)) return;
+            }
+            // A completed empty observation is also a failed assertion.
+            observedFalse = true;
           } catch (error) {
             // Ambiguity, invalid input and cancellation are not transient.
             if (error instanceof TargetStopped || context.signal.aborted) throw error;
@@ -173,8 +195,13 @@ export class TargetApp {
           if (Date.now() + interval >= context.deadlineMs) break;
           await delay(interval, undefined, {signal: context.signal});
         }
-        throw stopped('assertion_failed', last);
-      }, timeoutMs);
+        if (observedFalse) throw stopped('assertion_failed', last);
+        // Failed reads alone establish no business mismatch. Keep their
+        // operation failure distinct from an executed false comparison.
+        if (last !== undefined) throw last;
+        throw stopped('deadline');
+      }, timeoutMs, maxOperationMs, () => observedFalse ? 'assertion_failed' : 'deadline');
+    };
     return {
       tap: (options: TargetOperationOptions = {}) => this.perform('tap', async context => (await required(context)).tap(context), options.timeoutMs),
       fill: (value: string, options: TargetOperationOptions = {}) => this.perform('fill', async context => {
@@ -266,7 +293,7 @@ export function createTargetTest(options: TargetOptions) {
   return base.extend<TargetFixtures>({app: async ({}, use, info) => {
     const target = resolve();
     owned(target, info);
-    if (target.kind !== 'android-fake' || !options.native) throw stopped('unsupported_target');
+    if ((target.kind !== 'android-fake' && target.kind !== 'android') || !options.native) throw stopped('unsupported_target');
     await useApp(target, options.native(target), use);
   }});
 }

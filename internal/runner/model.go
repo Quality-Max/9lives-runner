@@ -54,6 +54,7 @@ const (
 // Receipt is one job's immutable execution record. Executed and Validated are
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
+	AndroidRuntimes     []AndroidRuntime      `json:"androidRuntimes,omitempty"`
 	Target              string                `json:"target,omitempty"`
 	AgentProvenance     *ProvenanceAssessment `json:"agentProvenance,omitempty"`
 	Goals               []GoalReceipt         `json:"goals,omitempty"`
@@ -114,6 +115,23 @@ type Receipt struct {
 	Termination *Termination     `json:"termination,omitempty"`
 	Evidence    Evidence         `json:"evidence"`
 	ReceiptPath string           `json:"receiptPath,omitempty"`
+}
+
+// AndroidRuntime is sanitized, worker-reported app/build/runtime attribution.
+// It does not establish independent behavioral verification.
+type AndroidRuntime struct {
+	TestID       string `json:"testId"`
+	AppPackage   string `json:"appPackage"`
+	APKSHA256    string `json:"apkSHA256"`
+	API          string `json:"api"`
+	Release      string `json:"release"`
+	ABI          string `json:"abi"`
+	Emulator     string `json:"emulator,omitempty"`
+	Device       string `json:"device,omitempty"`
+	DeviceHash   string `json:"deviceHash,omitempty"`
+	Appium       string `json:"appium"`
+	UIAutomator2 string `json:"uiautomator2"`
+	Worker       string `json:"worker"`
 }
 
 // TestFailure is one failed test in a validated report. At most

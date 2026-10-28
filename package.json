@@ -23,7 +23,8 @@
     "demo:lab": "node demo/release-lab/run-demo.cjs",
     "demo:first-run": "npm run build && node demo/first-run/run-demo.cjs",
     "smoke:demo": "node scripts/demo-smoke.cjs",
-    "demo:shop": "node demo/release-lab/app/server.cjs"
+    "demo:shop": "node demo/release-lab/app/server.cjs",
+    "smoke:android": "npm run build && node scripts/android-smoke.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

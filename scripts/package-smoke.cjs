@@ -48,7 +48,7 @@ try {
   assert.equal(packed.length, 1);
   assert.equal(packed[0].name, manifest.name);
   assert.equal(packed[0].version, manifest.version);
-  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
+  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'android', 'android-runtime'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
   assert.deepEqual(packed[0].files.map(file => file.path).sort(), expectedFiles);
   const tarball = path.join(work, packed[0].filename);
   const packedManifest = JSON.parse(call('tar', ['-xOf', tarball, 'package/package.json']));
@@ -66,6 +66,12 @@ try {
   const installed = path.join(consumer, 'node_modules/@9l/playwright');
   assert(fs.realpathSync(installed).startsWith(`${fs.realpathSync(consumer)}${path.sep}`), 'consumer resolved a workspace SDK');
   assert.equal(JSON.parse(fs.readFileSync(path.join(installed, 'package.json'))).version, manifest.version);
+  stage = 'optional Android entry point';
+  call(process.execPath, ['-e', `const assert = require('node:assert/strict');
+    assert.equal(typeof require('@9l/playwright/android').androidTargetDriver, 'function');
+    for (const name of ['appium', 'appium-uiautomator2-driver']) {
+      assert.throws(() => require.resolve(name), {code: 'MODULE_NOT_FOUND'});
+    }`], consumer);
   fs.writeFileSync(path.join(consumer, 'playwright.config.ts'), "import {defineConfig} from '@playwright/test';\nexport default defineConfig({testDir: './tests', workers: 1, retries: 0, timeout: 15000, use: {headless: true}});\n");
   const page = `<button onclick="document.querySelector('[role=status]').textContent='Order confirmed: 1 item'">Place order</button><p role="status">Cart: 1 item</p>`;
   for (const [name, content] of [['checkout', page], ['business-failure', page.replace("Order confirmed: 1 item", "Order missing")]]) {
