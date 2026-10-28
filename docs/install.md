@@ -164,6 +164,8 @@ unsafe or incomplete archive members, executes the staged candidate's bounded
 version endpoint, and then replaces the CLI. An update lock prevents two
 installers from replacing it simultaneously. The on-disk runner must still
 match the running version, so an older process cannot replace a newer install.
+On Unix, replacement preserves the installed executable's mode bits, including
+when the caller uses a restrictive umask.
 Failures preserve the previous
 executable or report the recovery copy if rollback itself fails. On Windows,
 the running image is moved aside before replacement and may remain as

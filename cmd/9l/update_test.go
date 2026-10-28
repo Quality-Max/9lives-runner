@@ -100,6 +100,8 @@ func TestAutomaticUpdateEligibilityProtectsNoninteractiveProtocols(t *testing.T)
 	for _, args := range [][]string{
 		{"run", "tests/a.spec.ts", "--format", "json"}, {"run", "tests/a.spec.ts", "--format=json"},
 		{"mcp"}, {"version"}, {"plan", "tests/a.spec.ts"}, {"run", "--help"}, {"run", "tests/a.spec.ts", "--dry-run"},
+		{"run", "tests/a.spec.ts", "--dry-run=1"}, {"run", "tests/a.spec.ts", "--dry-run=TRUE"},
+		{"run", "--help=true"}, {"run", "-h=false"},
 	} {
 		if automaticUpdateAllowed(args, 0, true, true, "", "") {
 			t.Fatalf("automatic update allowed for %v", args)

@@ -310,6 +310,11 @@ func TestInstallValidatesCandidateAndPreservesOldOnFailure(t *testing.T) {
 			if err := os.WriteFile(target, old, 0o755); err != nil {
 				t.Fatal(err)
 			}
+			if tc.name == "success" && runtime.GOOS != "windows" {
+				if err := os.Chmod(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.lock {
 				if err := os.WriteFile(target+".update-lock", nil, 0o600); err != nil {
 					t.Fatal(err)
@@ -329,6 +334,12 @@ func TestInstallValidatesCandidateAndPreservesOldOnFailure(t *testing.T) {
 				}
 				if result.Version != "0.5.4" {
 					t.Fatal("wrong installed version")
+				}
+				if runtime.GOOS != "windows" {
+					info, err := os.Stat(target)
+					if err != nil || info.Mode().Perm() != 0o700 {
+						t.Fatal("update changed the executable's permissions")
+					}
 				}
 				for _, legal := range []string{"LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"} {
 					if info, err := os.Stat(filepath.Join(result.NoticesDirectory, legal)); err != nil || info.Size() == 0 {

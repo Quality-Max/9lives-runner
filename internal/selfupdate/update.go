@@ -260,6 +260,11 @@ func (c *Client) Install(ctx context.Context, release Release, executable string
 		return Installation{}, err
 	}
 	candidate := filepath.Join(stage, binary)
+	// OpenFile applies the caller's umask; explicitly retain the installed
+	// permissions rather than making a shared runner private (or vice versa).
+	if err := os.Chmod(candidate, previous.Mode().Perm()); err != nil {
+		return Installation{}, errors.New("could not preserve the runner's executable permissions")
+	}
 	if err := verifyIdentity(ctx, candidate, release.Latest); err != nil {
 		return Installation{}, err
 	}
@@ -291,7 +296,7 @@ func (b *identityBuffer) Write(p []byte) (int, error) {
 func verifyIdentity(ctx context.Context, executable, version string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, executable, "version", "--format", "json")
+	command := exec.Command(executable, "version", "--format", "json")
 	command.Env = []string{}
 	for _, key := range []string{"SystemRoot", "WINDIR"} {
 		if value, present := os.LookupEnv(key); present {

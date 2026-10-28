@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -111,16 +112,26 @@ func automaticUpdateAllowed(args []string, code int, inputTerminal, outputTermin
 		return false
 	}
 	for i, arg := range args[1:] {
-		switch arg {
-		case "--help", "-h", "-help", "--dry-run", "-dry-run", "--dry-run=true", "-dry-run=true":
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		name, value, assigned := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		switch name {
+		case "h", "help":
 			return false
-		case "--format", "-format":
-			if i+2 < len(args) && args[i+2] != "text" {
+		case "dry-run":
+			if !assigned {
 				return false
 			}
-		}
-		if strings.HasPrefix(arg, "--format=") || strings.HasPrefix(arg, "-format=") {
-			if strings.SplitN(arg, "=", 2)[1] != "text" {
+			dry, err := strconv.ParseBool(value)
+			if err != nil || dry {
+				return false
+			}
+		case "format":
+			if !assigned && i+2 < len(args) {
+				value = args[i+2]
+			}
+			if value != "text" {
 				return false
 			}
 		}
