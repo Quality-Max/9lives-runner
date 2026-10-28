@@ -31,7 +31,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.5.4"
+var version = "0.5.5"
 
 func main() {
 	code := run(os.Args[1:], os.Stdout, os.Stderr)

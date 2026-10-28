@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.assertSafeNetworkUrl = assertSafeNetworkUrl;
+exports.bareHostname = bareHostname;
+exports.pinnedLookup = pinnedLookup;
 exports.safeUrlForDisplay = safeUrlForDisplay;
 exports.safeFetch = safeFetch;
 const promises_1 = require("node:dns/promises");

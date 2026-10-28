@@ -6,6 +6,7 @@ import path from 'node:path';
 import { browserInstallCommand } from './doctor';
 import type { Browser, BrowserContext, BrowserType, Page } from 'playwright';
 import { assertSafeNetworkUrl, type NetworkPolicyOptions } from './network-policy';
+import { startPolicyProxy } from './policy-proxy';
 
 export type Viewport = {
   width: number;
@@ -234,10 +235,18 @@ export async function withPage<T>(
     ? await resolveWorkspaceStorageStatePath(options.storageStatePath)
     : undefined;
   const browserName = options.browser ?? 'chromium';
+  const policy = { allowPrivateNetwork: options.allowPrivateNetwork, privateNetworkOrigin: initialUrl.origin };
+  // Every connection the browser makes, redirects included, goes through the
+  // policy proxy; `<-loopback>` keeps loopback destinations from bypassing it.
+  const proxy = await startPolicyProxy(policy);
   let browser: Browser;
   try {
-    browser = await browserType(browserName).launch({ headless: !options.headed });
+    browser = await browserType(browserName).launch({
+      headless: !options.headed,
+      proxy: { server: proxy.server, bypass: '<-loopback>' },
+    });
   } catch (error) {
+    await proxy.close();
     throw missingBrowserError(error, browserName) ?? error;
   }
   try {
@@ -253,10 +262,7 @@ export async function withPage<T>(
       }
       throw error;
     }
-    await enforceBrowserNetworkPolicy(context, {
-      allowPrivateNetwork: options.allowPrivateNetwork,
-      privateNetworkOrigin: initialUrl.origin,
-    });
+    await enforceBrowserNetworkPolicy(context, policy);
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     try {
@@ -271,6 +277,7 @@ export async function withPage<T>(
     return await fn(page, browser);
   } finally {
     await browser.close();
+    await proxy.close();
   }
 }
 
