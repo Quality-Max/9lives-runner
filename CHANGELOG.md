@@ -6,8 +6,17 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.3 — 2026-10-27
+
 ### CLI
 
+- A Windows output drain no longer hangs when its initial wait ends while
+  another goroutine is reading a synchronous pipe. After stopping the owned
+  process job, Windows drains to end of file without inspecting the pipe;
+  the byte and time bounds remain as backstops (#198).
+- A run deadline reached during `--wait-for` is reported as the run's
+  deadline, rather than as an environment failure saying the target was not
+  ready. The run remains `timed_out` (#190).
 - Output a command wrote before it exited is no longer lost when the machine
   is busy. Test-runner stdout and stderr, healing provider CLIs and the
   helper processes the runner owns used to drop output the runner had not yet
@@ -65,6 +74,10 @@ SDK versions.
 
 ### Release process
 
+- SDK qualification publishes worker and server readiness records by rename,
+  so the smoke cannot parse a partially written PID record while checking
+  owned timeout and cancellation. A controlled subprocess test checks that
+  readiness stays unpublished until its JSON is complete.
 - `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub
   marks Latest instead of a version pinned in the script, so a release no
   longer needs an installer or website change. The release workflow creates
