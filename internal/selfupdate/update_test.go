@@ -276,17 +276,37 @@ func TestInstallValidatesCandidateAndPreservesOldOnFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	archive := archiveFixture(t, runtime.GOOS, runtime.GOARCH, candidate, nil)
+	// A separate native executable provides the old identity. This also lets
+	// the test simulate a different updater replacing the on-disk runner while
+	// the original process still has its old version in memory.
+	oldDirectory := t.TempDir()
+	oldSource := filepath.Join(oldDirectory, "old.go")
+	oldBinary := filepath.Join(oldDirectory, "old.exe")
+	if err := os.WriteFile(oldSource, []byte("package main\nimport \"fmt\"\nfunc main(){fmt.Print(`{\"version\":1,\"name\":\"9l\",\"implementation\":\"go-runner\",\"cliVersion\":\"0.5.3\"}`)}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("go", "build", "-o", oldBinary, oldSource).Run(); err != nil {
+		t.Fatalf("build old native identity fixture: %v", err)
+	}
+	oldExecutable, err := os.ReadFile(oldBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name, latest      string
 		badChecksum, lock bool
 	}{
 		{"success", "0.5.4", false, false}, {"checksum", "0.5.4", true, false},
 		{"identity", "0.5.5", false, false}, {"downgrade", "0.5.2", false, false}, {"locked", "0.5.4", false, true},
+		{"already-replaced", "0.5.4", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			target := filepath.Join(dir, filepath.Base(self))
-			old := []byte("previous executable")
+			old := oldExecutable
+			if tc.name == "already-replaced" {
+				old = candidate
+			}
 			if err := os.WriteFile(target, old, 0o755); err != nil {
 				t.Fatal(err)
 			}

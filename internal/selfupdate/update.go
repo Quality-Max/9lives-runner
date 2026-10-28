@@ -223,6 +223,12 @@ func (c *Client) Install(ctx context.Context, release Release, executable string
 	defer func() { _ = lock.Close(); _ = os.Remove(target + ".update-lock") }()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	// A long-running process may still carry its original version after another
+	// updater replaced its executable. Recheck the on-disk identity under the
+	// lock; otherwise that stale process could overwrite a newer installation.
+	if err := verifyIdentity(ctx, target, c.current); err != nil {
+		return Installation{}, errors.New("installed runner no longer matches this process; restart 9l update")
+	}
 	ext, binary := ".tar.gz", "9l"
 	if c.platform == "windows" {
 		ext, binary = ".zip", "9l.exe"
