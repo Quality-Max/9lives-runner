@@ -6,6 +6,8 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.4 — 2026-10-28
+
 ### CLI
 
 - `9l update` checks the stable release marked Latest and asks before
