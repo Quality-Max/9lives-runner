@@ -298,6 +298,11 @@ the spec or prove its assertions protect the requirement. See the
 
 ## Compatibility
 
+The experimental Android adapter is available in the `0.6.0-beta` release.
+Use the matching beta CLI and SDK; see [beta installation](docs/releases.md#beta-releases)
+and [Android setup and qualification limits](docs/android-driver.md).
+The stable pairing below remains the default installation.
+
 | Component | Qualified | Boundary |
 | --- | --- | --- |
 | `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
