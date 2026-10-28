@@ -69,3 +69,27 @@ test('an Android operation deadline closes the driver even when abort settles it
     expect(closed).toBe(1);
   } finally { await app.close(); }
 });
+
+for (const outcome of ['resolve', 'reject']) {
+  test(`an Android transport that ${outcome}s past its deadline cannot beat the timer`, async () => {
+    let closed = 0;
+    const driver: TargetDriver = {
+      kind: 'android', appId: 'assertion', version: '9l.target/1', capabilities: targetCapabilities,
+      open: async () => {}, reset: async () => {}, close: async () => { closed++; },
+      observeTestId: async () => [{
+        tap: async context => {
+          // Hold the event loop so the driver's completion runs before the
+          // overdue SDK timer, as a native transport timeout can in practice.
+          while (Date.now() <= context.deadlineMs) { /* deliberate timer delay */ }
+          if (outcome === 'reject') throw new Error('transport_failed');
+        },
+        fill: async () => {}, visible: async () => true, state: async () => true, text: async () => '',
+      }],
+    };
+    const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
+    try {
+      await expect(app.getByTestId('send').tap({timeoutMs: 30})).rejects.toThrow('deadline');
+      expect(closed).toBe(1);
+    } finally { await app.close(); }
+  });
+}

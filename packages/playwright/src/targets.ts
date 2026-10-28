@@ -112,14 +112,15 @@ export class TargetApp {
       void work.then(() => { settled = true; }, () => { settled = true; });
       // Abort and reject at the deadline: a late result never succeeds. The
       // Android close stops native work; web retains its artifact-preservation grace.
-      const timer = setTimeout(() => {
+      const expire = () => {
         this.stop(deadlineMs < this.options.deadlineMs ? deadlineReason() : 'deadline', false);
         if (this.driver.kind === 'android') this.release();
         else setTimeout(() => { if (!settled) this.release(); }, settleMs);
-      }, Math.max(0, deadlineMs - Date.now()));
+      };
+      const timer = setTimeout(expire, Math.max(0, deadlineMs - Date.now()));
       let abort: () => void = () => {};
       try {
-        return await Promise.race([
+        const result = await Promise.race([
           work,
           new Promise<never>((_, reject) => {
             abort = () => reject(stopped(this.reason));
@@ -127,9 +128,15 @@ export class TargetApp {
             if (signal.aborted) abort();
           }),
         ]);
+        // A driver completion can run before an overdue timer. Enforce the
+        // bound here too, so late success or transport failure cannot win.
+        if (!signal.aborted && Date.now() >= deadlineMs) expire();
+        if (signal.aborted) throw stopped(this.reason);
+        return result;
       } catch (error) {
         // Keep the first reason (deadline, cancellation, a missing control...)
         // and the local cause. Neither crosses the engine bridge.
+        if (!signal.aborted && Date.now() >= deadlineMs) expire();
         if (signal.aborted) throw error instanceof TargetStopped ? error : stopped(this.reason, error);
         this.stop(error instanceof TargetStopped ? error.reason : 'operation_failed', false);
         throw error instanceof TargetStopped ? error : stopped(this.reason, error);
