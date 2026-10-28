@@ -6,6 +6,20 @@ SDK versions.
 
 ## Unreleased
 
+### CLI
+
+- `9l update` checks the stable release marked Latest and asks before
+  replacing the running CLI. `--check` checks without installing, and `--yes`
+  explicitly approves a non-interactive update. Downloads, checksums, archive
+  contents and the candidate's runner/version identity are bounded and
+  validated before replacement. Project SDK dependencies are left to the
+  project's developer.
+- After an interactive text `9l run` finishes, the CLI checks for updates at
+  most once per day and offers installation for future runs. CI, JSON output,
+  redirected streams, canceled/incomplete runs and MCP do not prompt or check.
+  `NINELIVES_NO_UPDATE_CHECK=1` disables automatic checks; explicit `9l update`
+  remains available. Update failure does not change the test run's result.
+
 ## 0.5.3 — 2026-10-27
 
 ### CLI

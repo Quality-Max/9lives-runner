@@ -132,6 +132,52 @@ your user account. POSIX mode bits do not set Windows ACLs.
 If Python `9lives` is also installed, it has its own `9l` command. Use an
 explicit path such as `$HOME/.local/bin/9l` to select this Go runner.
 
+## Updating the CLI (unreleased)
+
+These commands are implemented in development builds and will first ship
+after 0.5.3. Existing 0.5.3 installations need one more upgrade with the
+installer or a downloaded release before they can update themselves.
+
+```sh
+9l update --check  # show the latest stable release; do not install
+9l update          # show the version change and ask for approval
+9l update --yes    # explicitly approve installation in a script
+```
+
+Approval defaults to no. A completed interactive text `9l run` also checks
+once per day and offers installation after its test processes have stopped.
+The current invocation's result and exit code stay unchanged; the next
+invocation uses the installed version. Checks have a three-second budget and
+use the public GitHub release marked Latest, without account credentials or
+project data. Offline automatic checks stay silent. CI, JSON runs, redirected
+streams, canceled/incomplete runs and MCP do not check or prompt.
+
+Set `NINELIVES_NO_UPDATE_CHECK=1` to disable automatic checks. The timestamp
+and an advisory lock live in the OS user-cache directory under
+`9lives-runner/update-check.json`. Explicit `9l update` bypasses this cache.
+If a process is forcibly killed while holding the advisory `.lock` file,
+remove that file to restore automatic checks.
+
+Installation requires write access beside the running executable and never
+elevates privileges. It verifies the six-archive checksum manifest, rejects
+unsafe or incomplete archive members, executes the staged candidate's bounded
+version endpoint, and then replaces the CLI. An update lock prevents two
+installers from replacing it simultaneously. Failures preserve the previous
+executable or report the recovery copy if rollback itself fails. On Windows,
+the running image is moved aside before replacement and may remain as
+`9l.previous.exe` in the reported release directory until manually removed
+after old processes exit. Notices for the new release stay in that directory;
+existing unrelated `LICENSE` or `NOTICE` files are not overwritten.
+
+Checksums check consistency with the release served by GitHub. They are not
+independent signature verification; [build provenance](#verify-build-provenance)
+can also be checked with GitHub CLI. Package-manager installations should be
+upgraded through that manager if their installation directory is not writable.
+
+The command updates only the Go runner. For a project using the SDK, install
+its matching version separately with the npm command printed after updating;
+Playwright configuration and project dependencies are not edited automatically.
+
 ## Verify the selected CLI
 
 After installing or upgrading, check which `9l` your shell selects. On macOS
