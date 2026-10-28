@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a capability, integration, or improvement.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues and discussions before proposing a feature.
+        For open-ended questions, use [Discussions](https://github.com/Quality-Max/9lives-runner/discussions).
+        This form is public. Use synthetic examples and omit credentials and private data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who encounters this problem, and how does it affect their work?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired workflow and an observable outcome that would show it works. For a provider integration, describe the provider's role and who would build and maintain it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: What have you tried, and what is missing?
+  - type: textarea
+    id: contribution
+    attributes:
+      label: Contribution and context
+      description: Optional links to public documentation, related issues, or how you could help implement or validate the proposal.
