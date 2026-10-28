@@ -39,7 +39,7 @@ type Contracts struct {
 	Engine           string `json:"engine"`
 }
 
-var commands = []string{"plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "confirm", "tier1", "heal-native", "heal", "mcp", "scan", "inspect", "doctor", "version"}
+var commands = []string{"plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "confirm", "tier1", "heal-native", "heal", "mcp", "scan", "inspect", "doctor", "version", "update"}
 
 func versionInfo() VersionInfo {
 	return VersionInfo{

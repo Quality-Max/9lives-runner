@@ -34,7 +34,9 @@ import (
 var version = "0.5.3"
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	code := run(os.Args[1:], os.Stdout, os.Stderr)
+	offerAutomaticUpdate(os.Args[1:], code)
+	os.Exit(code)
 }
 
 func run(args []string, out, errOut io.Writer) int {
@@ -47,6 +49,8 @@ func run(args []string, out, errOut io.Writer) int {
 	}
 
 	switch args[0] {
+	case "update":
+		return updateCommand(args[1:], out, errOut)
 	case "doctor":
 		return doctorCommand(args[1:], out, errOut)
 	case "plan", "run":
@@ -115,6 +119,7 @@ Usage:
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l doctor [--sdk] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
+  9l update [--check | --yes]  # check Latest; ask before replacing the runner
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
 The Go runner currently executes Playwright specs from existing projects.
@@ -422,7 +427,11 @@ func terminalApproval(in *os.File, out io.Writer) func(context.Context) bool {
 // cancellation causes nativeHealCommand to return and process teardown reclaims
 // it; it never performs approval or source mutation after the select returns.
 func readTerminalApproval(ctx context.Context, in io.Reader, out io.Writer) bool {
-	fmt.Fprint(out, "Apply this verified candidate? [y/yes]: ")
+	return readApproval(ctx, in, out, "Apply this verified candidate? [y/yes]: ")
+}
+
+func readApproval(ctx context.Context, in io.Reader, out io.Writer, question string) bool {
+	fmt.Fprint(out, question)
 	type response struct {
 		answer string
 		err    error

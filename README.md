@@ -72,6 +72,10 @@ Run from your project root and replace the path with an existing spec. Follow th
 [quickstart](docs/run-existing-project.md) for prerequisites, expected results and
 troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
 
+Development builds now include `9l update` (ask and install),
+`9l update --check` (check only), and `9l update --yes` (explicit scripted
+approval). This will first ship after 0.5.3; see [updating the CLI](docs/install.md#updating-the-cli-unreleased).
+
 Your project supplies its Playwright dependencies, browsers, configuration, and
 assertions. The SDK is optional. Native v0.5.3 binaries support macOS, Linux and
 Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
