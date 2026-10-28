@@ -14,6 +14,9 @@ function sync(command, args, options = {}) {
   return result;
 }
 assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
+const targetAssertions = sync(process.execPath, [path.join(root, 'node_modules', '@playwright', 'test', 'cli.js'),
+  'test', '--config', 'testdata/sdk/target-assertion.config.ts', '--reporter=line']);
+assert.equal(targetAssertions.status, 0, targetAssertions.stderr || targetAssertions.stdout);
 // A throwaway repository supports provenance even on detached CI checkouts.
 const project = path.join(work, 'project');
 fs.cpSync(path.join(root, 'testdata/sdk/targets'), path.join(project, 'targets'), {recursive: true});

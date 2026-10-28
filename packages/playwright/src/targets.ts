@@ -111,10 +111,11 @@ export class TargetApp {
       let settled = false;
       void work.then(() => { settled = true; }, () => { settled = true; });
       // Abort and reject at the deadline: a late result never succeeds. The
-      // grace only decides whether to close the driver, if work is still pending.
+      // Android close stops native work; web retains its artifact-preservation grace.
       const timer = setTimeout(() => {
         this.stop(deadlineMs < this.options.deadlineMs ? deadlineReason() : 'deadline', false);
-        setTimeout(() => { if (!settled) this.release(); }, settleMs);
+        if (this.driver.kind === 'android') this.release();
+        else setTimeout(() => { if (!settled) this.release(); }, settleMs);
       }, Math.max(0, deadlineMs - Date.now()));
       let abort: () => void = () => {};
       try {

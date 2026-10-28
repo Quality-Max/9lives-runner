@@ -36,7 +36,7 @@ test('attached phone verifies the build, preserves app data and restores owned a
   const os = require('node:os');
   const {randomUUID} = require('node:crypto');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-test-'));
-  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir:process.env.TMPDIR};
   const commands = [], requests = [];
   let installedHash = 'a'.repeat(64), elements = 1, holdClick = false, physicalQemu = '';
   const policies = new Map([['hidden_api_policy_pre_p_apps','null'],['hidden_api_policy_p_apps','2'],['hidden_api_policy','0']]);
@@ -50,6 +50,8 @@ test('attached phone verifies the build, preserves app data and restores owned a
       await fs.writeFile(path.join(dir,'node_modules',name,'package.json'), JSON.stringify({version}));
     }
     process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = path.join(dir,'tmp-a');
+    await fs.mkdir(process.env.TMPDIR);
     cp.execFile = (file,args,options,callback) => {
       commands.push(args);
       const command = args.slice(2);
@@ -107,6 +109,8 @@ test('attached phone verifies the build, preserves app data and restores owned a
     for (const k of ['fullReset','forceAppLaunch','shouldTerminateApp','autoGrantPermissions']) assert.equal(caps[`appium:${k}`],false,k);
     assert.equal(Object.hasOwn(caps,'appium:hideKeyboard'),false);
     for (const k of ['noReset','dontStopAppOnReset','skipUnlock','skipDeviceInitialization']) assert.equal(caps[`appium:${k}`],true,k);
+    process.env.TMPDIR = path.join(dir,'tmp-b');
+    await fs.mkdir(process.env.TMPDIR);
     const contender = androidTargetDriver(options);
     await assert.rejects(contender.open(context()), /open_failed_device_attach/);
     await contender.close();
@@ -143,6 +147,8 @@ test('attached phone verifies the build, preserves app data and restores owned a
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;
     if(original.scratch===undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR;
     else process.env.NINELIVES_TARGET_SCRATCH_DIR=original.scratch;
+    if(original.tmpdir===undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR=original.tmpdir;
     await fs.rm(dir,{recursive:true,force:true});
   }
 });

@@ -33,6 +33,12 @@ function emulatorSet() {
 }
 const results = [];
 const modes = process.argv.slice(2).length ? process.argv.slice(2) : ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version'];
+const rejectionReasons = {
+  'install-fail': 'open_failed_apk_install',
+  unavailable: 'open_failed_emulator_boot',
+  digest: 'open_failed_configuration',
+  version: 'open_failed_configuration',
+};
 for (const mode of modes) {
   try {
   assert(['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version'].includes(mode));
@@ -54,6 +60,7 @@ for (const mode of modes) {
     assert.equal(receipt.androidRuntimes.length,1);assert.equal(facts.clickDispatches,1);
   } else {
     assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
+    if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
   }
   if (!['install-fail','unavailable','digest','version'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
   const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';

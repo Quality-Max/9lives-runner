@@ -50,3 +50,22 @@ test('the outer deadline after a false observation keeps the outer deadline', as
   try { await expect(app.getByTestId('receipt').toHaveText('wanted', 1000)).rejects.toThrow('deadline'); }
   finally { await app.close(); }
 });
+
+test('an Android operation deadline closes the driver even when abort settles its transport', async () => {
+  let closed = 0;
+  const driver: TargetDriver = {
+    kind: 'android', appId: 'assertion', version: '9l.target/1', capabilities: targetCapabilities,
+    open: async () => {}, reset: async () => {}, close: async () => { closed++; },
+    observeTestId: async () => [{
+      tap: context => new Promise((_, reject) => {
+        context.signal.addEventListener('abort', () => reject(new Error('aborted')), {once: true});
+      }),
+      fill: async () => {}, visible: async () => true, state: async () => true, text: async () => '',
+    }],
+  };
+  const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
+  try {
+    await expect(app.getByTestId('send').tap({timeoutMs: 50})).rejects.toThrow('deadline');
+    expect(closed).toBe(1);
+  } finally { await app.close(); }
+});

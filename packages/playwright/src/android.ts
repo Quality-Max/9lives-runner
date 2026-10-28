@@ -2,7 +2,7 @@ import {spawn, type ChildProcess, execFile} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile, stat} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
-import {tmpdir} from 'node:os';
+import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
@@ -315,9 +315,11 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           if (physical) {
             stage = 'device_attach';
             serial = options.deviceSerial!;
-            const lock = join(tmpdir(), `9l-android-${createHash('sha256').update(serial).digest('hex')}.lock`);
+            const leaseRoot = join(homedir(), '.9lives', 'android-leases');
+            const lock = join(leaseRoot, `9l-android-${createHash('sha256').update(serial).digest('hex')}.lock`);
             // Never recover a stale lease automatically: a killed worker may have
             // left automation running. Manual inspection is required in that case.
+            await mkdir(leaseRoot, {recursive: true, mode: 0o700});
             await mkdir(lock, {mode: 0o700}); lease = lock;
             await installedBuild(c);
             if (await adbRun(['shell', 'sh', '-c', "'pidof io.appium.uiautomator2.server io.appium.uiautomator2.server.test || true'"], c)) throw failure('device_automation_in_use');
