@@ -31,10 +31,12 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.5.0"
+var version = "0.5.4"
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	code := run(os.Args[1:], os.Stdout, os.Stderr)
+	offerAutomaticUpdate(os.Args[1:], code)
+	os.Exit(code)
 }
 
 func run(args []string, out, errOut io.Writer) int {
@@ -47,6 +49,8 @@ func run(args []string, out, errOut io.Writer) int {
 	}
 
 	switch args[0] {
+	case "update":
+		return updateCommand(args[1:], out, errOut)
 	case "doctor":
 		return doctorCommand(args[1:], out, errOut)
 	case "plan", "run":
@@ -105,7 +109,8 @@ Usage:
   9l inspect <url> [--format markdown|json] [--allow-private-network]  # ranked locators and testability
           # scan and inspect: [--viewport WxH] [--storage-state FILE --acknowledge-private-content]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
-  9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles]
+  9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles] [--limits]
+          # text groups analysis limits per file by code; --limits lists each location
   9l prove <spec> [--faults KINDS] [--max-faults N] [--paths] [--format text|json]  # experimental: inject network faults
           # needs @9l/playwright installed and a spec importing test from it; faults reach only fetch/XHR
           # made through its page or context fixtures, not Node-side fetch or database clients
@@ -114,6 +119,7 @@ Usage:
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l doctor [--sdk] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
+  9l update [--check | --yes]  # check Latest; ask before replacing the runner
   # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
 
 The Go runner currently executes Playwright specs from existing projects.
@@ -137,6 +143,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 	format := fs.String("format", "text", "text or json advisory report")
 	agentRecord := fs.String("agent-provenance", "", "agent creation snapshot JSON")
 	titles := fs.Bool("titles", false, "include literal test titles (source text) for local use")
+	limits := fs.Bool("limits", false, "text: list every analysis-limit location instead of one count per code and file")
 	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true})) != nil {
 		return 2
 	}
@@ -185,7 +192,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			fmt.Fprintln(errOut, "9l: --agent-provenance applies to a single spec")
 			return 2
 		}
-		return assessSuite(ctx, fs.Args(), contract, *format, *titles, read, out, errOut)
+		return assessSuite(ctx, fs.Args(), contract, *format, *titles, *limits, read, out, errOut)
 	}
 	source, err := read(fs.Arg(0), assessment.MaxSource)
 	if err != nil {
@@ -219,7 +226,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			return 2
 		}
 	} else {
-		writeAssessmentText(out, report)
+		writeAssessmentText(out, report, *limits)
 	}
 	// Advice does not gate execution. Invalid or unavailable analysis exits 2.
 	return 0
@@ -227,7 +234,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 
 // assessSuite reads and assesses every discovered file. It writes the combined
 // report even when some files could not be assessed, then exits 2 for them.
-func assessSuite(ctx context.Context, inputs []string, contract []byte, format string, titles bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
+func assessSuite(ctx context.Context, inputs []string, contract []byte, format string, titles, limits bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
 	paths, err := assessment.DiscoverSpecs(inputs)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
@@ -260,24 +267,7 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 			return 2
 		}
 	} else {
-		fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
-		for _, file := range suite.Files {
-			if file.Report == nil {
-				fmt.Fprintf(out, "file %s: not assessed: %s\n", strconv.Quote(file.Path), file.Error)
-				continue
-			}
-			fmt.Fprintf(out, "file %s:\n", strconv.Quote(file.Path))
-			writeAssessmentTests(out, *file.Report)
-		}
-		for _, limit := range suite.Limits {
-			fmt.Fprintln(out, "Limit:", limit)
-		}
-		fmt.Fprintf(out, "Summary: %d files (%d assessed, %d not assessed", suite.Summary.Files, suite.Summary.Assessed, suite.Summary.Failed+suite.Summary.Unrecognized)
-		if suite.Summary.Unrecognized > 0 {
-			fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
-		}
-		fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
-		writeRuleCounts(out, suite.Summary.Rules)
+		writeSuiteText(out, suite, limits)
 	}
 	if suite.Summary.Failed > 0 {
 		fmt.Fprintf(errOut, "9l: %d of %d files could not be assessed\n", suite.Summary.Failed, suite.Summary.Files)
@@ -286,10 +276,46 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 	return 0
 }
 
-func writeAssessmentText(out io.Writer, report assessment.Report) {
+// writeSuiteText writes the combined report. limits lists every
+// analysis-limit location instead of one count per code and file.
+func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
-	fmt.Fprintln(out, "Agent branch/source provenance:", report.AgentProvenance.Status)
-	writeAssessmentTests(out, report)
+	for _, file := range suite.Files {
+		if file.Report == nil {
+			fmt.Fprintf(out, "file %s: not assessed: %s\n", strconv.Quote(file.Path), file.Error)
+			continue
+		}
+		if len(file.Report.Tests) == 0 && len(file.Report.UnrecognizedTestImports) == 0 {
+			fmt.Fprintf(out, "file %s: no tests\n", strconv.Quote(file.Path))
+			continue
+		}
+		fmt.Fprintf(out, "file %s:\n", strconv.Quote(file.Path))
+		writeAssessmentTests(out, *file.Report, limits)
+	}
+	for _, limit := range suite.Limits {
+		fmt.Fprintln(out, "Limit:", limit)
+	}
+	fmt.Fprintf(out, "Summary: %d files (%d assessed, ", suite.Summary.Files, suite.Summary.Assessed)
+	if suite.Summary.NoTests > 0 {
+		fmt.Fprintf(out, "%d with no tests, ", suite.Summary.NoTests)
+	}
+	fmt.Fprintf(out, "%d not assessed", suite.Summary.Failed+suite.Summary.Unrecognized)
+	if suite.Summary.Unrecognized > 0 {
+		fmt.Fprintf(out, ", %d of them for an unrecognized test import", suite.Summary.Unrecognized)
+	}
+	fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
+	writeRuleCounts(out, suite.Summary.Rules)
+}
+
+func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
+	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
+	fmt.Fprint(out, "Agent branch/source provenance: ", report.AgentProvenance.Status)
+	if report.AgentProvenance.Scope == "spec" {
+		// "matched" is easy to over-trust: name what was compared.
+		fmt.Fprint(out, " (the selected spec, its path, branch, commit and workspace root; imported modules are not compared)")
+	}
+	fmt.Fprintln(out)
+	writeAssessmentTests(out, report, limits)
 	for _, limit := range report.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
 	}
@@ -298,7 +324,15 @@ func writeAssessmentText(out io.Writer, report assessment.Report) {
 	writeRuleCounts(out, counts)
 }
 
-func writeAssessmentTests(out io.Writer, report assessment.Report) {
+// writeAssessmentTests lists each test with its findings. Analysis limits
+// repeat for every test that calls the same unresolved helper or passes the
+// same callback, so unless limits is set they are left out of the test lines
+// and summed in one unindented line after the file's tests: one count per
+// limit code, counted under assessment.FindingCountKey so that the line agrees
+// with the per-rule summary.
+func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) {
+	seen := map[assessment.CountKey]bool{}
+	grouped := map[string]int{}
 	for _, test := range report.Tests {
 		title := ""
 		if test.Title != "" {
@@ -306,7 +340,18 @@ func writeAssessmentTests(out io.Writer, report assessment.Report) {
 			title = " " + strconv.Quote(test.Title)
 		}
 		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+		if test.Assertions.Count > 0 {
+			// What was recognized, beside any limit on what was not.
+			fmt.Fprintf(out, "  recognized assertions: %d (%s)\n", test.Assertions.Count, strings.Join(test.Assertions.Matchers, ", "))
+		}
 		for _, finding := range test.Findings {
+			if finding.Rule == "analysis-limit" && !limits {
+				if k := assessment.FindingCountKey(finding); !seen[k] {
+					seen[k] = true
+					grouped[finding.Code]++
+				}
+				continue
+			}
 			fields := ""
 			if finding.Requirement != "" {
 				fields += " requirement=" + finding.Requirement
@@ -321,6 +366,27 @@ func writeAssessmentTests(out io.Writer, report assessment.Report) {
 			fmt.Fprintf(out, "  %s [%s] at %d:%d%s: %s\n", assessment.FindingRule(finding), finding.Classification, finding.Line, finding.Column, fields, finding.Message)
 		}
 	}
+	if len(grouped) > 0 {
+		fmt.Fprintf(out, "analysis limits in this file: %s (--limits lists them)\n", strings.Join(countedCodes(grouped), ", "))
+	}
+}
+
+// countedCodes renders codes as "code ×N" by descending count, then name.
+func countedCodes(counts map[string]int) []string {
+	codes := make([]string, 0, len(counts))
+	for code := range counts {
+		codes = append(codes, code)
+	}
+	sort.Slice(codes, func(i, j int) bool {
+		if counts[codes[i]] != counts[codes[j]] {
+			return counts[codes[i]] > counts[codes[j]]
+		}
+		return codes[i] < codes[j]
+	})
+	for i, code := range codes {
+		codes[i] = fmt.Sprintf("%s ×%d", code, counts[code])
+	}
+	return codes
 }
 
 // writeRuleCounts lists rules by descending count, then name.
@@ -361,7 +427,11 @@ func terminalApproval(in *os.File, out io.Writer) func(context.Context) bool {
 // cancellation causes nativeHealCommand to return and process teardown reclaims
 // it; it never performs approval or source mutation after the select returns.
 func readTerminalApproval(ctx context.Context, in io.Reader, out io.Writer) bool {
-	fmt.Fprint(out, "Apply this verified candidate? [y/yes]: ")
+	return readApproval(ctx, in, out, "Apply this verified candidate? [y/yes]: ")
+}
+
+func readApproval(ctx context.Context, in io.Reader, out io.Writer, question string) bool {
+	fmt.Fprint(out, question)
 	type response struct {
 		answer string
 		err    error
@@ -556,6 +626,9 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	deadline := fs.Duration("deadline", 0, "shared run deadline (0 is unlimited)")
 	maxAttempts := fs.Int("attempts", 1, "maximum attempts per job: 9l's own retry of the whole job; the project's Playwright retries still apply inside each attempt unless --retries overrides them")
 	retries := fs.Int("retries", -1, "Playwright retries per test inside each attempt, replacing the project's setting; 0 with --attempts lets 9l own all retries (default: the project's setting)")
+	var waitFor waitTargets
+	fs.Var(&waitFor, "wait-for", "before any test process starts, wait until this http(s) URL answers without a server error or this host:port accepts connections (repeatable)")
+	waitTimeout := fs.Duration("wait-timeout", time.Minute, "how long --wait-for targets may take to become ready, 1s to 30m; a target still not ready leaves the run incomplete without starting a test process")
 	maxOutputBytes := fs.Int("max-output-bytes", 4<<20, "captured bytes per output stream")
 	dryRun := fs.Bool("dry-run", false, "print the plan without executing it")
 	grep := fs.String("grep", "", "run only tests whose title matches this regular expression (Playwright --grep)")
@@ -601,6 +674,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-timeout": true, "--timeout": true,
 		"-deadline": true, "--deadline": true,
 		"-attempts": true, "--attempts": true, "-retries": true, "--retries": true,
+		"-wait-for": true, "--wait-for": true, "-wait-timeout": true, "--wait-timeout": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
 		"-receipt-dir": true, "--receipt-dir": true,
 		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
@@ -624,6 +698,20 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	// --wait-for is checked here so plan and --dry-run reject what run would.
+	if waitFor.invalid {
+		fmt.Fprintln(errOut, "9l: --wait-for: each target is one http(s) URL or host:port of at most 512 bytes, at most 16 targets")
+		return exitUsage
+	}
+	if *waitTimeout < minWaitTimeout || *waitTimeout > maxWaitTimeout {
+		fmt.Fprintln(errOut, "9l: --wait-timeout must be between 1s and 30m")
+		return exitUsage
+	}
+	waitProbes, err := parseWaitTargets(waitFor.values)
+	if err != nil {
+		fmt.Fprintf(errOut, "9l: --wait-for: %v\n", err)
+		return exitUsage
 	}
 	explicitWorkers := false
 	fs.Visit(func(f *flag.Flag) { explicitWorkers = explicitWorkers || f.Name == "workers" })
@@ -729,7 +817,11 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	config := ""
 	if *configFile != "" {
 		absolute, err := filepath.Abs(*configFile)
-		if info, statErr := os.Stat(absolute); err != nil || statErr != nil || !info.Mode().IsRegular() {
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
+			return 2
+		}
+		if info, err := os.Stat(absolute); err != nil || !info.Mode().IsRegular() {
 			fmt.Fprintln(errOut, "9l: --config must name an existing Playwright config file")
 			return 2
 		}
@@ -768,6 +860,21 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A target that never comes up is an environment failure, not a test
+	// failure. The wait runs inside the stored run, so `9l cancel`, the run
+	// deadline and `9l result` cover it; a target still not ready leaves an
+	// error receipt per job and no test process started.
+	var beforeJobs func(context.Context) error
+	if len(waitProbes) > 0 {
+		beforeJobs = func(ctx context.Context) error {
+			err := waitForTargets(ctx, waitProbes, *waitTimeout)
+			var notReady waitNotReadyError
+			if errors.As(err, &notReady) {
+				fmt.Fprintf(errOut, "9l: %v; no test process was started\n", err)
+			}
+			return err
+		}
+	}
 	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
 		OnStarted: func() {
 			if *format == "json" {
@@ -776,6 +883,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 				fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
 			}
 		},
+		BeforeJobs:      beforeJobs,
 		AgentProvenance: agentProvenance,
 		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})

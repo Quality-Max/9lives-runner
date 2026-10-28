@@ -7,7 +7,7 @@ runner needs no SDK, model key or QualityMax account.
 ## 1. Check prerequisites
 
 - Use Node 24 (Node 22 minimum) and your project's installed Playwright.
-  The qualified range is Playwright 1.61.1–1.64.0 with Chromium.
+  The qualified range is Playwright 1.61.1–1.64.1 with Chromium.
 - Install your application's dependencies using its existing lockfile and setup
   instructions. Start its local or approved staging server, or let its existing
   Playwright `webServer` configuration start it.
@@ -102,6 +102,19 @@ It uses synthetic data and makes no model calls.
 | No matching tests or wrong project | Inspect the plan, spec path, config `testDir`, and project name. Use `--config`/`--project` when needed. |
 | Test failed | Inspect the failing assertion and receipt; preserve the intended behavior when fixing it. |
 | Run timed out or was interrupted | Inspect application state before rerunning a test that mutates data. Review both Playwright's timeout and the CLI budget. |
+
+On Unix, the runner stops its process group and tracks descendants to clean up
+Playwright's detached `webServer` processes on exit, deadline or cancellation.
+This requires `ps` on `PATH`. During execution, observations run every 500 ms;
+cleanup uses a 50 ms interval. A missed periodic observation can recover on the
+next snapshot. Startup and cleanup require a successful snapshot within three
+attempts; otherwise the command remains unsuccessful. Snapshots contain only
+process IDs, relationships, status and start time. Tracking is sampled, so a
+process that detaches and loses
+its parent entirely between observations can escape tracking. This is not
+kernel process containment. Start times have one-second resolution. The detached
+server cleanup regression is runtime-qualified on macOS with Chromium; other
+Unix platforms need their own runtime qualification.
 
 ## Optional next steps
 

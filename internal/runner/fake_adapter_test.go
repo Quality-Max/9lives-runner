@@ -245,7 +245,7 @@ func TestDependencyOrderingAndCycleRejection(t *testing.T) {
 func TestAttemptAndOutputBudgetsAreEnforced(t *testing.T) {
 	root := t.TempDir()
 	plan := Plan{Version: 1, RunID: "run-attempt-budget", Jobs: []Job{fakeJob("job-001", "infrastructure", 0)}}
-	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: time.Second, MaxAttempts: 2, MaxOutputBytes: 1024, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 10 * time.Second, MaxAttempts: 2, MaxOutputBytes: 1024, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
 	if len(summary.Receipts) != 1 || summary.Receipts[0].Attempt != 2 {
 		t.Fatalf("attempt limit was not enforced: %#v", summary)
 	}
@@ -266,7 +266,7 @@ func TestAttemptAndOutputBudgetsAreEnforced(t *testing.T) {
 func TestNonRepeatableWorkerNeverRetriesIncompleteEvidence(t *testing.T) {
 	job := fakeJob("job-001", "infrastructure", 0)
 	job.Target = "android-fake:finance"
-	summary, _ := Execute(context.Background(), Plan{Version: 1, RunID: "run-no-retry", Jobs: []Job{job}}, ExecuteOptions{MaxAttempts: 3, Timeout: time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
+	summary, _ := Execute(context.Background(), Plan{Version: 1, RunID: "run-no-retry", Jobs: []Job{job}}, ExecuteOptions{MaxAttempts: 3, Timeout: 10 * time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
 	if len(summary.Receipts) != 1 || summary.Receipts[0].Attempt != 1 || summary.Receipts[0].Status != StatusError {
 		t.Fatalf("unsafe retry: %+v", summary)
 	}

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -21,23 +23,36 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	format := fs.String("format", "text", "text or json")
-	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK")
-	if err := fs.Parse(args); err != nil {
+	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK; with a spec path, also check that spec for prove")
+	paths := fs.Bool("paths", false, "print executable and config paths for local use; never persisted")
+	// Flags may follow the spec, as with run and prove.
+	if err := fs.Parse(flagsFirst(args, map[string]bool{"-format": true, "--format": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
 	}
-	if fs.NArg() != 0 || (*format != "text" && *format != "json") {
-		fmt.Fprintln(errOut, "9l: doctor takes only --sdk and --format text|json")
+	if fs.NArg() > 1 || (fs.NArg() == 1 && !*sdk) || (*format != "text" && *format != "json") {
+		fmt.Fprintln(errOut, "9l: doctor takes only --sdk [spec], --paths and --format text|json")
 		return 2
+	}
+	helperArgs := map[string]any{"cliVersion": version, "sdk": *sdk, "paths": *paths, "executable": executableFacts(*paths)}
+	if fs.NArg() == 1 {
+		// The helper reads the spec as text and never executes it; refuse
+		// anything but a regular file here so the report names a real spec.
+		spec, err := filepath.Abs(fs.Arg(0))
+		if info, statErr := os.Stat(spec); err != nil || statErr != nil || !info.Mode().IsRegular() {
+			fmt.Fprintln(errOut, "9l: doctor: the spec must be an existing file")
+			return 2
+		}
+		helperArgs["spec"] = spec
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// What this engine admits and can request, so the helper can judge an
 	// installed SDK by its declared protocol rather than by version string.
-	engine := map[string]any{"protocol": playwrightsdk.Version, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}
-	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: map[string]any{"cliVersion": version, "sdk": *sdk, "engine": engine}}, browsercheck.Options{Timeout: 10 * time.Second})
+	helperArgs["engine"] = map[string]any{"protocol": playwrightsdk.Version, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}
+	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: helperArgs}, browsercheck.Options{Timeout: 10 * time.Second})
 	if err != nil {
 		// Never echo a helper's arbitrary stderr or project paths from diagnostics.
 		if errors.Is(err, browsercheck.ErrNodeUnavailable) {
@@ -78,4 +93,54 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// executableFacts compares the file doctor runs from with the 9l that PATH
+// resolves to, without executing either. The paths travel to the helper only
+// under --paths; otherwise the report says just whether the two match, whether
+// 9l is on PATH at all and whether a relative PATH entry found it.
+func executableFacts(paths bool) map[string]any {
+	facts := map[string]any{"samePath": false, "otherOnPath": false}
+	self, err := os.Executable()
+	if err != nil {
+		facts["selfUnknown"] = true
+		return facts
+	}
+	if paths {
+		facts["self"] = realPath(self)
+	}
+	other, err := exec.LookPath("9l")
+	if err != nil && !errors.Is(err, exec.ErrDot) {
+		return facts
+	}
+	facts["otherOnPath"] = true
+	if !filepath.IsAbs(other) {
+		// A relative PATH entry resolves against the current directory, so
+		// what it finds depends on where a terminal or host starts.
+		facts["relative"] = true
+		if absolute, err := filepath.Abs(other); err == nil {
+			other = absolute
+		}
+	}
+	facts["samePath"] = sameFile(self, other)
+	if paths {
+		facts["other"] = realPath(other)
+	}
+	return facts
+}
+
+func realPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+func sameFile(a, b string) bool {
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	if errA == nil && errB == nil {
+		return os.SameFile(infoA, infoB)
+	}
+	return realPath(a) == realPath(b)
 }

@@ -301,7 +301,7 @@ func TestHelperFailureModes(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "node"), []byte(wrapper), 0700); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("PATH", dir)
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			_, err := assessWithHelper(context.Background(), []byte("const a=1;"), []byte(contractJSON), c, Options{}, parser, test.timeout)
 			assertDiagnostic(t, err, test.code)
 		})
@@ -357,7 +357,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: 10, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -392,7 +392,7 @@ func TestRejectForeignAndIncompleteFacts(t *testing.T) {
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("duplicate test accepted")
 	}
-	if validFacts(Facts{Version: 10, Compiler: "5.9.3"}, []byte("x"), false) {
+	if validFacts(Facts{Version: helperVersion, Compiler: "5.9.3"}, []byte("x"), false) {
 		t.Fatal("missing inventory accepted")
 	}
 }
@@ -462,7 +462,7 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: 10, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -488,11 +488,11 @@ func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
 func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 	source := []byte(strings.Repeat("xxxxxxxx\n", 256))
 	guards := []ConditionalSkip{{Location: Location{1, 1}}, {Location: Location{2, 1}}, {Location: Location{3, 1}}, {Location: Location{4, 1}}, {Location: Location{5, 1}}}
-	f := Facts{Version: 10, Compiler: "5.9.3", Tests: []Fact{}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{}}
 	for line := 10; line < 210; line++ {
 		assertions := make([]Assertion, 6)
 		for i := range assertions {
-			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}}
+			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}, Matcher: "toBe"}
 		}
 		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}})
 	}
@@ -571,6 +571,227 @@ func TestAbsenceAfterWaitIsASuspectedAdequacyConcern(t *testing.T) {
 	}
 }
 
+func TestCaughtAssertionsAreProbesNotAssertions(t *testing.T) {
+	c, err := ParseContract([]byte(contractJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := false
+	// Only a caught matcher maps the outcome and follows the wait, so it can
+	// neither cover the outcome, nor count as an assertion, nor clear the
+	// absence check that follows it.
+	probeOnly := Fact{Location: Location{1, 1}, Requirements: []string{"confirmation"}, Disabled: &enabled,
+		Assertions: []Assertion{{Location: Location{2, 3}, Outcomes: []string{"confirmation"}, Caught: true, Matcher: "toBeVisible"}}}
+	waitThenProbe := Fact{Location: Location{4, 1}, Disabled: &enabled, Sleeps: []Sleep{{Location: Location{5, 3}}},
+		Assertions: []Assertion{
+			{Location: Location{6, 3}, AfterWait: true, Caught: true, Matcher: "toBeVisible"},
+			{Location: Location{7, 3}, AfterWait: true, Absence: true, Matcher: "toBeHidden"},
+		}}
+	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Compiler: "5.9.3", Tests: []Fact{probeOnly, waitThenProbe}})
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, fmt.Sprintf("%s[%s]@%d", FindingRule(f), f.Classification, f.Line))
+		}
+		got = append(got, strings.Join(rules, ","))
+	}
+	want := []string{
+		"unmapped-outcome/maps-no-outcome[suspected]@1,no-direct-assertion[suspected]@1,caught-assertion[informational]@2",
+		"caught-assertion[informational]@6,fixed-wait[demonstrated]@5,absence-after-wait[suspected]@7",
+	}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("caught matcher findings %q", got)
+	}
+	if !strings.Contains(report.Tests[0].Findings[1].Message, "failure caught") {
+		t.Fatalf("no-direct-assertion does not say why: %q", report.Tests[0].Findings[1].Message)
+	}
+}
+
+func TestAssessReportsCaughtAssertions(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"test('probe only', async ({page}) => {\n" +
+		"  await expect(page.getByRole('heading')).not.toContainText('May').catch(() => page.getByRole('button').click());\n" +
+		"});\n" +
+		"test('wait, probe, absence', async ({page}) => {\n" +
+		"  await page.waitForTimeout(500);\n" +
+		"  await expect(page.getByText('Saved')).toBeVisible().catch(() => {});\n" +
+		"  await expect(page.getByRole('alert')).toBeHidden();\n" +
+		"});\n" +
+		"test('still rejects', async ({page}) => {\n" +
+		"  await expect(page).toHaveURL('/a').then(() => {}).finally(() => {});\n" +
+		"});\n" +
+		// A synchronous matcher throws before allSettled exists, a soft matcher
+		// fails the test either way, and a wrapped rethrowing handler rejects.
+		"test('still fail the test', async ({page}) => {\n" +
+		"  await Promise.allSettled([expect(1).toEqual(2)]);\n" +
+		"  await expect.soft(page).toHaveURL('/b').catch(() => {});\n" +
+		"  await expect(page).toHaveURL('/c').catch((error => { throw error; }));\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, strings.Join(rules, ","))
+	}
+	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v14" {
+		t.Fatalf("caught findings %q under %s", got, report.Policy)
+	}
+	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
+		t.Fatalf("credited assertions %+v", summary)
+	}
+}
+
+// A caught matcher on an expect configured from options that are not read
+// may be soft, and so may still fail the test. It is neither credited
+// silently nor read as a probe: it stays an assertion behind a limit.
+func TestAssessLimitsACaughtMatcherThatMayBeSoft(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"test('spread', async ({page}) => {\n" +
+		"  await expect.configure({ ...options })(page).toHaveURL('/a').catch(() => {});\n" +
+		"});\n" +
+		"test('literal', async ({page}) => {\n" +
+		"  await expect.configure({ ...options, soft: false })(page).toHaveURL('/b').catch(() => {});\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, fmt.Sprintf("%d %s", test.Assertions.Count, strings.Join(rules, ",")))
+	}
+	want := []string{"1 analysis-limit/possibly-soft@3", "0 no-direct-assertion@5,caught-assertion@6"}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("possibly soft findings %q", got)
+	}
+}
+
+// A non-callable rejection handler is ignored, so the matcher still fails
+// the test; a configured or spaced poll is asynchronous, so its .catch makes
+// it a probe; and a wait that a loop header evaluates once is no loop limit.
+func TestAssessReadsHandlersPollsAndLoopHeadersStructurally(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"async function loadRows(page) { await page.waitForTimeout(50); return rows; }\n" +
+		"test('non-callable handler', async ({page}) => {\n" +
+		"  await expect(page).toHaveURL('/a').catch(false);\n" +
+		"  await expect(page).toHaveURL('/b').then(() => {}, {});\n" +
+		"});\n" +
+		"test('configured poll', async () => {\n" +
+		"  await expect.configure({ timeout: 5 }).poll(() => count).toBe(3).catch(() => {});\n" +
+		"  await expect.poll (() => count).toBe(3).catch(() => {});\n" +
+		"});\n" +
+		"test('loop input', async ({page}) => {\n" +
+		"  for (const row of await loadRows(page)) { expect(row.id).toBeDefined(); }\n" +
+		"});\n" +
+		"test('loop condition', async ({page}) => {\n" +
+		"  while (await loadRows(page)) { expect(1).toBe(1); }\n" +
+		"});\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, fmt.Sprintf("%d %s", test.Assertions.Count, strings.Join(rules, ",")))
+	}
+	want := []string{
+		"2 ",
+		"0 no-direct-assertion@7,caught-assertion@8,caught-assertion@9",
+		"1 fixed-wait@2",
+		"1 analysis-limit/loop@15,fixed-wait@2",
+	}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("structural findings %q", got)
+	}
+}
+
+func TestTestsListTheAssertionsTheyAreCreditedWith(t *testing.T) {
+	enabled := false
+	fact := Fact{Location: Location{1, 1}, Disabled: &enabled, Unsupported: true,
+		Limits: []AnalysisLimit{{Location: Location{2, 3}, Code: "unresolved-helper"}},
+		Assertions: []Assertion{
+			{Location: Location{3, 3}, Matcher: "toEqual"},
+			{Location: Location{4, 3}, Matcher: "toBe"},
+			{Location: Location{5, 3}, Matcher: "toEqual"},
+			{Location: Location{6, 3}, Matcher: "toBeVisible", Caught: true},
+		}}
+	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if test.Assertions.Count != 3 || strings.Join(test.Assertions.Matchers, ",") != "toBe,toEqual" {
+		t.Fatalf("credited assertions %+v", test.Assertions)
+	}
+	// Listing what was recognized changes no dimension: a limit still leaves
+	// adequacy unknown, and static assessment never has runtime evidence.
+	if test.Dimensions["assertionAdequacy"] != "unknown" || test.Dimensions["runtimeEvidence"] != "unknown" {
+		t.Fatalf("dimensions %v", test.Dimensions)
+	}
+	none := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{{Location: Location{1, 1}, Disabled: &enabled}}}).Tests[0]
+	if none.Assertions.Count != 0 || none.Assertions.Matchers == nil {
+		t.Fatalf("an empty summary must be a count of 0 and an empty list: %+v", none.Assertions)
+	}
+}
+
+func TestAssessCreditsDirectAssertionsBesideAnUnresolvedHelperAndLoop(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {test,expect} from '@playwright/test';\n" +
+		"import {seedCases} from './seed';\n" +
+		"test('seeded cases', async ({request}) => {\n" +
+		"  const cases = await seedCases(request);\n" +
+		"  for (const c of cases) {\n" +
+		"    const response = await request.get(c.url);\n" +
+		"    expect(response.status()).toBe(200);\n" +
+		"    expect(await response.json()).toEqual(c.body);\n" +
+		"  }\n" +
+		"});\n" +
+		"test('helper only', async ({request}) => { await seedCases(request); });\n")
+	report, err := Assess(context.Background(), source, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, test := range report.Tests {
+		var rules []string
+		for _, f := range test.Findings {
+			rules = append(rules, FindingRule(f)+"@"+fmt.Sprint(f.Line))
+		}
+		got = append(got, fmt.Sprintf("%d %v %s", test.Assertions.Count, test.Assertions.Matchers, strings.Join(rules, ",")))
+	}
+	// The loop is no limit; the unresolved helper stays one, at its call.
+	want := []string{"2 [toBe toEqual] analysis-limit/unresolved-helper@4", "0 [] analysis-limit/unresolved-helper@11"}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("credited assertions %q", got)
+	}
+}
+
+func TestAFileWithNoTestsSaysSo(t *testing.T) {
+	report := Build([]byte("source"), nil, Contract{}, Facts{Compiler: "5.9.3", Tests: []Fact{}})
+	if !strings.Contains(strings.Join(report.Limits, "\n"), NoTestsLimit) {
+		t.Fatalf("no-tests limit missing: %q", report.Limits)
+	}
+	unrecognized := Build([]byte("source"), nil, Contract{}, Facts{Compiler: "5.9.3", Tests: []Fact{}, UnrecognizedTestImports: []string{"e2e"}})
+	if strings.Contains(strings.Join(unrecognized.Limits, "\n"), NoTestsLimit) {
+		t.Fatal("an unrecognized test import is reported as a file with no tests")
+	}
+}
+
 func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 	requireNode(t)
 	source := []byte("import {test,expect} from '@playwright/test';\n" +
@@ -596,7 +817,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v13" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v14" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -631,13 +852,13 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v13" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v14" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }
 
 func TestHazardEvidenceIsValidated(t *testing.T) {
-	f := Facts{Version: 10, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
 	if !validFacts(f, []byte("xx"), false) {
 		t.Fatal("valid hazard rejected")
 	}
@@ -653,7 +874,7 @@ func TestHazardEvidenceIsValidated(t *testing.T) {
 			t.Fatalf("invalid hazard evidence accepted: %+v", hazards)
 		}
 	}
-	f.Version = 9
+	f.Version = helperVersion - 1
 	f.Tests[0].Hazards = []Hazard{}
 	if validFacts(f, []byte("xx"), false) {
 		t.Fatal("facts from the previous helper version accepted")
@@ -707,7 +928,7 @@ func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
 	}
 	// A value typed into a field and a key press are not selectors.
 	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v13" {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v14" {
 		t.Fatalf("hazard findings %q under %s", got, report.Policy)
 	}
 	counts, total := CountFindings(report)
@@ -723,7 +944,7 @@ func TestTruncatedHazardsAreBoundedAndDisclosed(t *testing.T) {
 		hazards[i] = Hazard{Location: Location{i%600 + 1, i/600 + 1}, Kind: "xpath"}
 	}
 	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}
-	f := Facts{Version: 10, Compiler: "5.9.3", Tests: []Fact{fact}, HazardsTruncated: true}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{fact}, HazardsTruncated: true}
 	if validFacts(f, source, false) {
 		t.Fatal("more hazards than the budget accepted")
 	}

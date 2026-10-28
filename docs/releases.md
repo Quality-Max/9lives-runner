@@ -21,11 +21,11 @@ and changelog. `npm test` fails if those declarations differ. Merge it to
 
 ```sh
 git fetch origin
-git tag v0.5.0 origin/main
-git push origin v0.5.0
+git tag v0.5.4 origin/main
+git push origin v0.5.4
 ```
 
-The commands above release CLI and SDK 0.5.0; choose the matching version for
+The commands above release CLI and SDK 0.5.4; choose the matching version for
 a later release. Never move a published tag to different source. The tag
 starts one workflow, `release.yml`, which runs in this order:
 
@@ -35,8 +35,9 @@ starts one workflow, `release.yml`, which runs in this order:
 2. `qualification` runs the entire reusable CI workflow once; its `sdk` job
    packs and qualifies the SDK tarball.
 3. `binaries` builds and exercises the six CLI archives on native runners.
-4. `github-release` validates the archives, writes `SHA256SUMS` and publishes
-   the GitHub Release.
+4. `github-release` validates the archives, writes `SHA256SUMS`, attests
+   build provenance for both, publishes the GitHub Release, then downloads
+   the published assets and verifies their bytes and attestations.
 5. `npm` publishes the SDK tarball from step 2 (see
    [trusted publications](#subsequent-trusted-publications)).
 
@@ -59,20 +60,41 @@ pass checkout assertions, business failure, owned timeout/cancel and clean
 consumer checks before release packaging. Windows arm64 has no Go race
 detector; its Go tests run without `-race`. Windows ZIPs start with
 CLI v0.2.0. Only the final publishing job has repository
-write permission; its actions are pinned to commit SHAs. Archives are not
-Apple notarized.
+write permission. Every action in this repository's workflows is pinned to a
+full commit SHA with its version in a comment. Archives are not Apple
+notarized.
 Published assets are not overwritten by a workflow rerun.
 
+From v0.5.2, `github-release` attests SLSA build provenance for every archive
+and for `SHA256SUMS` with `actions/attest-build-provenance`, from the files it
+uploads, before it publishes them. It is the only job granted
+`attestations: write`, and it and the `npm` job are the only ones with
+`id-token: write`; neither is granted at the workflow level. After
+publication the job downloads the release's assets, requires the same names
+and bytes it attested, and runs `gh attestation verify` on each against this
+repository, `release.yml` and the tag. A mismatch fails the run before the
+`npm` job. Rerunning the failed jobs reuses the run's archives, so the
+comparison holds; a rerun of all jobs rebuilds them, and if the release
+already holds the earlier, attested assets the comparison fails and the
+`npm` job does not run. Releases up to v0.5.1 have no attestations.
+
 After publication, download the matching native archive and checksum file,
-verify them using the [installation guide](install.md), inspect `9l --version`,
+verify them and the archive's attestation using the
+[installation guide](install.md#verify-build-provenance), inspect `9l --version`,
 and execute the checkout demo with the downloaded binary. Cross-compilation
 alone is not native runtime qualification. If a release is defective, stop
 recommending it and publish a fixed version; do not silently replace its bytes
 or reuse a version number.
 
-Once the release is verified, bump the version that
-`curl -fsSL https://9lives.run/install.sh | sh` installs in a separate change;
-see [Website and installer](website.md#bumping-the-installed-release).
+The release is created without being marked Latest. The workflow's final
+`latest` job marks it Latest once the `github-release` job has verified the
+published assets and attestations and the `npm` job has published the SDK,
+and only if it is the highest stable version, so rerunning an older tag
+never moves Latest back. `curl -fsSL https://9lives.run/install.sh | sh`
+installs the release marked Latest, so no installer change follows a release;
+see [Website and installer](website.md#which-release-the-installer-installs).
+If the `latest` job does not run, installs stay on the previous release until
+a rerun completes it.
 
 ## Qualify the SDK
 

@@ -35,6 +35,28 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Readiness: `--wait-for <url|host:port>` (repeatable) waits, inside the
+  started run and before any test process starts, until an http(s) target
+  answers without a server error (a status below 500 other than 429) or a
+  host:port accepts a TCP connection, polling every 500 ms for
+  `--wait-timeout` (1s to 30m, default 1m). A target still not ready when
+  the wait timeout passes leaves the run incomplete (exit 3): no test
+  process starts, and each planned job gets an error receipt reading `not
+  started: --wait-for target not ready (environment): <target> was not ready
+  after 1m0s: dial: connection refused`, so `9l result` and `9l status` read
+  the run back and an application that never came up is not reported as
+  failing tests. The wait counts against `--deadline`, and `9l cancel` or
+  Ctrl-C during it reports the run canceled, like any canceled run. A
+  target is named only as `scheme://host:port` or `host:port`, never with
+  its path, query, fragment or credentials; the reason is an HTTP status, a
+  network error code, `no such host` (the resolver said the name does not
+  exist), `dns lookup timed out` or `dns lookup failed` (the resolver did not
+  answer), `timed out`, `certificate not trusted` or `tls handshake failed`. An https target with a self-signed certificate is not
+  trusted and never becomes ready; wait for its `host:port` instead, which
+  checks only that it accepts connections. The host is a name, an IPv4
+  address or a bracketed IPv6 literal (`[::1]:8080`, `http://[fe80::1%25en0]/`);
+  any other host with a colon, such as `http://localhost:80:90`, is a usage
+  error. `plan` and `--dry-run` validate the targets but do not wait.
 - Retries: `--attempts <n>` is 9l's own retry of the whole job, with a receipt
   per attempt. The project's Playwright `retries` still apply inside each
   attempt, so a failing test can run several times within one receipt.
@@ -72,7 +94,8 @@
 - Assertion steps: with `--sdk`, the receipt records `reportedAssertions`,
   the assertion steps the worker reported as passed in each executed test's
   last completed attempt, and `passedWithoutAssertions`, the tests that passed
-  while reporting none. `9l run` and `9l result` print `N passed test(s)
+  while reporting none. A retrying assertion (`expect.poll`, `toPass`) counts
+  once, including the assertions inside it. `9l run` and `9l result` print `N passed test(s)
   reported no assertion step` under such a job. These are the worker's
   report, not verified coverage: `assertionCoverage` stays `unknown`. Without
   `--sdk`, Playwright's JSON reporter carries only `test.step` steps, so the
@@ -127,21 +150,28 @@
 - `9l assess`: advisory source assessment of a spec, or a combined report for
   several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles
-  for local use. Static findings do not establish executed assertion coverage.
+  for local use. Text output sums analysis limits in one line per file,
+  counted per code; `--limits` lists each limit location instead. Static
+  findings do not establish executed assertion coverage.
 - Experimental `9l prove`: run one spec, then re-run it once per injected
   network fault (`abort`, `http-500`, `empty-json` by default; `http-401`,
-  `http-403`, `http-429` and `malformed-json` with `--faults`) on each
-  fetch/XHR request it made, and report which faults an assertion caught and
-  which survived.
-  Requires `@9l/playwright` 0.1.1 or newer, and 0.1.3 or newer for the
-  `--faults` opt-in kinds; see [Prove](prove.md).
+  `http-403`, `http-429`, `malformed-json`, `redirect-cross-origin` and
+  `delay` with `--faults`) on each fetch/XHR request it made, and report
+  which faults an assertion caught and which survived.
+  Requires `@9l/playwright` 0.1.1 or newer, 0.1.3 or newer for the
+  `--faults` opt-in kinds and 0.5.1 or newer for `redirect-cross-origin`
+  and `delay`; see [Prove](prove.md).
 - Experimental `9l confirm`: run one reproduction spec on the revision a
   finding was reported against (`--unfixed`) and on the fixing revision
   (`--fixed`, default the working tree), each in its own Git worktree, and
   report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
   `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
-  commit and test source for later assessment/execution checks.
+  commit and test source for later assessment/execution checks. A `matched`
+  assessment has `scope: "spec"`: it compared the selected spec's bytes, its
+  path, the branch, commit and workspace root. Helpers, page objects and the
+  module under test are not compared, so `matched` does not mean unchanged
+  dependencies; the text output says so.
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
   proposals remain unverified and require approval.
 - `9l heal`: execute a failing Playwright spec, verify a selector-only
@@ -192,8 +222,14 @@ scan checks same-origin links with the session, except links whose path or
 query names a sign-out or data change (`logout`, `sign_out`, `delete`,
 `remove`, `unsubscribe` and similar): those are reported as skipped `info`
 findings rather than requested. Use `--max-links 0` to request none.
-Destinations are checked before each request; a hostname whose DNS answer
-changes between that check and the connection is not yet pinned (#108).
+Destinations are checked before each request. Link checks requested from
+Node check the address they connect to as well, on every redirect, so a
+hostname whose DNS answer changes after the first check (DNS rebinding) is
+still refused; the browser's navigation, subrequests and WebSockets are not
+yet pinned that way (#108). One more gap: same-origin links the page itself requests are followed
+through redirects inside Chromium, where only the first URL is checked, so
+such a link that redirects to a private or another loopback address is not
+yet refused (#108).
 
 `scan` and `inspect` are observations from one cold page load on this
 machine, not field data. They run in a Node helper embedded in the binary,

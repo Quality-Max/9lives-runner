@@ -186,10 +186,14 @@ type SuiteSummary struct {
 	Failed   int `json:"failed"`
 	// Unrecognized counts files whose `test` import assess does not
 	// recognise; they have a report but none of their tests were assessed.
-	Unrecognized int            `json:"unrecognized"`
-	Tests        int            `json:"tests"`
-	Findings     int            `json:"findings"`
-	Rules        map[string]int `json:"rules"`
+	Unrecognized int `json:"unrecognized"`
+	// NoTests counts files with a report in which no test declaration was
+	// recognized, such as a helper module given as a path. They are neither
+	// assessed nor failed.
+	NoTests  int            `json:"noTests"`
+	Tests    int            `json:"tests"`
+	Findings int            `json:"findings"`
+	Rules    map[string]int `json:"rules"`
 }
 
 // SuiteReport combines per-file reports. Completeness is partial whenever any
@@ -303,9 +307,12 @@ func buildSuite(files []SuiteFile, contract []byte) SuiteReport {
 			suite.Summary.Failed++
 			continue
 		}
-		if len(file.Report.UnrecognizedTestImports) > 0 {
+		switch {
+		case len(file.Report.UnrecognizedTestImports) > 0:
 			suite.Summary.Unrecognized++
-		} else {
+		case len(file.Report.Tests) == 0:
+			suite.Summary.NoTests++
+		default:
 			suite.Summary.Assessed++
 		}
 		suite.Summary.Tests += len(file.Report.Tests)
@@ -332,29 +339,40 @@ func buildSuite(files []SuiteFile, contract []byte) SuiteReport {
 // applying to several tests or one wait inside a shared helper, count once; an
 // outcome unmapped in the file counts once per requirement and outcome.
 func CountFindings(report Report) (map[string]int, int) {
-	type key struct {
-		rule, requirement, outcome string
-		at                         Location
-	}
-	counted := map[key]bool{}
+	counted := map[CountKey]bool{}
 	counts, total := map[string]int{}, 0
 	for _, test := range report.Tests {
 		for _, finding := range test.Findings {
-			rule := FindingRule(finding)
-			k := key{rule, finding.Requirement, finding.Outcome, finding.Location}
-			// An outcome mapped nowhere in the file is one gap; a test that
-			// maps none of its requirement's outcomes is a defect per test.
-			if finding.Rule == "unmapped-outcome" && finding.Code == CodeUnmappedInFile {
-				k.at = Location{}
-			}
+			k := FindingCountKey(finding)
 			if !counted[k] {
 				counted[k] = true
-				counts[rule]++
+				counts[k.rule]++
 				total++
 			}
 		}
 	}
 	return counts, total
+}
+
+// CountKey identifies a finding for counting: findings with equal keys count
+// once in a report.
+type CountKey struct {
+	rule, requirement, outcome string
+	at                         Location
+}
+
+// FindingCountKey is the key under which CountFindings counts a finding. The
+// call site is not part of it, so a finding inside a helper counts once for
+// the helper's line however many tests call it. Text output that counts
+// findings uses the same key so its counts agree with the summary.
+func FindingCountKey(finding Finding) CountKey {
+	k := CountKey{FindingRule(finding), finding.Requirement, finding.Outcome, finding.Location}
+	// An outcome mapped nowhere in the file is one gap; a test that maps none
+	// of its requirement's outcomes is a defect per test.
+	if finding.Rule == "unmapped-outcome" && finding.Code == CodeUnmappedInFile {
+		k.at = Location{}
+	}
+	return k
 }
 
 // FindingRule is the rule, qualified by its code when they differ.

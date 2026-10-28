@@ -34,6 +34,21 @@ counts once per requirement and outcome. `--titles` adds literal test titles (fi
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
 
+Analysis limits repeat for every test that calls the same unresolved helper
+or passes the same callback, so on a large suite they would crowd out the
+rule findings. The text report therefore leaves `analysis-limit` findings out
+of the test lines and sums them in one unindented line after the file's
+tests, one count per limit code by descending count, for example
+`analysis limits in this file: unresolved-helper ×37, nested-function ×12 (--limits lists them)`.
+The line belongs to the file, not to the test printed above it. It counts
+limits with the same rule as the per-rule summary: a location counts once
+however many tests report it, and the call site is not part of the count, so
+a limit inside a helper counts once for the helper's own line rather than once
+per calling test. The per-file counts therefore add up to the summary's.
+`--limits` restores one line per limit finding under its test, as for other
+rules. Both are text options only: the JSON report lists every limit finding
+either way and is identical with and without `--limits`.
+
 Only `test` imported by name from `@playwright/test` or `@9l/playwright` is
 recognised. A file that imports `test` only from another module, such as a
 fixture file that re-exports it or another test runner's package, reports no
@@ -53,11 +68,16 @@ A single regular file gives the single-file report described below. Several
 inputs, a directory or a quoted pattern give one combined suite report
 (`version` 1) with the shared `policy`, `requirementsSHA256`, `execution` and
 `completeness`, one `files` entry per file holding its single-file `report` or
-an `error` code, a `summary` (files, assessed, failed, unrecognized, tests,
-findings and per-rule counts) and the union of limits. A file with an
+an `error` code, a `summary` (files, assessed, failed, unrecognized, noTests,
+tests, findings and per-rule counts) and the union of limits. A file with an
 unrecognised `test` import counts as `unrecognized`, not `assessed`, and the
 text summary lists it as not assessed; unlike a failed file it does not make
-the command exit 2. A directory contributes files named
+the command exit 2. A file in which no test declaration is recognized, such as
+a helper module given as a path, counts as `noTests`, not `assessed`: the text
+report prints `file "<path>": no tests`, the summary reads, for example,
+`2 files (1 assessed, 1 with no tests, 0 not assessed)`, and its report carries
+a `no-tests` limit. It does not change the exit code. Its assertions are not
+attributed to the specs that import it. A directory contributes files named
 like Playwright's default `testMatch` (`*.spec.*`/`*.test.*` with `js`, `ts`,
 `jsx`, `tsx`, `mjs`, `cjs`, `mts` or `cts`). A pattern matches path segments,
 with `**` matching any number of directories, and takes every matching file. A
@@ -155,8 +175,19 @@ prevent complete analysis. Every report is explicitly partial. Test locations
 identify recognized syntax; this inventory is not authoritative runtime
 discovery. Limit findings carry one bounded code and location per reason:
 `dynamic-callback`, `declaration-generation`, `nested-function`,
-`conditional-flow`, `shadowed-binding`, `runtime-skip`, `unresolved-helper` and
-`unknown-matcher`. A nested function, such as a callback, is a
+`conditional-flow`, `loop`, `shadowed-binding`, `runtime-skip`,
+`unresolved-helper`, `unknown-matcher` and `possibly-soft`. `conditional-flow` marks a branch
+that can skip an assertion: `if`, `switch`, `try`, `?:`, `&&`, `||` and `??`.
+A `for`, `for…of`, `for…in`, `while` or `do` loop is not a branch. A loop
+whose body holds assertions, actions and calls gives no limit of its own;
+each assertion in it is recorded once, and whether or how often the loop runs
+is not evaluated, so a loop over an empty list runs none of them. Branches,
+calls and nested functions inside the loop remain limits of their own. A loop
+that repeats a fixed wait in its body or in a condition or update, directly
+or through an inlined helper, gives the `loop` limit; a wait in a `for`
+initializer or a `for…of` or `for…in` input runs once and is read in order
+without that limit. The limit is given because the order of waits and
+assertions across iterations, which `absence-after-wait` depends on, is not analyzed. A nested function, such as a callback, is a
 `nested-function` limit only when it holds a recognized assertion or wait,
 directly or through an inlined helper, because how often and when it runs is
 unknown; it is reported once, at the outermost such function. Calls, branches
@@ -209,11 +240,30 @@ waits, exclusive/disabled syntax and recognized asynchronous matcher findings.
 Unsupported analysis never produces `no-direct-assertion`; a supported body
 with no recognized assertion still produces a suspected absence finding.
 
+Each test lists the assertions it is credited with as
+`assertions: {"count": N, "matchers": [...]}`: every recognized matcher in its
+body and in the same-file helpers resolved from it, and every marked helper
+call, whatever limits the test also has. `matchers` holds the distinct names,
+sorted: names from the pinned Playwright API, `custom` for any other matcher
+and `assertion-helper` for a marked helper call; other source identifiers are
+not reported. Caught probes are not counted. The text report prints
+`recognized assertions: 2 (toBe, toEqual)` under a test with any. A test whose
+direct assertions sit beside one unresolved helper call therefore no longer
+reads like a test with no visible assertion, while the `unresolved-helper`
+limit stays at that call and covers only what the helper itself asserts.
+The list records what the source contains, not what runs: an assertion inside
+a loop, a branch or a nested function is listed even though it may run any
+number of times, including none, and the limits say so. It changes no
+dimension. Assertion adequacy still becomes only `concern` or `unknown`, as
+static rules cannot show that assertions are adequate, and runtime evidence
+stays `unknown` because nothing is executed.
+
 | Finding | Classification | Meaning |
 | --- | --- | --- |
 | Required outcome lacks an assertion annotation | suspected | No test in the file maps it, or this test maps none of the requirement's outcomes; helpers may protect it. |
 | No direct expect matcher in a supported body | suspected | No recognized direct assertion; unsupported bodies keep adequacy unknown. |
 | Async matcher neither directly awaited nor returned | suspected | Inspect how its promise is consumed. |
+| Matcher whose failure is caught (`caught-assertion`) | informational | A conditional probe that cannot fail the test; it is not counted as an assertion. |
 | `waitForTimeout` or `test.only` syntax | demonstrated | That syntax exists; runtime effect still needs context. |
 | Absence assertion first after a fixed wait (`absence-after-wait`) | suspected | A slow application also passes it; assert a positive completion signal first. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
@@ -232,7 +282,7 @@ recognized test in that suite, including tests declared before them.
 ignored; any other condition, a modifier under a branch, or one in an
 `afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
 location. After hooks run once test bodies have run: Playwright 1.61.1 through
-1.64.0 report a passing test skipped from `afterEach` and only some results
+1.64.1 report a passing test skipped from `afterEach` and only some results
 skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
 cannot be attributed from source and are ignored. Playwright treats a string
 followed by a function as a declaration at runtime, so only calls that cannot
@@ -258,10 +308,12 @@ and any other matcher negated with `.not`; negating an absence matcher, such as
 between the wait and the absence check counts as a completion signal. An
 unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the Playwright 1.61.1 API, whose matchers are
-unchanged through 1.64.0 (CI checks each release's type declarations),
-including locator, page, API-response and function assertions, and any
-matcher chained through `resolves` or `rejects`. Generic and snapshot matchers
-are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
+unchanged through 1.64.1 (CI checks each release's type declarations),
+including locator, page, API-response and function assertions, any
+matcher chained through `resolves` or `rejects`, and any matcher on
+`expect.poll(...)`, including one called on an `expect.configure(...)` chain.
+These are read from the syntax tree, so spacing and line breaks do not hide
+them. Generic and snapshot matchers are synchronous. A matcher is consumed when it, or a `then`/`catch`/`finally`
 chain on it, is awaited or returned by the function being scanned; the chained
 promise methods are not themselves matchers. A matcher that is an element of
 an array literal passed to `Promise.all`, `allSettled`, `race` or `any` is
@@ -277,6 +329,55 @@ cases. Any other matcher, such as a custom `expect.extend` matcher or
 one added in a later Playwright release, that is neither awaited nor returned
 gives the `unknown-matcher` limit, because whether it returns a promise is
 unknown.
+A matcher whose failure is caught cannot fail the test, so it is read as a
+conditional probe, such as
+`await expect(heading).not.toContainText('May').catch(() => next.click())`,
+not as an assertion. A failure takes one of two forms. An asynchronous
+matcher (above) rejects its promise; a synchronous one throws while the
+expression is evaluated, before any promise exists. A rejection is caught by
+`.catch(handler)` or `.then(onFulfilled, onRejected)` on the matcher, by
+`Promise.allSettled` holding it, or by such a handler on the `Promise.all`,
+`race` or `any` call holding it. None of these catches a throw, so
+`await Promise.allSettled([expect(a).toEqual(b)])` stays an assertion. A
+`try` block of the same function whose `catch` does not rethrow catches a
+throw, and a rejection only when it is awaited inside the block:
+`try { return await check(page); } catch {}` catches it, while
+`try { return check(page); } catch {}` lets the returned promise reject after
+the block. A failure leaves a resolved helper when the helper's own body
+throws it, or awaits or returns the rejecting promise; it reaches the call
+site as a rejection if the helper is `async` and in its own form otherwise,
+and is caught or not there by the same rules, through every level of
+inlining. A failure inside a function nested in the helper goes to that
+function's caller and is not traced to the call site. A marked helper is
+caught when its call is: a rejection if it is a same-file `async` function,
+otherwise both a throw and a rejection. A matcher outside the pinned API,
+whose form is unknown, is likewise caught only when both forms are; when just
+one is, it stays an assertion and gives the `unknown-matcher` limit. A soft
+matcher, `expect.soft(...)` or one through `expect.configure(...)` whose
+`soft` option is `true`, records its failure on the test whether or not
+anything catches it, so it is never a probe. Each `expect.configure` call
+merges its options over the ones it was called on, so the outermost call that
+sets `soft` decides, and within one object the last property does. When that
+cannot be read, because the options are a variable, a spread, a computed key
+or a `soft` value other than `true` or `false`, a caught matcher stays an
+assertion and gives the `possibly-soft` limit rather than being credited
+silently or read as a probe. A call made on `expect.configure(...)` itself,
+such as `.configure(...)` or `.soft(...)`, is not a matcher. A handler is
+read through parentheses, `as`, `satisfies` and a non-null `!`. A handler rethrows when
+its own body, outside nested functions, has a `throw` statement or a
+`Promise.reject` call; any other handler, including a named function whose
+body is not visible, is taken to swallow the failure. A promise ignores a
+handler that is not a function, so a `.catch()` with no handler, a handler
+that is a literal of any kind (such as `false`, `0` or `'x'`), an array or
+object literal, a template, `null`, `undefined`, `void`, `typeof` or a prefix
+operator such as `!` or `-`, a chain ending only in
+`.then(onFulfilled)` or `.finally`, and a `try` with only `finally` still
+reject, so those matchers stay assertions. A probe gets `caught-assertion`
+(informational) at the matcher and does not count as an assertion for
+`no-direct-assertion`, for outcome mapping or as the positive completion
+signal between a fixed wait and an absence check. Rejections caught further
+away, such as by a caller of an unresolved helper or around a nested
+function, are not traced.
 Debugging leftovers and locators tied to page structure or element order are
 engineering-quality findings, reported once per test at their location, with
 `site` when they are in a helper the test calls. They are found wherever test
@@ -304,10 +405,18 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v13` parses
+inputs invalidate prior assessments. Policy `assessment-source-v14` reads a
+matcher whose failure is caught as a probe with the informational
+`caught-assertion` rule (with the `possibly-soft` limit for a caught matcher
+whose `soft` option cannot be read), no longer reports a plain loop as `conditional-flow`
+(only a loop repeating a fixed wait gives the new `loop` limit), lists each
+test's credited `assertions`, and counts a file with no tests as `noTests`
+with a `no-tests` limit instead of as assessed. The helper version is 11;
+report version 3 and suite version 1 are unchanged, as the new fields are
+additive. Policy `assessment-source-v13` parses
 `.js`, `.mjs`, `.cjs` and `.jsx` specs as JavaScript, so TypeScript-only syntax
 in them is a `typescript-in-javascript` failure instead of a clean report; the
-helper version is 10 and report version 3 is unchanged. Policy
+helper version was 10 and report version 3 is unchanged. Policy
 `assessment-source-v12` removes
 the noisy `unnamed-role` advisory introduced in v11. The `debugging-leftover` and `fragile-selector` rules and
 `hazardsTruncated` limit remain; the helper version was 9 and report version 3
@@ -328,9 +437,10 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
 `conditional-skip`, `environment-skip`, `absence-after-wait`,
-`debugging-leftover` and `fragile-selector` rules, the `unknown-matcher` limit
-code, an absent `requirementsSHA256`, an optional test `title` and an optional
-finding `site` before upgrading. Requirement contract and agent provenance snapshot
+`debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the
+`unknown-matcher`, `loop` and `possibly-soft` limit codes, an absent `requirementsSHA256`, an
+optional test `title`, an optional finding `site`, the test `assertions`
+summary and the suite summary's `noTests` count before upgrading. Requirement contract and agent provenance snapshot
 versions remain 1. Reports omit source, requirement prose and raw diagnostic
 payloads, and omit titles unless `--titles` is given.
 

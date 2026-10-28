@@ -143,3 +143,21 @@ func TestAgentProvenanceRejectsMalformedRecordsAndDetachedBranch(t *testing.T) {
 		t.Fatal("detached branch accepted")
 	}
 }
+
+// A compared assessment names its scope: the selected spec, not the modules
+// it imports. An unknown assessment compared nothing and carries no scope.
+func TestProvenanceAssessmentScope(t *testing.T) {
+	_, p := provenanceFixture(t)
+	changed := p
+	changed.Source = provenanceHash([]byte("changed source"))
+	for name, assessment := range map[string]ProvenanceAssessment{"matched": CompareAgentProvenance(p, p), "mismatch": CompareAgentProvenance(p, changed)} {
+		raw, err := json.Marshal(assessment)
+		if err != nil || assessment.Status != name || !strings.Contains(string(raw), `"scope":"spec"`) {
+			t.Fatalf("%s: %s %v", name, raw, err)
+		}
+	}
+	raw, _ := json.Marshal(UnknownAgentProvenance())
+	if strings.Contains(string(raw), "scope") {
+		t.Fatalf("unknown provenance claims a scope: %s", raw)
+	}
+}

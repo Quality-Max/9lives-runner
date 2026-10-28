@@ -6,6 +6,286 @@ SDK versions.
 
 ## Unreleased
 
+## 0.5.4 — 2026-10-28
+
+### CLI
+
+- `9l update` checks the stable release marked Latest and asks before
+  replacing the running CLI. `--check` checks without installing, and `--yes`
+  explicitly approves a non-interactive update. Downloads, checksums, archive
+  contents and the candidate's runner/version identity are bounded and
+  validated before replacement. Project SDK dependencies are left to the
+  project's developer.
+- After an interactive text `9l run` finishes, the CLI checks for updates at
+  most once per day and offers installation for future runs. CI, JSON output,
+  redirected streams, canceled/incomplete runs and MCP do not prompt or check.
+  `NINELIVES_NO_UPDATE_CHECK=1` disables automatic checks; explicit `9l update`
+  remains available. Update failure does not change the test run's result.
+
+## 0.5.3 — 2026-10-27
+
+### CLI
+
+- A Windows output drain no longer hangs when its initial wait ends while
+  another goroutine is reading a synchronous pipe. After stopping the owned
+  process job, Windows drains to end of file without inspecting the pipe;
+  the byte and time bounds remain as backstops (#198).
+- A run deadline reached during `--wait-for` is reported as the run's
+  deadline, rather than as an environment failure saying the target was not
+  ready. The run remains `timed_out` (#190).
+- Output a command wrote before it exited is no longer lost when the machine
+  is busy. Test-runner stdout and stderr, healing provider CLIs and the
+  helper processes the runner owns used to drop output the runner had not yet
+  read 50 ms after the process exited: a failing provider then reported no
+  reason (`codex provider failed (exit 1)`), and a successful exit could
+  return truncated output as complete. Output is now read until the process
+  group has been stopped and every byte already written has reached its
+  destination, however slowly. Only a pipe that a writer outside the group
+  still holds open, with nothing left unread, is closed after 5 s. After that
+  the runner reads at most what an exited writer can have left in a pipe
+  (1 MiB) for at most 30 s, so a writer outside the group that never stops
+  writing cannot keep the command from returning. Cancelling the run or
+  reaching its deadline ends the 5 s wait at once and fails the command. A
+  destination that rejects output, or a pipe the runner had to close without
+  showing it was drained, fails an otherwise successful command.
+- `9l doctor --sdk <spec>` no longer reports `spec/import` as `missing`, and
+  so exits 2, for a valid spec that registers its tests through a named
+  import from a fixtures module, such as `import { it } from './fixtures'`
+  where the module exports `base.extend(…)` from `@9l/playwright`, beside an
+  unused `test` from `@playwright/test`. A named import the spec uses the way
+  a test function is used (called with a title and a callback outside any
+  test or hook body, or through `describe`, a hook, `extend` or `only`) is
+  now a warning that the module is not followed. Helpers called any other
+  way, such as `login(page)`, a member call `api.it(…)` or a `step('x', fn)`
+  wrapper inside a test, do not count, so a plain spec that uses them is
+  still `missing`; a local alias or extension of the plain test, such as
+  `const t = test.extend({})`, is the plain test. The callback may be a
+  function the spec declares once and passes by name, `it('x', body)`,
+  typed or not; a named function expression's own name declares nothing
+  outside it. A function passed by name to the plain test or a hook,
+  `test('x', body)` or `test.beforeEach(seed)`, is a test body, so a step
+  wrapper in it does not count either. `spec/fixtures` reads the callbacks
+  of such a test function too. Type arguments are read in balance, so
+  `base.extend<{ values: Array<string> }>(…)` from a fixtures module may
+  register tests, and `test.extend<{ get: () => string }>(…)` is still the
+  plain test. Every declarator of a `const`, `let` or `var` list is read, so
+  `const other = 1, body = async ({ page }) => {}` declares `body` and
+  `const other = 1, t = test.extend({})` is still the plain test. A callback
+  may declare type parameters, inline, `it('x', async <T,>({ page }) => {})`,
+  or by name, `async function body<T extends Record<string, unknown>>(…)`.
+  Doctor reads call arguments, annotations, type arguments and a declared
+  callback's head only within a bound; a call or callback it reads only in
+  part, such as one behind a 5,000-character comment or a 600-character one
+  between `async` and its parameters, is not verified and counts as a
+  possible test registration rather than as proof that there is none.
+
+### SDK
+
+- Qualified with `@playwright/test` 1.64.1, which fixes Chromium 155 and
+  later aborting a preflighted cross-origin redirect with `net::ERR_ABORTED`
+  whenever any route is registered. The `playwright-compat` CI job runs the
+  unit, browser, assessment and packed-consumer checks on it, and install
+  examples and `9l doctor` repair commands now name 1.64.1. 1.64.0 stays
+  qualified; the peer range is unchanged (`>=1.61.1 <2`).
+
+### Release process
+
+- SDK qualification publishes worker and server readiness records by rename,
+  so the smoke cannot parse a partially written PID record while checking
+  owned timeout and cancellation. A controlled subprocess test checks that
+  readiness stays unpublished until its JSON is complete.
+- `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub
+  marks Latest instead of a version pinned in the script, so a release no
+  longer needs an installer or website change. The release workflow creates
+  each release without marking it Latest and marks it only after the
+  published archives, checksums and provenance attestations were verified and
+  the SDK was published, and only if it is the highest stable version; a run
+  that fails earlier leaves installs on the previous release. The installer
+  follows the github.com redirect, not the GitHub API, and accepts only a
+  stable tag of this repository; `NINELIVES_VERSION=vX.Y.Z` still installs a
+  specific release. The homepage no longer names a CLI version.
+
+## 0.5.2 — 2026-10-27
+
+### CLI
+
+- On Unix, owned process cleanup tracks detached Playwright `webServer`
+  descendants as well as the original process group. Deadline, cancellation
+  and normal completion stop observed owned children before returning, so
+  the server does not retain its listening port for the next run. Process
+  observations run every 500 ms during execution and every 50 ms during
+  cleanup. Temporary inspection failures can recover; startup and cleanup
+  still require fresh successful snapshots and persistent failures remain
+  unsuccessful. Tracking is sampled, not kernel containment: a process that
+  detaches and loses its parent entirely between observations can escape it
+  (#191).
+- `9l assess` reads a matcher whose failure is caught as a conditional
+  probe, not an assertion: one consumed through `.catch(handler)`, a `.then`
+  rejection handler, `Promise.allSettled`, a `.catch` on the `Promise.all`,
+  `race` or `any` call carrying it, or awaited inside a `try` block whose
+  `catch` does not rethrow, including through a helper called that way. Such a
+  matcher cannot fail the test, so it no longer satisfies
+  `no-direct-assertion`, counts toward outcome mapping or acts as the positive
+  completion signal that clears `absence-after-wait`. It gets the new
+  `caught-assertion` finding (informational, assertion adequacy) at the
+  matcher. Promise handlers catch only an asynchronous matcher's rejection,
+  not a synchronous matcher's throw, which a `try` block catches with or
+  without `await`; a promise returned from a `try` block without `await`, by
+  a matcher or a helper, is not caught there. `expect.soft` matchers, and
+  those through `expect.configure` whose outermost `soft` option is `true`,
+  are never probes, since Playwright records their failure on the test either
+  way; a caught matcher whose `soft` option cannot be read (a variable, a
+  spread, a computed key or a non-literal value) stays an assertion and gives
+  the new `possibly-soft` limit. A call made on `expect.configure(...)`, such
+  as `.configure(...)` or `.soft(...)`, is no longer counted as a matcher. A
+  matcher of unknown timing, or a marked helper not declared `async`, caught
+  for only one of a throw and a rejection stays an assertion and gives
+  `unknown-matcher`. A chain ending only in `.then(onFulfilled)` or
+  `.finally`, a `.catch()` with no handler, a handler that is not a function
+  (a literal of any kind, an array or object literal, a template, `null`,
+  `undefined`, `void`, `typeof` or a prefix operator), or a handler that
+  throws or returns `Promise.reject`, including through parentheses or type
+  wrappers, still rejects and stays an assertion. A matcher on
+  `expect.poll(...)` is asynchronous however it is spaced and also on an
+  `expect.configure(...)` chain, so a caught poll is a probe. Policy
+  `assessment-source-v14`; the analyzer helper version is 11, and report
+  version 3 and suite version 1 are unchanged (#21).
+- `9l assess` no longer reports a plain `for`, `for…of`, `for…in`, `while`
+  or `do` loop as `analysis-limit/conditional-flow`, which stays for
+  branches that can skip an assertion (`if`, `switch`, `try`, `?:`, `&&`,
+  `||`, `??`). A loop gives no limit of its own unless it repeats a fixed
+  wait in its body or in a condition or update, directly or through an
+  inlined helper (a wait in a `for` initializer or a `for…of` or `for…in`
+  input runs once and does not count); that gives the new
+  `analysis-limit/loop`, since the order of waits and assertions across
+  iterations is not analyzed. Whether a loop runs at all is not evaluated
+  (#141).
+- Each test in the `9l assess` JSON report lists the assertions it is
+  credited with, as `assertions: {"count", "matchers"}`, whatever its limits:
+  recognized matchers in its body and resolved same-file helpers, and marked
+  helper calls, excluding caught probes. Matcher names come from the pinned
+  Playwright API; anything else is `custom` or `assertion-helper`. The text
+  report prints `recognized assertions: 2 (toBe, toEqual)` under such a
+  test, so direct assertions beside an unresolved helper call are visible
+  while the `unresolved-helper` limit stays at that call. No dimension
+  changes: static rules still never mark assertion adequacy or runtime
+  evidence `supported` (#141).
+- A file in which no test declaration is recognized, such as a helper module
+  passed as a path, is no longer counted as assessed. Suite summaries count
+  it in the new `noTests` field and the text summary as `N with no tests`;
+  the file is listed as `file "<path>": no tests`, and its report, like a
+  single-file report, carries a `no-tests` limit. Exit codes are unchanged
+  (#141).
+- The `assess` and `assess-suite` schemas add the test `assertions` summary
+  and the summary's `noTests` count (additive).
+- `9l scan` and the `scan_url` MCP tool apply the network policy to the
+  address a Node-side link check connects to, not only to the answer seen
+  before the request. Links to another origin, and same-origin links the page
+  could not fetch itself, are requested with `node:http`/`node:https` and a
+  lookup that resolves the name again at connect time and refuses the
+  connection unless every answer passes, on each redirect hop. A hostname
+  whose DNS answer changes between the check and the connection (DNS
+  rebinding) can no longer reach a private, link-local or loopback address,
+  or a second loopback origin under `--allow-private-network`; the refusal
+  reads as before and names no address. Redirect re-validation, the response
+  size limit and the 10 s timeout are unchanged, and the timeout now also
+  ends a response body nobody reads. The browser's navigation, subrequests
+  and WebSockets are not yet pinned (#108).
+
+### Release process
+
+- The release workflow attests SLSA build provenance for every CLI archive
+  and for `SHA256SUMS` before publishing them, then downloads the published
+  assets, requires the bytes it attested and checks each with
+  `gh attestation verify`; a mismatch stops the run before npm publication.
+  Only the GitHub Release job gains `attestations: write` and
+  `id-token: write`; no permission is added at the workflow level. [Installation](docs/install.md#verify-build-provenance)
+  shows the `gh attestation verify` command; the checksum steps remain for
+  users without `gh`, and releases up to 0.5.1 have no attestations (#112).
+- Every action in the repository's workflows is pinned to a full commit SHA
+  with its version in a comment, including CI, which the release runs as its
+  qualification gate, and the Pages deployment.
+
+## 0.5.1 — 2026-10-26
+
+### SDK
+
+- A retrying assertion (`expect.poll`, `toPass`, a custom matcher that calls
+  `expect`) counts once in `reportedAssertions`, including the assertions it
+  runs inside it on every retry, even inside a `test.step`. Previously each
+  passing inner assertion was counted as well, and failed retries were
+  reported as failed assertion steps. The count is of top-level assertion
+  steps, not of every `expect` in the source.
+- The prove channel applies two more opt-in faults. `redirect-cross-origin`
+  answers 302 with `Location: http://redirect.invalid/`, a reserved name that
+  never resolves, so the browser's redirect fails without contacting an
+  application host (DNS may still be asked for the name). `delay` holds the
+  real response for 35 s, longer than Playwright's default test and `expect`
+  timeouts, then lets it through; it is credited when the hold starts and the
+  hold ends as soon as the context closes, so a fault run never outlives its
+  test. A redirect is held as the server sent it and Chromium follows it
+  itself, so the page sees the same redirect as without the fault; one close
+  listener per context serves every hold, however often the page polls. The
+  manifest's `"9l".faults` lists both.
+- When the upstream request of an `empty-json`, `malformed-json` or `delay`
+  fault fails in a fault run, the request is now aborted after the
+  `not-applicable` (`unreachable`) record instead of being sent a second time,
+  which could repeat a request the application had already acted on.
+
+### CLI
+
+- `9l run --wait-for <url|host:port>` (repeatable) and `--wait-timeout` (1s
+  to 30m, default 1m) wait, inside the started run and before any test
+  process starts, until an http(s) target answers without a server error
+  (5xx or 429) or a host:port accepts connections. A target still not ready
+  leaves the run incomplete (exit 3) with an error receipt per job reading
+  `not started: --wait-for target not ready (environment): …`, instead of a
+  test failure against an application that never came up; `9l result` and
+  `9l status` read the run back. The wait counts against `--deadline`, and
+  `9l cancel` or Ctrl-C during it reports the run canceled. Targets are
+  named only as `scheme://host:port` or `host:port`, never with a path,
+  query, fragment or credentials. A self-signed https target is reported as
+  `certificate not trusted`; wait for its `host:port` instead.
+- Agent provenance assessments carry `scope: "spec"` and the text output says
+  what a `matched` status compared: the selected spec, its path, branch,
+  commit and workspace root. Imported modules are not compared, and the
+  wording no longer invites reading `matched` as unchanged dependencies.
+- `9l prove --faults` accepts `redirect-cross-origin` and `delay`, planned
+  after the existing kinds for every observed request. Defaults stay
+  `abort,http-500,empty-json`. An installed SDK that does not report the new
+  kinds is refused for them after the baseline with exit 2, as before, and
+  `9l doctor --sdk` names them under `sdk/faults`. Reports use policy
+  `prove-network-v4`; the rules are unchanged from `v3`. The text output
+  widens the kind column so every kind aligns. The real Chromium smoke
+  qualifies both kinds on the shop fixture (#43).
+- `9l doctor` adds an `executable` check: it compares the file it runs from
+  with the `9l` first on PATH, without running either, and warns when they
+  differ, since terminals, scripts and MCP hosts start the one on PATH unless
+  configured with a full path. It also warns when no `9l` is on PATH, or
+  when a relative PATH entry found it. The paths appear only with the new
+  `--paths` flag, which is for local reading and never persisted, and then
+  in every case, including when the two are the same file.
+  `9l doctor --sdk <spec>` reads one spec as text and adds `spec/import`
+  (`missing`, so exit 2, only when the binding `test` comes from
+  `@playwright/test` and nothing else could provide it; a `test` from a local
+  fixtures module, or a package default or namespace import the spec takes
+  `.test` from, is a warning, and so is a spec that takes the SDK but also
+  registers tests with the plain `test`), `spec/fixtures` (whether a `test`
+  or hook callback destructures `page` or `context`) and `spec/config` (the
+  nearest `playwright.config.*` and, for a single literal `testDir` in a
+  config that neither names `projects` nor spreads or merges other values,
+  whether the spec lies under it). In spec mode the
+  workspace and package checks describe the project `prove` would use for
+  the spec. Neither the spec nor the config is executed; basenames only
+  unless `--paths`. (#165)
+- `9l assess` text output no longer lists every `analysis-limit` finding
+  under its test. After a file's tests, one unindented line counts the limits
+  per code (`analysis limits in this file: unresolved-helper ×37,
+  nested-function ×12 (--limits lists them)`), counted as in the per-rule
+  summary so the two agree; rule findings keep their per-location lines.
+  `--limits` restores the per-location listing. The JSON report is unchanged
+  and identical with and without `--limits` (#23).
+
 ## 0.5.0 — 2026-10-23
 
 ### SDK

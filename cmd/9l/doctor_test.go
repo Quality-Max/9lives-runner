@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -25,7 +28,7 @@ func TestDoctorEmptyProjectAndMissingNode(t *testing.T) {
 	if code := run([]string{"doctor", "--sdk", "--format", "json"}, &out, &stderr); code != 2 {
 		t.Fatalf("doctor exit %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(out.String(), "npm install --save-dev @playwright/test@1.64.0") || !strings.Contains(out.String(), `"ready":false`) {
+	if !strings.Contains(out.String(), "npm install --save-dev @playwright/test@1.64.1") || !strings.Contains(out.String(), `"ready":false`) {
 		t.Fatalf("missing repair: %s", out.String())
 	}
 	files, err := os.ReadDir(".")
@@ -132,13 +135,16 @@ func TestDoctorJudgesTheSDKPairByDeclaredProtocol(t *testing.T) {
 		}
 	}
 	t.Chdir(root)
-	report := func(protocol string) (int, string, struct {
+	report := func(protocol string, faults ...string) (int, string, struct {
 		Ready  bool
 		Checks []struct{ Name, Status, Message, Fix string }
 	}) {
 		t.Helper()
+		if faults == nil {
+			faults = prove.Kinds
+		}
 		manifest, _ := json.Marshal(map[string]any{"name": "@9l/playwright", "version": "0.0.1", "main": "index.js",
-			"9l": map[string]any{"protocol": protocol, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}})
+			"9l": map[string]any{"protocol": protocol, "capabilities": playwrightsdk.Capabilities, "faults": faults}})
 		if err := os.WriteFile(filepath.Join(pkg, "package.json"), manifest, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -172,9 +178,361 @@ func TestDoctorJudgesTheSDKPairByDeclaredProtocol(t *testing.T) {
 	if strings.Contains(raw, "fixture-") || strings.Contains(raw, "node_modules") {
 		t.Fatal("doctor disclosed fixture paths or ran the SDK entry")
 	}
+	// An SDK that predates redirect-cross-origin and delay is admitted, and the
+	// kinds it cannot apply are named before any prove run.
+	_, _, older := report(playwrightsdk.Version, "abort", "http-500", "empty-json", "http-401", "http-403", "http-429", "malformed-json")
+	if faults := find(older.Checks, "sdk/faults"); faults.Status != "warning" || !strings.Contains(faults.Message, "Not applied by this SDK: redirect-cross-origin, delay.") {
+		t.Fatalf("older fault kinds: %+v", faults)
+	}
 	code, _, foreign := report("9l.engine/0")
 	if sdk := find(foreign.Checks, "sdk"); code != 2 || foreign.Ready || sdk.Status != "missing" || !strings.Contains(sdk.Message, "Incompatible") {
 		t.Fatalf("foreign protocol: exit %d %+v", code, sdk)
+	}
+}
+
+// Doctor compares the 9l first on PATH with its own executable without
+// running either, and names the two paths only under --paths.
+func TestDoctorWarnsAboutAnotherNineLOnPathWithoutRunningIt(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node not installed")
+	}
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "fixture-ran-marker")
+	name, script := "9l", "#!/bin/sh\necho ran > \""+marker+"\"\n"
+	if runtime.GOOS == "windows" {
+		name, script = "9l.cmd", "@echo ran > \""+marker+"\"\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Chdir(t.TempDir())
+	find := func(args ...string) (string, struct{ Name, Status, Message, Fix string }) {
+		t.Helper()
+		var out, stderr bytes.Buffer
+		run(append([]string{"doctor"}, args...), &out, &stderr)
+		var report struct {
+			Checks []struct{ Name, Status, Message, Fix string }
+		}
+		if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+			t.Fatalf("%s %s", out.String(), stderr.String())
+		}
+		for _, check := range report.Checks {
+			if check.Name == "executable" {
+				return out.String(), check
+			}
+		}
+		t.Fatalf("no executable check: %s", out.String())
+		return "", struct{ Name, Status, Message, Fix string }{}
+	}
+	raw, check := find("--format", "json")
+	if check.Status != "warning" || !strings.Contains(check.Message, "is not this executable") || !strings.Contains(check.Fix, "full path") {
+		t.Fatalf("stale PATH: %+v", check)
+	}
+	if strings.Contains(raw, bin) || strings.Contains(check.Message, "This executable:") {
+		t.Fatal("doctor printed executable paths without --paths")
+	}
+	var text, stderr bytes.Buffer
+	run([]string{"doctor"}, &text, &stderr)
+	if !strings.Contains(text.String(), "executable [warning]") || strings.Contains(text.String(), bin) {
+		t.Fatalf("text report: %s", text.String())
+	}
+	other, err := filepath.EvalSymlinks(filepath.Join(bin, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows may hand the test an 8.3 short name for the temp directory
+	// while doctor reports the long one, so there the fake binary is matched
+	// by its file name at the end of the reported path.
+	raw, check = find("--format", "json", "--paths")
+	if !strings.Contains(check.Message, "First on PATH: ") || !strings.Contains(check.Message, string(filepath.Separator)+name+".") || (runtime.GOOS != "windows" && !strings.Contains(raw, other)) {
+		t.Fatalf("--paths omits the PATH binary: %+v", check)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("doctor ran the other 9l")
+	}
+}
+
+// A spec is read as text: taking test from @playwright/test is a missing
+// prerequisite for prove, so the report is not ready and the command exits 2.
+func TestDoctorSpecImportingPlaywrightTestExitsTwo(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node not installed")
+	}
+	root := t.TempDir()
+	files := map[string]string{
+		"package.json":          "{}",
+		"playwright.config.ts":  "throw new Error(\"fixture-config-must-not-run\");\nexport default { testDir: './tests' };\n",
+		"tests/fixture.spec.ts": "throw new Error(\"fixture-spec-must-not-run\");\nimport { test } from '@playwright/test';\ntest('x', async ({ page }) => { await page.goto('/'); });\n",
+	}
+	for name, content := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(root)
+	var out, stderr bytes.Buffer
+	code := run([]string{"doctor", "--sdk", "tests/fixture.spec.ts", "--format", "json"}, &out, &stderr)
+	var report struct {
+		Ready      bool
+		Checks     []struct{ Name, Status, Message, Fix string }
+		Unverified []string
+	}
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil || code != 2 || report.Ready {
+		t.Fatalf("exit %d: %s %s", code, out.String(), stderr.String())
+	}
+	found := map[string]struct{ Name, Status, Message, Fix string }{}
+	for _, check := range report.Checks {
+		found[check.Name] = check
+	}
+	if check := found["spec/import"]; check.Status != "missing" || !strings.Contains(check.Fix, "import test from @9l/playwright") {
+		t.Fatalf("spec/import: %+v", check)
+	}
+	if check := found["spec/fixtures"]; check.Status != "ok" {
+		t.Fatalf("spec/fixtures: %+v", check)
+	}
+	if check := found["spec/config"]; check.Status != "ok" || !strings.Contains(check.Message, "config found: playwright.config.ts") {
+		t.Fatalf("spec/config: %+v", check)
+	}
+	if !slices.Contains(report.Unverified, "testDir and testMatch unless literal") {
+		t.Fatalf("unverified: %v", report.Unverified)
+	}
+	if strings.Contains(out.String(), "fixture-") || strings.Contains(out.String(), root) {
+		t.Fatal("doctor executed or disclosed the fixture project")
+	}
+	for _, args := range [][]string{{"doctor", "tests/fixture.spec.ts"}, {"doctor", "--sdk", "tests/absent.spec.ts"}, {"doctor", "--sdk", "tests"}} {
+		out.Reset()
+		stderr.Reset()
+		if code := run(args, &out, &stderr); code != 2 || out.Len() != 0 || !strings.Contains(stderr.String(), "9l: doctor") {
+			t.Fatalf("%v: exit %d %s %s", args, code, out.String(), stderr.String())
+		}
+	}
+}
+
+// pathWithOnlyRuntimeTools excludes 9l while retaining Node and Unix supervision.
+func pathWithOnlyRuntimeTools(t *testing.T) string {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node not installed")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(node, filepath.Join(dir, filepath.Base(node))); err != nil {
+		t.Skipf("cannot link Node: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		ps, err := exec.LookPath("ps")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(ps, filepath.Join(dir, "ps")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+type doctorCheck struct{ Name, Status, Message, Fix string }
+
+func doctorChecks(t *testing.T, args ...string) (int, string, map[string]doctorCheck) {
+	t.Helper()
+	var out, stderr bytes.Buffer
+	code := run(append([]string{"doctor", "--format", "json"}, args...), &out, &stderr)
+	var report struct{ Checks []doctorCheck }
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatalf("exit %d: %s %s", code, out.String(), stderr.String())
+	}
+	found := map[string]doctorCheck{}
+	for _, check := range report.Checks {
+		found[check.Name] = check
+	}
+	return code, out.String(), found
+}
+
+// A 9l missing from PATH is a warning: a host configured with plain 9l
+// cannot start the executable doctor runs from.
+func TestDoctorWarnsWhenNoNineLIsOnPath(t *testing.T) {
+	t.Setenv("PATH", pathWithOnlyRuntimeTools(t))
+	t.Chdir(t.TempDir())
+	if facts := executableFacts(false); facts["otherOnPath"] != false || facts["self"] != nil {
+		t.Fatalf("facts: %v", facts)
+	}
+	_, _, found := doctorChecks(t)
+	if check := found["executable"]; check.Status != "warning" || !strings.Contains(check.Message, "no 9l on PATH") || !strings.Contains(check.Fix, "full path") {
+		t.Fatalf("executable: %+v", check)
+	}
+}
+
+// A relative PATH entry resolves against the current directory, so doctor
+// reports the absolute file it found and warns that hosts started elsewhere
+// find another 9l or none.
+func TestDoctorReportsARelativePathEntry(t *testing.T) {
+	nodeDir := pathWithOnlyRuntimeTools(t)
+	work := t.TempDir()
+	name, script := "9l", "#!/bin/sh\nexit 0\n"
+	if runtime.GOOS == "windows" {
+		name, script = "9l.cmd", "@exit /b 0\r\n"
+	}
+	if err := os.MkdirAll(filepath.Join(work, "rel"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "rel", name), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "rel"+string(os.PathListSeparator)+nodeDir)
+	t.Chdir(work)
+	facts := executableFacts(true)
+	other, _ := facts["other"].(string)
+	if facts["relative"] != true || facts["otherOnPath"] != true || !filepath.IsAbs(other) || filepath.Base(other) != name {
+		t.Fatalf("facts: %v", facts)
+	}
+	_, raw, found := doctorChecks(t)
+	if check := found["executable"]; check.Status != "warning" || !strings.Contains(check.Message, "relative PATH entry") || strings.Contains(check.Message, "First on PATH") {
+		t.Fatalf("executable: %+v", check)
+	}
+	if strings.Contains(raw, work) {
+		t.Fatal("doctor printed paths without --paths")
+	}
+}
+
+// When PATH finds this very executable the check is ok, and --paths still
+// names the file, so a user can see which build that is.
+func TestDoctorNamesTheExecutableOnPathWithPaths(t *testing.T) {
+	nodeDir := pathWithOnlyRuntimeTools(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	name := "9l"
+	if runtime.GOOS == "windows" {
+		name = "9l.exe"
+	}
+	if err := os.Symlink(self, filepath.Join(bin, name)); err != nil {
+		t.Skipf("cannot link the test executable: %v", err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+nodeDir)
+	t.Chdir(t.TempDir())
+	_, raw, found := doctorChecks(t)
+	if check := found["executable"]; check.Status != "ok" || check.Message != "this executable is the 9l first on PATH." {
+		t.Fatalf("executable: %+v", check)
+	}
+	if strings.Contains(raw, bin) {
+		t.Fatal("doctor printed paths without --paths")
+	}
+	_, _, found = doctorChecks(t, "--paths")
+	check := found["executable"]
+	if check.Status != "ok" || !strings.HasPrefix(check.Message, "this executable is the 9l first on PATH. This executable: ") || !strings.Contains(check.Message, ". First on PATH: ") {
+		t.Fatalf("--paths drops the paths of a matching executable: %+v", check)
+	}
+	if real, err := filepath.EvalSymlinks(self); err == nil && runtime.GOOS != "windows" && strings.Count(check.Message, real) != 2 {
+		t.Fatalf("--paths should name %s twice: %+v", real, check)
+	}
+}
+
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// With a spec, the workspace and package checks describe the project prove
+// would use for it, found by walking up from the spec, not the directory
+// doctor runs in. Without a spec they still describe the current directory.
+func TestDoctorJudgesTheSpecProjectNotTheCurrentDirectory(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node not installed")
+	}
+	project := t.TempDir()
+	writeFiles(t, project, map[string]string{
+		"package.json": `{"devDependencies":{"@playwright/test":"1.64.1","@9l/playwright":"0.5.0"}}`,
+		"node_modules/@playwright/test/package.json": `{"name":"@playwright/test","version":"1.64.1"}`,
+		"node_modules/@9l/playwright/package.json":   `{"name":"@9l/playwright","version":"0.5.0"}`,
+		"node_modules/@playwright/test/index.js":     "throw new Error('fixture-entry-must-not-run');\n",
+		"node_modules/@9l/playwright/index.js":       "throw new Error('fixture-entry-must-not-run');\n",
+		"tests/a.spec.ts":                            "import { test } from './fixtures';\nimport { test as pwTest } from '@playwright/test';\ntest('x', async ({ page }, testInfo) => {});\n",
+		"tests/it.spec.ts":                           "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', async ({ page }) => {});\n",
+		"tests/helper.spec.ts":                       "import { test } from '@playwright/test';\nimport { login } from './helpers';\ntest('x', async ({ page }) => { await login(page); });\n",
+		"tests/extended.spec.ts":                     "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/named.spec.ts":                        "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async ({ page }) => {};\nit('x', body);\n",
+		"tests/annotated.spec.ts":                    "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body: (fixtures: { page: unknown }) => Promise<void> = async ({ page }) => {};\nit('x', body);\n",
+		"tests/self-named.spec.ts":                   "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async function body({ page }) {};\nit('x', body);\n",
+		"tests/named-step.spec.ts":                   "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst body = async ({ page }) => { await step('fill', async () => {}); };\ntest('x', body);\n",
+		"tests/long-comment.spec.ts":                 "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', /*" + strings.Repeat("c", 4996) + "*/ async ({ page }) => {});\ntest('y', async ({ page }) => {});\n",
+		"tests/typed-base.spec.ts":                   "import { test } from '@playwright/test';\nimport { base } from './fixtures';\nconst t = base.extend<{ values: Array<string> }>({});\nt('x', async ({ page }) => {});\n",
+		"tests/typed-extended.spec.ts":               "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst t = test.extend<{ getValue: () => string }>({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/second-declarator.spec.ts":            "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst other = 1, body = async ({ page }) => {};\nit('x', body);\n",
+		"tests/second-extended.spec.ts":              "import { test } from '@playwright/test';\nimport { step } from './helpers';\nconst other = 1, t = test.extend({});\nt('x', async ({ page }) => { await step('fill', async () => {}); });\n",
+		"tests/long-head.spec.ts":                    "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nconst body = async /*" + strings.Repeat("c", 596) + "*/ ({ page }) => {};\nit('x', body);\n",
+		"tests/generic-inline.spec.ts":               "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nit('x', async <T,>({ page }) => {});\n",
+		"tests/generic-named.spec.ts":                "import { test } from '@playwright/test';\nimport { it } from './fixtures';\nasync function body<T extends Record<string, unknown>>({ page }) {}\nit('x', body);\n",
+	})
+	t.Chdir(t.TempDir())
+	_, raw, found := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "a.spec.ts"))
+	for _, name := range []string{"workspace", "playwright-test"} {
+		if found[name].Status != "ok" {
+			t.Fatalf("%s: %+v", name, found[name])
+		}
+	}
+	if found["sdk"].Status == "missing" {
+		t.Fatalf("sdk: %+v", found["sdk"])
+	}
+	// A test from a local fixtures module is not followed: a warning, never
+	// missing, even beside an aliased @playwright/test import.
+	if check := found["spec/import"]; check.Status != "warning" || !strings.Contains(check.Message, "another module") {
+		t.Fatalf("spec/import: %+v", check)
+	}
+	if check := found["spec/fixtures"]; check.Status != "ok" {
+		t.Fatalf("spec/fixtures: %+v", check)
+	}
+	if strings.Contains(raw, project) {
+		t.Fatal("doctor printed the project path without --paths")
+	}
+	// A test function imported from a fixtures module under another name,
+	// used as one, is not followed either; a helper beside the plain test is
+	// not a test function, so that spec still fails.
+	// So is one that passes a callback declared in the spec by name, typed
+	// with an arrow type or as a self-named function expression. A step
+	// helper inside a locally extended plain test, typed or not, or inside a
+	// callback passed by name to the plain test, is inside a test body. A
+	// call doctor reads only in part, here behind a long comment, and a
+	// typed extension of a fixtures test may register tests too. So may a
+	// callback declared after another name in one list, or with type
+	// parameters, inline or by name; a later declarator extending the plain
+	// test is still the plain test.
+	for _, spec := range []string{"it.spec.ts", "named.spec.ts", "annotated.spec.ts", "self-named.spec.ts", "long-comment.spec.ts", "typed-base.spec.ts",
+		"second-declarator.spec.ts", "generic-inline.spec.ts", "generic-named.spec.ts"} {
+		_, _, it := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
+		if check := it["spec/import"]; check.Status != "warning" || !regexp.MustCompile(`registers tests with (it|base) from another module`).MatchString(check.Message) {
+			t.Fatalf("spec/import with it from fixtures in %s: %+v", spec, check)
+		}
+		if check := it["spec/fixtures"]; check.Status != "ok" {
+			t.Fatalf("spec/fixtures with it from fixtures in %s: %+v", spec, check)
+		}
+	}
+	// A callback whose head doctor reads only in part, behind a long comment
+	// between async and its parameters, is not verified: still a warning.
+	if _, _, cut := doctorChecks(t, "--sdk", filepath.Join(project, "tests", "long-head.spec.ts")); cut["spec/import"].Status != "warning" {
+		t.Fatalf("spec/import with a callback head read in part: %+v", cut["spec/import"])
+	}
+	for _, spec := range []string{"helper.spec.ts", "extended.spec.ts", "named-step.spec.ts", "typed-extended.spec.ts", "second-extended.spec.ts"} {
+		_, _, helper := doctorChecks(t, "--sdk", filepath.Join(project, "tests", spec))
+		if check := helper["spec/import"]; check.Status != "missing" {
+			t.Fatalf("spec/import with a helper in %s: %+v", spec, check)
+		}
+	}
+	_, _, cwd := doctorChecks(t)
+	if cwd["workspace"].Status != "missing" || !strings.Contains(cwd["workspace"].Message, "current directory") {
+		t.Fatalf("without a spec: %+v", cwd["workspace"])
 	}
 }
 

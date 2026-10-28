@@ -20,7 +20,15 @@ import (
 
 type ExecuteOptions struct {
 	// OnStarted runs after durable initialization, before any jobs start.
-	OnStarted       func()
+	OnStarted func()
+	// BeforeJobs runs after OnStarted, inside the stored run and under its
+	// cancellation and deadline, before any job starts; the CLI waits for
+	// --wait-for targets here. An error while the run is still live means no
+	// job may start: each planned job gets an error receipt reading "not
+	// started: " and the error text, which is persisted and so must carry
+	// nothing secret. If the run was canceled or its deadline passed, the
+	// jobs are reported canceled or timed out as for any interrupted run.
+	BeforeJobs      func(context.Context) error
 	AgentProvenance *AgentProvenance
 	Workers         int
 	Timeout         time.Duration
@@ -168,9 +176,21 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 		<-watchDone
 	}()
 
+	notStarted := ""
+	if opts.BeforeJobs != nil {
+		if err := opts.BeforeJobs(runCtx); err != nil && runCtx.Err() == nil {
+			notStarted = "not started: " + err.Error()
+		}
+	}
 	// Dependency plans are deliberately serial. A failed prerequisite produces
 	// a durable blocked receipt for descendants rather than running them.
-	if hasDependencies {
+	if notStarted != "" {
+		// No process starts; every planned job still has a terminal receipt.
+		for _, job := range orderedJobs {
+			receipt := Receipt{Version: ReceiptVersion, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Target: job.Target, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: notStarted, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
+			summary.Receipts = append(summary.Receipts, persistAttempt(receipt, store, nil, nil))
+		}
+	} else if hasDependencies {
 		completed := map[string]Receipt{}
 		for _, job := range orderedJobs {
 			if runCtx.Err() != nil {

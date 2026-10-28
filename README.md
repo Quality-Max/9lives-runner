@@ -1,7 +1,7 @@
 # 9lives runner
 
 [![npm version](https://img.shields.io/npm/v/@9l/playwright?cacheSeconds=3600)](https://www.npmjs.com/package/@9l/playwright)
-[![npm downloads](https://img.shields.io/npm/dm/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
+[![npm downloads](https://img.shields.io/npm/d18m/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
 [![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
@@ -72,8 +72,12 @@ Run from your project root and replace the path with an existing spec. Follow th
 [quickstart](docs/run-existing-project.md) for prerequisites, expected results and
 troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
 
+From 0.5.4, the CLI includes `9l update` (ask and install),
+`9l update --check` (check only), and `9l update --yes` (explicit scripted
+approval). See [updating the CLI](docs/install.md#updating-the-cli).
+
 Your project supplies its Playwright dependencies, browsers, configuration, and
-assertions. The SDK is optional. Native v0.5.0 binaries support macOS, Linux and
+assertions. The SDK is optional. Native v0.5.4 binaries support macOS, Linux and
 Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
 and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
 other browser engines are unqualified.
@@ -92,7 +96,7 @@ that can run standalone or connect to QualityMax.
 
 ## What is available
 
-- **Local execution:** `plan`, `run`, `status`, `result`, and `cancel` bound execution and record attributable terminal receipts. Each failed test carries a class (assertion, timeout, action timeout, environment), receipts count flaky passes and, with the SDK, the assertion steps the worker reported.
+- **Local execution:** `plan`, `run`, `status`, `result`, and `cancel` bound execution and record attributable terminal receipts. Each failed test carries a class (assertion, timeout, action timeout, environment), receipts count flaky passes and, with the SDK, the assertion steps the worker reported. `run --wait-for` waits for the application first, so one that never comes up leaves the run incomplete instead of failing its tests.
 - **Assessment:** `9l assess` advises on waits, skips, assertions, requirement mappings, and source provenance.
 - **Page observations:** `9l scan` runs nine check categories; `9l inspect` ranks controls and locators.
 - **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
@@ -104,12 +108,12 @@ that can run standalone or connect to QualityMax.
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.5.0 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.5.4 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
 Use Node 24 for the qualified runtime (Node 22 minimum) and Playwright 1.61.1
-through 1.64.0; an existing project can keep its version in that range. On Linux, use
+through 1.64.1; an existing project can keep its version in that range. On Linux, use
 `npm exec playwright install --with-deps chromium` for browser dependencies.
 
 Install the Go CLI separately. With Go 1.27.3 or newer:
@@ -296,12 +300,12 @@ the spec or prove its assertions protect the requirement. See the
 
 | Component | Qualified | Boundary |
 | --- | --- | --- |
-| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
-| `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
+| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
+| `9l assess` matchers | Playwright 1.61.1 through 1.64.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.5.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.5.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.5.4 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.5.4, released with the CLI | Installing the SDK does not install the CLI or browsers |
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
@@ -393,7 +397,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.5.0](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.5.4](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions with one shared version: a single
 `v<version>` tag releases both. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)

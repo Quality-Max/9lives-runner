@@ -1,6 +1,6 @@
 # Install the CLI and Playwright SDK
 
-The published npm package is [@9l/playwright 0.5.0](https://www.npmjs.com/package/@9l/playwright).
+The published npm package is [@9l/playwright 0.5.4](https://www.npmjs.com/package/@9l/playwright).
 It supplies TypeScript fixtures and the reporter. Install the Go `9l` CLI
 separately; the SDK does not bundle the runner or a browser.
 
@@ -9,13 +9,13 @@ separately; the SDK does not bundle the runner or a browser.
 From your Playwright project, with Node 24 (Node 22 minimum):
 
 ```sh
-npm install --save-dev @9l/playwright@0.5.0 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.5.4 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
 On Linux use `npm exec playwright install --with-deps chromium`.
 The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified versions:
-every published release from 1.61.1 through 1.64.0 (1.61.1, 1.62.0, 1.62.1, 1.63.0 and 1.64.0), with Chromium. Later versions in that range install but are unqualified,
+every published release from 1.61.1 through 1.64.1 (1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 and 1.64.1), with Chromium. Later versions in that range install but are unqualified,
 as are other engines. Preserve the existing project configuration and assertions.
 The [SDK contract](sdk-bridge.md) describes supported settings and limits.
 
@@ -36,7 +36,7 @@ published CLI version. The public Go install path has been exercised.
 ## Prebuilt CLI releases
 
 The [GitHub Releases page](https://github.com/Quality-Max/9lives-runner/releases)
-is the download location. CLI v0.5.0 is published for macOS, Linux and
+is the download location. CLI v0.5.4 is published for macOS, Linux and
 Windows; releases before v0.2.0 have no Windows assets. Download a
 specific version and the matching `SHA256SUMS` file. Go is not needed to run
 these executables.
@@ -50,14 +50,14 @@ these executables.
 | Windows, x86-64 | `9l-windows-amd64.zip` |
 | Windows, ARM64 | `9l-windows-arm64.zip` |
 
-For the published `v0.5.0`, using GitHub CLI, this example installs on Apple
+For the published `v0.5.4`, using GitHub CLI, this example installs on Apple
 Silicon. Choose your archive from the table:
 
 ```sh
 mkdir -p /tmp/9l-download
 cd /tmp/9l-download
 BUNDLE=9l-darwin-arm64
-gh release download v0.5.0 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
+gh release download v0.5.4 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
 grep -Ex "[0-9a-f]{64}  $BUNDLE\.tar\.gz" SHA256SUMS > selected.sha256
 test "$(grep -c '' selected.sha256)" = 1
 shasum -a 256 -c selected.sha256
@@ -75,14 +75,35 @@ line ending stops the install instead of being trimmed. Keep the
 included `LICENSE` and `NOTICE`. macOS archives are not Apple notarized; the
 checksums verify downloaded bytes against the release's checksum file.
 
+### Verify build provenance
+
+A checksum shows that the archive matches the release's `SHA256SUMS`, but
+whoever can change the release can change both files. From v0.5.2, the
+release workflow also attests build provenance for every archive and for
+`SHA256SUMS`, signed through Sigstore. With GitHub CLI, check the archive you
+downloaded before extracting it:
+
+```sh
+gh attestation verify "$BUNDLE.tar.gz" --repo Quality-Max/9lives-runner
+```
+
+The command fails unless an attestation for the archive's exact SHA-256 was
+produced by a GitHub Actions workflow in `Quality-Max/9lives-runner`. To also
+require the release workflow and the version's tag, add
+`--signer-workflow Quality-Max/9lives-runner/.github/workflows/release.yml`
+and `--source-ref refs/tags/<version>`. The same command checks a Windows ZIP
+or `SHA256SUMS`. Releases up to and including v0.5.1 have no attestations,
+so the command fails for them; verify those with the checksum steps above.
+Without `gh`, the checksum steps remain the verification.
+
 ### Windows
 
 Choose the Windows ZIP for your CPU, download it with that release's
 `SHA256SUMS`, then verify and extract it in PowerShell. Windows assets start
-with v0.2.0; this example uses v0.5.0:
+with v0.2.0; this example uses v0.5.4:
 
 ```powershell
-$Version = 'v0.5.0'
+$Version = 'v0.5.4'
 $Bundle = '9l-windows-amd64' # use arm64 for Windows on ARM
 New-Item -ItemType Directory -Force 9l-download | Out-Null
 Set-Location 9l-download
@@ -94,6 +115,9 @@ if ((Get-FileHash "$Bundle.zip" -Algorithm SHA256).Hash -ne $Expected) { throw '
 Expand-Archive "$Bundle.zip" -DestinationPath . -Force
 & ".\$Bundle\9l.exe" --version
 ```
+
+From v0.5.2, also run `gh attestation verify "$Bundle.zip" --repo Quality-Max/9lives-runner`
+before extracting; see [Verify build provenance](#verify-build-provenance).
 
 Keep `LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` with the binary. Add its directory to your user
 `PATH`, or invoke `9l.exe` by its full path. Install Node 24, project dependencies
@@ -107,6 +131,56 @@ your user account. POSIX mode bits do not set Windows ACLs.
 
 If Python `9lives` is also installed, it has its own `9l` command. Use an
 explicit path such as `$HOME/.local/bin/9l` to select this Go runner.
+
+## Updating the CLI
+
+Self-update is available from 0.5.4. Existing 0.5.3 and earlier installations
+need one more upgrade with the installer or a downloaded release before they
+can update themselves.
+
+```sh
+9l update --check  # show the latest stable release; do not install
+9l update          # show the version change and ask for approval
+9l update --yes    # explicitly approve installation in a script
+```
+
+Approval defaults to no. A completed interactive text `9l run` also checks
+once per day and offers installation after its test processes have stopped.
+The current invocation's result and exit code stay unchanged; the next
+invocation uses the installed version. Checks have a three-second budget and
+use the public GitHub release marked Latest, without account credentials or
+project data. Offline automatic checks stay silent. CI, JSON runs, redirected
+streams, canceled/incomplete runs and MCP do not check or prompt.
+
+Set `NINELIVES_NO_UPDATE_CHECK=1` to disable automatic checks. The timestamp
+and an advisory lock live in the OS user-cache directory under
+`9lives-runner/update-check.json`. Explicit `9l update` bypasses this cache.
+If a process is forcibly killed while holding the advisory `.lock` file,
+remove that file to restore automatic checks.
+
+Installation requires write access beside the running executable and never
+elevates privileges. It verifies the six-archive checksum manifest, rejects
+unsafe or incomplete archive members, executes the staged candidate's bounded
+version endpoint, and then replaces the CLI. An update lock prevents two
+installers from replacing it simultaneously. The on-disk runner must still
+match the running version, so an older process cannot replace a newer install.
+On Unix, replacement preserves the installed executable's mode bits, including
+when the caller uses a restrictive umask.
+Failures preserve the previous
+executable or report the recovery copy if rollback itself fails. On Windows,
+the running image is moved aside before replacement and may remain as
+`9l.previous.exe` in the reported release directory until manually removed
+after old processes exit. Notices for the new release stay in that directory;
+existing unrelated `LICENSE` or `NOTICE` files are not overwritten.
+
+Checksums check consistency with the release served by GitHub. They are not
+independent signature verification; [build provenance](#verify-build-provenance)
+can also be checked with GitHub CLI. Package-manager installations should be
+upgraded through that manager if their installation directory is not writable.
+
+The command updates only the Go runner. For a project using the SDK, install
+its matching version separately with the npm command printed after updating;
+Playwright configuration and project dependencies are not edited automatically.
 
 ## Verify the selected CLI
 
@@ -137,6 +211,10 @@ command; check `--version` and `--help` before upgrading it. A successful
 install does not replace another executable earlier on PATH, an alias or a
 shell function. Update that selection, reopen the shell if necessary, then
 repeat these checks. The Python `9lives` distribution also installs `9l`.
+`9l doctor`, run by its full path, reports the same mismatch: its
+`executable` check warns when the `9l` first on PATH is a different file,
+when no `9l` is on PATH, or when a relative PATH entry found it, and
+`--paths` prints both paths. It never runs the other binary.
 
 For SDK execution, use the [qualified CLI/SDK pair](../README.md#compatibility).
 The engine checks protocol and capabilities rather than package semver; a

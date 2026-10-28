@@ -1,13 +1,14 @@
 import { createRequire } from 'node:module';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { Binding, LocalFunction, callbackFixtures, calls, importBindings, localFunctions, mergesValues, readsTest, registersTests, scan, testAliases } from './source-text';
 
 export type Diagnostic = { name: string; status: 'ok' | 'warning' | 'missing'; message: string; fix?: string };
 // Engine is what the CLI admits (protocol and capabilities) and can request
 // (prove fault kinds); an SDK declares the same three under "9l" in its
 // package.json, so the pair is judged without loading either.
 export type Engine = { protocol: string; capabilities: string[]; faults: string[] };
-const qualified = new Set(['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0']);
+const qualified = new Set(['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1']);
 const safeVersion = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/;
 const safeToken = /^[a-z0-9][a-z0-9./-]{0,63}$/;
 
@@ -53,8 +54,208 @@ export function browserInstallCommand(browser: string, root = process.cwd()): st
   return installed ? `npx --yes playwright@${installed.version} install ${browser}` : `npx playwright install ${browser}`;
 }
 
-export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: Engine }, root = process.cwd()) {
+// What the CLI learned about its own executable and the 9l first on PATH. The
+// CLI compares the two files itself and sends the paths only under --paths,
+// so the helper can only ever print what it was handed. `relative` means the
+// PATH entry that found 9l is relative, so it resolves against the current
+// directory; `selfUnknown` means the CLI could not locate its own file.
+export type Executable = { samePath: boolean; otherOnPath: boolean; relative?: boolean; selfUnknown?: boolean; self?: string; other?: string };
+
+function executableCheck(found: Executable): Diagnostic {
+  const self = typeof found.self === 'string' ? ` This executable: ${found.self}.` : '';
+  const other = typeof found.other === 'string' ? ` First on PATH: ${found.other}.` : '';
+  if (found.selfUnknown) return { name: 'executable', status: 'warning', message: "this executable's own path is unknown, so it was not compared with the 9l on PATH." };
+  if (!found.otherOnPath) {
+    return { name: 'executable', status: 'warning',
+      message: `no 9l on PATH; terminals, scripts and MCP hosts configured with plain 9l cannot start it.${self}`,
+      fix: "add this executable's directory to PATH, or configure the host with this executable's full path" };
+  }
+  if (found.relative) {
+    return { name: 'executable', status: 'warning',
+      message: `the 9l first on PATH ${found.samePath ? 'is' : 'is not'} this executable, found through a relative PATH entry that resolves against the current directory; a host started elsewhere finds another 9l or none.${self}${other}`,
+      fix: "replace the relative PATH entry with an absolute directory, or configure the host with this executable's full path" };
+  }
+  if (found.samePath) return { name: 'executable', status: 'ok', message: `this executable is the 9l first on PATH.${self}${other}` };
+  return { name: 'executable', status: 'warning',
+    message: `the 9l first on PATH is not this executable; terminals, scripts and MCP hosts start that one unless configured with a full path.${self}${other}`,
+    fix: "put this build's directory first on PATH, or configure the host with this executable's full path" };
+}
+
+const specLimit = 1024 * 1024;
+const configLimit = 256 * 1024;
+const configExtensions = ['ts', 'js', 'mts', 'mjs', 'cts', 'cjs'];
+const sdkModule = '@9l/playwright';
+const testModule = '@playwright/test';
+
+// Read a regular file as text when it is within the limit; otherwise say why not.
+function readBounded(file: string, limit: number): { text?: string; reason: 'missing' | 'large' | 'ok' } {
+  try {
+    const info = statSync(file);
+    if (!info.isFile()) return { reason: 'missing' };
+    if (info.size > limit) return { reason: 'large' };
+    return { text: readFileSync(file, 'utf8'), reason: 'ok' };
+  } catch { return { reason: 'missing' }; }
+}
+
+function nearestConfigIn(directory: string): string | undefined {
+  for (const extension of configExtensions) {
+    const candidate = path.join(directory, `playwright.config.${extension}`);
+    try { if (statSync(candidate).isFile()) return candidate; } catch { /* Try the next name. */ }
+  }
+  return undefined;
+}
+
+function declaresPlaywright(manifest: string): boolean {
+  const read = readBounded(manifest, configLimit);
+  try {
+    const data = JSON.parse(read.text ?? '');
+    return Boolean(data?.dependencies?.[testModule] || data?.devDependencies?.[testModule]);
+  } catch { return false; }
+}
+
+// The config and project prove uses for a spec, by the SDK adapter's walk:
+// the nearest playwright.config.* above the spec, in the adapter's extension
+// order, and the directory of that config, or else the nearest package.json
+// that declares @playwright/test. Files are read as text, never executed.
+export function proveProject(spec: string): { config?: string; project?: string } {
+  let config: string | undefined;
+  let project: string | undefined;
+  for (let directory = path.dirname(spec); ; directory = path.dirname(directory)) {
+    config ??= nearestConfigIn(directory);
+    if (!project && declaresPlaywright(path.join(directory, 'package.json'))) project = directory;
+    if (path.dirname(directory) === directory) break;
+  }
+  return { config, project: config ? path.dirname(config) : project };
+}
+
+// Named imports, other than test and expect, that the spec uses the way a
+// test function is used, such as `it` from `export const it = base.extend(…)`
+// in a fixtures module. Doctor does not follow the module, so such a name may
+// be a test from @9l/playwright; a helper such as `login(page)` is not one.
+// Local aliases and extensions, `const t = test.extend(…)`, are the test they
+// come from, so a helper called in their callbacks is inside a test body.
+// A binding doctor reads only in part may be a test it registers with, but
+// is not known to be the plain test, so neither hides a provider.
+function testProviders(code: string, bindings: Binding[], functions: Map<string, LocalFunction>): Binding[] {
+  const registrars = testAliases(code, [
+    ...bindings.filter(binding => binding.imported === 'test').map(binding => binding.local),
+    ...bindings.filter(binding => ['*', 'default'].includes(binding.imported)).map(binding => `${binding.local}.test`),
+  ]);
+  return bindings.filter(binding => ![testModule, sdkModule].includes(binding.module) && !['test', 'expect', '*', 'default'].includes(binding.imported)
+    && [...testAliases(code, [binding.local], true)].some(local => registersTests(code, local, registrars, functions)));
+}
+
+function importCheck(name: string, code: string, bindings: Binding[], providers: Binding[], paths: boolean): Diagnostic {
+  const local = (module: string) => paths ? module : 'another module';
+  const test = bindings.find(binding => binding.local === 'test');
+  // Tests registered through a binding from @playwright/test are not
+  // instrumented, even when the SDK is imported too, say for its expect.
+  const plain = bindings.filter(binding => binding.module === testModule);
+  const plainRegisters = plain.some(binding => binding.imported === 'test' ? calls(code, binding.local) : ['*', 'default'].includes(binding.imported) && readsTest(code, binding.local));
+  const provided = (provider: Binding) => `registers tests with ${provider.local} from ${local(provider.module)}, which is not followed; whether those tests come from @9l/playwright is not verified.${plainRegisters ? ' Tests the spec registers with the plain test from @playwright/test are not instrumented.' : ''}`;
+  const mixed = { name: 'spec/import', status: 'warning' as const, message: `${name} takes test from @9l/playwright but also registers tests with test from @playwright/test, which prove does not instrument; which tests use which is not verified.` };
+  if (test?.module === sdkModule) return plainRegisters ? mixed : { name: 'spec/import', status: 'ok', message: `${name} imports test from @9l/playwright.` };
+  // `import { test as base }` then `base.extend`, or `n9l.test` through a namespace.
+  if (bindings.some(binding => binding.module === sdkModule && ['test', '*', 'default'].includes(binding.imported))) {
+    return plainRegisters ? mixed : { name: 'spec/import', status: 'ok', message: `${name} takes test from @9l/playwright under another name.` };
+  }
+  if (test && test.module === testModule && test.imported === 'test') {
+    // Another module could still provide the test the spec runs: a `test`
+    // export, a local fixtures module, or a namespace or default import the
+    // spec reads `.test` from or calls.
+    const other = bindings.find(binding => binding.module !== testModule && (binding.imported === 'test'
+      || (['*', 'default'].includes(binding.imported) && (/^[./]/.test(binding.module) || readsTest(code, binding.local) || (binding.imported === 'default' && calls(code, binding.local, false))))));
+    if (other) {
+      return { name: 'spec/import', status: 'warning', message: `${name} imports test from @playwright/test and also imports from ${local(other.module)}, which is not followed; whether its tests come from @9l/playwright is not verified.` };
+    }
+    if (providers.length) {
+      return { name: 'spec/import', status: 'warning', message: `${name} imports test from @playwright/test but ${provided(providers[0])}` };
+    }
+    return { name: 'spec/import', status: 'missing',
+      message: `${name} imports test from @playwright/test; prove would run its baseline uninstrumented and exit 1 because no browser context was instrumented.`,
+      fix: 'import test from @9l/playwright; prove instruments only its page and context fixtures' };
+  }
+  if (test) {
+    return { name: 'spec/import', status: 'warning', message: `${name} imports test from ${local(test.module)}; fixture modules are not followed, so whether that test comes from @9l/playwright is not verified.` };
+  }
+  if (providers.length) return { name: 'spec/import', status: 'warning', message: `${name} ${provided(providers[0])}` };
+  return { name: 'spec/import', status: 'warning', message: `${name} has no test import doctor can read from @9l/playwright, @playwright/test or a fixtures module; not verified.` };
+}
+
+// Spec readiness for prove: the import, the instrumented fixtures and the
+// config that will select the spec. Everything is read as text; neither the
+// spec nor any config is executed, and messages name only basenames unless
+// the CLI asked for paths.
+export function specChecks(spec: string, paths = false): Diagnostic[] {
   const checks: Diagnostic[] = [];
+  const name = path.basename(spec);
+  const source = readBounded(spec, specLimit);
+  if (source.reason === 'missing') {
+    checks.push({ name: 'spec', status: 'missing', message: `${name} is not a readable file.`, fix: 'pass the path of one Playwright spec file after --sdk' });
+  } else if (source.reason === 'large') {
+    checks.push({ name: 'spec', status: 'warning', message: `${name}: spec too large to inspect (over 1 MiB); the import and fixture checks were skipped.` });
+  } else {
+    const scanned = scan(source.text ?? '');
+    const bindings = importBindings(scanned);
+    const functions = localFunctions(scanned.code, bindings);
+    const providers = testProviders(scanned.code, bindings, functions);
+    checks.push(importCheck(name, scanned.code, bindings, providers, paths));
+    const fixtures = callbackFixtures(scanned, bindings, providers.map(provider => provider.local), functions);
+    checks.push(fixtures.has('page') || fixtures.has('context')
+      ? { name: 'spec/fixtures', status: 'ok', message: `${name} takes the page or context fixture in a test or hook callback.` }
+      : { name: 'spec/fixtures', status: 'warning', message: `${name}: no destructured page or context parameter found in a test or hook callback; prove faults reach only fetch and XHR made through those fixtures.` });
+  }
+  const { config } = proveProject(spec);
+  if (!config) {
+    checks.push({ name: 'spec/config', status: 'warning', message: 'no playwright.config.* above the spec; prove runs it with Playwright defaults.', fix: 'add a playwright.config.ts above the spec, or pass prove --config' });
+    return checks;
+  }
+  const found = `config found: ${path.basename(config)}${paths ? ` in ${path.dirname(config)}` : ''}.`;
+  const contents = readBounded(config, configLimit);
+  if (contents.reason !== 'ok') {
+    checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: the config is too large to read.` });
+    return checks;
+  }
+  const { code, literals } = scan(contents.text ?? '');
+  // `projects: […]`, shorthand `{ projects }` or `config.projects = …`.
+  if (/(?<![\w$])projects(?![\w$])/.test(code)) {
+    // A project without its own testDir inherits the config's, so with
+    // projects only executing the config tells which one selects the spec.
+    checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: the config defines projects, so which one selects the spec is only known by executing it.` });
+    return checks;
+  }
+  if (mergesValues(code)) {
+    checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: the config spreads or merges values that can set testDir or projects, so only executing it tells which applies.` });
+    return checks;
+  }
+  // A whole string literal: the next token after it ends the property, so
+  // `'./tests' + suffix` or a template is not read as `./tests`.
+  const values: string[] = [];
+  let computed = false;
+  for (const match of code.matchAll(/(?:^|[^.\w$])testDir\s*:\s*/g)) {
+    const literal = literals.get((match.index ?? 0) + match[0].length);
+    if (literal && literal.text.length <= 512 && /^\s*(?:[,}]|$)/.test(code.slice(literal.end, literal.end + 64))) values.push(literal.text);
+    else computed = true;
+  }
+  if (values.length !== 1 || computed) {
+    const why = values.length + (computed ? 1 : 0) > 1 ? 'the config sets testDir more than once, so which applies is only known by executing it' : 'only a literal testDir can be read without executing the config';
+    checks.push({ name: 'spec/config', status: 'ok', message: `${found} testDir not verified: ${why}.` });
+    return checks;
+  }
+  const literal = values[0];
+  const testDir = path.resolve(path.dirname(config), literal);
+  const relative = path.relative(testDir, spec);
+  const inside = relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  const named = paths ? ` (${literal})` : '';
+  checks.push(inside
+    ? { name: 'spec/config', status: 'ok', message: `${found} The spec is under its literal testDir${named}.` }
+    : { name: 'spec/config', status: 'warning', message: `${found} The spec is outside its literal testDir${named}, so prove will not select it.`, fix: 'move the spec under that testDir, or pass prove --config with a config that includes it' });
+  return checks;
+}
+
+export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: Engine; executable?: Executable; spec?: string; paths?: boolean }, root = process.cwd()) {
+  const checks: Diagnostic[] = [];
+  if (args.executable && typeof args.executable === 'object') checks.push(executableCheck(args.executable));
   const major = Number(process.versions.node.split('.')[0]);
   // Below the minimum is a defect with an install step. Any other version
   // outside the qualified one is supported but untested; never suggest a
@@ -62,17 +263,31 @@ export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: En
   checks.push({ name: 'node', status: major < 22 ? 'missing' : major === 24 ? 'ok' : 'warning',
     message: `Node ${process.versions.node}; minimum 22, qualified on 24.${major >= 22 && major !== 24 ? ' Supported but outside the qualified matrix; report problems with the output of 9l doctor --format json.' : ''}`,
     ...(major < 22 ? { fix: 'Install Node 24 LTS, then restart your terminal and MCP host.' } : {}) });
-  const load = createRequire(path.join(root, 'package.json'));
-  let manifest = false;
-  try { manifest = statSync(path.join(root, 'package.json')).isFile(); } catch { /* Missing project. */ }
-  checks.push({ name: 'workspace', status: manifest ? 'ok' : 'missing', message: manifest ? 'package.json exists; project config has not been executed.' : 'No package.json in the current directory.',
-    ...(!manifest ? { fix: 'Run 9l doctor from your application project directory.' } : {}) });
+  const spec = typeof args.spec === 'string' && path.isAbsolute(args.spec) ? args.spec : undefined;
+  let load: NodeRequire;
+  if (spec) {
+    // Judge the project prove would use for this spec, not the current
+    // directory: the adapter resolves the config, project and installed
+    // packages by walking up from the spec.
+    const { project } = proveProject(spec);
+    load = createRequire(path.join(path.dirname(spec), 'package.json'));
+    checks.push(project
+      ? { name: 'workspace', status: 'ok', message: `prove runs the spec from its project${args.paths === true ? ` ${project}` : ''}; project config has not been executed.` }
+      : { name: 'workspace', status: 'missing', message: 'No playwright.config.* or package.json declaring @playwright/test above the spec, so prove cannot run it.',
+        fix: 'add @playwright/test to the package.json of the project that holds the spec' });
+  } else {
+    load = createRequire(path.join(root, 'package.json'));
+    let manifest = false;
+    try { manifest = statSync(path.join(root, 'package.json')).isFile(); } catch { /* Missing project. */ }
+    checks.push({ name: 'workspace', status: manifest ? 'ok' : 'missing', message: manifest ? 'package.json exists; project config has not been executed.' : 'No package.json in the current directory.',
+      ...(!manifest ? { fix: 'Run 9l doctor from your application project directory.' } : {}) });
+  }
   const test = metadata(load, '@playwright/test');
   const testRuntime = test ? metadata(createRequire(path.join(test.directory, 'package.json')), 'playwright') ?? test : undefined;
   const runtime = metadata(load, 'playwright') ?? testRuntime;
   checks.push({ name: 'playwright-test', status: !test ? 'missing' : qualified.has(test.version) ? 'ok' : 'warning',
     message: test ? `@playwright/test ${test.version}${qualified.has(test.version) ? ' is qualified.' : ' is outside the qualified matrix.'}` : '@playwright/test is not installed locally.',
-    ...(!test ? { fix: 'npm install --save-dev @playwright/test@1.64.0' } : {}) });
+    ...(!test ? { fix: 'npm install --save-dev @playwright/test@1.64.1' } : {}) });
   const sdk = metadata(load, '@9l/playwright');
   const align = args.cliVersion && safeVersion.test(args.cliVersion) ? { fix: `npm install --save-dev @9l/playwright@${args.cliVersion}` } : {};
   if (!sdk) {
@@ -125,8 +340,10 @@ export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: En
       checks.push({ name: `${mode}/browser`, status: 'warning', message: 'Browser files could not be verified for this package version.', fix });
     }
   }
+  if (spec) checks.push(...specChecks(spec, args.paths === true));
   return { version: 1, cliVersion: args.cliVersion, platform: `${process.platform}/${process.arch}`,
     ready: !checks.some(check => check.status === 'missing' || check.name.endsWith('/browser')), checks,
-    unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login'],
+    unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login',
+      ...(spec ? ['testDir and testMatch unless literal'] : [])],
     next: 'Start your app, then run: 9l scan http://localhost:<port> --allow-private-network. No account is required.' };
 }
