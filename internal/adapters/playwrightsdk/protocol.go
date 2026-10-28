@@ -441,7 +441,13 @@ func decodeEvent(raw []byte) (event, error) {
 	if value := values["runtime"]; value != nil {
 		var runtime map[string]json.RawMessage
 		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker"}
-		if json.Unmarshal(value, &runtime) != nil || len(runtime) != len(keys) {
+		if json.Unmarshal(value, &runtime) != nil {
+			return frame, fmt.Errorf("invalid runtime")
+		}
+		if string(runtime["device"]) == `"physical"` {
+			keys = []string{"appPackage", "apkSHA256", "api", "release", "abi", "device", "deviceHash", "appium", "uiautomator2", "worker"}
+		}
+		if len(runtime) != len(keys) {
 			return frame, fmt.Errorf("invalid runtime")
 		}
 		for _, key := range keys {
@@ -469,7 +475,9 @@ var androidVersion = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$`)
 
 func validAndroidRuntime(r runner.AndroidRuntime) bool {
 	return len(r.AppPackage) <= 200 && androidPackage.MatchString(r.AppPackage) && testID.MatchString(r.APKSHA256) && testID.MatchString(r.Worker) && r.TestID == "" &&
-		regexp.MustCompile(`^[0-9]{1,3}$`).MatchString(r.API) && androidVersion.MatchString(r.Release) && androidVersion.MatchString(r.Emulator) &&
+		regexp.MustCompile(`^[0-9]{1,3}$`).MatchString(r.API) && androidVersion.MatchString(r.Release) &&
+		((r.Device == "" && r.DeviceHash == "" && androidVersion.MatchString(r.Emulator)) ||
+			(r.Device == "physical" && r.Emulator == "" && testID.MatchString(r.DeviceHash))) &&
 		r.Appium == "3.8.0" && r.UIAutomator2 == "8.7.0" && oneOf(r.ABI, "arm64-v8a", "x86_64")
 }
 

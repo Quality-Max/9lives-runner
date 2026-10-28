@@ -52,6 +52,12 @@
         "appium": {
           "type": "string"
         },
+        "device": {
+          "type": "string"
+        },
+        "deviceHash": {
+          "type": "string"
+        },
         "emulator": {
           "type": "string"
         },
@@ -75,7 +81,6 @@
         "api",
         "release",
         "abi",
-        "emulator",
         "appium",
         "uiautomator2",
         "worker"

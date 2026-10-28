@@ -126,7 +126,9 @@ type AndroidRuntime struct {
 	API          string `json:"api"`
 	Release      string `json:"release"`
 	ABI          string `json:"abi"`
-	Emulator     string `json:"emulator"`
+	Emulator     string `json:"emulator,omitempty"`
+	Device       string `json:"device,omitempty"`
+	DeviceHash   string `json:"deviceHash,omitempty"`
 	Appium       string `json:"appium"`
 	UIAutomator2 string `json:"uiautomator2"`
 	Worker       string `json:"worker"`

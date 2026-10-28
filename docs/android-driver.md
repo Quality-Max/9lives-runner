@@ -83,9 +83,9 @@ const test = createTargetTest({
 
 Declare a Playwright project named `android:<app-alias>` and invoke it with
 `9l run <spec> --sdk --config <config> --target android:<app-alias>`.
-Only resource IDs belonging to the configured package are supported. This
-driver requires Go's private attempt scratch directory and cannot attach to a
-device from an ordinary standalone Playwright invocation.
+Resource IDs and explicit control aliases are scoped to the configured package.
+This driver requires Go's private attempt scratch directory and cannot run from
+an ordinary standalone Playwright invocation.
 
 The app uses Android resource IDs through the shared `getByTestId` interface.
 Open is bounded at 180 seconds; the ordinary operation/assertion bounds still
@@ -124,5 +124,51 @@ state control failed before reaching the intended assertion. After the polling
 classification fix, healthy, amount and state controls were requalified against
 the unchanged native driver. This is combined per-case evidence, not one final
 all-green matrix. The local index is `.context/android-qualification-summary.json`.
-It does not qualify other Android runtimes, physical devices, iOS, semantic
-screen checks, verified replay or the combined finance demo.
+That emulator matrix does not qualify physical devices, iOS, semantic screen
+checks, verified replay or the combined finance demo.
+
+## Experimental installed-app attachment
+
+Pass `deviceSerial` instead of `avd` and `apk` to attach to an explicitly selected,
+authorized physical device. Keep the serial in a private local file outside
+source control. `apkSHA256` must match the installed single-base APK; split APKs
+are rejected. The driver checks the build before and after session creation.
+It installs the pinned automation helpers, preserves the installed app and its
+data, and rejects `app.reset()` before issuing a device command.
+
+For apps without resource IDs, provide finite aliases through `controls`:
+
+```ts
+androidTargetDriver({
+  appId, sdkRoot, toolsRoot, deviceSerial, apkSHA256, appPackage, activity,
+  controls: {
+    overview: {accessibilityIdSuffix: ', Overview', className: 'android.view.View'},
+    heading: {text: 'Overview', className: 'android.widget.TextView', selected: false},
+  },
+});
+```
+
+Aliases accept exact text, exact accessibility descriptions or a literal
+description suffix, with optional native class and selected-state filters.
+They remain package-scoped and must resolve uniquely before each operation.
+They do not perform semantic screen analysis.
+
+The phone is leased exclusively by a host-local lock. Existing UiAutomator2
+automation is rejected. Normal close stops only the leased helper, removes its
+ADB forward and restores the hidden-API policy values and any preexisting
+Appium Settings mock-location permission/index. The app is left running. The
+keyboard capability is omitted to preserve the selected input method. Physical
+receipts identify `device: "physical"` and a SHA-256 of the serial instead of an
+emulator version; raw serials are excluded.
+
+An interrupted host, disconnected phone or externally killed worker can prevent
+cleanup. A remaining lease blocks reuse and contains private recovery metadata;
+inspect the phone and restore those values before removing that lock. Outer Go
+cancellation and hard-kill recovery on a physical phone are not qualified.
+
+A private local installed-app smoke on Android 17 / API 37 arm64-v8a passed
+four navigation destinations with eight worker-reported assertions. The unchanged
+assertions rejected an opt-in wrong-heading response control at `assert-text`.
+App-specific tests, selectors, configuration and execution evidence remain local
+outside source control. These checks do not establish independent verification
+or qualify arbitrary phones, keyboards, fold transitions or cancellation.

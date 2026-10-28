@@ -316,8 +316,10 @@ versions, but is not a qualified pairing; align both versions before diagnosing
 a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
 An experimental [shared target contract](docs/targets.md) dispatches one
-deterministic scenario to web and an in-memory native fixture. Real Android
-execution remains a subsequent milestone.
+deterministic scenario to web and an in-memory native fixture. The experimental
+[Android adapter](docs/android-driver.md) supports an owned local emulator and
+explicit installed-app attachment to a physical device, with qualification
+limited to the documented runtime and scenarios.
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the

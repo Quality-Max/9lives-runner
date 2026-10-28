@@ -18,7 +18,11 @@ for name in ("receipt","run-result","run-status"):
     schema=json.loads((Path(sys.argv[1])/"docs/contracts"/(name+".schema.json")).read_text())
     validator=jsonschema.Draft202012Validator(schema["$defs"]["AndroidRuntime"])
     assert validator.is_valid(runtime), name+": bound runtime rejected"
-    unbound=dict(runtime)
+    physical=dict(runtime)
+    del physical["emulator"]
+    physical.update(device="physical",deviceHash="d"*64)
+    assert validator.is_valid(physical), name+": physical runtime rejected"
+    unbound=dict(physical)
     del unbound["testId"]
     assert not validator.is_valid(unbound), name+": unbound runtime accepted"
 `

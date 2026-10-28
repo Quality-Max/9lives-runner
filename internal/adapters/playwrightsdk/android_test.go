@@ -60,3 +60,36 @@ func TestAndroidRuntimeIsRequiredAndBoundToActiveAttempt(t *testing.T) {
 		t.Fatal("duplicate nested key accepted")
 	}
 }
+
+func TestPhysicalAndroidRuntimeIsClosedAndBound(t *testing.T) {
+	physical := func() []map[string]any {
+		f := androidFrames()
+		r := f[4]["runtime"].(map[string]any)
+		delete(r, "emulator")
+		r["device"] = "physical"
+		r["deviceHash"] = strings.Repeat("c", 64)
+		return f
+	}
+	identity := owner
+	identity.Target = "android:finance"
+	v, err := New().ValidateAttempt(stream(physical()), identity)
+	if err != nil || len(v.AndroidRuntimes) != 1 || v.AndroidRuntimes[0].Device != "physical" || v.AndroidRuntimes[0].TestID != testKey {
+		t.Fatal("physical runtime not bound to test")
+	}
+	for name, mutate := range map[string]func(map[string]any){
+		"mixed":        func(r map[string]any) { r["emulator"] = "36.4.9" },
+		"raw serial":   func(r map[string]any) { r["serial"] = "private" },
+		"missing hash": func(r map[string]any) { delete(r, "deviceHash") },
+		"bad hash":     func(r map[string]any) { r["deviceHash"] = "private" },
+		"wrong kind":   func(r map[string]any) { r["device"] = "emulator" },
+		"missing kind": func(r map[string]any) { delete(r, "device") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := physical()
+			mutate(f[4]["runtime"].(map[string]any))
+			if _, err := New().ValidateAttempt(stream(f), identity); err == nil {
+				t.Fatal("invalid physical runtime accepted")
+			}
+		})
+	}
+}

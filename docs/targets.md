@@ -2,7 +2,8 @@
 
 QUA-2203 / Demo M1 adds an opt-in deterministic surface shared by a web
 worker and a **fake native worker**. The fake runs in memory. The optional M2
-`android:<app-alias>` adapter uses a real local emulator; see
+`android:<app-alias>` adapter uses a real local emulator or explicit experimental
+physical-device attachment; see
 [Android setup and qualification](android-driver.md). The fake fixture does not
 qualify Android, iOS, semantic screen checks, independent verification or replay.
 Existing specs and Playwright configuration keep their existing behavior.
