@@ -12,7 +12,8 @@ publication has no GitHub Actions provenance. Its source commit is
 
 ## Release the CLI and SDK
 
-Releases use stable `v<major.minor.patch>` tags. In one reviewed change, set
+Releases use stable `v<major.minor.patch>` tags or beta tags such as
+`v0.6.0-beta` and `v0.6.0-beta.1`. In one reviewed change, set
 the version in `cmd/9l/main.go` (`var version`), `packages/playwright/package.json`
 and the `@9l/playwright` dependency of `testdata/sdk/package.json`, regenerate
 `package-lock.json` with `npm install --package-lock-only`, and update the docs
@@ -95,6 +96,24 @@ installs the release marked Latest, so no installer change follows a release;
 see [Website and installer](website.md#which-release-the-installer-installs).
 If the `latest` job does not run, installs stay on the previous release until
 a rerun completes it.
+
+### Beta releases
+
+Beta tags follow the same qualification, native packaging, checksum,
+attestation and trusted npm publication steps as stable tags. GitHub marks
+them as prereleases, npm publishes them under the `beta` dist-tag, and the
+workflow skips promotion to Latest. Default CLI installs and npm's `latest`
+dist-tag keep the stable release.
+
+Opt in to the matching beta SDK explicitly:
+
+```sh
+npm install --save-dev @9l/playwright@0.6.0-beta @playwright/test@1.64.1
+```
+
+For the CLI, download `v0.6.0-beta` with `gh release download` and follow the
+archive, checksum and provenance checks in [the installation guide](install.md#verify-build-provenance).
+The shell installer and `9l update` select stable releases only.
 
 ## Qualify the SDK
 

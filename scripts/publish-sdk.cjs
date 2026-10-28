@@ -5,10 +5,12 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {name, registryHas} = require('./sdk-registry.cjs');
+const {releaseVersion, releaseChannel} = require('./release-version.cjs');
 
 try {
   const root = path.resolve(__dirname, '..');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'packages/playwright/package.json')));
+  const channel = releaseChannel(releaseVersion(root));
   const directory = path.join(root, '.context/npm-pack');
   const qualification = JSON.parse(fs.readFileSync(path.join(directory, 'qualification.json')));
   assert.equal(qualification.name, manifest.name);
@@ -31,7 +33,7 @@ try {
     console.log(`${name}@${manifest.version} is already published with identical contents; nothing to do`);
     return;
   }
-  const result = spawnSync('npm', ['publish', tarball, '--access', 'public'], {cwd: root, stdio: 'inherit', timeout: 120000});
+  const result = spawnSync('npm', ['publish', tarball, '--access', 'public', '--tag', channel], {cwd: root, stdio: 'inherit', timeout: 120000});
   assert(!result.error && result.status === 0);
 } catch {
   console.error('SDK publication failed or qualified artifact was rejected');

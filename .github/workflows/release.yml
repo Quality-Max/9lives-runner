@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.identity.outputs.version }}
+      prerelease: ${{ steps.identity.outputs.prerelease }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -118,6 +119,7 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           generate_release_notes: true
+          prerelease: ${{ needs.check-tag.outputs.prerelease == 'true' }}
           # The installer at 9lives.run installs the release marked Latest; the
           # latest job sets it only after verification and SDK publication.
           make_latest: 'false'
@@ -171,6 +173,7 @@ jobs:
   # Latest, so a run that fails earlier leaves installs on the previous
   # verified release, and no installer change is needed per release.
   latest:
+    if: ${{ needs.check-tag.outputs.prerelease == 'false' }}
     needs: [check-tag, github-release, npm]
     runs-on: ubuntu-24.04
     permissions:

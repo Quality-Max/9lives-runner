@@ -6,6 +6,32 @@ SDK versions.
 
 ## Unreleased
 
+## 0.6.0-beta — 2026-10-28
+
+### Android (experimental)
+
+- Add the opt-in `@9l/playwright/android` adapter using pinned Appium 3.8.0
+  and UiAutomator2 8.7.0. Run native assertions on an owned Android emulator
+  or attach explicitly to an installed app on a connected device. Ordinary
+  Playwright execution remains separate. Android tooling is installed separately.
+- Require exact resource IDs, reject missing or ambiguous controls, check APK
+  identity, and keep mutations to one attempt. Runtime metadata is bounded;
+  screenshots, page source, device logs and private application content are
+  excluded from execution receipts.
+- Add cancellation, deadline, device lease and cleanup controls. Reject late
+  transport completions even when they run before an overdue timer. Installed-device
+  attachment remains experimental: physical disconnect and outer process hard-kill
+  cleanup, arbitrary phones, software keyboards and fold layouts are unqualified.
+- Target assertions are executed but not independently verified. Semantic screen
+  checks, a live combined reporter, the shared finance demo and full epic
+  qualification remain later milestones.
+
+### Releases
+
+- Support explicit beta tags through the same CLI and SDK release gates.
+  GitHub beta releases are prereleases; npm uses the `beta` dist-tag. Stable
+  default installs stay on the current stable release.
+
 ## 0.5.5 — 2026-10-28
 
 ### Security

@@ -3,7 +3,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const semver = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
+// Stable releases and explicit beta prereleases are the supported channels.
+const semver = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-beta(?:\.(?:0|[1-9]\d*))?)?$/;
+
+function releaseChannel(version) {
+  if (!semver.test(version)) throw new Error('unsupported release version');
+  return version.includes('-') ? 'beta' : 'latest';
+}
 
 function declaredVersions(root = path.resolve(__dirname, '..')) {
   const source = fs.readFileSync(path.join(root, 'cmd/9l/main.go'), 'utf8');
@@ -27,4 +33,4 @@ function releaseVersion(root) {
   return versions.cli;
 }
 
-module.exports = {semver, declaredVersions, releaseVersion};
+module.exports = {semver, declaredVersions, releaseVersion, releaseChannel};
