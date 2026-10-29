@@ -475,7 +475,7 @@ func TestAfterHookFailIsAConcern(t *testing.T) {
 	}
 	fact.AfterHookFails[0].Conditional = true
 	test = Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
-	if len(test.Findings) != 1 || test.Findings[0].Rule != "after-hook-fail" || test.Findings[0].Classification != "suspected" || !strings.Contains(test.Findings[0].Message, "when its condition holds") {
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "after-hook-fail" || test.Findings[0].Classification != "suspected" || !strings.Contains(test.Findings[0].Message, "when it applies") {
 		t.Fatalf("conditional after-hook test.fail() misreported: %+v", test.Findings)
 	}
 }

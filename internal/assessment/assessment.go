@@ -659,12 +659,14 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		// Unlike an after-hook skip, an after-hook test.fail() changes the
 		// verdict of a failed test: Playwright 1.61.1 through 1.64.1 count it
 		// as expected and the run exits 0, so a real failure reports green.
+		// Only an unconditional afterEach call is demonstrated; a condition, a
+		// branch or an afterAll hook leaves whether it applies unevaluated.
 		for _, p := range fact.AfterHookFails {
 			if p.Conditional {
-				add("after-hook-fail", "suspected", "engineeringQuality", "", "", "A conditional test.fail() modifier in an afterEach/afterAll hook applies to this test's suite after the test body has run; when its condition holds, Playwright 1.61.1 through 1.64.1 count a failed test as an expected failure and the run exits 0, so a real failure is reported green.", "Declare the expected failure on the test (test.fail('title', ...)) or at the start of its body, or remove it; read 9l's receipt, which marks runtime expected failures, rather than Playwright's exit code.", p.Location)
+				add("after-hook-fail", "suspected", "engineeringQuality", "", "", "A test.fail() modifier in an afterEach/afterAll hook whose application to this test is not evaluated — a condition, an enclosing branch, or an afterAll hook that follows only the group's last test; when it applies, Playwright 1.61.1 through 1.64.1 count a failed test as an expected failure and the run exits 0, so a real failure is reported green.", "Declare the expected failure on the test (test.fail('title', ...)) or at the start of its body, or remove it; read 9l's receipt, which marks runtime expected failures, rather than Playwright's exit code.", p.Location)
 				continue
 			}
-			add("after-hook-fail", "demonstrated", "engineeringQuality", "", "", "A test.fail() modifier in an afterEach/afterAll hook applies to this test's suite after the test body has run; Playwright 1.61.1 through 1.64.1 then count a failed test as an expected failure and the run exits 0, so a real failure is reported green.", "Declare the expected failure on the test (test.fail('title', ...)) or at the start of its body, or remove it; read 9l's receipt, which marks runtime expected failures, rather than Playwright's exit code.", p.Location)
+			add("after-hook-fail", "demonstrated", "engineeringQuality", "", "", "An unconditional test.fail() modifier in an afterEach hook applies to this test after its body has run; Playwright 1.61.1 through 1.64.1 then count a failed test as an expected failure and the run exits 0, so a real failure is reported green.", "Declare the expected failure on the test (test.fail('title', ...)) or at the start of its body, or remove it; read 9l's receipt, which marks runtime expected failures, rather than Playwright's exit code.", p.Location)
 		}
 		report.Tests = append(report.Tests, t)
 	}

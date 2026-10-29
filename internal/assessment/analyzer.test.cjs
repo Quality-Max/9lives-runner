@@ -1040,12 +1040,14 @@ test('hazards have their own budget and never cut assertion analysis short', () 
 
 // test.fail() in an after hook is attributed to every test in its suite as an
 // after-hook fail; a declaration, a body-level call, a before-hook call and a
-// literal false condition are not. A condition or an enclosing branch marks
-// it conditional. Playwright 1.61.1 through 1.64.1 apply it to the completed
-// test, so a failed body is reported as an expected failure and the run exits 0.
+// literal false condition are not. A condition, an enclosing branch or an
+// afterAll hook marks it conditional: afterAll follows only the group's last
+// test, so which tests it can affect is not known from source. Playwright
+// 1.61.1 through 1.64.1 apply it to the completed test, so a failed body is
+// reported as an expected failure and the run exits 0.
 test('after-hook test.fail() modifiers are attributed to the suite as conditional or not', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';
-    test.describe('plain', () => { test.afterEach(() => { test.fail(); }); test('a', async () => { expect(1).toBe(1); }); test('b', async () => { expect(1).toBe(1); }); });
+    test.describe('plain', () => { test.afterEach(() => { test.fail(); }); test.afterAll(() => { test.fail(); }); test('a', async () => { expect(1).toBe(1); }); test('b', async () => { expect(1).toBe(1); }); });
     test.describe('conditioned', () => {
       test.afterAll(async () => { test.fail(process.platform === 'win32', 'known'); });
       test.afterEach(() => { if (flaky) test.fail(); });
@@ -1057,7 +1059,7 @@ test('after-hook test.fail() modifiers are attributed to the suite as conditiona
     test('body', async () => { test.fail(); expect(1).toBe(2); });
     test.fail('declared', async () => { expect(1).toBe(2); });`);
   // A test.fail('title', ...) declaration is not in the inventory, as before.
-  assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false]], [[2, false]], [[4, true], [5, true], [6, false]], []]);
+  assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false], [2, true]], [[2, false], [2, true]], [[4, true], [5, true], [6, false]], []]);
   assert(facts.tests.every(t => !t.disabled && t.conditionalSkips.length === 0));
   assert.equal(facts.version, 12);
 });

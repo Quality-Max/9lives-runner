@@ -211,13 +211,16 @@ function createAnalyzer(ts) {
     // Conditions that read process.env are reported separately: such a test
     // may never run in an environment like CI.
     // Guarded marks a modifier under a branch, apart from the after-hook case.
+    // afterAll marks a modifier in an afterAll hook: it follows the group's
+    // last test, so which tests it can affect is not known from source.
     const modifierScope = (node, scope) => {
-      let conditional = false, afterExecution = false, guarded = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
+      let conditional = false, afterExecution = false, guarded = false, afterAll = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor === scope) return { conditional, environment, afterExecution, guarded };
+        if (ancestor === scope) return { conditional, environment, afterExecution, guarded, afterAll };
         if (ts.isFunctionLike(ancestor)) {
           if (!isHookCallback(ancestor)) return null;
           if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) {
+            afterAll = isTestCall(ancestor.parent, ['afterAll']);
             conditional = true;
             afterExecution = true;
           }
@@ -341,7 +344,7 @@ function createAnalyzer(ts) {
           const first = node.arguments[0];
           if (attributed?.afterExecution && first?.kind !== ts.SyntaxKind.FalseKeyword) {
             const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [], afterHookFails: [] };
-            entry.afterHookFails.push({ ...location(node), conditional: attributed.guarded || (!!first && first.kind !== ts.SyntaxKind.TrueKeyword) });
+            entry.afterHookFails.push({ ...location(node), conditional: attributed.guarded || attributed.afterAll || (!!first && first.kind !== ts.SyntaxKind.TrueKeyword) });
             scopeModifiers.set(scope, entry);
           }
           return;
