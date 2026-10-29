@@ -974,7 +974,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 11);
+  assert.equal(facts.version, 12);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {
@@ -1036,4 +1036,28 @@ test('hazards have their own budget and never cut assertion analysis short', () 
   assert(facts.tests.every(t => t.limits.length === 0));
   assert.equal(facts.tests.reduce((n, t) => n + t.hazards.length, 0), 512);
   assert.equal(facts.hazardsTruncated, true);
+});
+
+// test.fail() in an after hook is attributed to every test in its suite as an
+// after-hook fail; a declaration, a body-level call, a before-hook call and a
+// literal false condition are not. A condition or an enclosing branch marks
+// it conditional. Playwright 1.61.1 through 1.64.1 apply it to the completed
+// test, so a failed body is reported as an expected failure and the run exits 0.
+test('after-hook test.fail() modifiers are attributed to the suite as conditional or not', () => {
+  const facts = analyze(`import {test,expect} from '@playwright/test';
+    test.describe('plain', () => { test.afterEach(() => { test.fail(); }); test('a', async () => { expect(1).toBe(1); }); test('b', async () => { expect(1).toBe(1); }); });
+    test.describe('conditioned', () => {
+      test.afterAll(async () => { test.fail(process.platform === 'win32', 'known'); });
+      test.afterEach(() => { if (flaky) test.fail(); });
+      test.afterEach(() => { test.fail(true, 'always'); });
+      test.afterEach(() => { test.fail(false, 'never'); });
+      test('c', async () => { expect(1).toBe(1); });
+    });
+    test.beforeEach(() => { test.fail(); });
+    test('body', async () => { test.fail(); expect(1).toBe(2); });
+    test.fail('declared', async () => { expect(1).toBe(2); });`);
+  // A test.fail('title', ...) declaration is not in the inventory, as before.
+  assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false]], [[2, false]], [[4, true], [5, true], [6, false]], []]);
+  assert(facts.tests.every(t => !t.disabled && t.conditionalSkips.length === 0));
+  assert.equal(facts.version, 12);
 });

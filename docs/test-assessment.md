@@ -268,6 +268,7 @@ stays `unknown` because nothing is executed.
 | Absence assertion first after a fixed wait (`absence-after-wait`) | suspected | A slow application also passes it; assert a positive completion signal first. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
 | Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
+| `test.fail()` in an `afterEach`/`afterAll` hook (`after-hook-fail`) | demonstrated; suspected when conditional | Playwright 1.61.1 through 1.64.1 count a failed test as an expected failure and exit 0; a real failure reports green. |
 | Suite modifier whose condition reads `process.env` | suspected | The test may not run in some environments, such as CI; confirm a required run still executes it. |
 | Unknown requirement or unsupported analysis | unsupported | Supply reviewed intent or inspect manually. |
 
@@ -284,7 +285,15 @@ ignored; any other condition, a modifier under a branch, or one in an
 location. After hooks run once test bodies have run: Playwright 1.61.1 through
 1.64.1 report a passing test skipped from `afterEach` and only some results
 skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
-cannot be attributed from source and are ignored. Playwright treats a string
+cannot be attributed from source and are ignored. A `test.fail()` modifier
+with the same call shapes is reported only in an `afterEach`/`afterAll` hook,
+as `after-hook-fail` at the call: Playwright 1.61.1 through 1.64.1 apply it to
+the test that has just run ([microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738)),
+so a failed body becomes an expected failure and the run exits 0. Unconditional
+(`test.fail()`, `test.fail(true, reason)`) it is demonstrated; with a condition
+or under a branch it is suspected, as the condition is not evaluated; `false`
+is ignored. The documented forms, a `test.fail('title', ...)` declaration and a
+body-level `test.fail(condition)`, are not reported. Playwright treats a string
 followed by a function as a declaration at runtime, so only calls that cannot
 be one are modifiers: no arguments, one non-title argument, a fixture callback
 or syntactically boolean first argument (`true`, `!x`, a comparison), or a
@@ -405,7 +414,10 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v14` reads a
+inputs invalidate prior assessments. Policy `assessment-source-v15` adds the
+`after-hook-fail` rule and the `afterHookFails` fact; the helper version is
+12, report version 3 and suite version 1 are unchanged. Policy
+`assessment-source-v14` reads a
 matcher whose failure is caught as a probe with the informational
 `caught-assertion` rule (with the `possibly-soft` limit for a caught matcher
 whose `soft` option cannot be read), no longer reports a plain loop as `conditional-flow`
@@ -436,7 +448,7 @@ version to 7 for after-hook attribution; report version 3 is unchanged. Policy
 `code`: the limit reason for `analysis-limit` findings, the case for
 `unmapped-outcome` findings (from v9), and the rule name for all others, so `rule` is the finding family and `code` the specific reason.
 Consumers must also accept the `informational` classification, the
-`conditional-skip`, `environment-skip`, `absence-after-wait`,
+`conditional-skip`, `environment-skip`, `after-hook-fail`, `absence-after-wait`,
 `debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the
 `unknown-matcher`, `loop` and `possibly-soft` limit codes, an absent `requirementsSHA256`, an
 optional test `title`, an optional finding `site`, the test `assertions`

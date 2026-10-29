@@ -165,14 +165,20 @@ function createAnalyzer(ts) {
     // Playwright reads a string followed by a function as a declaration at
     // runtime, so only calls that cannot be one are modifiers. Ambiguous calls
     // such as test.skip(name, run) stay declarations.
-    const isModifier = node => {
-      if (!isTestCall(node, ['skip', 'fixme'])) return false;
+    const modifierShape = node => {
       const [first, second] = node.arguments;
       if (!first) return true;
       if (isTitle(first)) return false;
       if (isFunction(first) || isBoolean(first)) return true;
       return node.arguments.length === 1 || (node.arguments.length === 2 && isTitle(second));
     };
+    const isModifier = node => isTestCall(node, ['skip', 'fixme']) && modifierShape(node);
+    // test.fail()/test.fail(condition, reason) with the same shapes. Only one in
+    // an after hook is reported: Playwright 1.61.1 through 1.64.1 apply it to
+    // the test that has just run, so a failed body becomes an expected failure
+    // and the run can exit 0 (microsoft/playwright#43738). A declaration or a
+    // body-level call is the documented expected-failure form.
+    const isFailModifier = node => isTestCall(node, ['fail']) && modifierShape(node);
     // An assertion that something is absent or did not happen, which a slow
     // application also satisfies. A negated absence matcher is a presence check.
     const absence = (matcher, modifiers, args) => {
@@ -204,10 +210,11 @@ function createAnalyzer(ts) {
     // conditional rather than disabling the suite.
     // Conditions that read process.env are reported separately: such a test
     // may never run in an environment like CI.
+    // Guarded marks a modifier under a branch, apart from the after-hook case.
     const modifierScope = (node, scope) => {
-      let conditional = false, afterExecution = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
+      let conditional = false, afterExecution = false, guarded = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor === scope) return { conditional, environment, afterExecution };
+        if (ancestor === scope) return { conditional, environment, afterExecution, guarded };
         if (ts.isFunctionLike(ancestor)) {
           if (!isHookCallback(ancestor)) return null;
           if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) {
@@ -219,6 +226,7 @@ function createAnalyzer(ts) {
         if (ts.isExpressionStatement(ancestor) || ts.isBlock(ancestor) || ts.isAwaitExpression(ancestor) || ts.isParenthesizedExpression(ancestor)
           || (ts.isCallExpression(ancestor) && isTestCall(ancestor, ['beforeEach', 'beforeAll', 'afterEach', 'afterAll']))) continue;
         conditional = true;
+        guarded = true;
         const guard = condition(ancestor);
         if (guard && readsEnvironment(guard)) environment = true;
       }
@@ -327,12 +335,23 @@ function createAnalyzer(ts) {
       const alias = ts.isCallExpression(node) ? root(node.expression) : '';
       if (tests.has(alias) && !enclosingDeclarations(node).some(declaration => boundNames(declaration.name).includes(alias))) {
         const expr = node.expression;
+        if (isFailModifier(node)) {
+          const scope = scopes[scopes.length - 1];
+          const attributed = modifierScope(node, scope);
+          const first = node.arguments[0];
+          if (attributed?.afterExecution && first?.kind !== ts.SyntaxKind.FalseKeyword) {
+            const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [], afterHookFails: [] };
+            entry.afterHookFails.push({ ...location(node), conditional: attributed.guarded || (!!first && first.kind !== ts.SyntaxKind.TrueKeyword) });
+            scopeModifiers.set(scope, entry);
+          }
+          return;
+        }
         if (isModifier(node)) {
           const scope = scopes[scopes.length - 1];
           const attributed = modifierScope(node, scope);
           const first = node.arguments[0];
           if (attributed && first?.kind !== ts.SyntaxKind.FalseKeyword) {
-            const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [] };
+            const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [], afterHookFails: [] };
             if (!attributed.conditional && (!first || first.kind === ts.SyntaxKind.TrueKeyword)) entry.disabled = true;
             else entry.conditional.push({ ...location(node), environment: attributed.environment, afterExecution: attributed.afterExecution });
             scopeModifiers.set(scope, entry);
@@ -344,7 +363,7 @@ function createAnalyzer(ts) {
           const callback = node.arguments[node.arguments.length - 1];
           const statement = ts.isExpressionStatement(node.parent) ? node.parent : node;
           const disabled = inheritedDisabled || (ts.isPropertyAccessExpression(expr) && ['skip', 'fixme'].includes(expr.name.text));
-          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
+          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], afterHookFails: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
           // Titles are source text; include literal ones only when requested.
           if (options.titles && node.arguments[0] && (ts.isStringLiteral(node.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(node.arguments[0]))) fact.title = [...node.arguments[0].text].slice(0, 200).join('');
           factScopes.set(fact, scopes);
@@ -775,14 +794,15 @@ function createAnalyzer(ts) {
         if (!entry) continue;
         if (entry.disabled) fact.disabled = true;
         fact.conditionalSkips.push(...entry.conditional);
+        fact.afterHookFails.push(...entry.afterHookFails);
       }
-      if (fact.conditionalSkips.length > 16) throw new AnalysisError('limit');
+      if (fact.conditionalSkips.length > 16 || fact.afterHookFails.length > 16) throw new AnalysisError('limit');
     }
     // A shared modifier counts once, however many tests it applies to.
-    const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
+    const modifiers = new Set(results.flatMap(f => [...f.conditionalSkips, ...f.afterHookFails].map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 11, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 12, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -805,7 +825,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 11, error: code }));
+    process.stdout.write(JSON.stringify({ version: 12, error: code }));
     process.exitCode = 2;
   }
 }
