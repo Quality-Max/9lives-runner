@@ -108,10 +108,10 @@ dist-tag keep the stable release.
 Opt in to the matching beta SDK explicitly:
 
 ```sh
-npm install --save-dev @9l/playwright@0.6.0-beta @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.6.0-beta.1 @playwright/test@1.64.1
 ```
 
-For the CLI, download `v0.6.0-beta` with `gh release download` and follow the
+For the CLI, download `v0.6.0-beta.1` with `gh release download` and follow the
 archive, checksum and provenance checks in [the installation guide](install.md#verify-build-provenance).
 The shell installer and `9l update` select stable releases only.
 

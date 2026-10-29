@@ -4,7 +4,10 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.0-beta.1 — 2026-10-29
+
+Continues the 0.6.0-beta line on the beta channel: it includes everything
+in 0.6.0-beta plus the changes below. Stable installs stay on 0.5.5.
 
 ### Evidence
 
