@@ -1079,6 +1079,12 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		if receipt.PassedWithoutAssertions > 0 {
 			fmt.Fprintf(w, "           %d passed test(s) reported no assertion step; a green test that asserts nothing proves nothing\n", receipt.PassedWithoutAssertions)
 		}
+		if receipt.RuntimeExpectedFailures > 0 {
+			fmt.Fprintf(w, "           %d failed test(s) count as expected only because test.fail() ran during the test; Playwright reports them green\n", receipt.RuntimeExpectedFailures)
+		}
+		if receipt.SkippedAfterAssertions > 0 {
+			fmt.Fprintf(w, "           %d skipped test(s) had already reported a passed assertion step; the body ran before the skip\n", receipt.SkippedAfterAssertions)
+		}
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}

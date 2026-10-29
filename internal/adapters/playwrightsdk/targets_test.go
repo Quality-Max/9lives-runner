@@ -13,7 +13,7 @@ import (
 
 func targetFrames() []map[string]any {
 	f := passingFrames()
-	f[0]["capabilities"] = []string{"steps", "artifact-metadata", "terminal-outcomes", TargetVersion}
+	f[0]["capabilities"] = []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes", TargetVersion}
 	f[0]["targetVersion"] = TargetVersion
 	f[2]["operation"] = "assert-text"
 	f = append(f[:1], append([]map[string]any{{"type": "required_test", "testId": testKey}}, f[1:]...)...)

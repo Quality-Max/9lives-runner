@@ -357,7 +357,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -416,7 +416,7 @@ func TestWithoutContractRunsCodeChecksOnly(t *testing.T) {
 func TestEveryFindingCarriesACode(t *testing.T) {
 	c, _ := ParseContract([]byte(contractJSON))
 	disabled := true
-	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order", "missing"}, Sleeps: []Sleep{{Location: Location{2, 1}}}, ConditionalSkips: []ConditionalSkip{{Location: Location{3, 1}}, {Location: Location{3, 5}, Environment: true}}, Disabled: &disabled, Exclusive: true,
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{"checkout-order", "missing"}, Sleeps: []Sleep{{Location: Location{2, 1}}}, ConditionalSkips: []ConditionalSkip{{Location: Location{3, 1}}, {Location: Location{3, 5}, Environment: true}}, AfterHookFails: []AfterHookFail{{Location: Location{3, 9}}}, Disabled: &disabled, Exclusive: true,
 		Assertions: []Assertion{{Location: Location{4, 1}, Unawaited: true, Absence: true, AfterWait: true}}, Unsupported: true, Limits: []AnalysisLimit{{Location: Location{5, 1}, Code: "unresolved-helper"}}}
 	report := Build([]byte("source"), []byte(contractJSON), c, Facts{Tests: []Fact{fact}})
 	seen := map[string]bool{}
@@ -433,7 +433,7 @@ func TestEveryFindingCarriesACode(t *testing.T) {
 		}
 		seen[f.Rule] = true
 	}
-	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip", "environment-skip", "absence-after-wait"} {
+	for _, rule := range []string{"analysis-limit", "unknown-requirement", "unmapped-outcome", "unawaited-assertion", "fixed-wait", "exclusive-test", "disabled-test", "conditional-skip", "environment-skip", "after-hook-fail", "absence-after-wait"} {
 		if !seen[rule] {
 			t.Fatalf("fixture did not exercise %s", rule)
 		}
@@ -461,8 +461,27 @@ func TestConditionalSkipIsInformationalAndNotDisabled(t *testing.T) {
 	}
 }
 
+// An after-hook test.fail() is a concern: unconditional, it is demonstrated;
+// with a condition or under a branch, suspected. It does not disable the test
+// or stop its body from lending coverage, since the body runs first.
+func TestAfterHookFailIsAConcern(t *testing.T) {
+	fact := Fact{Location: Location{1, 1}, Disabled: new(bool), Assertions: []Assertion{{Location: Location{2, 1}}}, AfterHookFails: []AfterHookFail{{Location: Location{3, 1}}}}
+	test := Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "after-hook-fail" || test.Findings[0].Code != "after-hook-fail" || test.Findings[0].Classification != "demonstrated" || test.Findings[0].Location != (Location{3, 1}) {
+		t.Fatalf("after-hook test.fail() misreported: %+v", test.Findings)
+	}
+	if test.Dimensions["engineeringQuality"] != "concern" || !strings.Contains(test.Findings[0].Message, "exits 0") {
+		t.Fatalf("after-hook test.fail() did not raise a concern: %+v", test)
+	}
+	fact.AfterHookFails[0].Conditional = true
+	test = Build([]byte("source"), nil, Contract{}, Facts{Tests: []Fact{fact}}).Tests[0]
+	if len(test.Findings) != 1 || test.Findings[0].Rule != "after-hook-fail" || test.Findings[0].Classification != "suspected" || !strings.Contains(test.Findings[0].Message, "when its condition holds") {
+		t.Fatalf("conditional after-hook test.fail() misreported: %+v", test.Findings)
+	}
+}
+
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -494,7 +513,7 @@ func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 		for i := range assertions {
 			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}, Matcher: "toBe"}
 		}
-		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}})
+		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}})
 	}
 	if !validFacts(f, source, false) {
 		t.Fatal("shared modifiers counted once per test")
@@ -642,7 +661,7 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		got = append(got, strings.Join(rules, ","))
 	}
 	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v14" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v15" {
 		t.Fatalf("caught findings %q under %s", got, report.Policy)
 	}
 	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
@@ -817,7 +836,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v14" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v15" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -852,13 +871,13 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v14" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v15" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }
 
 func TestHazardEvidenceIsValidated(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if !validFacts(f, []byte("xx"), false) {
 		t.Fatal("valid hazard rejected")
 	}
@@ -928,7 +947,7 @@ func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
 	}
 	// A value typed into a field and a key press are not selectors.
 	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v14" {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v15" {
 		t.Fatalf("hazard findings %q under %s", got, report.Policy)
 	}
 	counts, total := CountFindings(report)
@@ -943,7 +962,7 @@ func TestTruncatedHazardsAreBoundedAndDisclosed(t *testing.T) {
 	for i := range hazards {
 		hazards[i] = Hazard{Location: Location{i%600 + 1, i/600 + 1}, Kind: "xpath"}
 	}
-	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}}
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}
 	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{fact}, HazardsTruncated: true}
 	if validFacts(f, source, false) {
 		t.Fatal("more hazards than the budget accepted")

@@ -54,9 +54,13 @@ type event struct {
 }
 
 type testState struct {
-	retry        int
-	active       bool
-	statuses     []string
+	retry    int
+	active   bool
+	statuses []string
+	// declared is the expected status the worker reported before the first
+	// attempt ran; expected is the one it reported when the last attempt
+	// ended. They differ when a modifier ran during an attempt.
+	declared     string
 	expected     string
 	final        bool
 	goalFailed   bool
@@ -69,6 +73,10 @@ type testState struct {
 	reportedAttempt int
 	reportedFinal   int
 	finalStatus     string
+	// skippedAfterAssertions marks a test whose last attempt ended skipped
+	// after the worker had reported a passed assertion step in it: the body
+	// ran before a modifier relabeled the result.
+	skippedAfterAssertions bool
 }
 
 func TargetID(target string) string {
@@ -126,10 +134,10 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		if index == 0 {
 			caps := frame.Capabilities
 			if targeted {
-				if frame.TargetVersion != TargetVersion || len(caps) != 4 || caps[3] != TargetVersion {
+				if frame.TargetVersion != TargetVersion || len(caps) != 5 || caps[4] != TargetVersion {
 					return invalid("unsupported target contract")
 				}
-				caps = caps[:3]
+				caps = caps[:4]
 			} else if frame.TargetVersion != "" {
 				return invalid("unexpected target contract")
 			}
@@ -168,7 +176,12 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if state.active || state.final || frame.Retry != state.retry+1 {
 				return invalid("duplicate or late test attempt")
 			}
-			state.retry, state.active, state.reportedAttempt = frame.Retry, true, 0
+			// The declaration is what Playwright knew before the test ran; it
+			// cannot change between attempts.
+			if !oneOf(frame.ExpectedStatus, "passed", "failed", "skipped") || (state.declared != "" && state.declared != frame.ExpectedStatus) {
+				return invalid("missing or changed declared outcome")
+			}
+			state.retry, state.active, state.reportedAttempt, state.declared = frame.Retry, true, 0, frame.ExpectedStatus
 		case "target_runtime":
 			if !strings.HasPrefix(identity.Target, "android:") || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.runtime || frame.Runtime == nil || !validAndroidRuntime(*frame.Runtime) {
 				return invalid("missing, foreign or malformed Android runtime")
@@ -237,6 +250,11 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			state.statuses = append(state.statuses, frame.Status)
 			if frame.Status != "skipped" {
 				state.reportedFinal, state.finalStatus = state.reportedAttempt, frame.Status
+			} else {
+				// From the last attempt only: a skip before any reported
+				// assertion step did not run the body, whatever an earlier
+				// attempt of this test did.
+				state.skippedAfterAssertions = state.reportedAttempt > 0
 			}
 		case "test_result":
 			summarizing = true
@@ -255,11 +273,20 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				if !skipPins[frame.SkipKey] {
 					unpinned++
 				}
+				if state.skippedAfterAssertions {
+					validation.SkippedAfterAssertions++
+				}
 			} else {
 				validation.ExecutedTests++
 				validation.TargetAssertions += state.assertions
 				if frame.Outcome == "flaky" {
 					validation.FlakyTests++
+				}
+				// A failure that counts as expected only because test.fail()
+				// ran during the attempt. Playwright reports it green either
+				// way; the receipt says the expectation was not declared.
+				if frame.Outcome == "expected" && state.finalStatus == "failed" && state.declared == "passed" {
+					validation.RuntimeExpectedFailures++
 				}
 				// Worker-reported, from the last completed attempt: a signal
 				// that a passed test asserted nothing, never verified coverage.
@@ -300,6 +327,12 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			validation.Description += fmt.Sprintf("; %d worker-reported assertion step(s)", validation.ReportedAssertions)
 			if validation.PassedWithoutAssertions != 0 {
 				validation.Description += fmt.Sprintf("; %d passed test(s) reported none", validation.PassedWithoutAssertions)
+			}
+			if validation.RuntimeExpectedFailures != 0 {
+				validation.Description += fmt.Sprintf("; %d failed test(s) expected to fail only by a runtime test.fail()", validation.RuntimeExpectedFailures)
+			}
+			if validation.SkippedAfterAssertions != 0 {
+				validation.Description += fmt.Sprintf("; %d skipped test(s) had reported a passed assertion step", validation.SkippedAfterAssertions)
 			}
 			if (frame.Status == "passed") != (validation.FailureCount == 0) {
 				return invalid("inconsistent terminal outcome")
@@ -347,7 +380,7 @@ func outcome(state *testState) string {
 // Capabilities is the exact capability list a hello frame must carry. The
 // SDK declares the same list in its package metadata so doctor can compare
 // an installed SDK with this engine without running it.
-var Capabilities = []string{"steps", "artifact-metadata", "terminal-outcomes"}
+var Capabilities = []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}
 
 func equalCapabilities(values []string) bool     { return slices.Equal(values, Capabilities) }
 func oneOf(value string, allowed ...string) bool { return slices.Contains(allowed, value) }
@@ -408,7 +441,7 @@ func decodeEvent(raw []byte) (event, error) {
 	case "required_test":
 		fields = append(fields, "testId")
 	case "test_begin":
-		fields = append(fields, "testId", "retry")
+		fields = append(fields, "testId", "retry", "expectedStatus")
 	case "target_runtime":
 		fields = append(fields, "testId", "retry", "runtime")
 	case "step_end":

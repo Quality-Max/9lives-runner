@@ -26,10 +26,10 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v14"
+const Policy = "assessment-source-v15"
 
 // helperVersion is the version of the analyzer's facts.
-const helperVersion = 11
+const helperVersion = 12
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -131,6 +131,14 @@ type ConditionalSkip struct {
 	Environment    bool `json:"environment"`
 	AfterExecution bool `json:"afterExecution"`
 }
+
+// AfterHookFail is a test.fail() modifier in an afterEach/afterAll hook of a
+// suite the test belongs to. Conditional marks a condition argument or an
+// enclosing branch, so whether it applies to this test is not evaluated.
+type AfterHookFail struct {
+	Location
+	Conditional bool `json:"conditional"`
+}
 type Fact struct {
 	Location
 	Title            string            `json:"title,omitempty"`
@@ -139,6 +147,7 @@ type Fact struct {
 	Sleeps           []Sleep           `json:"sleeps"`
 	Hazards          []Hazard          `json:"hazards"`
 	ConditionalSkips []ConditionalSkip `json:"conditionalSkips"`
+	AfterHookFails   []AfterHookFail   `json:"afterHookFails"`
 	Disabled         *bool             `json:"disabled"`
 	Exclusive        bool              `json:"exclusive"`
 	Unsupported      bool              `json:"unsupported"`
@@ -407,7 +416,7 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 	seen, modifiers := map[Location]bool{}, map[Location]bool{}
 	total, hazards := 0, 0
 	for _, t := range f.Tests {
-		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.Hazards == nil || t.ConditionalSkips == nil || len(t.ConditionalSkips) > 16 || t.Disabled == nil ||
+		if !valid(t.Location) || seen[t.Location] || t.Requirements == nil || t.Assertions == nil || t.Sleeps == nil || t.Hazards == nil || t.ConditionalSkips == nil || len(t.ConditionalSkips) > 16 || t.AfterHookFails == nil || len(t.AfterHookFails) > 16 || t.Disabled == nil ||
 			(!titles && t.Title != "") || len(t.Title) > 1024 || !utf8.ValidString(t.Title) || !ids(t.Requirements) || t.Limits == nil || len(t.Limits) > len(analysisLimits) || t.Unsupported != (len(t.Limits) > 0) {
 			return false
 		}
@@ -437,6 +446,13 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 		}
 		applied := map[Location]bool{}
 		for _, p := range t.ConditionalSkips {
+			if !valid(p.Location) || applied[p.Location] {
+				return false
+			}
+			applied[p.Location] = true
+			modifiers[p.Location] = true
+		}
+		for _, p := range t.AfterHookFails {
 			if !valid(p.Location) || applied[p.Location] {
 				return false
 			}
@@ -639,6 +655,16 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 				continue
 			}
 			add("conditional-skip", "informational", "engineeringQuality", "", "", "A conditional or after-hook test.skip/test.fixme modifier applies to this test's suite; whether it skips this test is not evaluated.", "Confirm the condition and reason; while it holds, this test does not protect the requirement.", p.Location)
+		}
+		// Unlike an after-hook skip, an after-hook test.fail() changes the
+		// verdict of a failed test: Playwright 1.61.1 through 1.64.1 count it
+		// as expected and the run exits 0, so a real failure reports green.
+		for _, p := range fact.AfterHookFails {
+			if p.Conditional {
+				add("after-hook-fail", "suspected", "engineeringQuality", "", "", "A conditional test.fail() modifier in an afterEach/afterAll hook applies to this test's suite after the test body has run; when its condition holds, Playwright 1.61.1 through 1.64.1 count a failed test as an expected failure and the run exits 0, so a real failure is reported green.", "Declare the expected failure on the test (test.fail('title', ...)) or at the start of its body, or remove it; read 9l's receipt, which marks runtime expected failures, rather than Playwright's exit code.", p.Location)
+				continue
+			}
+			add("after-hook-fail", "demonstrated", "engineeringQuality", "", "", "A test.fail() modifier in an afterEach/afterAll hook applies to this test's suite after the test body has run; Playwright 1.61.1 through 1.64.1 then count a failed test as an expected failure and the run exits 0, so a real failure is reported green.", "Declare the expected failure on the test (test.fail('title', ...)) or at the start of its body, or remove it; read 9l's receipt, which marks runtime expected failures, rather than Playwright's exit code.", p.Location)
 		}
 		report.Tests = append(report.Tests, t)
 	}

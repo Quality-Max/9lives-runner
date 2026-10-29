@@ -92,8 +92,15 @@ type Receipt struct {
 	// PassedWithoutAssertions the tests that passed while reporting none.
 	// They say whether a green test asserted anything; they are the worker's
 	// report, not verified coverage, so assertionCoverage stays unknown.
-	ReportedAssertions      int    `json:"reportedAssertions,omitempty"`
-	PassedWithoutAssertions int    `json:"passedWithoutAssertions,omitempty"`
+	ReportedAssertions      int `json:"reportedAssertions,omitempty"`
+	PassedWithoutAssertions int `json:"passedWithoutAssertions,omitempty"`
+	// RuntimeExpectedFailures counts failed tests that count as expected only
+	// because test.fail() ran during the attempt, and SkippedAfterAssertions
+	// skipped tests that had reported a passed assertion step first. Both
+	// come from the SDK evidence stream and mark results the framework
+	// relabeled while the test ran; they do not change the status.
+	RuntimeExpectedFailures int    `json:"runtimeExpectedFailures,omitempty"`
+	SkippedAfterAssertions  int    `json:"skippedAfterAssertions,omitempty"`
 	Error                   string `json:"error,omitempty"`
 	// Failures describes each failed test, from the validated structured
 	// report, when the adapter can attribute them. Messages are bounded and

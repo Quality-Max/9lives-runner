@@ -6,6 +6,41 @@ SDK versions.
 
 ## Unreleased
 
+### Evidence
+
+- Results Playwright relabels after a test body has run are visible in
+  `--sdk` receipts. Qualifying Playwright's modifiers for 9l found two
+  upstream defects, reported as microsoft/playwright#43676 and
+  microsoft/playwright#43738: on 1.61.1 through 1.64.1, `test.skip()` in an
+  `afterEach` hook reports a test that ran and passed as skipped, and
+  `test.fail()` in an after hook or fixture teardown turns a failed test into
+  an expected failure, so the summary says `1 passed` and the process exits 0.
+  The engine reporter now sends, on `test_begin`, the expected status
+  Playwright knew before any attempt ran, and Go compares it with the status
+  the attempt ended with. Receipts gain `runtimeExpectedFailures`, failed
+  tests that count as expected only because `test.fail()` ran during the
+  test (in the body, a suite-level condition function or an after hook; the
+  reporter cannot tell which), and `skippedAfterAssertions`, skipped tests
+  whose final attempt had already reported a passed assertion step. `9l run` and
+  `9l result` print both under the job. Neither changes the status:
+  Playwright's semantics for expected failures and pinned skips are kept, and
+  an unpinned skip still makes the attempt incomplete. The counts are the
+  worker's report, not verified outcomes. The `9l.engine/1` capability list
+  is now `steps`, `artifact-metadata`, `terminal-outcomes`,
+  `declared-outcomes`; an SDK without it is rejected at the handshake and
+  `9l doctor` reports the pair as incompatible, so update the CLI and
+  `@9l/playwright` together. Regression fixtures for both defects run in
+  `npm run smoke`.
+
+### Assessment
+
+- `9l assess` reports `test.fail()` in an `afterEach`/`afterAll` hook as
+  `after-hook-fail`: demonstrated when unconditional, suspected with a
+  condition or under a branch. The declaration and body-level forms are not
+  reported. Policy is `assessment-source-v15`; the analyzer helper version is
+  12 and facts carry `afterHookFails`; report version 3 and suite version 1
+  are unchanged.
+
 ## 0.6.0-beta — 2026-10-28
 
 ### Android (experimental)

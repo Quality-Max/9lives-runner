@@ -21,6 +21,12 @@ export default class EngineReporter implements Reporter {
   private seq = 0;
   private stepSeq = 0;
   private suite?: Suite;
+  // The expected status of each test before any attempt ran. Playwright
+  // updates test.expectedStatus only when an attempt ends, so a test_begin
+  // frame carries the declaration (test.fail('title', ...) or a suite-level
+  // modifier) and test_end the final value; Go reads a difference as a
+  // modifier that ran during the attempt, in the body or in an after hook.
+  private declared = new Map<string, string>();
   private terminal = false;
   private overflow = false;
 
@@ -43,6 +49,7 @@ export default class EngineReporter implements Reporter {
   }
   onBegin(_config: FullConfig, suite: Suite) {
     this.suite = suite;
+    for (const test of suite.allTests()) this.declared.set(test.id, test.expectedStatus);
     this.emit('hello', {capabilities: this.target ? [...capabilities, targetVersion] : capabilities, totalTests: suite.allTests().length, ...(this.target ? {targetVersion} : {})});
     if (this.target) {
       for (const test of suite.allTests()) {
@@ -52,7 +59,7 @@ export default class EngineReporter implements Reporter {
     }
   }
   onTestBegin(test: TestCase, result: TestResult) {
-    this.emit('test_begin', {testId: this.testId(test), retry: result.retry});
+    this.emit('test_begin', {testId: this.testId(test), retry: result.retry, expectedStatus: this.declared.get(test.id) ?? test.expectedStatus});
   }
   onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
     // expect.poll, toPass and custom matchers report the assertions they run,

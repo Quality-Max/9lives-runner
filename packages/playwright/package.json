@@ -24,7 +24,7 @@
   "engines": {"node": ">=22"},
   "9l": {
     "protocol": "9l.engine/1",
-    "capabilities": ["steps", "artifact-metadata", "terminal-outcomes"],
+    "capabilities": ["steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"],
     "faults": ["abort", "http-500", "empty-json", "http-401", "http-403", "http-429", "malformed-json", "redirect-cross-origin", "delay"]
   },
   "publishConfig": {"access": "public"}
