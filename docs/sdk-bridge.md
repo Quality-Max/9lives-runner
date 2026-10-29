@@ -47,8 +47,8 @@ per LF-terminated line, with no CR or other surrounding whitespace. Every frame 
 
 | Frame | Evidence |
 | --- | --- |
-| `hello` | Total tests and exact capabilities: steps, artifact metadata, terminal outcomes |
-| `test_begin` | Hashed Playwright test ID and retry index |
+| `hello` | Total tests and exact capabilities: steps, artifact metadata, terminal outcomes, declared outcomes |
+| `test_begin` | Hashed Playwright test ID, retry index and the expected status declared before any attempt ran |
 | `step_end` | Owning test/retry, unique step ID, category and passed/failed outcome |
 | `test_end` | Actual/expected attempt status and bounded attachment metadata |
 | `test_result` | Final expected/unexpected/flaky/skipped outcome per test; skipped results add a `skipKey` digest |
@@ -65,6 +65,43 @@ closed. Validation state is local to an attempt and cannot update another receip
 Retry attempts count as one test. Expected failures retain Playwright semantics;
 skipped tests do not establish completeness. Suite exit code and reported
 outcomes must agree.
+
+## Results relabeled while the test ran
+
+Playwright's modifiers can change a test's expected status after its body
+has run. Qualifying them for 9l found two upstream defects, reported as
+[microsoft/playwright#43676](https://github.com/microsoft/playwright/issues/43676)
+and [microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738):
+on 1.61.1 through 1.64.1, `test.skip()` in an `afterEach` hook reports a test
+whose body ran and passed as skipped (`afterAll`: only the group's last test),
+and `test.fail()` in an after hook or fixture teardown turns a failed test into
+an expected failure, so the summary says it passed and the process exits 0.
+Playwright's JSON report cannot tell either from a test that declared its
+status, so `9l run` without `--sdk` cannot either.
+
+The engine stream can, within the limits of what the reporter observes.
+`test_begin` carries the expected status Playwright knew before any attempt
+ran: `passed`, or `failed`/`skipped` from a `test.fail('title', ...)` or
+`test.skip('title', ...)` declaration or an unconditional suite-level
+modifier. It is the same on every retry. `test_end` carries the status the
+attempt ended with. Go rejects a declaration that changes between attempts
+and derives two counts from the rest:
+
+- `runtimeExpectedFailures`: executed tests that failed and count as expected
+  only because `test.fail()` ran during the attempt. The reporter cannot see
+  whether that call was in the body (the documented
+  `test.fail(browserName === 'webkit')` form), in a suite-level condition
+  function, or in an after hook, so all three count. Playwright's verdict is
+  kept: the test is executed and not a failure, and the attempt can pass.
+- `skippedAfterAssertions`: skipped tests whose attempt had already reported a
+  passed assertion step, so the body ran before a modifier relabeled it. The
+  skip still needs a `--pin-skip` and still counts as skipped, never as
+  executed; a conditional `test.skip()` placed after an assertion counts too.
+
+Both are in the receipt's validation summary and in its JSON, and `9l run`
+and `9l result` print them under the job. They are the worker's report, not
+verified outcomes: they make a relabeled result visible without claiming the
+original one was right.
 
 ## Skip pins
 
@@ -92,7 +129,8 @@ not independently verified assertion coverage; receipts retain `unknown` coverag
 The receipt does count them: `reportedAssertions` is the number of assertion
 steps the worker reported as passed in each executed test's last completed
 attempt, and `passedWithoutAssertions` the tests that passed while reporting
-none. A retrying assertion (`expect.poll`, `toPass`, a custom matcher)
+none; `runtimeExpectedFailures` and `skippedAfterAssertions` are described
+above. A retrying assertion (`expect.poll`, `toPass`, a custom matcher)
 counts once, including the assertions it runs inside it on each retry, so
 the count is of top-level assertion steps, not of every `expect` in the
 source. Both are the worker's report, so a green test that asserted nothing is

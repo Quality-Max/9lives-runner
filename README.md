@@ -170,6 +170,18 @@ A passing execution means the test's assertions passed and its report was
 validated. It does not prove that the assertions fully cover the requirements.
 Independent behavioral verification remains planned.
 
+Playwright's own verdict is not the evidence. Qualifying its modifiers for 9l
+found two upstream defects, reported as
+[microsoft/playwright#43676](https://github.com/microsoft/playwright/issues/43676)
+and [microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738):
+on 1.61.1 through 1.64.1 a `test.skip()` in an after hook reports a test that
+ran and passed as skipped, and a `test.fail()` there turns a failed test into
+an expected failure, so `1 passed` and exit code 0 can describe a failing
+run. With `--sdk`, the receipt reports `runtimeExpectedFailures` and
+`skippedAfterAssertions` for results relabeled while the test ran, and
+`9l assess` flags `test.fail()` in an after hook. See
+[results relabeled while the test ran](docs/sdk-bridge.md#results-relabeled-while-the-test-ran).
+
 ### Check the page you changed
 
 Before a coding agent calls a web change done, give it evidence from the page
@@ -314,7 +326,7 @@ The stable pairing below remains the default installation.
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
-`artifact-metadata`, `terminal-outcomes` (in that order), then validates the
+`artifact-metadata`, `terminal-outcomes`, `declared-outcomes` (in that order), then validates the
 execution evidence. It does not compare package versions or enforce a
 same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
 versions, but is not a qualified pairing; align both versions before diagnosing

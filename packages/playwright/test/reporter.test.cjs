@@ -46,3 +46,40 @@ test('a nested expect step is not counted as a second assertion', () => {
     fs.rmSync(dir, {recursive: true, force: true});
   }
 });
+
+// Playwright sets test.expectedStatus from the worker when an attempt ends, so
+// after a runtime test.fail() (in the body or, on 1.61.1 through 1.64.1, in an
+// after hook) the TestCase reads "failed" from then on. test_begin must keep
+// the status declared before any attempt ran, on every retry, and test_end the
+// final one, so Go can tell a declared expected failure from a relabeled one.
+test('test_begin carries the expected status declared before the test ran', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-reporter-'));
+  const events = path.join(dir, 'events.ndjson');
+  const saved = {...process.env};
+  Object.assign(process.env, {
+    NINELIVES_ENGINE_PROTOCOL: '9l.engine/1', NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001',
+    NINELIVES_ATTEMPT_ID: 'job-001-attempt-001', NINELIVES_ENGINE_EVENTS: events,
+  });
+  delete process.env.NINELIVES_TARGET;
+  try {
+    const Reporter = require('../dist/reporter.js').default;
+    const reporter = new Reporter();
+    const testCase = {id: 'test-1', expectedStatus: 'passed', titlePath: () => ['', '', 'a.spec.ts', 'relabeled'], outcome: () => 'expected'};
+    reporter.onBegin({}, {allTests: () => [testCase]});
+    reporter.onTestBegin(testCase, {retry: 0});
+    testCase.expectedStatus = 'failed'; // the dispatcher's update when the attempt ends
+    reporter.onTestEnd(testCase, {retry: 0, status: 'failed', attachments: []});
+    reporter.onTestBegin(testCase, {retry: 1});
+    reporter.onTestEnd(testCase, {retry: 1, status: 'failed', attachments: []});
+    reporter.onEnd({status: 'passed'});
+    const frames = fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(frames.map(frame => frame.type), ['hello', 'test_begin', 'test_end', 'test_begin', 'test_end', 'test_result', 'end']);
+    assert.deepEqual(frames[0].capabilities, ['steps', 'artifact-metadata', 'terminal-outcomes', 'declared-outcomes']);
+    assert.deepEqual(frames.filter(frame => frame.type === 'test_begin').map(frame => frame.expectedStatus), ['passed', 'passed']);
+    assert.deepEqual(frames.filter(frame => frame.type === 'test_end').map(frame => frame.expectedStatus), ['failed', 'failed']);
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});

@@ -97,6 +97,15 @@ type Validation struct {
 	// Both are worker-reported signals, not verified coverage.
 	ReportedAssertions      int
 	PassedWithoutAssertions int
+	// RuntimeExpectedFailures counts executed tests that failed and count as
+	// expected only because test.fail() ran during the attempt, in the body
+	// or in an after hook, rather than by a declaration the framework knew
+	// before the test ran. SkippedAfterAssertions counts skipped tests whose
+	// attempt had already reported a passed assertion step, so the body ran
+	// before a modifier relabeled the result. Both are worker-reported
+	// signals that Playwright's own verdict hides; neither changes it.
+	RuntimeExpectedFailures int
+	SkippedAfterAssertions  int
 	Description             string
 }
 

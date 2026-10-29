@@ -20,8 +20,8 @@ var testKey = strings.Repeat("a", 64)
 
 func passingFrames() []map[string]any {
 	return []map[string]any{
-		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 1},
-		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}, "totalTests": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 0, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "passed"},
 		{"type": "test_end", "testId": testKey, "retry": 0, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
 		{"type": "test_result", "testId": testKey, "outcome": "expected"},
@@ -87,8 +87,15 @@ func TestRejectUntrustedEvidence(t *testing.T) {
 		"worker error": func(f []map[string]any) []map[string]any {
 			return append(f[:1], map[string]any{"type": "engine_error"})
 		},
-		"unsafe extra field": func(f []map[string]any) []map[string]any { f[2]["pageContent"] = "omitted fixture data"; return f },
-		"missing retry":      func(f []map[string]any) []map[string]any { delete(f[1], "retry"); return f },
+		"unsafe extra field":       func(f []map[string]any) []map[string]any { f[2]["pageContent"] = "omitted fixture data"; return f },
+		"missing retry":            func(f []map[string]any) []map[string]any { delete(f[1], "retry"); return f },
+		"missing declared outcome": func(f []map[string]any) []map[string]any { delete(f[1], "expectedStatus"); return f },
+		"unknown declared outcome": func(f []map[string]any) []map[string]any { f[1]["expectedStatus"] = "interrupted"; return f },
+		"old SDK without declared outcomes": func(f []map[string]any) []map[string]any {
+			f[0]["capabilities"] = []string{"steps", "artifact-metadata", "terminal-outcomes"}
+			delete(f[1], "expectedStatus")
+			return f
+		},
 		"unsafe attachment": func(f []map[string]any) []map[string]any {
 			f[3]["artifacts"] = []any{map[string]any{"id": "artifact-1", "kind": "json", "retained": false, "path": "outside"}}
 			return f
@@ -144,7 +151,7 @@ func TestFailureExpectedFailureAndRetryOutcomes(t *testing.T) {
 	frames[3]["status"] = "failed"
 	frames[4]["outcome"] = "flaky"
 	frames = append(frames[:4], append([]map[string]any{
-		{"type": "test_begin", "testId": testKey, "retry": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 1, "expectedStatus": "passed"},
 		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
 	}, frames[4:]...)...)
 	validation, err := New().ValidateAttempt(stream(frames), owner)
@@ -164,7 +171,7 @@ func TestGoalFailuresDoNotHideOtherTests(t *testing.T) {
 		other := strings.Repeat("b", 64)
 		frames[5]["status"] = "failed"
 		frames = append(frames[:4], append([]map[string]any{
-			{"type": "test_begin", "testId": other, "retry": 0},
+			{"type": "test_begin", "testId": other, "retry": 0, "expectedStatus": "passed"},
 			{"type": "step_end", "testId": other, "retry": 0, "stepId": "step-2", "category": "assertion", "status": "failed"},
 			{"type": "test_end", "testId": other, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
 		}, frames[4:]...)...)
@@ -195,7 +202,7 @@ func TestSerialGroupCanRetryExpectedAndSkippedAttempts(t *testing.T) {
 			frames[4]["outcome"] = test.outcome
 			frames[5]["status"] = test.terminalStatus
 			frames = append(frames[:4], append([]map[string]any{
-				{"type": "test_begin", "testId": testKey, "retry": 1},
+				{"type": "test_begin", "testId": testKey, "retry": 1, "expectedStatus": "passed"},
 				{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
 			}, frames[4:]...)...)
 			if validation, err := New().ValidateAttempt(stream(frames), owner); err != nil || validation.ExecutedTests != 1 || validation.FailureCount != 0 {
@@ -223,7 +230,7 @@ func mixedSkipFrames(skipKey string) []map[string]any {
 	frames[0]["totalTests"] = 2
 	other := strings.Repeat("b", 64)
 	frames = append(frames[:4], append([]map[string]any{
-		{"type": "test_begin", "testId": other, "retry": 0},
+		{"type": "test_begin", "testId": other, "retry": 0, "expectedStatus": "passed"},
 		{"type": "test_end", "testId": other, "retry": 0, "status": "skipped", "expectedStatus": "skipped", "artifacts": []any{}},
 	}, frames[4:]...)...)
 	return append(frames[:7], append([]map[string]any{{"type": "test_result", "testId": other, "outcome": "skipped", "skipKey": skipKey}}, frames[7:]...)...)
@@ -391,11 +398,11 @@ func TestCaughtGoalFailurePreservesObservedTestCounts(t *testing.T) {
 func TestAssertionsCountsFailedTestsWithAFailedAssertion(t *testing.T) {
 	other := strings.Repeat("b", 64)
 	frames := []map[string]any{
-		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 2},
-		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}, "totalTests": 2},
+		{"type": "test_begin", "testId": testKey, "retry": 0, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "failed"},
 		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
-		{"type": "test_begin", "testId": other, "retry": 0},
+		{"type": "test_begin", "testId": other, "retry": 0, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": other, "retry": 0, "stepId": "step-2", "category": "browser", "status": "failed"},
 		{"type": "test_end", "testId": other, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
 		{"type": "test_result", "testId": testKey, "outcome": "unexpected"},
@@ -419,11 +426,11 @@ func TestAssertionsCountsFailedTestsWithAFailedAssertion(t *testing.T) {
 	}
 	// A retried test is visible as more than one attempt, whatever its outcome.
 	retried := stream([]map[string]any{
-		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 1},
-		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}, "totalTests": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 0, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "failed"},
 		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
-		{"type": "test_begin", "testId": testKey, "retry": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 1, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 1, "stepId": "step-2", "category": "assertion", "status": "passed"},
 		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
 		{"type": "test_result", "testId": testKey, "outcome": "flaky"},
@@ -443,10 +450,10 @@ func TestAssertionsCountsFailedTestsWithAFailedAssertion(t *testing.T) {
 // A flaky outcome counts as executed and passed, and is reported as flaky.
 func TestFlakyOutcomeIsCountedAsSuch(t *testing.T) {
 	frames := []map[string]any{
-		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 1},
-		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}, "totalTests": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 0, "expectedStatus": "passed"},
 		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
-		{"type": "test_begin", "testId": testKey, "retry": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 1, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 1, "stepId": "step-1", "category": "assertion", "status": "passed"},
 		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
 		{"type": "test_result", "testId": testKey, "outcome": "flaky"},
@@ -468,18 +475,18 @@ func TestReportedAssertionStepsComeFromTheLastCompletedAttempt(t *testing.T) {
 	}
 	other := strings.Repeat("b", 64)
 	frames := []map[string]any{
-		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 2},
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}, "totalTests": 2},
 		// Two passed assertions in an attempt that failed, none in the retry that passed.
-		{"type": "test_begin", "testId": testKey, "retry": 0},
+		{"type": "test_begin", "testId": testKey, "retry": 0, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-2", "category": "assertion", "status": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-3", "category": "assertion", "status": "failed"},
 		{"type": "test_end", "testId": testKey, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
-		{"type": "test_begin", "testId": testKey, "retry": 1},
+		{"type": "test_begin", "testId": testKey, "retry": 1, "expectedStatus": "passed"},
 		{"type": "step_end", "testId": testKey, "retry": 1, "stepId": "step-4", "category": "browser", "status": "passed"},
 		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
 		// A failed test's missing assertions are not a vacuous pass.
-		{"type": "test_begin", "testId": other, "retry": 0},
+		{"type": "test_begin", "testId": other, "retry": 0, "expectedStatus": "passed"},
 		{"type": "test_end", "testId": other, "retry": 0, "status": "failed", "expectedStatus": "passed", "artifacts": []any{}},
 		{"type": "test_result", "testId": testKey, "outcome": "flaky"},
 		{"type": "test_result", "testId": other, "outcome": "unexpected"},
@@ -488,5 +495,96 @@ func TestReportedAssertionStepsComeFromTheLastCompletedAttempt(t *testing.T) {
 	validation, err = New().ValidateAttempt(stream(frames), owner)
 	if err != nil || validation.ReportedAssertions != 0 || validation.PassedWithoutAssertions != 1 || validation.ExecutedTests != 2 || !strings.Contains(validation.Description, "0 worker-reported assertion step(s); 1 passed test(s) reported none") {
 		t.Fatalf("flaky pass without assertions: %+v, %v", validation, err)
+	}
+}
+
+// The status a test declared before it ran is what Playwright knew from the
+// declaration, so it cannot differ between attempts of the same test.
+func TestDeclaredOutcomeCannotChangeBetweenAttempts(t *testing.T) {
+	frames := passingFrames()
+	frames[3]["status"], frames[4]["outcome"] = "failed", "flaky"
+	frames = append(frames[:4], append([]map[string]any{
+		{"type": "test_begin", "testId": testKey, "retry": 1, "expectedStatus": "failed"},
+		{"type": "test_end", "testId": testKey, "retry": 1, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
+	}, frames[4:]...)...)
+	if _, err := New().ValidateAttempt(stream(frames), owner); err == nil || !strings.Contains(err.Error(), "changed declared outcome") {
+		t.Fatalf("a declaration that changed between attempts was accepted: %v", err)
+	}
+}
+
+// A failed test counts as expected only because test.fail() ran during the
+// attempt (microsoft/playwright#43738 for an after hook): Playwright reports
+// it green, so the receipt must say the expectation was not declared. A
+// declared expected failure (test.fail('title', ...)) is not reported.
+func TestRuntimeExpectedFailureIsCountedButKeepsPlaywrightSemantics(t *testing.T) {
+	for _, declared := range []string{"passed", "failed"} {
+		frames := passingFrames()
+		frames[1]["expectedStatus"] = declared
+		frames[2]["status"] = "failed"
+		frames[3]["status"], frames[3]["expectedStatus"] = "failed", "failed"
+		validation, err := New().ValidateAttempt(stream(frames), owner)
+		want := 0
+		if declared == "passed" {
+			want = 1
+		}
+		if err != nil || validation.ExecutedTests != 1 || validation.FailureCount != 0 || validation.RuntimeExpectedFailures != want {
+			t.Fatalf("declared %s: %+v, %v", declared, validation, err)
+		}
+		if strings.Contains(validation.Description, "runtime test.fail()") != (want == 1) {
+			t.Fatalf("declared %s: description %q", declared, validation.Description)
+		}
+	}
+	// An expected failure that passed is a failure already; it is not relabeled.
+	frames := passingFrames()
+	frames[3]["expectedStatus"], frames[4]["outcome"], frames[5]["status"] = "failed", "unexpected", "failed"
+	validation, err := New().ValidateAttempt(stream(frames), owner)
+	if err != nil || validation.FailureCount != 1 || validation.RuntimeExpectedFailures != 0 {
+		t.Fatalf("unexpected pass counted as relabeled: %+v, %v", validation, err)
+	}
+}
+
+// A test reported skipped after the worker reported a passed assertion step
+// in that attempt ran its body (microsoft/playwright#43676 for test.skip()
+// in an afterEach). It still needs a pin and still counts as skipped; the
+// receipt says the body ran. A skip with no step before it is not reported.
+func TestSkipAfterReportedAssertionIsCounted(t *testing.T) {
+	skipped, other := strings.Repeat("b", 64), strings.Repeat("c", 64)
+	pinTitle := "tests/hooks.spec.ts › relabeled › runs then skips"
+	pin := SkipPinKey(pinTitle)
+	pinned, err := New().WithSkipPins([]string{pinTitle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asserted := range []bool{true, false} {
+		frames := []map[string]any{
+			{"type": "hello", "capabilities": Capabilities, "totalTests": 2},
+			{"type": "test_begin", "testId": skipped, "retry": 0, "expectedStatus": "passed"},
+		}
+		if asserted {
+			frames = append(frames, map[string]any{"type": "step_end", "testId": skipped, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "passed"})
+		}
+		frames = append(frames,
+			map[string]any{"type": "test_end", "testId": skipped, "retry": 0, "status": "skipped", "expectedStatus": "skipped", "artifacts": []any{}},
+			map[string]any{"type": "test_begin", "testId": other, "retry": 0, "expectedStatus": "passed"},
+			map[string]any{"type": "step_end", "testId": other, "retry": 0, "stepId": "step-2", "category": "assertion", "status": "passed"},
+			map[string]any{"type": "test_end", "testId": other, "retry": 0, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
+			map[string]any{"type": "test_result", "testId": skipped, "outcome": "skipped", "skipKey": pin},
+			map[string]any{"type": "test_result", "testId": other, "outcome": "expected"},
+			map[string]any{"type": "end", "status": "passed"},
+		)
+		if _, err := New().ValidateAttempt(stream(frames), owner); err == nil {
+			t.Fatal("a relabeled skip without a pin was accepted")
+		}
+		validation, err := pinned.ValidateAttempt(stream(frames), owner)
+		want := 0
+		if asserted {
+			want = 1
+		}
+		if err != nil || validation.ExecutedTests != 1 || validation.SkippedTests != 1 || validation.SkippedAfterAssertions != want || validation.ReportedAssertions != 1 {
+			t.Fatalf("asserted %v: %+v, %v", asserted, validation, err)
+		}
+		if strings.Contains(validation.Description, "had reported a passed assertion step") != asserted {
+			t.Fatalf("asserted %v: description %q", asserted, validation.Description)
+		}
 	}
 }

@@ -27,8 +27,8 @@ func TestLargestValidSDKStreamPersistsUnchanged(t *testing.T) {
 		artifacts[i] = map[string]any{"id": fmt.Sprintf("artifact-%d", i+1), "kind": "json", "retained": false}
 	}
 	frames := []map[string]any{
-		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes"}, "totalTests": 1},
-		{"type": "test_begin", "testId": test, "retry": 0},
+		{"type": "hello", "capabilities": []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}, "totalTests": 1},
+		{"type": "test_begin", "testId": test, "retry": 0, "expectedStatus": "passed"},
 	}
 	for step := 1; len(frames) < maxEvents-3; step++ {
 		frames = append(frames, map[string]any{"type": "step_end", "testId": test, "retry": 0, "stepId": fmt.Sprintf("step-%d", step), "category": "assertion", "status": "passed"})

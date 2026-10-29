@@ -513,6 +513,8 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.AssertionCoverage = validation.AssertionCoverage
 				receipt.ReportedAssertions = validation.ReportedAssertions
 				receipt.PassedWithoutAssertions = validation.PassedWithoutAssertions
+				receipt.RuntimeExpectedFailures = validation.RuntimeExpectedFailures
+				receipt.SkippedAfterAssertions = validation.SkippedAfterAssertions
 				receipt.Validation = validation.Description
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
@@ -664,6 +666,9 @@ func validateValidation(validation Validation) error {
 	}
 	if validation.ReportedAssertions < 0 || validation.PassedWithoutAssertions < 0 || validation.PassedWithoutAssertions > validation.ExecutedTests {
 		return errors.New("structured report has inconsistent reported assertion counts")
+	}
+	if validation.RuntimeExpectedFailures < 0 || validation.RuntimeExpectedFailures > validation.ExecutedTests || validation.SkippedAfterAssertions < 0 || validation.SkippedAfterAssertions > validation.SkippedTests {
+		return errors.New("structured report has inconsistent relabeled test counts")
 	}
 	return nil
 }

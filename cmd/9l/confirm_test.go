@@ -54,8 +54,8 @@ func (worker *fakeConfirmWorker) Run(_ context.Context, job runner.Job, _ int) r
 		}
 	}
 	events := []string{
-		`"seq":1,"type":"hello","capabilities":["steps","artifact-metadata","terminal-outcomes"],"totalTests":1`,
-		fmt.Sprintf(`"seq":2,"type":"test_begin","testId":"%s","retry":0`, confirmTestID),
+		`"seq":1,"type":"hello","capabilities":["steps","artifact-metadata","terminal-outcomes","declared-outcomes"],"totalTests":1`,
+		fmt.Sprintf(`"seq":2,"type":"test_begin","testId":"%s","retry":0,"expectedStatus":"passed"`, confirmTestID),
 		fmt.Sprintf(`"seq":3,"type":"step_end","testId":"%s","retry":0,"stepId":"step-1","category":"%s","status":"%s"`, confirmTestID, category, step),
 		fmt.Sprintf(`"seq":4,"type":"test_end","testId":"%s","retry":0,"status":"%s","expectedStatus":"passed","artifacts":[]`, confirmTestID, status),
 		fmt.Sprintf(`"seq":5,"type":"test_result","testId":"%s","outcome":"%s"`, confirmTestID, outcome),

@@ -222,6 +222,33 @@ async function main() {
   const serialFrames = readEvents(serial.summary.receipts[0]);
   assert.equal(serialFrames.filter(frame => frame.type === 'test_begin' && frame.retry === 1).length, 3);
   assert(serialFrames.some(frame => frame.type === 'test_end' && frame.retry === 0 && frame.status === 'skipped'));
+  // Playwright 1.61.1 through 1.64.1 (microsoft/playwright#43738): test.fail()
+  // in an after hook relabels a completed failing test as expected and exits 0.
+  // The receipt keeps that verdict and says the expectation came from a runtime
+  // test.fail(); the stream shows the declared and the final expected status.
+  const relabeledFailure = invoke('testdata/sdk/tests/after-hook-fail.spec.ts');
+  assert.equal(relabeledFailure.code, 0);
+  assert.equal(relabeledFailure.summary.outcome, 'passed');
+  assert.equal(relabeledFailure.summary.receipts[0].executedTests, 1);
+  assert.equal(relabeledFailure.summary.receipts[0].failureCount, 0);
+  assert.equal(relabeledFailure.summary.receipts[0].runtimeExpectedFailures, 1);
+  assert.match(relabeledFailure.summary.receipts[0].validation, /1 failed test\(s\) expected to fail only by a runtime test\.fail\(\)/);
+  const relabeledFrames = readEvents(relabeledFailure.summary.receipts[0]);
+  assert(relabeledFrames.some(frame => frame.type === 'test_begin' && frame.expectedStatus === 'passed'));
+  assert(relabeledFrames.some(frame => frame.type === 'test_end' && frame.status === 'failed' && frame.expectedStatus === 'failed'));
+  // microsoft/playwright#43676: test.skip() in an afterEach reports a passed
+  // test as skipped. Unpinned, the attempt stays incomplete as for any skip;
+  // pinned, it counts as skipped and the receipt says the body had asserted.
+  const relabeledSkip = invoke('testdata/sdk/tests/after-hook-skip.spec.ts');
+  assert.equal(relabeledSkip.code, 3);
+  assert.equal(relabeledSkip.summary.complete, false);
+  const pinnedRelabeledSkip = invoke('testdata/sdk/tests/after-hook-skip.spec.ts', ['--pin-skip', 'after-hook-skip.spec.ts › relabeled › a passing test an after hook reports as skipped']);
+  assert.equal(pinnedRelabeledSkip.code, 0);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].executedTests, 1);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].skippedTests, 1);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].skippedAfterAssertions, 1);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].runtimeExpectedFailures, undefined);
+  assert.match(pinnedRelabeledSkip.summary.receipts[0].validation, /1 skipped test\(s\) had reported a passed assertion step/);
   console.log('SDK checkout: browser assertions, step/artifact metadata and canonical receipts verified; business defect stays red');
   const missingProvider = invoke('testdata/sdk/tests/goal-start-failure.spec.ts');
   assert.equal(missingProvider.code, 3); // a goal that never ran proves no defect

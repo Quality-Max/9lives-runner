@@ -97,7 +97,12 @@
   while reporting none. A retrying assertion (`expect.poll`, `toPass`) counts
   once, including the assertions inside it. `9l run` and `9l result` print `N passed test(s)
   reported no assertion step` under such a job. These are the worker's
-  report, not verified coverage: `assertionCoverage` stays `unknown`. Without
+  report, not verified coverage: `assertionCoverage` stays `unknown`. The
+  same stream gives `runtimeExpectedFailures`, failed tests that count as
+  expected only because `test.fail()` ran during the test, and
+  `skippedAfterAssertions`, skipped tests that had already reported a passed
+  assertion step; both are printed under the job and neither changes the
+  status. See [results relabeled while the test ran](sdk-bridge.md#results-relabeled-while-the-test-ran). Without
   `--sdk`, Playwright's JSON reporter carries only `test.step` steps, so the
   counts are absent. See [sdk-bridge.md](sdk-bridge.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every

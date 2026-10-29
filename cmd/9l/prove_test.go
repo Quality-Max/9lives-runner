@@ -82,7 +82,7 @@ func (worker *fakeProveWorker) Run(ctx context.Context, job runner.Job, _ int) r
 		mode = "fault"
 	}
 	identity := fmt.Sprintf(`"version":"9l.engine/1","runId":"%s","jobId":"%s","attemptId":"%s"`, job.Env["NINELIVES_RUN_ID"], job.Env["NINELIVES_JOB_ID"], job.Env["NINELIVES_ATTEMPT_ID"])
-	events := []string{fmt.Sprintf(`"seq":1,"type":"hello","capabilities":["steps","artifact-metadata","terminal-outcomes"],"totalTests":%d`, len(worker.tests))}
+	events := []string{fmt.Sprintf(`"seq":1,"type":"hello","capabilities":["steps","artifact-metadata","terminal-outcomes","declared-outcomes"],"totalTests":%d`, len(worker.tests))}
 	seq, step := 1, 0
 	emit := func(event string) { seq++; events = append(events, fmt.Sprintf(`"seq":%d,`, seq)+event) }
 	results := []string{}
@@ -126,7 +126,7 @@ func (worker *fakeProveWorker) Run(ctx context.Context, job runner.Job, _ int) r
 		}
 		for retry, status := range attempts {
 			step++
-			emit(fmt.Sprintf(`"type":"test_begin","testId":"%s","retry":%d`, test.id, retry))
+			emit(fmt.Sprintf(`"type":"test_begin","testId":"%s","retry":%d,"expectedStatus":"passed"`, test.id, retry))
 			emit(fmt.Sprintf(`"type":"step_end","testId":"%s","retry":%d,"stepId":"step-%d","category":"assertion","status":"%s"`, test.id, retry, step, status))
 			emit(fmt.Sprintf(`"type":"test_end","testId":"%s","retry":%d,"status":"%s","expectedStatus":"passed","artifacts":[]`, test.id, retry, status))
 		}

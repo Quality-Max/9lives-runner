@@ -497,6 +497,12 @@
     "runId": {
       "type": "string"
     },
+    "runtimeExpectedFailures": {
+      "type": "integer"
+    },
+    "skippedAfterAssertions": {
+      "type": "integer"
+    },
     "skippedTests": {
       "type": "integer"
     },
