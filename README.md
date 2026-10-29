@@ -310,7 +310,7 @@ the spec or prove its assertions protect the requirement. See the
 
 ## Compatibility
 
-The experimental Android adapter is available in the `0.6.0-beta` release.
+The experimental Android adapter is available in the `0.6.0-beta` releases.
 Use the matching beta CLI and SDK; see [beta installation](docs/releases.md#beta-releases)
 and [Android setup and qualification limits](docs/android-driver.md).
 The stable pairing below remains the default installation.
