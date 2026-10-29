@@ -35,10 +35,11 @@ SDK versions.
 ### Assessment
 
 - `9l assess` reports `test.fail()` in an `afterEach`/`afterAll` hook as
-  `after-hook-fail`: demonstrated when unconditional, suspected with a
-  condition or under a branch. The declaration and body-level forms are not
-  reported. Policy is `assessment-source-v15`; the analyzer helper version is
-  12 and facts carry `afterHookFails`; report version 3 and suite version 1
+  `after-hook-fail`: demonstrated only for an unconditional `afterEach` call;
+  suspected with a condition, under a branch, or in an `afterAll` hook, which
+  follows only the group's last test. The declaration and body-level forms are
+  not reported. Policy is `assessment-source-v15`; the analyzer helper version
+  is 12 and facts carry `afterHookFails`; report version 3 and suite version 1
   are unchanged.
 
 ## 0.6.0-beta — 2026-10-28
