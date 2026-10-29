@@ -588,3 +588,49 @@ func TestSkipAfterReportedAssertionIsCounted(t *testing.T) {
 		}
 	}
 }
+
+// The signal comes from the last attempt, like reportedFinal: an attempt that
+// asserted and was relabeled skipped must not mark a later retry that is
+// skipped before any assertion step, and the reverse order must count.
+func TestSkipAfterAssertionsReflectsTheLastAttempt(t *testing.T) {
+	skipped, other := strings.Repeat("b", 64), strings.Repeat("c", 64)
+	pinTitle := "tests/hooks.spec.ts › relabeled › skips on retry"
+	pin := SkipPinKey(pinTitle)
+	pinned, err := New().WithSkipPins([]string{pinTitle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name     string
+		asserted []bool // per attempt: a passed assertion step before the skip
+		want     int
+	}{
+		{"asserted then bare skip", []bool{true, false}, 0},
+		{"bare skip then asserted", []bool{false, true}, 1},
+		{"asserted on both attempts", []bool{true, true}, 1},
+	} {
+		frames := []map[string]any{{"type": "hello", "capabilities": Capabilities, "totalTests": 2}}
+		for retry, asserted := range test.asserted {
+			frames = append(frames, map[string]any{"type": "test_begin", "testId": skipped, "retry": retry, "expectedStatus": "passed"})
+			if asserted {
+				frames = append(frames, map[string]any{"type": "step_end", "testId": skipped, "retry": retry, "stepId": fmt.Sprintf("step-%d", retry+1), "category": "assertion", "status": "passed"})
+			}
+			frames = append(frames, map[string]any{"type": "test_end", "testId": skipped, "retry": retry, "status": "skipped", "expectedStatus": "skipped", "artifacts": []any{}})
+		}
+		frames = append(frames,
+			map[string]any{"type": "test_begin", "testId": other, "retry": 0, "expectedStatus": "passed"},
+			map[string]any{"type": "step_end", "testId": other, "retry": 0, "stepId": "step-3", "category": "assertion", "status": "passed"},
+			map[string]any{"type": "test_end", "testId": other, "retry": 0, "status": "passed", "expectedStatus": "passed", "artifacts": []any{}},
+			map[string]any{"type": "test_result", "testId": skipped, "outcome": "skipped", "skipKey": pin},
+			map[string]any{"type": "test_result", "testId": other, "outcome": "expected"},
+			map[string]any{"type": "end", "status": "passed"},
+		)
+		validation, err := pinned.ValidateAttempt(stream(frames), owner)
+		if err != nil || validation.SkippedAfterAssertions != test.want {
+			t.Fatalf("%s: %+v, %v", test.name, validation, err)
+		}
+		if strings.Contains(validation.Description, "had reported a passed assertion step") != (test.want == 1) {
+			t.Fatalf("%s: description %q", test.name, validation.Description)
+		}
+	}
+}

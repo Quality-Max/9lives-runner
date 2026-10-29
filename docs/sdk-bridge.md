@@ -93,10 +93,11 @@ and derives two counts from the rest:
   `test.fail(browserName === 'webkit')` form), in a suite-level condition
   function, or in an after hook, so all three count. Playwright's verdict is
   kept: the test is executed and not a failure, and the attempt can pass.
-- `skippedAfterAssertions`: skipped tests whose attempt had already reported a
-  passed assertion step, so the body ran before a modifier relabeled it. The
-  skip still needs a `--pin-skip` and still counts as skipped, never as
-  executed; a conditional `test.skip()` placed after an assertion counts too.
+- `skippedAfterAssertions`: skipped tests whose final attempt had already
+  reported a passed assertion step, so the body ran before a modifier
+  relabeled it. The skip still needs a `--pin-skip` and still counts as
+  skipped, never as executed; a conditional `test.skip()` placed after an
+  assertion counts too.
 
 Both are in the receipt's validation summary and in its JSON, and `9l run`
 and `9l result` print them under the job. They are the worker's report, not

@@ -21,7 +21,7 @@ SDK versions.
   tests that count as expected only because `test.fail()` ran during the
   test (in the body, a suite-level condition function or an after hook; the
   reporter cannot tell which), and `skippedAfterAssertions`, skipped tests
-  whose attempt had already reported a passed assertion step. `9l run` and
+  whose final attempt had already reported a passed assertion step. `9l run` and
   `9l result` print both under the job. Neither changes the status:
   Playwright's semantics for expected failures and pinned skips are kept, and
   an unpinned skip still makes the attempt incomplete. The counts are the

@@ -73,8 +73,9 @@ type testState struct {
 	reportedAttempt int
 	reportedFinal   int
 	finalStatus     string
-	// skippedAfterAssertions marks an attempt that ended skipped after the
-	// worker had reported a passed assertion step in it: the body ran.
+	// skippedAfterAssertions marks a test whose last attempt ended skipped
+	// after the worker had reported a passed assertion step in it: the body
+	// ran before a modifier relabeled the result.
 	skippedAfterAssertions bool
 }
 
@@ -249,8 +250,11 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			state.statuses = append(state.statuses, frame.Status)
 			if frame.Status != "skipped" {
 				state.reportedFinal, state.finalStatus = state.reportedAttempt, frame.Status
-			} else if state.reportedAttempt > 0 {
-				state.skippedAfterAssertions = true
+			} else {
+				// From the last attempt only: a skip before any reported
+				// assertion step did not run the body, whatever an earlier
+				// attempt of this test did.
+				state.skippedAfterAssertions = state.reportedAttempt > 0
 			}
 		case "test_result":
 			summarizing = true
