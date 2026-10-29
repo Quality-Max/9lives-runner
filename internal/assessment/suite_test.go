@@ -149,7 +149,11 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 	}
 	node := requireNode(t)
 	previous := suiteFileTimeout
-	suiteFileTimeout = 2 * time.Second
+	// Half the production budget, but with real headroom for the retrying
+	// analyzer run: on the slowest CI runners under -race, Node startup alone
+	// can exceed a 2s budget and turn a transient timeout into a persistent
+	// one. The fixtures sleep longer than the budget either way.
+	suiteFileTimeout = 5 * time.Second
 	t.Cleanup(func() { suiteFileTimeout = previous })
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	source := []byte("import {test,expect} from '@playwright/test';\ntest('a', () => { expect(1).toBe(1); });\n")
@@ -158,9 +162,9 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 		want       string
 	}{
 		// Slow only on the first run: the retry, alone, succeeds.
-		{"transient", "if /bin/mkdir %s 2>/dev/null; then /bin/sleep 5; fi\n", ""},
+		{"transient", "if /bin/mkdir %s 2>/dev/null; then /bin/sleep 8; fi\n", ""},
 		// Always slow: the file stays a timeout; nothing is invented.
-		{"persistent", "/bin/sleep 5\n", "timeout"},
+		{"persistent", "/bin/sleep 8\n", "timeout"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
