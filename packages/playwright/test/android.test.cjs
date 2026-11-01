@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {validAndroidRuntime, androidVersions} = require('../dist/android-runtime');
 
 test('native metadata rejects unknown fields, content, missing identity and unsupported versions', () => {
-  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'35',release:'15',abi:'arm64-v8a',emulator:'36.4.9',...androidVersions,worker:'b'.repeat(64),display:'4619827259835644672',displayWidth:'1080',displayHeight:'2340',density:'420',posture:'flat'};
+  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'35',release:'15',abi:'arm64-v8a',emulator:'36.4.9',...androidVersions,worker:'b'.repeat(64),display:'4619827259835644672',displayWidth:'1080',displayHeight:'2340',density:'420',posture:'flat',versionCode:'28',versionName:'1.4.0',signer:'d'.repeat(64)};
   assert.equal(validAndroidRuntime(runtime), true);
   for (const key of Object.keys(runtime)) {
     assert.equal(validAndroidRuntime({...runtime,[key]:'synthetic page content'}),false,key);
@@ -18,10 +18,13 @@ test('native metadata rejects unknown fields, content, missing identity and unsu
   assert.equal(validAndroidRuntime({...runtime,posture:'half-opened'}),true);
   assert.equal(validAndroidRuntime({...runtime,display:'Built-in Screen'}),false);
   assert.equal(validAndroidRuntime({...runtime,posture:"DeviceState{name='OPENED'}"}),false);
+  assert.equal(validAndroidRuntime({...runtime,versionCode:'unknown',versionName:'unknown',signer:'unknown'}),true);
+  assert.equal(validAndroidRuntime({...runtime,versionName:'1.4.0 (debug build for user@host)'}),false);
+  assert.equal(validAndroidRuntime({...runtime,signer:'CN=9l Synthetic Fixture'}),false);
 });
 
 test('physical metadata is distinct from emulator identity and excludes raw serials', () => {
-  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'37',release:'17',abi:'arm64-v8a',device:'physical',deviceHash:'c'.repeat(64),...androidVersions,worker:'b'.repeat(64),display:'4619827259835644672',displayWidth:'1812',displayHeight:'2176',density:'374',posture:'opened'};
+  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'37',release:'17',abi:'arm64-v8a',device:'physical',deviceHash:'c'.repeat(64),...androidVersions,worker:'b'.repeat(64),display:'4619827259835644672',displayWidth:'1812',displayHeight:'2176',density:'374',posture:'opened',versionCode:'29',versionName:'1.4.0',signer:'unknown'};
   assert.equal(validAndroidRuntime(runtime), true);
   for (const key of Object.keys(runtime)) {
     const missing = {...runtime}; delete missing[key];
@@ -138,11 +141,11 @@ test('attached phone verifies the build, preserves app data and restores owned a
     assert.equal(mockPermission,'deny');
     assert.equal(mockStore,'original synthetic helper index');
     assert.equal(backup,undefined);
-    for (const [hash,qemu] of [['b'.repeat(64),''],['a'.repeat(64),'1']]) {
+    for (const [hash,qemu,reason] of [['b'.repeat(64),'',/build-digest/],['a'.repeat(64),'1',/open_failed_device_attach/]]) {
       installedHash=hash; physicalQemu=qemu;
       const before=requests.filter(r=>r.url.endsWith('/session')).length;
       const bad=androidTargetDriver(options);
-      await assert.rejects(bad.open(context()),/open_failed_device_attach/);
+      await assert.rejects(bad.open(context()),reason);
       await bad.close();
       assert.equal(requests.filter(r=>r.url.endsWith('/session')).length,before);
     }
@@ -596,6 +599,133 @@ test('attached phone records its active display and posture, checks declared req
     for (const requires of [{}, {posture: 'OPENED'}, {minWidthDp: 0}, {minWidthDp: 1.5}, {width: 640}]) {
       assert.throws(() => androidTargetDriver({...base, requires}), /invalid_configuration/);
     }
+  } finally {
+    for (const driver of opened) await driver.close().catch(() => {});
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});
+
+// A declared artifact, version or signer that differs from the installed
+// build is a setup mismatch before any session; the signer is read by pulling
+// the installed APK only when declared, and the in-place installer refuses a
+// different signer before touching the device.
+test('attached phone verifies the installed build against declared identity and installInPlace refuses a foreign signer', async () => {
+  const cp = require('node:child_process');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {randomUUID, createHash} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-build-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const artifact = path.join(dir, 'build-28.apk');
+  await fs.writeFile(artifact, 'synthetic artifact bytes');
+  const artifactDigest = createHash('sha256').update('synthetic artifact bytes').digest('hex');
+  const device = {digest: artifactDigest, version: '    versionCode=28 minSdk=24 targetSdk=35\n    versionName=1.4.0', installedSigner: 'a1'.repeat(32)};
+  const commands = [];
+  let sessions = 0;
+  const serial = `test-${randomUUID()}`;
+  const opened = [];
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      commands.push([path.basename(file), ...args]);
+      if (path.basename(file) === 'apksigner') {
+        const target = args[2];
+        const signer = target.endsWith('installed.apk') ? device.installedSigner : target === artifact ? 'a1'.repeat(32) : 'b2'.repeat(32);
+        queueMicrotask(() => callback(null, `Signer #1 certificate DN: CN=9l\nSigner #1 certificate SHA-256 digest: ${signer}\n`));
+        return new EventEmitter();
+      }
+      if (path.basename(file) === 'aapt2') { queueMicrotask(() => callback(null, "package: name='dev.ninelives.fixture' versionCode='28' versionName='1.4.0'")); return new EventEmitter(); }
+      const command = args.slice(2);
+      const script = command[1] === 'sh' ? command[3] : '';
+      let result = '';
+      if (command[0] === 'get-state') result = 'device';
+      else if (command[0] === 'pull') { require('node:fs').writeFileSync(command[2], 'synthetic artifact bytes'); result = ''; }
+      else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
+      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
+      else if (script.includes('dumpsys package')) result = device.version;
+      else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
+      else if (command[1] === 'sha256sum') result = `${device.digest}  /data/app/test/base.apk`;
+      else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
+      queueMicrotask(() => callback(null, result));
+      return new EventEmitter();
+    };
+    cp.spawn = () => {
+      const child = new EventEmitter(); child.pid = 123; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      return child;
+    };
+    global.fetch = async input => {
+      const url = String(input);
+      let value = null;
+      if (url.endsWith('/status')) value = {ready: true};
+      else if (url.endsWith('/session')) { sessions++; value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}}; }
+      return new Response(JSON.stringify({value}), {status: 200});
+    };
+    const {androidTargetDriver, TargetSetupError, installInPlace} = require('../dist/android');
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+    const open = async (options, expectation) => {
+      commands.length = 0; sessions = 0;
+      const driver = androidTargetDriver({...base, ...options});
+      opened.push(driver);
+      let error;
+      try { await driver.open(context()); } catch (e) { error = e; }
+      if (expectation === undefined) { assert.equal(error, undefined, error?.message); return driver; }
+      if (expectation instanceof RegExp) { assert.match(String(error?.message), expectation); await driver.close(); return; }
+      assert(error instanceof TargetSetupError, `expected a setup classification, got ${error?.message}`);
+      assert.deepEqual(error.record, expectation);
+      assert.equal(sessions, 0, 'no session on a wrong build');
+      await driver.close();
+    };
+    // The declared artifact replaces apkSHA256; versions and signer are recorded.
+    let driver = await open({expected: {apk: artifact, versionCode: '28', versionName: '1.4.0', signerSHA256: 'a1'.repeat(32)}});
+    assert.equal(validAndroidRuntime(driver.runtime()), true);
+    assert.deepEqual([driver.runtime().apkSHA256, driver.runtime().versionCode, driver.runtime().versionName, driver.runtime().signer], [artifactDigest, '28', '1.4.0', 'a1'.repeat(32)]);
+    assert(commands.some(c => c[0] === 'adb' && c[3] === 'pull'), 'the installed APK is pulled for the declared signer');
+    assert.equal(await fs.access(path.join(dir, 'installed.apk')).then(() => true, () => false), false, 'the pulled APK does not stay in the scratch root');
+    await driver.close();
+    // Without a declared signer nothing is pulled and the signer is unknown.
+    driver = await open({apkSHA256: artifactDigest});
+    assert.equal(driver.runtime().signer, 'unknown');
+    assert(!commands.some(c => c[3] === 'pull' || c[0] === 'apksigner'));
+    await driver.close();
+    // EAS auto-incremented to 29: a stale declaration is a mismatch, not an app failure.
+    device.version = '    versionCode=29 minSdk=24 targetSdk=35\n    versionName=1.4.0';
+    await open({apkSHA256: artifactDigest, expected: {versionCode: '28'}}, {classification: 'mismatch', reason: 'build-version', stage: 'open'});
+    await open({apkSHA256: artifactDigest, expected: {versionName: '1.5.0'}}, {classification: 'mismatch', reason: 'build-version', stage: 'open'});
+    device.installedSigner = 'c3'.repeat(32);
+    await open({apkSHA256: artifactDigest, expected: {signerSHA256: 'a1'.repeat(32)}}, {classification: 'mismatch', reason: 'build-signer', stage: 'open'});
+    device.digest = 'd4'.repeat(32);
+    await open({expected: {apk: artifact}}, {classification: 'mismatch', reason: 'build-digest', stage: 'open'});
+    await open({apkSHA256: 'e5'.repeat(32), expected: {apk: artifact}}, /open_failed_configuration/);
+    for (const options of [{}, {expected: {}}, {apkSHA256: artifactDigest, expected: {versionCode: 'v28'}}, {apkSHA256: artifactDigest, expected: {signerSHA256: 'CN=9l'}}, {apkSHA256: artifactDigest, expected: {clearData: true}}]) {
+      assert.throws(() => androidTargetDriver({...base, ...options}), /invalid_configuration/);
+    }
+    // installInPlace: a foreign signer refuses before install; a matching one installs with -r only.
+    device.digest = artifactDigest; device.installedSigner = 'c3'.repeat(32);
+    commands.length = 0;
+    await assert.rejects(installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact}), /signer_mismatch/);
+    assert(!commands.some(c => c.includes('install') || c.includes('uninstall') || c.includes('clear')), 'nothing changed on a signer mismatch');
+    device.installedSigner = 'a1'.repeat(32);
+    commands.length = 0;
+    assert.deepEqual(await installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact}), {appPackage: 'dev.ninelives.fixture', apkSHA256: artifactDigest, signer: 'a1'.repeat(32), versionCode: '29', versionName: '1.4.0'});
+    const install = commands.find(c => c.includes('install'));
+    assert.deepEqual(install.slice(3), ['install', '--no-streaming', '-r', artifact]);
+    assert(!commands.some(c => c.includes('uninstall') || c.includes('clear')));
+    await assert.rejects(installInPlace({sdkRoot: dir, deviceSerial: 'emulator-5554', apk: artifact}), /invalid_configuration/);
   } finally {
     for (const driver of opened) await driver.close().catch(() => {});
     cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;

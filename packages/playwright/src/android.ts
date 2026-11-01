@@ -7,7 +7,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
 import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation} from './targets';
-import {activeDisplay, deviceStatePattern, displayPattern, imePattern, parseDeviceState, parseDisplays, parseIme, parsePosture, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
+import {activeDisplay, deviceStatePattern, displayPattern, imePattern, packagePattern, parseDeviceState, parseDisplays, parseIme, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
 import {androidVersions, type AndroidRuntime} from './android-runtime';
@@ -21,8 +21,17 @@ export type AndroidControl = ({accessibilityId: string; text?: never; accessibil
 };
 export type AndroidTargetOptions = {
   appId: string; sdkRoot: string; toolsRoot: string;
-  apkSHA256: string; appPackage: string; activity: string;
+  /** The expected SHA-256 of the installed base APK. May be omitted only
+   * when `expected.apk` names the artifact to compare the installation with. */
+  apkSHA256?: string; appPackage: string; activity: string;
   controls?: Record<string, AndroidControl>;
+  /** What the installed build must be. A digest that differs from the
+   * declared one, or from `expected.apk`, a different versionCode or
+   * versionName, or another signing certificate stops the test as
+   * `setup mismatch` before any application operation. The signer is read
+   * by pulling the installed base APK through the local apksigner when
+   * declared; versions come from the device's package manager. */
+  expected?: {apk?: string; versionCode?: string; versionName?: string; signerSHA256?: string};
   /** Attached device only: the app state expected before each test. The
    * driver reads the app's window count, focus and keyboard visibility after
    * launching the activity; a difference is classified `dirty` (state left by
@@ -135,7 +144,15 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       (physical ? !/^[a-zA-Z0-9_.:-]{1,128}$/.test(options.deviceSerial!) || options.deviceSerial!.startsWith('emulator-') || options.avd !== undefined || options.apk !== undefined
         : !/^[a-zA-Z0-9_.-]{1,100}$/.test(options.avd!)) ||
       !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(options.appPackage) ||
-      !/^[a-zA-Z0-9_.]+$/.test(options.activity) || !/^[a-f0-9]{64}$/.test(options.apkSHA256)) throw failure('invalid_configuration');
+      !/^[a-zA-Z0-9_.]+$/.test(options.activity) || (options.apkSHA256 === undefined ? options.expected?.apk === undefined : !/^[a-f0-9]{64}$/.test(options.apkSHA256))) throw failure('invalid_configuration');
+  const expected = options.expected;
+  if (expected !== undefined && (Object.keys(expected).some(k => !['apk', 'versionCode', 'versionName', 'signerSHA256'].includes(k)) || Object.keys(expected).length === 0 ||
+      (expected.apk !== undefined && (typeof expected.apk !== 'string' || !expected.apk)) ||
+      (expected.versionCode !== undefined && !/^[0-9]{1,10}$/.test(expected.versionCode)) ||
+      (expected.versionName !== undefined && !/^[A-Za-z0-9._+-]{1,64}$/.test(expected.versionName)) ||
+      (expected.signerSHA256 !== undefined && !/^[a-f0-9]{64}$/.test(expected.signerSHA256)))) throw failure('invalid_configuration');
+  // Resolved at open: the declared artifact's digest wins over apkSHA256.
+  let expectedDigest = options.apkSHA256 ?? '';
   if (Object.keys(controls).length > 128) throw failure('invalid_controls');
   const expectedWindows = options.baseline?.windows ?? 1;
   const backPresses = options.recovery?.back ?? 0;
@@ -209,13 +226,42 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (error || !Buffer.isBuffer(stdout) || stdout.length < 8 || stdout.subarray(0, 8).toString('latin1') !== '\x89PNG\r\n\x1a\n') return no(failure('screenshot_failed'));
     yes(createHash('sha256').update(stdout).digest('hex'));
   }));
-  const installedBuild = async (c: TargetContext) => {
-    if (await adbRun(['get-state'], c) !== 'device' || await adbRun(['shell', 'getprop', 'ro.kernel.qemu'], c) === '1') throw failure('not_physical_device');
+  const installedPath = async (c: TargetContext) => {
     const path = await adbRun(['shell', 'pm', 'path', options.appPackage], c);
     // Split builds require a digest of the entire installation; fail closed.
     if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
-    const digest = await adbRun(['shell', 'sha256sum', path.slice(8)], c);
-    if (digest.split(/\s+/)[0] !== options.apkSHA256) throw failure('apk_digest_mismatch');
+    return path.slice(8);
+  };
+  // A wrong or stale installed build is a setup mismatch, not a driver fault.
+  const installedBuild = async (c: TargetContext) => {
+    if (await adbRun(['get-state'], c) !== 'device' || await adbRun(['shell', 'getprop', 'ro.kernel.qemu'], c) === '1') throw failure('not_physical_device');
+    const digest = await adbRun(['shell', 'sha256sum', await installedPath(c)], c);
+    if (digest.split(/\s+/)[0] !== expectedDigest) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
+  };
+  const buildTools = join(sdk, 'build-tools/35.0.0');
+  // apksigner prints only certificate facts; the first signer's digest is kept.
+  const signerOf = async (apk: string, c: TargetContext) => {
+    const signer = parseSigner(await command(join(buildTools, 'apksigner'), ['verify', '--print-certs', apk], c, env));
+    if (!signer) throw failure('unreadable_signer');
+    return signer;
+  };
+  let versionCode = 'unknown', versionName = 'unknown', signer = 'unknown';
+  // Version from the package manager; the signer from the local APK (owned
+  // emulator) or, when declared, from the installed base APK pulled into the
+  // attempt's private scratch directory and removed with it.
+  const buildIdentity = async (c: TargetContext, localAPK?: string) => {
+    ({versionCode, versionName} = parsePackageVersion(await adbRun(shell(`dumpsys package ${options.appPackage} 2>/dev/null | grep -E "${packagePattern}" | head -c 2048`), c)));
+    if (expected?.versionCode !== undefined && versionCode !== expected.versionCode) throw new TargetSetupError({classification: 'mismatch', reason: 'build-version', stage: 'open'});
+    if (expected?.versionName !== undefined && versionName !== expected.versionName) throw new TargetSetupError({classification: 'mismatch', reason: 'build-version', stage: 'open'});
+    if (localAPK) signer = await signerOf(localAPK, c);
+    else if (expected?.signerSHA256 !== undefined) {
+      const pulled = join(directory!, 'installed.apk');
+      await adbRun(['pull', await installedPath(c), pulled], c);
+      if (createHash('sha256').update(await readFile(pulled)).digest('hex') !== expectedDigest) throw failure('pulled_build_changed');
+      signer = await signerOf(pulled, c);
+      await rm(pulled, {force: true});
+    }
+    if (expected?.signerSHA256 !== undefined && signer !== expected.signerSHA256) throw new TargetSetupError({classification: 'mismatch', reason: 'build-signer', stage: 'open'});
   };
   const children = () => [emulator, server].filter((child): child is ChildProcess => !!child);
   const check = (c: TargetContext) => {
@@ -373,12 +419,21 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
         let stage = 'configuration';
         try {
           let apkBytes: Buffer | undefined;
+          if (expected?.apk !== undefined) {
+            const artifact = resolve(expected.apk);
+            const info = await stat(artifact);
+            if (!info.isFile() || info.size > 256 * 1024 * 1024) throw failure('invalid_expected_apk');
+            const digest = createHash('sha256').update(await readFile(artifact)).digest('hex');
+            // Two declarations that disagree are a configuration error, not a device finding.
+            if (options.apkSHA256 !== undefined && digest !== options.apkSHA256) throw failure('expected_apk_digest_conflict');
+            expectedDigest = digest;
+          }
           if (!physical) {
             const apk = resolve(options.apk!);
             const info = await stat(apk);
             if (!info.isFile() || info.size > 256 * 1024 * 1024) throw failure('invalid_apk');
             apkBytes = await readFile(apk);
-            if (createHash('sha256').update(apkBytes).digest('hex') !== options.apkSHA256) throw failure('apk_digest_mismatch');
+            if (createHash('sha256').update(apkBytes).digest('hex') !== expectedDigest) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
           }
           const appiumPkg = JSON.parse(await readFile(join(tools, 'node_modules/appium/package.json'), 'utf8'));
           const driverPkg = JSON.parse(await readFile(join(tools, 'node_modules/appium-uiautomator2-driver/package.json'), 'utf8'));
@@ -411,6 +466,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             await mkdir(leaseRoot, {recursive: true, mode: 0o700});
             await mkdir(lock, {mode: 0o700}); lease = lock;
             await installedBuild(c);
+            // Version and signer are checked before any device change or session.
+            stage = 'build_identity';
+            await buildIdentity(c);
             stage = 'device_state';
             const state = await readDeviceState(c);
             if (state === 'locked' || state === 'screen-off') throw new TargetSetupError({classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'open'});
@@ -459,6 +517,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             }
             stage = 'apk_install';
             await adbRun(['install', '--no-streaming', '-r', installedAPK], c);
+            stage = 'build_identity';
+            await buildIdentity(c, installedAPK);
           }
           const appiumPort = await freePort();
           base = `http://127.0.0.1:${appiumPort}/${owner}`;
@@ -528,7 +588,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             identity = {emulator: version};
           }
           evidence = {
-            appPackage: options.appPackage, apkSHA256: options.apkSHA256,
+            appPackage: options.appPackage, apkSHA256: expectedDigest, versionCode, versionName, signer,
             api: await adbRun(['shell', 'getprop', 'ro.build.version.sdk'], c),
             release: await adbRun(['shell', 'getprop', 'ro.build.version.release'], c),
             abi: await adbRun(['shell', 'getprop', 'ro.product.cpu.abi'], c),
@@ -619,4 +679,44 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     close,
   };
+}
+
+/** Install or update an app on an explicitly selected device without
+ * uninstalling or clearing its data. The APK's signing certificate must
+ * match the installed app's, read through the local apksigner; a different
+ * signer refuses before any device change. Returns the installed identity
+ * for the project's reviewed build metadata. Never runs inside a test. */
+export async function installInPlace(options: {sdkRoot: string; deviceSerial: string; apk: string; timeoutMs?: number}) {
+  if (!/^[a-zA-Z0-9_.:-]{1,128}$/.test(options.deviceSerial) || options.deviceSerial.startsWith('emulator-') || !options.apk) throw failure('invalid_configuration');
+  const sdk = resolve(options.sdkRoot), adb = join(sdk, 'platform-tools', 'adb'), tools = join(sdk, 'build-tools/35.0.0');
+  const env: NodeJS.ProcessEnv = {ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk};
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'JAVA_HOME', 'SYSTEMROOT']) if (process.env[key]) env[key] = process.env[key];
+  const c: TargetContext = {signal: new AbortController().signal, deadlineMs: Date.now() + Math.min(Math.max(options.timeoutMs ?? 300_000, 1_000), 900_000)};
+  const apk = resolve(options.apk);
+  const info = await stat(apk);
+  if (!info.isFile() || info.size > 256 * 1024 * 1024) throw failure('invalid_apk');
+  const apkSHA256 = createHash('sha256').update(await readFile(apk)).digest('hex');
+  const badging = await command(join(tools, 'aapt2'), ['dump', 'badging', apk], c, env);
+  const appPackage = /^package: name='([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)'/m.exec(badging)?.[1];
+  if (!appPackage) throw failure('unreadable_package');
+  const signer = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', apk], c, env));
+  if (!signer) throw failure('unreadable_signer');
+  const run = (args: string[]) => command(adb, ['-s', options.deviceSerial, ...args], c, env);
+  if (await run(['get-state']) !== 'device' || await run(['shell', 'getprop', 'ro.kernel.qemu']) === '1') throw failure('not_physical_device');
+  const path = await run(['shell', 'pm', 'path', appPackage]);
+  if (path) {
+    if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
+    const scratch = await mkdtemp(join(process.env.TMPDIR ?? homedir(), '9l-install-'));
+    try {
+      const pulled = join(scratch, 'installed.apk');
+      await run(['pull', path.slice(8), pulled]);
+      const installed = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', pulled], c, env));
+      if (installed !== signer) throw failure('signer_mismatch');
+    } finally { await rm(scratch, {recursive: true, force: true}); }
+  }
+  await run(['install', '--no-streaming', '-r', apk]);
+  const digest = (await run(['shell', 'sha256sum', (await run(['shell', 'pm', 'path', appPackage])).slice(8)])).split(/\s+/)[0];
+  if (digest !== apkSHA256) throw failure('installed_build_changed');
+  const version = parsePackageVersion(await run(['shell', 'sh', '-c', `'dumpsys package ${appPackage} 2>/dev/null | grep -E "${packagePattern}" | head -c 2048'`]));
+  return {appPackage, apkSHA256, signer, ...version};
 }

@@ -22,6 +22,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     open: async () => {
       if (mode === 'locked') throw new TargetSetupError({classification: 'blocked', reason: 'device-locked', stage: 'open'});
       if (mode === 'posture') throw new TargetSetupError({classification: 'mismatch', reason: 'posture', stage: 'open'});
+      if (mode === 'stale-build') throw new TargetSetupError({classification: 'mismatch', reason: 'build-version', stage: 'open'});
     },
     screenDigest: async () => createHash('sha256').update(`fake screen ${status}`).digest('hex'),
     setup: () => mode === 'dirty-recovered' ? {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}} as TargetSetupRecord : undefined,

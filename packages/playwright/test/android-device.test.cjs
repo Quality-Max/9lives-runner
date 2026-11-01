@@ -64,3 +64,13 @@ test('fold posture comes from the committed device state only', () => {
   assert.equal(parsePosture("Can't find service: device_state"), 'flat');
   assert.equal(parsePosture(''), 'unknown');
 });
+
+const {parsePackageVersion, parseSigner} = require('../dist/android-device');
+
+test('package versions and the signer digest are read from tool output only', () => {
+  assert.deepEqual(parsePackageVersion('    versionCode=29 minSdk=24 targetSdk=35\n    versionName=1.4.0\n'), {versionCode: '29', versionName: '1.4.0'});
+  assert.deepEqual(parsePackageVersion('    versionName=1.4.0 (debug)\n'), {versionCode: 'unknown', versionName: 'unknown'});
+  assert.deepEqual(parsePackageVersion(''), {versionCode: 'unknown', versionName: 'unknown'});
+  assert.equal(parseSigner(`Signer #1 certificate DN: CN=9l Synthetic Fixture\nSigner #1 certificate SHA-256 digest: ${'f'.repeat(64)}\nSigner #1 certificate SHA-1 digest: ${'1'.repeat(40)}`), 'f'.repeat(64));
+  assert.equal(parseSigner('DOES NOT VERIFY'), undefined);
+});

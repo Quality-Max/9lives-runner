@@ -14,6 +14,7 @@ func androidFrames() []map[string]any {
 	r := map[string]any{"type": "target_runtime", "testId": testKey, "retry": 0, "targetId": TargetID("android:finance"), "runtime": map[string]any{
 		"appPackage": "dev.ninelives.fixture", "apkSHA256": strings.Repeat("a", 64), "api": "35", "release": "15", "abi": "arm64-v8a", "emulator": "36.4.9", "appium": "3.8.0", "uiautomator2": "8.7.0", "worker": strings.Repeat("b", 64),
 		"display": "4619827259835644672", "displayWidth": "1080", "displayHeight": "2340", "density": "420", "posture": "flat",
+		"versionCode": "28", "versionName": "1.4.0", "signer": strings.Repeat("d", 64),
 	}}
 	return append(f[:4], append([]map[string]any{r}, f[4:]...)...)
 }
@@ -36,7 +37,7 @@ func TestAndroidRuntimeIsRequiredAndBoundToActiveAttempt(t *testing.T) {
 		"stale attempt":  func(f []map[string]any) []map[string]any { f[4]["attemptId"] = "old"; return f },
 		"wrong retry":    func(f []map[string]any) []map[string]any { f[4]["retry"] = 1; return f },
 	}
-	for _, key := range []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture"} {
+	for _, key := range []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture", "versionCode", "versionName", "signer"} {
 		key := key
 		cases["invalid "+key] = func(f []map[string]any) []map[string]any {
 			f[4]["runtime"].(map[string]any)[key] = "untrusted content"
@@ -52,6 +53,10 @@ func TestAndroidRuntimeIsRequiredAndBoundToActiveAttempt(t *testing.T) {
 		f[4]["runtime"].(map[string]any)["posture"] = "DeviceState{identifier=2, name='OPENED'}"
 		return f
 	}
+	cases["version content"] = func(f []map[string]any) []map[string]any {
+		f[4]["runtime"].(map[string]any)["versionName"] = "1.4.0 (debug build for user@host)"
+		return f
+	}
 	cases["display name"] = func(f []map[string]any) []map[string]any {
 		f[4]["runtime"].(map[string]any)["display"] = "Built-in Screen"
 		return f
@@ -63,6 +68,11 @@ func TestAndroidRuntimeIsRequiredAndBoundToActiveAttempt(t *testing.T) {
 		},
 		func(f []map[string]any) []map[string]any {
 			f[4]["runtime"].(map[string]any)["posture"] = "half-opened"
+			return f
+		},
+		func(f []map[string]any) []map[string]any {
+			r := f[4]["runtime"].(map[string]any)
+			r["versionCode"], r["versionName"], r["signer"] = "unknown", "unknown", "unknown"
 			return f
 		},
 	} {

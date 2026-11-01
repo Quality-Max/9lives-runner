@@ -72,3 +72,16 @@ export function parsePosture(text: string): Posture {
   if (name.includes('CLOSED') || name.includes('FOLDED')) return 'closed';
   return 'unknown';
 }
+
+/** Package version from `dumpsys package <pkg>`. */
+export const packagePattern = 'versionCode=|versionName=';
+export type PackageVersion = {versionCode: string; versionName: string};
+export function parsePackageVersion(text: string): PackageVersion {
+  const code = /versionCode=([0-9]{1,10})(?:[\s]|$)/.exec(text)?.[1];
+  const name = /versionName=([A-Za-z0-9._+-]{1,64})[ \t]*$/m.exec(text)?.[1];
+  return {versionCode: code ?? 'unknown', versionName: name ?? 'unknown'};
+}
+/** The first signer's certificate digest from `apksigner verify --print-certs`. */
+export function parseSigner(text: string): string | undefined {
+  return /Signer #1 certificate SHA-256 digest: ([a-f0-9]{64})/.exec(text)?.[1];
+}

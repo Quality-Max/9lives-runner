@@ -8,6 +8,27 @@ SDK versions.
 
 ### Android (experimental)
 
+- Installed-app identity (#217). The Android runtime receipt gains
+  `versionCode`, `versionName` (from the device's package manager) and
+  `signer` (the SHA-256 of the first signing certificate, read with the
+  local `apksigner`), or `unknown` when not read; `apkSHA256` is the
+  verified digest of the installed base APK. `androidTargetDriver` accepts
+  `expected: {apk, versionCode, versionName, signerSHA256}`: a declared
+  artifact's digest (or `apkSHA256`), version or signer that differs from
+  the installed build stops the test as `setup mismatch` (`build-digest`,
+  `build-version`, `build-signer`) before any application operation, where
+  a digest mismatch was an opaque attach failure before. The signer of an
+  installed app is read by pulling its base APK into the attempt's private
+  scratch directory only when declared. `installInPlace({sdkRoot,
+  deviceSerial, apk})` from `@9l/playwright/android` updates an app with
+  `adb install -r` after checking the new APK's signer against the
+  installed one through `apksigner`; a different signer refuses before any
+  device change, and it never uninstalls or clears data. The runtime
+  schema is closed, so CLI and `@9l/playwright` must be updated together.
+  Version and signer parsing are unit-tested against tool output; the
+  install helper is tested against a fake adb and remains unqualified on
+  a device.
+
 - Multi-display devices (#216). At attachment the driver reads the physical
   displays from `dumpsys display` and the fold posture from
   `dumpsys device_state`, and the Android runtime receipt gains `display`
