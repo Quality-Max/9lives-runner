@@ -13,7 +13,8 @@ func TestAndroidRuntimeSchemasRequireTrustedTestBinding(t *testing.T) {
 from pathlib import Path
 runtime={"testId":"a"*64,"appPackage":"dev.ninelives.fixture","apkSHA256":"b"*64,
          "api":"35","release":"15","abi":"arm64-v8a","emulator":"37.1.11",
-         "appium":"3.8.0","uiautomator2":"8.7.0","worker":"c"*64}
+         "appium":"3.8.0","uiautomator2":"8.7.0","worker":"c"*64,
+         "display":"4619827259835644672","displayWidth":"1080","displayHeight":"2340","density":"420","posture":"flat"}
 for name in ("receipt","run-result","run-status"):
     schema=json.loads((Path(sys.argv[1])/"docs/contracts"/(name+".schema.json")).read_text())
     validator=jsonschema.Draft202012Validator(schema["$defs"]["AndroidRuntime"])

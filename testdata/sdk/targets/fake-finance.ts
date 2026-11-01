@@ -1,4 +1,5 @@
 import {appendFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetCapabilities, TargetSetupError, type TargetDriver, type TargetHandle, type TargetIdentity, type TargetContext, type TargetSetupRecord} from '@9l/playwright';
 
@@ -18,7 +19,11 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     // Setup classifications a real device driver would make: a locked phone
     // before any operation, a leaked window recovered by a declared Back, and
     // a phone that locked while an assertion was polling.
-    open: async () => { if (mode === 'locked') throw new TargetSetupError({classification: 'blocked', reason: 'device-locked', stage: 'open'}); },
+    open: async () => {
+      if (mode === 'locked') throw new TargetSetupError({classification: 'blocked', reason: 'device-locked', stage: 'open'});
+      if (mode === 'posture') throw new TargetSetupError({classification: 'mismatch', reason: 'posture', stage: 'open'});
+    },
+    screenDigest: async () => createHash('sha256').update(`fake screen ${status}`).digest('hex'),
     setup: () => mode === 'dirty-recovered' ? {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}} as TargetSetupRecord : undefined,
     recheck: async (_context, failed) => mode === 'lock-recheck' ? {classification: 'blocked', reason: 'device-locked', stage: 'recheck'}
       : mode === 'observer' && failed.operation === 'assert-hidden' ? {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'} : undefined,

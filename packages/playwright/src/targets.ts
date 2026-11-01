@@ -1,12 +1,13 @@
 import {test as base, type Locator, type Page, type TestInfo} from '@playwright/test';
 import {setTimeout as delay} from 'node:timers/promises';
+import {createHash} from 'node:crypto';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
 import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
 export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
-  'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate'] as const;
+  'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest'] as const;
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
 export type TargetPoint = {x: number; y: number};
@@ -49,6 +50,9 @@ export interface TargetDriver extends TargetIdentity {
   /** One touch down/up at device coordinates. */
   tapAt?(point: TargetPoint, context: TargetContext): Promise<void>;
   viewport?(context: TargetContext): Promise<TargetSize>;
+  /** SHA-256 of a screenshot of the target display, computed in memory. The
+   * image itself is never returned, written or attached. */
+  screenDigest?(context: TargetContext): Promise<string>;
   /** Stop and relaunch the configured app, keeping its data. Android only. */
   terminate?(context: TargetContext): Promise<void>;
   activate?(context: TargetContext): Promise<void>;
@@ -277,7 +281,7 @@ export class TargetApp {
     }
   }
 
-  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate'>(name: K): NonNullable<TargetDriver[K]> {
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest'>(name: K): NonNullable<TargetDriver[K]> {
     const method = this.driver[name];
     if (typeof method !== 'function') throw stopped('unsupported_operation');
     return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
@@ -305,6 +309,15 @@ export class TargetApp {
       const size = await this.optional('viewport')(context);
       if (!validSize(size)) throw stopped('invalid_property');
       return {width: size.width, height: size.height};
+    }, options.timeoutMs);
+  }
+  /** A digest of the active display's current image, for settling checks
+   * (two equal digests mean nothing moved). The image is never retained. */
+  screenDigest(options: TargetOperationOptions = {}) {
+    return this.perform('screen-digest', async context => {
+      const digest = await this.optional('screenDigest')(context);
+      if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) throw stopped('invalid_property');
+      return digest;
     }, options.timeoutMs);
   }
   /** Stop the configured app without clearing its data. Android only. */
@@ -421,6 +434,7 @@ export function webTargetDriver(page: Page, appId: string, lifecycle: {
       if (!size) throw new Error('viewport unavailable');
       return size;
     },
+    screenDigest: async context => createHash('sha256').update(await page.screenshot({timeout: remaining(context), animations: 'allow', caret: 'initial'})).digest('hex'),
     observeTestId: async (id, context) => {
       remaining(context);
       const locator = page.getByTestId(id);

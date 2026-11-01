@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {validAndroidRuntime, androidVersions} = require('../dist/android-runtime');
 
 test('native metadata rejects unknown fields, content, missing identity and unsupported versions', () => {
-  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'35',release:'15',abi:'arm64-v8a',emulator:'36.4.9',...androidVersions,worker:'b'.repeat(64)};
+  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'35',release:'15',abi:'arm64-v8a',emulator:'36.4.9',...androidVersions,worker:'b'.repeat(64),display:'4619827259835644672',displayWidth:'1080',displayHeight:'2340',density:'420',posture:'flat'};
   assert.equal(validAndroidRuntime(runtime), true);
   for (const key of Object.keys(runtime)) {
     assert.equal(validAndroidRuntime({...runtime,[key]:'synthetic page content'}),false,key);
@@ -14,10 +14,14 @@ test('native metadata rejects unknown fields, content, missing identity and unsu
   assert.equal(validAndroidRuntime({...runtime,appium:'3.8.1'}),false);
   assert.equal(validAndroidRuntime({...runtime,uiautomator2:'8.7.1'}),false);
   assert.equal(validAndroidRuntime(null),false);
+  assert.equal(validAndroidRuntime({...runtime,display:'unknown',displayWidth:'0',displayHeight:'0',density:'0',posture:'unknown'}),true);
+  assert.equal(validAndroidRuntime({...runtime,posture:'half-opened'}),true);
+  assert.equal(validAndroidRuntime({...runtime,display:'Built-in Screen'}),false);
+  assert.equal(validAndroidRuntime({...runtime,posture:"DeviceState{name='OPENED'}"}),false);
 });
 
 test('physical metadata is distinct from emulator identity and excludes raw serials', () => {
-  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'37',release:'17',abi:'arm64-v8a',device:'physical',deviceHash:'c'.repeat(64),...androidVersions,worker:'b'.repeat(64)};
+  const runtime = {appPackage:'dev.ninelives.fixture',apkSHA256:'a'.repeat(64),api:'37',release:'17',abi:'arm64-v8a',device:'physical',deviceHash:'c'.repeat(64),...androidVersions,worker:'b'.repeat(64),display:'4619827259835644672',displayWidth:'1812',displayHeight:'2176',density:'374',posture:'opened'};
   assert.equal(validAndroidRuntime(runtime), true);
   for (const key of Object.keys(runtime)) {
     const missing = {...runtime}; delete missing[key];
@@ -486,6 +490,114 @@ test('attached phone diagnostics are metadata only and classify observer stalene
     assert.equal(await plain.recheck(context(), {operation: 'assert-hidden'}), undefined);
   } finally {
     await driver?.close(); await plain?.close();
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});
+
+// The runtime names the display the session targets and the fold posture, a
+// declared posture or width is checked before any application operation, and
+// a screen digest names that display and never keeps the image.
+test('attached phone records its active display and posture, checks declared requirements and digests screenshots in memory', async () => {
+  const cp = require('node:child_process');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {randomUUID, createHash} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-display-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const inner = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644672", 1812 x 2176, density 374, state ON}';
+  const cover = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644673", 904 x 2316, density 420, state OFF}';
+  const device = {displays: [inner, cover].join('\n'), posture: "  Committed state: DeviceState{identifier=2, name='OPENED'}"};
+  const png = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.from('synthetic image bytes')]);
+  const screencaps = [];
+  const serial = `test-${randomUUID()}`;
+  const opened = [];
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      const command = args.slice(2);
+      const script = command[1] === 'sh' ? command[3] : '';
+      let result = '';
+      if (command[0] === 'exec-out') { screencaps.push(command); queueMicrotask(() => callback(null, png)); return new EventEmitter(); }
+      if (command[0] === 'get-state') result = 'device';
+      else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
+      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
+      else if (script.includes('dumpsys display')) result = device.displays;
+      else if (script.includes('dumpsys device_state')) result = device.posture;
+      else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
+      else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
+      else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
+      queueMicrotask(() => callback(null, result));
+      return new EventEmitter();
+    };
+    cp.spawn = () => {
+      const child = new EventEmitter(); child.pid = 123; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      return child;
+    };
+    global.fetch = async input => {
+      const url = String(input);
+      let value = null;
+      if (url.endsWith('/status')) value = {ready: true};
+      else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
+      return new Response(JSON.stringify({value}), {status: 200});
+    };
+    const {androidTargetDriver, TargetSetupError} = require('../dist/android');
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+    const open = async (options, expectation) => {
+      const driver = androidTargetDriver({...base, ...options});
+      opened.push(driver);
+      let error;
+      try { await driver.open(context()); } catch (e) { error = e; }
+      if (expectation === undefined) { assert.equal(error, undefined); return driver; }
+      assert(error instanceof TargetSetupError, `expected a setup classification, got ${error?.message}`);
+      assert.deepEqual(error.record, expectation);
+      await driver.close();
+    };
+    let driver = await open({requires: {posture: 'opened', minWidthDp: 640}});
+    const runtime = driver.runtime();
+    assert.equal(validAndroidRuntime(runtime), true);
+    assert.deepEqual([runtime.display, runtime.displayWidth, runtime.displayHeight, runtime.density, runtime.posture], ['4619827259835644672', '1812', '2176', '374', 'opened']);
+    assert.equal(await driver.screenDigest(context()), createHash('sha256').update(png).digest('hex'));
+    assert.deepEqual(screencaps.at(-1), ['exec-out', 'screencap', '-p', '-d', '4619827259835644672'], 'the active display is named explicitly');
+    await driver.close();
+    // 1812 px at 374 dpi is 775 dp: a wider requirement is a mismatch, not an app failure.
+    await open({requires: {minWidthDp: 800}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    await open({requires: {posture: 'closed'}}, {classification: 'mismatch', reason: 'posture', stage: 'open'});
+    // Folded: the cover display is the powered one.
+    device.displays = [inner.replace('state ON', 'state OFF'), cover.replace('state OFF', 'state ON')].join('\n');
+    device.posture = "  Committed state: DeviceState{identifier=0, name='CLOSED'}";
+    await open({requires: {minWidthDp: 640}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    driver = await open({});
+    assert.deepEqual([driver.runtime().display, driver.runtime().displayWidth, driver.runtime().posture], ['4619827259835644673', '904', 'closed']);
+    await driver.close();
+    // Unreadable display or posture is recorded as unknown, and a digest then
+    // takes the device default without inventing an id.
+    device.displays = ''; device.posture = '';
+    driver = await open({});
+    assert.deepEqual([driver.runtime().display, driver.runtime().displayWidth, driver.runtime().density, driver.runtime().posture], ['unknown', '0', '0', 'unknown']);
+    await driver.screenDigest(context());
+    assert.deepEqual(screencaps.at(-1), ['exec-out', 'screencap', '-p']);
+    await driver.close();
+    await open({requires: {minWidthDp: 1}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    for (const requires of [{}, {posture: 'OPENED'}, {minWidthDp: 0}, {minWidthDp: 1.5}, {width: 640}]) {
+      assert.throws(() => androidTargetDriver({...base, requires}), /invalid_configuration/);
+    }
+  } finally {
+    for (const driver of opened) await driver.close().catch(() => {});
     cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
     if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
     if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;

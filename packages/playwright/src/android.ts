@@ -7,7 +7,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
 import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation} from './targets';
-import {deviceStatePattern, imePattern, parseDeviceState, parseIme, parseWindows, windowPattern} from './android-device';
+import {activeDisplay, deviceStatePattern, displayPattern, imePattern, parseDeviceState, parseDisplays, parseIme, parsePosture, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
 import {androidVersions, type AndroidRuntime} from './android-runtime';
@@ -39,6 +39,10 @@ export type AndroidTargetOptions = {
    * manager no longer lists is classified as observer staleness. No
    * screenshot, hierarchy, text or log is captured. */
   diagnostics?: {gestures: boolean};
+  /** What the spec needs from the device: a fold posture and/or a minimum
+   * active-display width in dp. Another posture or a narrower display is
+   * reported as a setup mismatch before any application operation. */
+  requires?: {posture?: 'opened' | 'half-opened' | 'closed' | 'flat'; minWidthDp?: number};
 } & ({
   avd: string; apk: string; headless?: boolean; deviceSerial?: never;
 } | {
@@ -140,6 +144,10 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       ((options.baseline !== undefined || options.recovery !== undefined) && !physical) ||
       (options.diagnostics !== undefined && (Object.keys(options.diagnostics).some(k => k !== 'gestures') || typeof options.diagnostics.gestures !== 'boolean'))) throw failure('invalid_configuration');
   const diagnostics = options.diagnostics?.gestures === true;
+  const requires = options.requires;
+  if (requires !== undefined && (Object.keys(requires).some(k => !['posture', 'minWidthDp'].includes(k)) || Object.keys(requires).length === 0 ||
+      (requires.posture !== undefined && !['opened', 'half-opened', 'closed', 'flat'].includes(requires.posture)) ||
+      (requires.minWidthDp !== undefined && (!Number.isInteger(requires.minWidthDp) || requires.minWidthDp < 1 || requires.minWidthDp > 10000)))) throw failure('invalid_configuration');
   for (const [id, control] of Object.entries(controls)) {
     if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/.test(id) || !control ||
         Object.keys(control).some(k => !['text', 'accessibilityId', 'accessibilityIdSuffix', 'className', 'selected'].includes(k)) ||
@@ -185,6 +193,22 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     return windows.focus === 'foreign' ? 'foreign-focus' : windows.windows > expectedWindows ? 'extra-window' : ime === 'shown' ? 'ime-showing' : undefined;
   };
   let setupRecord: TargetSetupRecord | undefined;
+  // The display the session targets. Screenshots name it explicitly, so a
+  // multi-display device never answers with its first display by default.
+  let display: DisplayInfo | undefined, posture: Posture = 'unknown';
+  const readDisplays = async (c: TargetContext) => {
+    display = activeDisplay(parseDisplays(await adbRun(shell(`dumpsys display 2>/dev/null | grep -E "${displayPattern}" | head -c 16384`), c)));
+    posture = parsePosture(await adbRun(shell(`dumpsys device_state 2>&1 | grep -E "${posturePattern}" | head -c 2048`), c));
+    if (requires?.posture !== undefined && posture !== requires.posture) throw new TargetSetupError({classification: 'mismatch', reason: 'posture', stage: 'open'});
+    if (requires?.minWidthDp !== undefined && (!display || Math.floor(display.width * 160 / display.density) < requires.minWidthDp)) throw new TargetSetupError({classification: 'mismatch', reason: 'display-width', stage: 'open'});
+  };
+  // The PNG stays in memory and leaves only as a digest.
+  const screenDigest = (c: TargetContext) => new Promise<string>((yes, no) => execFile(adb, ['-s', serial, 'exec-out', 'screencap', '-p', ...(display ? ['-d', display.id] : [])], {
+    signal: c.signal, timeout: timeout(c), maxBuffer: 64 * 1024 * 1024, env, encoding: 'buffer',
+  }, (error, stdout) => {
+    if (error || !Buffer.isBuffer(stdout) || stdout.length < 8 || stdout.subarray(0, 8).toString('latin1') !== '\x89PNG\r\n\x1a\n') return no(failure('screenshot_failed'));
+    yes(createHash('sha256').update(stdout).digest('hex'));
+  }));
   const installedBuild = async (c: TargetContext) => {
     if (await adbRun(['get-state'], c) !== 'device' || await adbRun(['shell', 'getprop', 'ro.kernel.qemu'], c) === '1') throw failure('not_physical_device');
     const path = await adbRun(['shell', 'pm', 'path', options.appPackage], c);
@@ -474,6 +498,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           if (typeof value.sessionId !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(value.sessionId) || returnedUDID !== serial) throw failure('foreign_session');
           session = value.sessionId;
           stage = 'runtime_identity';
+          await readDisplays(c);
           let identity: {emulator: string} | {device: 'physical'; deviceHash: string};
           if (physical) {
             await installedBuild(c);
@@ -507,6 +532,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             api: await adbRun(['shell', 'getprop', 'ro.build.version.sdk'], c),
             release: await adbRun(['shell', 'getprop', 'ro.build.version.release'], c),
             abi: await adbRun(['shell', 'getprop', 'ro.product.cpu.abi'], c),
+            display: display?.id ?? 'unknown', displayWidth: String(display?.width ?? 0), displayHeight: String(display?.height ?? 0), density: String(display?.density ?? 0), posture,
             ...identity, ...androidVersions, worker: createHash('sha256').update(`${owner}:${process.pid}`).digest('hex'),
           };
         } catch (error) {
@@ -547,6 +573,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
         {type: 'pointerMove', duration: 0, x: point.x, y: point.y}, {type: 'pointerDown', button: 0}, {type: 'pause', duration: 50}, {type: 'pointerUp', button: 0},
       ]}]});
     },
+    async screenDigest(c) { check(c); return screenDigest(c); },
     async viewport(c): Promise<TargetSize> {
       const r = rect(await endpoint('/window/rect', c));
       if (r.width === 0 || r.height === 0) throw failure('invalid_property');

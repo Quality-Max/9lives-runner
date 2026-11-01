@@ -37,3 +37,30 @@ test('keyboard visibility reads mInputShown only', () => {
   assert.equal(parseIme('  mInputShown=false'), 'hidden');
   assert.equal(parseIme('mImeWindowVis=0x0'), 'unknown');
 });
+
+const {parseDisplays, activeDisplay, parsePosture} = require('../dist/android-device');
+
+test('physical displays are read with id, size, density and power state; the active one is the single powered display', () => {
+  const inner = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644672", 1812 x 2176, modeId 1, defaultModeId 1, supportedModes [...], colorMode 0, supportedColorModes [0], hdrCapabilities ..., allmSupported false, gameContentTypeSupported false, density 374, 374.0 x 374.0 dpi, appVsyncOff 1000000, presDeadline 11111111, touch INTERNAL, rotation 0, type INTERNAL, address {port=0, model=...}, deviceProductInfo ..., state ON, frameRateOverride ..., brightnessMinimum 0.0, brightnessMaximum 1.0, brightnessDefault 0.4, FLAG_DEFAULT_DISPLAY, FLAG_ROTATES_WITH_CONTENT, FLAG_SECURE, FLAG_SUPPORTS_PROTECTED_BUFFERS, FLAG_TRUSTED}';
+  const cover = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644673", 904 x 2316, modeId 2, density 420, state OFF, FLAG_ROTATES_WITH_CONTENT}';
+  const displays = parseDisplays([inner, cover].join('\n'));
+  assert.deepEqual(displays, [
+    {id: '4619827259835644672', width: 1812, height: 2176, density: 374, on: true},
+    {id: '4619827259835644673', width: 904, height: 2316, density: 420, on: false},
+  ]);
+  assert.equal(activeDisplay(displays).id, '4619827259835644672');
+  assert.equal(activeDisplay(parseDisplays([inner.replace('state ON', 'state OFF'), cover.replace('state OFF', 'state ON')].join('\n'))).id, '4619827259835644673');
+  assert.equal(activeDisplay(parseDisplays([inner, cover.replace('state OFF', 'state ON')].join('\n'))), undefined, 'two powered displays cannot be chosen between');
+  assert.equal(activeDisplay(parseDisplays(cover)).id, '4619827259835644673', 'a single display is the target whatever its state');
+  assert.deepEqual(parseDisplays('DisplayDeviceInfo{"Overlay #1": uniqueId="overlay:1", 1080 x 1920, density 320, state ON}'), [], 'only local displays');
+  assert.deepEqual(parseDisplays(''), []);
+});
+
+test('fold posture comes from the committed device state only', () => {
+  assert.equal(parsePosture("  Committed state: DeviceState{identifier=2, name='OPENED', app_accessible=true}"), 'opened');
+  assert.equal(parsePosture("  Committed state: DeviceState{identifier=1, name='HALF_OPENED'}"), 'half-opened');
+  assert.equal(parsePosture('mCommittedState=DeviceState{identifier=0, name=CLOSED}'), 'closed');
+  assert.equal(parsePosture("Committed state: DeviceState{identifier=4, name='REAR_DISPLAY'}"), 'unknown');
+  assert.equal(parsePosture("Can't find service: device_state"), 'flat');
+  assert.equal(parsePosture(''), 'unknown');
+});

@@ -8,6 +8,24 @@ SDK versions.
 
 ### Android (experimental)
 
+- Multi-display devices (#216). At attachment the driver reads the physical
+  displays from `dumpsys display` and the fold posture from
+  `dumpsys device_state`, and the Android runtime receipt gains `display`
+  (the id of the powered display the session targets, or `unknown`),
+  `displayWidth`, `displayHeight`, `density` and `posture` (`opened`,
+  `half-opened`, `closed`, `flat` for a device without a fold, or
+  `unknown`). The runtime schema is closed, so CLI and `@9l/playwright`
+  must be updated together. A new portable `app.screenDigest()` returns the
+  SHA-256 of a screenshot of that display, computed in memory and never
+  written, attached or returned as an image; on Android it names the display
+  explicitly, so the capture no longer depends on the device default or
+  carries a multiple-displays warning. A spec can declare what it needs with
+  `requires: {posture, minWidthDp}`; another posture or a narrower active
+  display stops the test as `setup mismatch` (`posture`, `display-width`)
+  before any application operation. The readers are unit-tested against
+  dumpsys excerpts; no foldable or two-display device was available, so
+  display selection and posture names remain unqualified.
+
 - Opt-in, metadata-only failure diagnostics for native gestures (#211).
   With `diagnostics: {gestures: true}` the Android driver reads the app's
   window count and focus before each gesture (tap, scroll, back, touch) and

@@ -94,6 +94,10 @@ assert.equal(locked.summary.receipts[0].failures[0].class, 'setup', 'locked: fai
 assert(locked.summary.receipts[0].failures[0].message.includes('9lives target stopped: setup_blocked'));
 assert(locked.summary.receipts[0].validation.includes('1 test(s) carry a driver setup classification'));
 assert(!locked.mutations.includes('mutation'), 'locked: nothing ran against the app');
+const posture = invoke('posture', {extra: ['--failure-details']});
+assert.equal(posture.code, 1);
+assert.deepEqual(posture.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'mismatch', reason: 'posture', stage: 'open'}]);
+assert.equal(posture.summary.receipts[0].failures[0].class, 'setup', 'posture: a spec needing another posture is a setup mismatch');
 const lockRecheck = invoke('lock-recheck', {extra: ['--failure-details']});
 assert.equal(lockRecheck.code, 1);
 assert.deepEqual(lockRecheck.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'blocked', reason: 'device-locked', stage: 'recheck'}]);
@@ -130,7 +134,8 @@ assert.equal(portable.code, 0, 'operations: portable operations pass on both tar
 for (const receipt of portable.summary.receipts) {
   assert.equal(receipt.targetAssertions, 4, `${receipt.target}: portable assertions`);
   const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(frames.filter(f => f.operation).map(f => f.operation), ['open', 'viewport', 'bounds', 'tap-at', 'assert-text', 'scroll', 'assert-text', 'assert-hidden', 'back', 'assert-text'], receipt.target);
+  assert.deepEqual(frames.filter(f => f.operation).map(f => f.operation), ['open', 'viewport', 'bounds', 'tap-at', 'assert-text', 'scroll', 'assert-text', 'assert-hidden', 'screen-digest', 'screen-digest', 'back', 'assert-text'], receipt.target);
+  assert(!fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').includes('PNG'), `${receipt.target}: no image in evidence`);
 }
 const lifecycle = invoke('lifecycle', {targets: ['android-fake:finance'], grep: 'native only', file: operations});
 assert.equal(lifecycle.code, 0, 'lifecycle: keyboard and restart pass on the native target');

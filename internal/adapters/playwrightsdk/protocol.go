@@ -411,7 +411,7 @@ func outcome(state *testState) string {
 
 // The typed operations of the shared target fixture (9l.target/1). Queries
 // such as bounds and viewport are actions: executed, never assertions.
-var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate"}
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest"}
 var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
 
 // Capabilities is the exact capability list a hello frame must carry. The
@@ -514,12 +514,12 @@ func decodeEvent(raw []byte) (event, error) {
 	// Artifact objects are a closed metadata schema too.
 	if value := values["runtime"]; value != nil {
 		var runtime map[string]json.RawMessage
-		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker"}
+		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture"}
 		if json.Unmarshal(value, &runtime) != nil {
 			return frame, fmt.Errorf("invalid runtime")
 		}
 		if string(runtime["device"]) == `"physical"` {
-			keys = []string{"appPackage", "apkSHA256", "api", "release", "abi", "device", "deviceHash", "appium", "uiautomator2", "worker"}
+			keys = []string{"appPackage", "apkSHA256", "api", "release", "abi", "device", "deviceHash", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture"}
 		}
 		if len(runtime) != len(keys) {
 			return frame, fmt.Errorf("invalid runtime")
@@ -582,7 +582,7 @@ func decodeEvent(raw []byte) (event, error) {
 var setupReasons = map[string][]string{
 	runner.SetupBlocked:  {"device-locked", "screen-off"},
 	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
-	runner.SetupMismatch: {},
+	runner.SetupMismatch: {"posture", "display-width"},
 	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
 }
@@ -626,8 +626,13 @@ func validAndroidRuntime(r runner.AndroidRuntime) bool {
 		regexp.MustCompile(`^[0-9]{1,3}$`).MatchString(r.API) && androidVersion.MatchString(r.Release) &&
 		((r.Device == "" && r.DeviceHash == "" && androidVersion.MatchString(r.Emulator)) ||
 			(r.Device == "physical" && r.Emulator == "" && testID.MatchString(r.DeviceHash))) &&
-		r.Appium == "3.8.0" && r.UIAutomator2 == "8.7.0" && oneOf(r.ABI, "arm64-v8a", "x86_64")
+		r.Appium == "3.8.0" && r.UIAutomator2 == "8.7.0" && oneOf(r.ABI, "arm64-v8a", "x86_64") &&
+		(r.Display == "unknown" || displayID.MatchString(r.Display)) && pixels.MatchString(r.DisplayWidth) && pixels.MatchString(r.DisplayHeight) && regexp.MustCompile(`^[0-9]{1,4}$`).MatchString(r.Density) &&
+		oneOf(r.Posture, "opened", "half-opened", "closed", "flat", "unknown")
 }
+
+var displayID = regexp.MustCompile(`^[0-9]{1,24}$`)
+var pixels = regexp.MustCompile(`^[0-9]{1,5}$`)
 
 // TestAssertionFacts is one test's outcome in an attempt's evidence.
 type TestAssertionFacts struct {
