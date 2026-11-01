@@ -2,6 +2,8 @@ import {test as base, type Locator, type Page, type TestInfo} from '@playwright/
 import {setTimeout as delay} from 'node:timers/promises';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
+import {TargetSetupError, targetSetupType, validTargetSetup, type TargetSetupRecord} from './target-setup';
+export {TargetSetupError, validTargetSetup, type TargetSetupRecord, type SetupClassification} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state'] as const;
 export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android'; appId: string};
@@ -29,6 +31,14 @@ export interface TargetDriver extends TargetIdentity {
   observeTestId(id: string, context: TargetContext): Promise<readonly TargetHandle[]>;
   close(): Promise<void>;
   runtime?(): AndroidRuntime | undefined;
+  /** After a successful open: the setup record of a declared recovery that
+   * restored the baseline, so the receipt shows the test ran from it. */
+  setup?(): TargetSetupRecord | undefined;
+  /** After a completed assertion failure, while the driver is still open:
+   * classify the device state (a locked phone, for example) so the failure
+   * reads as inconclusive setup, never as an application defect. It must only
+   * read state; it never acts on the device. Its own errors are ignored. */
+  recheck?(context: TargetContext): Promise<TargetSetupRecord | undefined>;
 }
 
 const defaultOperationMs = 5_000;
@@ -46,6 +56,9 @@ class TargetStopped extends Error {
   }
 }
 const stopped = (reason: string, cause?: unknown) => new TargetStopped(reason, cause);
+const recheckMs = 5_000;
+// A closed metadata record; the reporter forwards it as one target_setup frame.
+const attachSetup = (record: TargetSetupRecord) => base.info().attach('9l.target-setup', {body: Buffer.from(JSON.stringify(record)), contentType: targetSetupType});
 const boundedText = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max;
 
 /** Deterministic shared operations; browser/device handles stay in the worker. */
@@ -138,6 +151,13 @@ export class TargetApp {
         // and the local cause. Neither crosses the engine bridge.
         if (!signal.aborted && Date.now() >= deadlineMs) expire();
         if (signal.aborted) throw error instanceof TargetStopped ? error : stopped(this.reason, error);
+        if (error instanceof TargetSetupError) {
+          // The driver classified the device/app state before the operation
+          // could establish anything about the application.
+          this.stop(`setup_${error.record.classification}`, false);
+          await attachSetup(error.record);
+          throw stopped(this.reason, error);
+        }
         this.stop(error instanceof TargetStopped ? error.reason : 'operation_failed', false);
         throw error instanceof TargetStopped ? error : stopped(this.reason, error);
       } finally {
@@ -155,6 +175,11 @@ export class TargetApp {
       if (!validAndroidRuntime(runtime)) throw stopped('missing_android_runtime');
       await base.info().attach('9l.android-runtime', {body: Buffer.from(JSON.stringify(runtime)), contentType: androidRuntimeType});
     }
+    const recovered = this.driver.setup?.();
+    if (recovered !== undefined) {
+      if (!validTargetSetup(recovered) || !recovered.recovery?.restored) throw stopped('invalid_setup_record');
+      await attachSetup(recovered);
+    }
   }, options.timeoutMs ?? (this.driver.kind === 'android' ? 180_000 : undefined), this.driver.kind === 'android' ? 180_000 : maxOperationMs); }
   reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs); }
 
@@ -171,9 +196,10 @@ export class TargetApp {
       if (!handle) throw stopped('missing_test_id');
       return handle;
     };
-    const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) => {
+    const assertion = async (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) => {
       let observedFalse = false;
-      return this.perform(operation, async context => {
+      try {
+        return await this.perform(operation, async context => {
         // A completed mismatch is an assertion failure at this polling bound,
         // even if a later read stalls. Without one, a deadline is inconclusive.
         const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
@@ -201,6 +227,22 @@ export class TargetApp {
         if (last !== undefined) throw last;
         throw stopped('deadline');
       }, timeoutMs, maxOperationMs, () => observedFalse ? 'assertion_failed' : 'deadline');
+      } catch (error) {
+        // A completed mismatch on a device the driver can still read: ask it
+        // whether the device became unavailable (locked, screen off) during
+        // the readiness poll. A positive answer reclassifies the failure as
+        // setup; the assertion step stays failed and the test still fails.
+        if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
+        let record: TargetSetupRecord | undefined;
+        try {
+          record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
+        } catch { record = undefined; }
+        if (record === undefined) throw error;
+        if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
+        this.reason = `setup_${record.classification}`;
+        await attachSetup(record);
+        throw stopped(this.reason, error);
+      }
     };
     return {
       tap: (options: TargetOperationOptions = {}) => this.perform('tap', async context => (await required(context)).tap(context), options.timeoutMs),

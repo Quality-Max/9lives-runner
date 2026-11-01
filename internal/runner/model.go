@@ -54,7 +54,14 @@ const (
 // Receipt is one job's immutable execution record. Executed and Validated are
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
-	AndroidRuntimes     []AndroidRuntime      `json:"androidRuntimes,omitempty"`
+	AndroidRuntimes []AndroidRuntime `json:"androidRuntimes,omitempty"`
+	// TargetSetup lists the native target tests whose driver classified the
+	// device or app state before, or after a failed, application assertion:
+	// blocked (locked device), dirty (state left by a previous test),
+	// mismatch (declared build or posture) or unknown. A test with a record
+	// whose recovery did not restore the baseline cannot pass; its failure is
+	// inconclusive setup evidence, not an application defect.
+	TargetSetup         []TargetSetup         `json:"targetSetup,omitempty"`
 	Target              string                `json:"target,omitempty"`
 	AgentProvenance     *ProvenanceAssessment `json:"agentProvenance,omitempty"`
 	Goals               []GoalReceipt         `json:"goals,omitempty"`
@@ -141,6 +148,37 @@ type AndroidRuntime struct {
 	Worker       string `json:"worker"`
 }
 
+// TargetSetup is one worker-reported setup classification of a native target
+// test. Classification and reason are closed enums; stage says whether the
+// driver found the state before any application operation ("open") or when
+// it rechecked after a failed assertion ("recheck"). Recovery, when present,
+// records a user-declared non-destructive step the driver took and whether
+// it restored the declared baseline.
+type TargetSetup struct {
+	TestID         string         `json:"testId"`
+	Classification string         `json:"classification"`
+	Reason         string         `json:"reason"`
+	Stage          string         `json:"stage"`
+	Recovery       *SetupRecovery `json:"recovery,omitempty"`
+}
+
+// SetupRecovery is a recorded, user-declared recovery step; see TargetSetup.
+type SetupRecovery struct {
+	Method   string `json:"method"`
+	Presses  int    `json:"presses"`
+	Restored bool   `json:"restored"`
+}
+
+// Setup classifications and the stages at which they are recorded.
+const (
+	SetupBlocked      = "blocked"
+	SetupDirty        = "dirty"
+	SetupMismatch     = "mismatch"
+	SetupUnknown      = "unknown"
+	SetupStageOpen    = "open"
+	SetupStageRecheck = "recheck"
+)
+
 // TestFailure is one failed test in a validated report. At most
 // MaxReportedFailures are kept per attempt.
 type TestFailure struct {
@@ -166,7 +204,10 @@ type TestFailure struct {
 	// budget ran out), "action-timeout" (one action or navigation timed
 	// out), "environment" (the browser could not reach the target: a
 	// connection, name-resolution or certificate error on navigation),
-	// "unexpected-pass", or "other" when the error carries no such mark.
+	// "unexpected-pass", "setup" (a native target driver classified the
+	// device or app state as blocked, dirty, mismatched or unknown before or
+	// after the assertion, so the result is inconclusive), or "other" when
+	// the error carries no such mark.
 	Class       string           `json:"class,omitempty"`
 	Attachments []TestAttachment `json:"attachments,omitempty"`
 }
@@ -178,6 +219,7 @@ const (
 	FailureActionTimeout  = "action-timeout"
 	FailureEnvironment    = "environment"
 	FailureUnexpectedPass = "unexpected-pass"
+	FailureSetup          = "setup"
 	FailureOther          = "other"
 )
 

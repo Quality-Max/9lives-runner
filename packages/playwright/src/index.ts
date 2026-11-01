@@ -33,5 +33,5 @@ export const test = base.extend<{n9l: NineLives}>({
 });
 export {expect};
 export {protocolVersion} from './protocol';
-export {createTargetTest, TargetApp, webTargetDriver, targetCapabilities} from './targets';
-export type {TargetDriver, TargetHandle, TargetIdentity, TargetContext, TargetState, TargetFixtures, TargetOperationOptions} from './targets';
+export {createTargetTest, TargetApp, webTargetDriver, targetCapabilities, TargetSetupError, validTargetSetup} from './targets';
+export type {TargetDriver, TargetHandle, TargetIdentity, TargetContext, TargetState, TargetFixtures, TargetOperationOptions, TargetSetupRecord, SetupClassification} from './targets';

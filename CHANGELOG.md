@@ -4,6 +4,35 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Android (experimental)
+
+- A native driver can classify the device or app state instead of letting an
+  environment problem read as an application failure. The attached-device
+  adapter reads the keyguard and wakefulness before any application
+  operation and reports `device-locked` or `screen-off` as `setup blocked`;
+  after a completed assertion failure it rechecks, so a phone that locked
+  during a readiness poll is classified too, and a build whose state it
+  cannot read is reported as `unknown`, never inferred. It never requests,
+  stores or bypasses a PIN and never changes lock settings (#208). After
+  launching the activity it compares the app's window count, focus and
+  keyboard visibility with a declared baseline (`baseline: {windows}`,
+  default one window) and reports `extra-window`, `foreign-focus` or
+  `ime-showing` as `setup dirty`: state a previous test left behind. An
+  opt-in `recovery: {back: N}` presses Back up to N times until the baseline
+  returns and is recorded either way; it never clears data, force-stops or
+  changes settings (#212). The classification crosses the engine stream as
+  one `target_setup` frame per attempt (closed enums, no content) and lands
+  in the receipt as `targetSetup`; `9l run` and `9l result` print it under
+  the job, and a `--failure-details` failure carries class `setup`. A test
+  with an unrecovered classification cannot pass; a recovered one runs from
+  the restored baseline with the record kept. The shared target fixture
+  exposes `TargetSetupError` and the optional driver hooks `setup()` and
+  `recheck()`, exercised by the offline target smoke; the device readers
+  are unit-tested against dumpsys excerpts and remain unqualified on
+  arbitrary phones.
+
 ## 0.6.0-beta.1 — 2026-10-29
 
 Continues the 0.6.0-beta line on the beta channel: it includes everything

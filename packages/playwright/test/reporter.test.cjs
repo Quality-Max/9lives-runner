@@ -83,3 +83,45 @@ test('test_begin carries the expected status declared before the test ran', () =
     fs.rmSync(dir, {recursive: true, force: true});
   }
 });
+
+// A native driver's setup classification reaches Go as one closed frame per
+// attempt; a web target, a second record or content cannot.
+test('a target setup attachment becomes one bounded target_setup frame', () => {
+  const run = (target, attachments) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-reporter-'));
+    const events = path.join(dir, 'events.ndjson');
+    const saved = {...process.env};
+    Object.assign(process.env, {
+      NINELIVES_ENGINE_PROTOCOL: '9l.engine/1', NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001',
+      NINELIVES_ATTEMPT_ID: 'job-001-attempt-001', NINELIVES_ENGINE_EVENTS: events, NINELIVES_TARGET: target,
+    });
+    try {
+      const Reporter = require('../dist/reporter.js').default;
+      const reporter = new Reporter();
+      reporter.onTestEnd({id: 'test-1', expectedStatus: 'passed'}, {retry: 0, status: 'failed', attachments});
+      return fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+      Object.assign(process.env, saved);
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  };
+  const record = {classification: 'blocked', reason: 'device-locked', stage: 'open'};
+  const attachment = body => ({name: '9l.target-setup', contentType: 'application/vnd.9l.target-setup+json', body: Buffer.from(JSON.stringify(body))});
+  const frames = run('android-fake:finance', [attachment(record)]);
+  assert.deepEqual(frames.map(f => f.type), ['target_setup', 'test_end']);
+  assert.deepEqual(frames[0].setup, record);
+  assert.equal(frames[0].retry, 0);
+  const recovered = {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}};
+  assert.deepEqual(run('android:finance', [attachment(recovered)])[0].setup, recovered);
+  for (const [target, attachments] of [
+    ['web:finance', [attachment(record)]],
+    ['android-fake:finance', [attachment(record), attachment(record)]],
+    ['android-fake:finance', [attachment({...record, reason: 'PIN visible on screen'})]],
+    ['android-fake:finance', [attachment({...record, note: 'content'})]],
+    ['android-fake:finance', [{...attachment(record), contentType: 'application/json'}]],
+    ['android-fake:finance', [{name: '9l.target-setup', contentType: 'application/vnd.9l.target-setup+json', body: Buffer.from('{')}]],
+  ]) {
+    assert.deepEqual(run(target, attachments).map(f => f.type), ['engine_error'], target);
+  }
+});

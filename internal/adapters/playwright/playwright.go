@@ -755,6 +755,10 @@ var (
 	assertionError  = regexp.MustCompile(`^Error: expect(\.soft|\.poll)?\(`)
 	actionTimeout   = regexp.MustCompile(`^TimeoutError: [a-zA-Z]+\.[a-zA-Z]+: Timeout [0-9]+ms exceeded`)
 	navigationError = regexp.MustCompile(`^Error: (page|frame)\.(goto|reload|goBack|goForward): (net::ERR_[A-Z_0-9]+|NS_ERROR_[A-Z_0-9]+)`)
+	// The shared target fixture stops a session with "9lives target stopped:
+	// <reason>"; a setup_* reason is a driver's classification of the device
+	// or app state, recorded in the receipt's targetSetup.
+	setupError = regexp.MustCompile(`^Error: 9lives target stopped: setup_(blocked|dirty|mismatch|unknown)$`)
 )
 
 // classifyError reads the framework's structured prefix of an error.
@@ -767,6 +771,8 @@ func classifyError(message string) string {
 		return runner.FailureActionTimeout
 	case navigationError.MatchString(line):
 		return runner.FailureEnvironment
+	case setupError.MatchString(line):
+		return runner.FailureSetup
 	}
 	return runner.FailureOther
 }

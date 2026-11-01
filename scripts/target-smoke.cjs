@@ -83,6 +83,28 @@ assert.equal(defect.summary.receipts[0].failureCount, 1);
 assert.deepEqual(defect.mutations, ['mutation']);
 const defectFrames = fs.readFileSync(defect.summary.receipts[0].evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
 assert(defectFrames.some(f => f.operation === 'assert-text' && f.status === 'failed'), 'wrong finance result must fail the exact assertion');
+// A driver's setup classification keeps the test failed, names the reason in
+// the receipt and classes the failure as setup, never as an application defect.
+const locked = invoke('locked', {extra: ['--failure-details']});
+assert.equal(locked.code, 1);
+assert.equal(locked.summary.receipts[0].validated, true, 'locked: classified evidence still validates');
+assert.equal(locked.summary.receipts[0].status, 'failed');
+assert.deepEqual(locked.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'blocked', reason: 'device-locked', stage: 'open'}]);
+assert.equal(locked.summary.receipts[0].failures[0].class, 'setup', 'locked: failure class');
+assert(locked.summary.receipts[0].failures[0].message.includes('9lives target stopped: setup_blocked'));
+assert(locked.summary.receipts[0].validation.includes('1 test(s) carry a driver setup classification'));
+assert(!locked.mutations.includes('mutation'), 'locked: nothing ran against the app');
+const lockRecheck = invoke('lock-recheck', {extra: ['--failure-details']});
+assert.equal(lockRecheck.code, 1);
+assert.deepEqual(lockRecheck.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'blocked', reason: 'device-locked', stage: 'recheck'}]);
+assert.equal(lockRecheck.summary.receipts[0].failures[0].class, 'setup');
+const recheckFrames = fs.readFileSync(lockRecheck.summary.receipts[0].evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
+assert(recheckFrames.some(f => f.operation === 'assert-text' && f.status === 'failed'), 'lock-recheck: the assertion step stays failed');
+assert.equal(recheckFrames.filter(f => f.type === 'target_setup').length, 1);
+const recovered = invoke('dirty-recovered');
+assert.equal(recovered.code, 0, 'dirty-recovered: the test ran from the restored baseline');
+assert.deepEqual(recovered.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}}]);
+assert.equal(recovered.summary.receipts[0].targetAssertions, 3);
 const reasons = {ambiguous: 'ambiguous_test_id', missing: 'missing_test_id', version: 'unsupported_driver_contract', capabilities: 'unsupported_driver_contract'};
 for (const mode of ['ambiguous', 'missing', 'version', 'capabilities', 'cancel', 'deadline', 'timeout', 'late', 'caught', 'forged']) {
   const grep = {caught: 'caught failures', forged: 'named like a target assertion'}[mode];
@@ -119,5 +141,5 @@ assert.equal(listing.status, 0, listing.stderr);
 assert.equal(sync(process.execPath, [path.join(root, 'node_modules', '@playwright', 'test', 'cli.js'),
   'test', 'testdata/sdk/tests/nested/config.spec.ts', '--config', 'testdata/sdk/playwright.config.ts', '--reporter=line']).status, 0);
 fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify({version: 1, cases, ordinaryPlaywright: 'passed'}, null, 2));
-console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; pinned skip, re-rendered web control and plain listing passed; one attempt each.');
+console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; pinned skip, re-rendered web control and plain listing passed; one attempt each.');
 console.log(`Bounded receipts: ${path.relative(root, work)}`);

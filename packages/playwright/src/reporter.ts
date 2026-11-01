@@ -3,6 +3,7 @@ import {closeSync, openSync, writeSync} from 'node:fs';
 import type {Reporter, FullConfig, Suite, TestCase, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validAndroidRuntime, androidRuntimeType} from './android-runtime';
+import {validTargetSetup, targetSetupType} from './target-setup';
 
 function insideAssertion(step: TestStep) {
   for (let ancestor = step.parent; ancestor; ancestor = ancestor.parent) {
@@ -77,7 +78,17 @@ export default class EngineReporter implements Reporter {
   }
   onTestEnd(test: TestCase, result: TestResult) {
     if (result.attachments.length > 32) { this.emit('engine_error'); return; }
+    // One bounded classification per attempt, from a native target only.
+    if (result.attachments.filter(attachment => attachment.name === '9l.target-setup').length > 1) { this.emit('engine_error'); return; }
     for (const attachment of result.attachments) {
+      if (attachment.name === '9l.target-setup') {
+        if (!this.target || this.target.kind === 'web' || attachment.contentType !== targetSetupType || !attachment.body || attachment.body.length > 512) { this.emit('engine_error'); return; }
+        let setup: unknown;
+        try { setup = JSON.parse(attachment.body.toString('utf8')); } catch { this.emit('engine_error'); return; }
+        if (!validTargetSetup(setup)) { this.emit('engine_error'); return; }
+        this.emit('target_setup', {testId: this.testId(test), retry: result.retry, setup});
+        continue;
+      }
       if (attachment.name !== '9l.android-runtime') continue;
       if (this.target?.kind !== 'android' || attachment.contentType !== androidRuntimeType || !attachment.body || attachment.body.length > 2048) { this.emit('engine_error'); return; }
       let runtime: unknown;

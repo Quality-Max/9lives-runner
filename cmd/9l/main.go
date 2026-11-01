@@ -1085,6 +1085,9 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		if receipt.SkippedAfterAssertions > 0 {
 			fmt.Fprintf(w, "           %d skipped test(s) had already reported a passed assertion step; the body ran before the skip\n", receipt.SkippedAfterAssertions)
 		}
+		for _, setup := range receipt.TargetSetup {
+			fmt.Fprintf(w, "           %s\n", setupSummary(setup))
+		}
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}
@@ -1255,4 +1258,25 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// setupSummary describes one native target setup classification: what the
+// driver found, when, and whether a declared recovery restored the baseline.
+// Such a test's failure is inconclusive setup evidence, not an application
+// defect; a recovered test ran from the restored baseline.
+func setupSummary(setup runner.TargetSetup) string {
+	when := "before any application operation"
+	if setup.Stage == runner.SetupStageRecheck {
+		when = "rechecked after a failed assertion"
+	}
+	text := fmt.Sprintf("setup %s: %s (%s)", setup.Classification, setup.Reason, when)
+	switch {
+	case setup.Recovery != nil && setup.Recovery.Restored:
+		return text + fmt.Sprintf("; %s recovery restored the baseline after %d press(es), the test ran from it", setup.Recovery.Method, setup.Recovery.Presses)
+	case setup.Recovery != nil:
+		return text + fmt.Sprintf("; %s recovery did not restore the baseline after %d press(es); inconclusive, not an application failure", setup.Recovery.Method, setup.Recovery.Presses)
+	case setup.Classification == runner.SetupUnknown:
+		return text + "; the device state could not be determined, so the failure is inconclusive"
+	}
+	return text + "; inconclusive, not an application failure"
 }

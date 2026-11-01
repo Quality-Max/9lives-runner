@@ -153,6 +153,34 @@ description suffix, with optional native class and selected-state filters.
 They remain package-scoped and must resolve uniquely before each operation.
 They do not perform semantic screen analysis.
 
+Before any application operation the driver reads the keyguard and
+wakefulness markers of `dumpsys window` and `dumpsys power`, filtered on the
+device and kept in memory. A locked phone or a sleeping screen stops the test
+as `setup blocked` (`device-locked`, `screen-off`) before the automation
+helpers, hidden-API policies or an Appium session touch the device. After a
+completed assertion failure it rechecks the same markers, so a phone that
+locked while a readiness poll was running is classified instead of looking
+like a missing control; a build whose markers it does not recognize is
+reported as `unknown`. The driver never requests, stores or bypasses a PIN,
+never attempts to unlock and never changes the lock or timeout settings.
+
+After launching the activity it compares the app's state with a declared
+baseline: the number of windows titled with the app's package (its activity
+and dialogs; anonymous popups are not attributed), the focused window's
+package, and `mInputShown` of `dumpsys input_method`. `baseline: {windows}`
+defaults to one. An extra window, foreign focus or an open keyboard stops
+the test as `setup dirty` (`extra-window`, `foreign-focus`, `ime-showing`):
+state a previous test left behind, not an application failure. With
+`recovery: {back: N}` the driver presses Back up to N times, half a second
+apart, until the baseline returns, and records the method, the press count
+and whether it restored the baseline; a restored baseline lets the test run
+and keeps the record in the receipt, an unrestored one fails the test.
+Recovery never clears data, force-stops or changes settings, and nothing
+beyond those counts and enums is retained. Both checks apply to attached
+devices only; an owned emulator starts fresh for each test. The markers are
+tested against dumpsys excerpts; they are not qualified on arbitrary phones
+or Android builds.
+
 The phone is leased exclusively by a host-local lock. Existing UiAutomator2
 automation is rejected. Normal close stops only the leased helper, removes its
 ADB forward and restores the hidden-API policy values and any preexisting

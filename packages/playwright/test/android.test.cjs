@@ -152,3 +152,142 @@ test('attached phone verifies the build, preserves app data and restores owned a
     await fs.rm(dir,{recursive:true,force:true});
   }
 });
+
+// A locked phone, state a previous test left behind, and a declared Back
+// recovery are classified before any application operation. The driver only
+// reads device state; the one mutation is the declared Back press.
+test('attached phone classifies a locked device and leaked state as setup, never as an application failure', async () => {
+  const cp = require('node:child_process');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {randomUUID} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-setup-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const appWindow = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
+  const focus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+  const device = {state: 'showing=false\nmInputRestricted=false\nmWakefulness=Awake', windows: [appWindow, focus].join('\n'), ime: 'mInputShown=false'};
+  let commands = [], sessions = 0, backPresses = 0, onBack = () => {};
+  const serial = `test-${randomUUID()}`;
+  let opened = [];
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      commands.push(args);
+      const command = args.slice(2);
+      const script = command[1] === 'sh' ? command[3] : '';
+      let result = '';
+      if (command[0] === 'get-state') result = 'device';
+      else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
+      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (script.includes('dumpsys window; dumpsys power')) result = device.state;
+      else if (script.includes('dumpsys window windows')) result = device.windows;
+      else if (script.includes('dumpsys input_method')) result = device.ime;
+      else if (script.includes('pm path io.appium.settings')) result = 'absent';
+      else if (script.includes('echo present')) result = 'absent';
+      else if (command[1] === 'input' && command[3] === 'KEYCODE_BACK') { backPresses++; onBack(); }
+      else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
+      else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
+      queueMicrotask(() => callback(null, result));
+      return new EventEmitter();
+    };
+    cp.spawn = () => {
+      const child = new EventEmitter(); child.pid = 123; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      return child;
+    };
+    global.fetch = async input => {
+      const url = String(input);
+      let value = null;
+      if (url.endsWith('/status')) value = {ready: true};
+      else if (url.endsWith('/session')) { sessions++; value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}}; }
+      else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
+      else if (url.endsWith('/displayed')) value = false;
+      return new Response(JSON.stringify({value}), {status: 200});
+    };
+    const {androidTargetDriver, TargetSetupError} = require('../dist/android');
+    const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    const open = async (options, expectation) => {
+      commands = []; sessions = 0; backPresses = 0;
+      const driver = androidTargetDriver({...base, ...options});
+      opened.push(driver);
+      let error;
+      try { await driver.open(context()); } catch (e) { error = e; }
+      if (expectation === undefined) { assert.equal(error, undefined); return driver; }
+      assert(error instanceof TargetSetupError, `expected a setup classification, got ${error?.message}`);
+      assert.deepEqual(error.record, expectation);
+      await driver.close();
+      return driver;
+    };
+    // Locked before start, or asleep: classified before policies, helpers or a session.
+    device.state = 'KeyguardServiceDelegate\n      showing=true occluded=false\n    mInputRestricted=true\nmWakefulness=Awake';
+    await open({}, {classification: 'blocked', reason: 'device-locked', stage: 'open'});
+    assert.equal(sessions, 0);
+    assert(!commands.some(a => a[2] === 'settings' && a[3] === 'put'), 'no policy changed on a locked device');
+    device.state = 'showing=false\nmWakefulness=Asleep';
+    await open({}, {classification: 'blocked', reason: 'screen-off', stage: 'open'});
+    // An unrecognized build is unknown, which does not block the test.
+    device.state = 'mWakefulness=Awake';
+    let driver = await open({});
+    assert.equal(sessions, 1);
+    await driver.close();
+    device.state = 'showing=false\nmInputRestricted=false\nmWakefulness=Awake';
+    // State a previous test left: an extra app window, foreign focus or an open keyboard.
+    device.windows = [appWindow, appWindow.replace('4d5e6f', '7a8b9c').replace('#1', '#2'), focus].join('\n');
+    await open({}, {classification: 'dirty', reason: 'extra-window', stage: 'open'});
+    assert.equal(backPresses, 0, 'no recovery without a declaration');
+    await open({baseline: {windows: 2}});
+    await opened.at(-1).close();
+    device.windows = [appWindow, '  mCurrentFocus=Window{aa u0 com.android.systemui/com.android.systemui.Dialog}'].join('\n');
+    await open({}, {classification: 'dirty', reason: 'foreign-focus', stage: 'open'});
+    device.windows = [appWindow, focus].join('\n');
+    device.ime = 'mInputShown=true';
+    await open({}, {classification: 'dirty', reason: 'ime-showing', stage: 'open'});
+    // A declared Back recovery is bounded and recorded; the test runs only from the restored baseline.
+    let remaining = 2;
+    onBack = () => { if (--remaining === 0) device.ime = 'mInputShown=false'; };
+    driver = await open({recovery: {back: 3}});
+    assert.equal(backPresses, 2);
+    assert.deepEqual(driver.setup(), {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}});
+    assert.equal(validAndroidRuntime(driver.runtime()), true);
+    // Rechecks read the keyguard after a completed assertion failure.
+    assert.equal(await driver.recheck(context()), undefined);
+    device.state = 'showing=true\nmInputRestricted=true';
+    assert.deepEqual(await driver.recheck(context()), {classification: 'blocked', reason: 'device-locked', stage: 'recheck'});
+    device.state = '';
+    assert.deepEqual(await driver.recheck(context()), {classification: 'unknown', reason: 'device-state-unknown', stage: 'recheck'});
+    device.state = 'showing=false\nmWakefulness=Awake';
+    await driver.close();
+    device.ime = 'mInputShown=true';
+    onBack = () => {};
+    await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 3, restored: false}});
+    assert.equal(backPresses, 3);
+    assert(!commands.some(a => a.includes('clear') || a.includes('force-stop') && a.includes(base.appPackage) || a.includes('uninstall')), 'recovery never clears, stops or removes the app');
+    // A clean baseline records nothing.
+    device.ime = 'mInputShown=false';
+    driver = await open({recovery: {back: 3}});
+    assert.equal(driver.setup(), undefined);
+    assert.equal(backPresses, 0);
+    await driver.close();
+    // Baseline and recovery are attachment-only and bounded.
+    for (const options of [{baseline: {windows: 0}}, {baseline: {windows: 17}}, {baseline: {focus: 'app'}}, {recovery: {back: 0}}, {recovery: {back: 17}}, {recovery: {clear: true}}]) {
+      assert.throws(() => androidTargetDriver({...base, ...options}), /invalid_configuration/);
+    }
+    const emulator = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, avd: 'QualityMax_API_35', apk: path.join(dir, 'x.apk'), apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+    assert.throws(() => androidTargetDriver({...emulator, baseline: {windows: 1}}), /invalid_configuration/);
+    assert.throws(() => androidTargetDriver({...emulator, recovery: {back: 1}}), /invalid_configuration/);
+  } finally {
+    for (const driver of opened) await driver.close().catch(() => {});
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});
