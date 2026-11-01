@@ -88,6 +88,19 @@ This driver requires Go's private attempt scratch directory and cannot run from
 an ordinary standalone Playwright invocation.
 
 The app uses Android resource IDs through the shared `getByTestId` interface.
+Beyond tap, fill and the visibility, text and state checks, the driver maps
+each added operation to one supported command with fixed arguments: `back`
+to the WebDriver back endpoint (the Back key), `scroll` to UiAutomator2's
+`mobile: scrollGesture` inside the resolved element, `tapAt` to one W3C
+touch pointer down/up at device pixels, `bounds` and `viewport` to the
+element and window rectangles, and `terminate`/`activate` to
+`mobile: terminateApp`/`mobile: activateApp` for the configured package only
+(a force-stop that keeps the app's data, then a relaunch). The keyboard is
+read from `mInputShown` of `dumpsys input_method`; `hideKeyboard` presses
+Back only while it is shown and reads the result back, so the selected input
+method is never changed and no keyboard capability is set on a phone. An
+unreadable keyboard state fails the operation rather than guessing. Nothing
+is retried.
 Open is bounded at 180 seconds; the ordinary operation/assertion bounds still
 apply. The adapter never attaches to an existing emulator. Its private console
 handshake identifies its own emulator child, and a private HTTP base path

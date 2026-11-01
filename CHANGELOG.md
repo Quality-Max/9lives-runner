@@ -8,6 +8,27 @@ SDK versions.
 
 ### Android (experimental)
 
+- The shared target fixture gains the operations an attached-app suite
+  needed beyond tap and fill, so projects no longer have to bridge into the
+  runner-owned Appium session themselves (#209). Portable on web and
+  Android: `app.back()`, `app.tapAt({x, y})` (one touch down/up at device
+  coordinates), `app.viewport()`, `getByTestId(id).bounds()`,
+  `getByTestId(id).scroll(direction, {percent})` (one bounded gesture inside
+  that control) and `toBeHidden()` (absent or not displayed). Android only:
+  `app.toHaveKeyboard(visible)`, `app.hideKeyboard()` (Back while the
+  keyboard shows, read back from the device, never changing the input
+  method), `app.terminate()` and `app.activate()` (force-stop and relaunch
+  of the configured package, keeping its data). A driver without an
+  operation fails it with the stable reason `unsupported_operation`. Each
+  operation is one supported Appium command with fixed arguments; nothing
+  is retried. The engine accepts the new typed steps (`back`,
+  `hide-keyboard`, `scroll`, `tap-at`, `bounds`, `viewport`, `terminate`,
+  `activate`, `assert-hidden`, `assert-keyboard`); an older CLI rejects them
+  as unknown operations, so update the CLI and `@9l/playwright` together.
+  The offline target smoke runs the portable operations on both targets and
+  the native-only ones on the fake driver; the Android commands are
+  unit-tested against a fake transport and remain unqualified on a device.
+
 - A native driver can classify the device or app state instead of letting an
   environment problem read as an application failure. The attached-device
   adapter reads the keyguard and wakefulness before any application

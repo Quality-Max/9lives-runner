@@ -291,3 +291,105 @@ test('attached phone classifies a locked device and leaked state as setup, never
     await fs.rm(dir, {recursive: true, force: true});
   }
 });
+
+// Each added operation maps to one supported Appium command with fixed
+// arguments; the keyboard is read back from the device, never assumed.
+test('attached phone dispatches back, keyboard, scroll, touch, geometry and lifecycle through supported commands only', async () => {
+  const cp = require('node:child_process');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {randomUUID} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-ops-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const requests = [];
+  let ime = 'mInputShown=false', backs = 0, hideOnBack = true;
+  const serial = `test-${randomUUID()}`;
+  let driver;
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      const command = args.slice(2);
+      const script = command[1] === 'sh' ? command[3] : '';
+      let result = '';
+      if (command[0] === 'get-state') result = 'device';
+      else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
+      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys input_method')) result = ime;
+      else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
+      else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
+      else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
+      queueMicrotask(() => callback(null, result));
+      return new EventEmitter();
+    };
+    cp.spawn = () => {
+      const child = new EventEmitter(); child.pid = 123; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      return child;
+    };
+    global.fetch = async (input, init) => {
+      const url = String(input), body = init.body ? JSON.parse(init.body) : undefined;
+      requests.push({path: url.replace(/^.*\/session\/owned-session/, ''), method: init.method ?? 'GET', body});
+      let value = null;
+      if (url.endsWith('/status')) value = {ready: true};
+      else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
+      else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
+      else if (url.endsWith('/window/rect')) value = {x: 0, y: 0, width: 1080, height: 2340};
+      else if (url.endsWith('/rect')) value = {x: 12.4, y: 160, width: 1080, height: 600};
+      else if (url.endsWith('/back')) { backs++; if (hideOnBack) ime = 'mInputShown=false'; }
+      else if (url.endsWith('/execute/sync')) value = true;
+      return new Response(JSON.stringify({value}), {status: 200});
+    };
+    const {androidTargetDriver} = require('../dist/android');
+    const context = (ms = 30000) => ({signal: new AbortController().signal, deadlineMs: Date.now() + ms});
+    driver = androidTargetDriver({appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'});
+    await driver.open(context());
+    requests.length = 0;
+    await driver.back(context());
+    assert.deepEqual(requests.at(-1), {path: '/back', method: 'POST', body: {}});
+    assert.equal(await driver.keyboardShown(context()), false);
+    await driver.hideKeyboard(context());
+    assert.equal(backs, 1, 'a hidden keyboard is not dismissed again');
+    ime = 'mInputShown=true';
+    assert.equal(await driver.keyboardShown(context()), true);
+    await driver.hideKeyboard(context());
+    assert.equal(backs, 2);
+    assert.equal(await driver.keyboardShown(context()), false);
+    ime = 'mImeWindowVis=0x0';
+    await assert.rejects(driver.keyboardShown(context()), /unavailable_state/);
+    ime = 'mInputShown=true'; hideOnBack = false;
+    await assert.rejects(driver.hideKeyboard(context(400)), /keyboard_not_hidden/);
+    assert(!requests.some(r => r.path.includes('hide_keyboard')), 'no Appium keyboard capability or endpoint');
+    const [handle] = await driver.observeTestId('list', context());
+    await handle.scroll('down', 0.5, context());
+    assert.deepEqual(requests.at(-1), {path: '/execute/sync', method: 'POST', body: {script: 'mobile: scrollGesture', args: [{elementId: 'ref-0', direction: 'down', percent: 0.5}]}});
+    assert.deepEqual(await handle.bounds(context()), {x: 12, y: 160, width: 1080, height: 600});
+    assert.deepEqual(await driver.viewport(context()), {width: 1080, height: 2340});
+    await driver.tapAt({x: 900, y: 1200}, context());
+    const actions = requests.at(-1);
+    assert.equal(actions.path, '/actions');
+    assert.deepEqual(actions.body.actions[0].parameters, {pointerType: 'touch'});
+    assert.deepEqual(actions.body.actions[0].actions.map(a => a.type), ['pointerMove', 'pointerDown', 'pause', 'pointerUp']);
+    assert.deepEqual([actions.body.actions[0].actions[0].x, actions.body.actions[0].actions[0].y], [900, 1200]);
+    await assert.rejects(driver.tapAt({x: -1, y: 0}, context()), /invalid_point/);
+    await driver.terminate(context());
+    assert.deepEqual(requests.at(-1).body, {script: 'mobile: terminateApp', args: [{appId: 'dev.ninelives.fixture'}]});
+    await driver.activate(context());
+    assert.deepEqual(requests.at(-1).body, {script: 'mobile: activateApp', args: [{appId: 'dev.ninelives.fixture'}]});
+    assert(!requests.some(r => r.path.includes('/appium/device/') || r.path.includes('reset')), 'no reset, clear or device endpoints');
+  } finally {
+    await driver?.close();
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});

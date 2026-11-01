@@ -5,7 +5,13 @@ import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './an
 import {TargetSetupError, targetSetupType, validTargetSetup, type TargetSetupRecord} from './target-setup';
 export {TargetSetupError, validTargetSetup, type TargetSetupRecord, type SetupClassification} from './target-setup';
 
-export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state'] as const;
+export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
+  'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate'] as const;
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
+/** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
+export type TargetPoint = {x: number; y: number};
+export type TargetRect = TargetPoint & {width: number; height: number};
+export type TargetSize = {width: number; height: number};
 export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android'; appId: string};
 export type TargetContext = {signal: AbortSignal; deadlineMs: number};
 export type TargetState = 'enabled' | 'checked';
@@ -21,6 +27,9 @@ export interface TargetHandle {
   visible(context: TargetContext): Promise<boolean>;
   text(context: TargetContext): Promise<string>;
   state(name: TargetState, context: TargetContext): Promise<boolean>;
+  /** One bounded scroll gesture inside this element; percent of its size. */
+  scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
+  bounds?(context: TargetContext): Promise<TargetRect>;
 }
 export interface TargetDriver extends TargetIdentity {
   version: typeof targetVersion;
@@ -29,6 +38,20 @@ export interface TargetDriver extends TargetIdentity {
   reset(context: TargetContext): Promise<void>;
   /** Observe at most two matches; two means ambiguous and must fail. */
   observeTestId(id: string, context: TargetContext): Promise<readonly TargetHandle[]>;
+  // Optional operations. A driver without one fails the operation with the
+  // stable reason unsupported_operation; it never substitutes another action.
+  /** Platform back: Android's Back key, the browser's history. */
+  back?(context: TargetContext): Promise<void>;
+  /** Software keyboard visibility; an unreadable state throws. Android only. */
+  keyboardShown?(context: TargetContext): Promise<boolean>;
+  /** Dismiss the keyboard without changing the input method. Android only. */
+  hideKeyboard?(context: TargetContext): Promise<void>;
+  /** One touch down/up at device coordinates. */
+  tapAt?(point: TargetPoint, context: TargetContext): Promise<void>;
+  viewport?(context: TargetContext): Promise<TargetSize>;
+  /** Stop and relaunch the configured app, keeping its data. Android only. */
+  terminate?(context: TargetContext): Promise<void>;
+  activate?(context: TargetContext): Promise<void>;
   close(): Promise<void>;
   runtime?(): AndroidRuntime | undefined;
   /** After a successful open: the setup record of a declared recovery that
@@ -183,35 +206,20 @@ export class TargetApp {
   }, options.timeoutMs ?? (this.driver.kind === 'android' ? 180_000 : undefined), this.driver.kind === 'android' ? 180_000 : maxOperationMs); }
   reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs); }
 
-  getByTestId(id: string) {
-    const observe = async (context: TargetContext) => {
-      if (!boundedText(id, 128) || !id || /[\x00-\x1f]/.test(id)) throw stopped('invalid_test_id');
-      const matches = await this.driver.observeTestId(id, context);
-      context.signal.throwIfAborted();
-      if (!Array.isArray(matches) || matches.length > 1) throw stopped('ambiguous_test_id');
-      return matches[0];
-    };
-    const required = async (context: TargetContext) => {
-      const handle = await observe(context);
-      if (!handle) throw stopped('missing_test_id');
-      return handle;
-    };
-    const assertion = async (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) => {
-      let observedFalse = false;
-      try {
-        return await this.perform(operation, async context => {
-        // A completed mismatch is an assertion failure at this polling bound,
-        // even if a later read stalls. Without one, a deadline is inconclusive.
+  /** Poll a check to its bound. A completed false observation is an assertion
+   * failure even if a later read stalls; a bound reached before any completed
+   * check is a deadline; failed reads alone keep their own operation error.
+   * After a completed failure, the driver may reclassify the device state. */
+  private async assertLoop(operation: string, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) {
+    let observedFalse = false;
+    try {
+      return await this.perform(operation, async context => {
         const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
         let last: unknown;
         for (let poll = 0; poll < maxObservations; poll++) {
           context.signal.throwIfAborted();
           try {
-            const handle = await observe(context);
-            if (handle) {
-              if (await check(handle, context)) return;
-            }
-            // A completed empty observation is also a failed assertion.
+            if (await attempt(context)) return;
             observedFalse = true;
           } catch (error) {
             // Ambiguity, invalid input and cancellation are not transient.
@@ -227,30 +235,104 @@ export class TargetApp {
         if (last !== undefined) throw last;
         throw stopped('deadline');
       }, timeoutMs, maxOperationMs, () => observedFalse ? 'assertion_failed' : 'deadline');
-      } catch (error) {
-        // A completed mismatch on a device the driver can still read: ask it
-        // whether the device became unavailable (locked, screen off) during
-        // the readiness poll. A positive answer reclassifies the failure as
-        // setup; the assertion step stays failed and the test still fails.
-        if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
-        let record: TargetSetupRecord | undefined;
-        try {
-          record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
-        } catch { record = undefined; }
-        if (record === undefined) throw error;
-        if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
-        this.reason = `setup_${record.classification}`;
-        await attachSetup(record);
-        throw stopped(this.reason, error);
-      }
+    } catch (error) {
+      // A completed mismatch on a device the driver can still read: ask it
+      // whether the device became unavailable (locked, screen off) during
+      // the readiness poll. A positive answer reclassifies the failure as
+      // setup; the assertion step stays failed and the test still fails.
+      if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
+      let record: TargetSetupRecord | undefined;
+      try {
+        record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
+      } catch { record = undefined; }
+      if (record === undefined) throw error;
+      if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
+      this.reason = `setup_${record.classification}`;
+      await attachSetup(record);
+      throw stopped(this.reason, error);
+    }
+  }
+
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate'>(name: K): NonNullable<TargetDriver[K]> {
+    const method = this.driver[name];
+    if (typeof method !== 'function') throw stopped('unsupported_operation');
+    return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
+  }
+
+  /** Platform back: Android's Back key, the browser's history. */
+  back(options: TargetOperationOptions = {}) { return this.perform('back', context => this.optional('back')(context), options.timeoutMs); }
+  /** Dismiss the software keyboard, keeping the selected input method. Android only. */
+  hideKeyboard(options: TargetOperationOptions = {}) { return this.perform('hide-keyboard', context => this.optional('hideKeyboard')(context), options.timeoutMs); }
+  /** Android only: assert the software keyboard is shown or hidden. */
+  toHaveKeyboard(visible: boolean, timeoutMs?: number) {
+    if (typeof visible !== 'boolean') return this.assertLoop('assert-keyboard', async () => { throw stopped('invalid_value'); }, timeoutMs);
+    return this.assertLoop('assert-keyboard', async context => await this.optional('keyboardShown')(context) === visible, timeoutMs);
+  }
+  /** One touch down/up at device coordinates, for example outside a pane.
+   * Coordinates are integers inside the viewport; nothing is retried. */
+  tapAt(point: TargetPoint, options: TargetOperationOptions = {}) {
+    return this.perform('tap-at', async context => {
+      if (!validPoint(point)) throw stopped('invalid_point');
+      await this.optional('tapAt')({x: point.x, y: point.y}, context);
+    }, options.timeoutMs);
+  }
+  viewport(options: TargetOperationOptions = {}) {
+    return this.perform('viewport', async context => {
+      const size = await this.optional('viewport')(context);
+      if (!validSize(size)) throw stopped('invalid_property');
+      return {width: size.width, height: size.height};
+    }, options.timeoutMs);
+  }
+  /** Stop the configured app without clearing its data. Android only. */
+  terminate(options: TargetOperationOptions = {}) { return this.perform('terminate', context => this.optional('terminate')(context), options.timeoutMs); }
+  /** Bring the configured app back to the foreground. Android only. */
+  activate(options: TargetOperationOptions = {}) { return this.perform('activate', context => this.optional('activate')(context), options.timeoutMs); }
+
+  getByTestId(id: string) {
+    const observe = async (context: TargetContext) => {
+      if (!boundedText(id, 128) || !id || /[\x00-\x1f]/.test(id)) throw stopped('invalid_test_id');
+      const matches = await this.driver.observeTestId(id, context);
+      context.signal.throwIfAborted();
+      if (!Array.isArray(matches) || matches.length > 1) throw stopped('ambiguous_test_id');
+      return matches[0];
     };
+    const required = async (context: TargetContext) => {
+      const handle = await observe(context);
+      if (!handle) throw stopped('missing_test_id');
+      return handle;
+    };
+    // A missing control is a completed false observation, except for a
+    // hidden assertion, where absence is exactly what it asserts.
+    const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs?: number, absent = false) =>
+      this.assertLoop(operation, async context => {
+        const handle = await observe(context);
+        return handle ? check(handle, context) : absent;
+      }, timeoutMs);
     return {
       tap: (options: TargetOperationOptions = {}) => this.perform('tap', async context => (await required(context)).tap(context), options.timeoutMs),
       fill: (value: string, options: TargetOperationOptions = {}) => this.perform('fill', async context => {
         if (!boundedText(value, 4096)) throw stopped('invalid_value');
         await (await required(context)).fill(value, context);
       }, options.timeoutMs),
+      /** One bounded scroll gesture inside this control, by a fraction of its size. */
+      scroll: (direction: ScrollDirection, options: TargetOperationOptions & {percent?: number} = {}) => this.perform('scroll', async context => {
+        const percent = options.percent ?? 0.5;
+        if (!['up', 'down', 'left', 'right'].includes(direction) || typeof percent !== 'number' || !(percent > 0 && percent <= 1)) throw stopped('invalid_value');
+        const handle = await required(context);
+        if (typeof handle.scroll !== 'function') throw stopped('unsupported_operation');
+        await handle.scroll(direction, percent, context);
+      }, options.timeoutMs),
+      /** The control's rectangle in device coordinates. */
+      bounds: (options: TargetOperationOptions = {}) => this.perform('bounds', async context => {
+        const handle = await required(context);
+        if (typeof handle.bounds !== 'function') throw stopped('unsupported_operation');
+        const rect = await handle.bounds(context);
+        if (!validRect(rect)) throw stopped('invalid_property');
+        return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+      }, options.timeoutMs),
       toBeVisible: (timeoutMs?: number) => assertion('assert-visible', (handle, context) => handle.visible(context), timeoutMs),
+      /** Passes when the control is absent or not displayed. */
+      toBeHidden: (timeoutMs?: number) => assertion('assert-hidden', async (handle, context) => !await handle.visible(context), timeoutMs, true),
       toHaveText: (value: string, timeoutMs?: number) => {
         if (!boundedText(value, 4096)) return assertion('assert-text', async () => { throw stopped('invalid_value'); }, timeoutMs);
         return assertion('assert-text', async (handle, context) => {
@@ -266,6 +348,11 @@ export class TargetApp {
   }
 }
 
+const coordinate = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+const validPoint = (value: unknown): value is TargetPoint => !!value && typeof value === 'object' && coordinate((value as TargetPoint).x) && coordinate((value as TargetPoint).y);
+const validSize = (value: unknown): value is TargetSize => !!value && typeof value === 'object' && coordinate((value as TargetSize).width) && coordinate((value as TargetSize).height) && (value as TargetSize).width > 0 && (value as TargetSize).height > 0;
+const validRect = (value: unknown): value is TargetRect => validPoint(value) && coordinate((value as TargetRect).width) && coordinate((value as TargetRect).height);
+
 const remaining = (context: TargetContext) => { context.signal.throwIfAborted(); return Math.max(1, context.deadlineMs - Date.now()); };
 
 function locatorHandle(locator: Locator): TargetHandle {
@@ -277,6 +364,19 @@ function locatorHandle(locator: Locator): TargetHandle {
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),
+    scroll: async (direction, percent, context) => {
+      remaining(context);
+      await locator.evaluate((element, {direction, percent}) => {
+        const dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
+        const dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
+        element.scrollBy({left: dx * element.clientWidth * percent, top: dy * element.clientHeight * percent, behavior: 'instant'});
+      }, {direction, percent});
+    },
+    bounds: async context => {
+      const box = await locator.boundingBox({timeout: remaining(context)});
+      if (!box) throw new Error('control has no box');
+      return {x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height)};
+    },
   };
 }
 
@@ -289,6 +389,14 @@ export function webTargetDriver(page: Page, appId: string, lifecycle: {
     version: targetVersion, capabilities: targetCapabilities, kind: 'web', appId,
     open: context => lifecycle.open(page, context), reset: context => lifecycle.reset(page, context),
     close: () => page.close({runBeforeUnload: false}),
+    back: async context => { await page.goBack({timeout: remaining(context)}); },
+    tapAt: async (point, context) => { remaining(context); await page.mouse.click(point.x, point.y); },
+    viewport: async context => {
+      remaining(context);
+      const size = page.viewportSize();
+      if (!size) throw new Error('viewport unavailable');
+      return size;
+    },
     observeTestId: async (id, context) => {
       remaining(context);
       const locator = page.getByTestId(id);

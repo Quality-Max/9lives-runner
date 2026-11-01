@@ -53,7 +53,7 @@ function invoke(mode, {targets = ['android-fake:finance'], grep = 'one determini
     if (targets.length === 1 && file === spec) assert.equal(receipt.agentProvenance.status, 'matched', mode);
   }
   const mutations = fs.existsSync(effects) ? fs.readFileSync(effects, 'utf8').trim().split('\n') : [];
-  cases.push({mode, outcome: summary.outcome, statuses: summary.receipts.map(r => r.status), attempts: summary.receipts.map(r => r.attempt)});
+  cases.push({mode, file: path.basename(file), outcome: summary.outcome, statuses: summary.receipts.map(r => r.status), attempts: summary.receipts.map(r => r.attempt)});
   return {code: result.status, summary, mutations};
 }
 
@@ -121,6 +121,23 @@ for (const mode of ['ambiguous', 'missing', 'version', 'capabilities', 'cancel',
     assert(message.includes(`9lives target stopped: ${reasons[mode]}`), `${mode}: specific reason, got ${message}`);
   }
 }
+// Operations beyond tap/fill: geometry, touch, scrolling, back and hidden
+// assertions on both targets; keyboard and process lifecycle on the native
+// target; a web call to a native-only operation fails with a stable reason.
+const operations = path.join(project, 'targets/operations.spec.ts');
+const portable = invoke('operations', {targets: ['web:finance', 'android-fake:finance'], grep: 'portable', file: operations});
+assert.equal(portable.code, 0, 'operations: portable operations pass on both targets');
+for (const receipt of portable.summary.receipts) {
+  assert.equal(receipt.targetAssertions, 4, `${receipt.target}: portable assertions`);
+  const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(frames.filter(f => f.operation).map(f => f.operation), ['open', 'viewport', 'bounds', 'tap-at', 'assert-text', 'scroll', 'assert-text', 'assert-hidden', 'back', 'assert-text'], receipt.target);
+}
+const lifecycle = invoke('lifecycle', {targets: ['android-fake:finance'], grep: 'native only', file: operations});
+assert.equal(lifecycle.code, 0, 'lifecycle: keyboard and restart pass on the native target');
+assert.equal(lifecycle.summary.receipts[0].targetAssertions, 4);
+const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
+assert.notEqual(unsupported.code, 0);
+assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');
 // A platform skip is complete only when pinned, like any other SDK skip.
 const skip = 'one deterministic scenario|skipped on the native target';
 const unpinned = invoke('skip-unpinned', {grep: skip});
