@@ -758,7 +758,7 @@ var (
 	// The shared target fixture stops a session with "9lives target stopped:
 	// <reason>"; a setup_* reason is a driver's classification of the device
 	// or app state, recorded in the receipt's targetSetup.
-	setupError = regexp.MustCompile(`^Error: 9lives target stopped: setup_(blocked|dirty|mismatch|unknown)$`)
+	setupError = regexp.MustCompile(`^Error: 9lives target stopped: setup_(blocked|dirty|mismatch|observer|unknown)$`)
 )
 
 // classifyError reads the framework's structured prefix of an error.

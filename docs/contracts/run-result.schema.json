@@ -422,6 +422,12 @@
         "targetAssertions": {
           "type": "integer"
         },
+        "targetDiagnostics": {
+          "items": {
+            "$ref": "#/$defs/TargetDiagnostic"
+          },
+          "type": "array"
+        },
         "targetSetup": {
           "items": {
             "$ref": "#/$defs/TargetSetup"
@@ -499,6 +505,58 @@
       "required": [
         "input",
         "reason"
+      ],
+      "type": "object"
+    },
+    "TargetDiagnostic": {
+      "properties": {
+        "elapsedMs": {
+          "type": "integer"
+        },
+        "focusAfter": {
+          "type": "string"
+        },
+        "focusBefore": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "point": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "viewportHeight": {
+          "type": "integer"
+        },
+        "viewportWidth": {
+          "type": "integer"
+        },
+        "windowsAfter": {
+          "type": "integer"
+        },
+        "windowsBefore": {
+          "type": "integer"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "testId",
+        "operation",
+        "reason",
+        "elapsedMs",
+        "windowsBefore",
+        "windowsAfter"
       ],
       "type": "object"
     },

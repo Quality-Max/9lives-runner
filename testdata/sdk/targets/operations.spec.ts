@@ -59,3 +59,12 @@ test('keyboard and process lifecycle are native only', async ({app}) => {
   // @9l-outcome draft-survives-restart
   await app.getByTestId('status').toHaveText('draft 7');
 });
+
+// An outside touch that should dismiss a modal. In the observer control the
+// dialog's window is gone but the snapshot still lists it: the hidden
+// assertion fails and the driver classifies the disagreement.
+test('an outside touch dismisses the modal', async ({app}) => {
+  await app.open();
+  await app.tapAt({x: 390, y: 790});
+  await app.getByTestId('status').toBeHidden(300);
+});

@@ -47,11 +47,12 @@ type event struct {
 		Kind     string `json:"kind"`
 		Retained bool   `json:"retained"`
 	} `json:"artifacts"`
-	TargetID      string                 `json:"targetId"`
-	TargetVersion string                 `json:"targetVersion"`
-	Operation     string                 `json:"operation"`
-	Runtime       *runner.AndroidRuntime `json:"runtime"`
-	Setup         *runner.TargetSetup    `json:"setup"`
+	TargetID      string                   `json:"targetId"`
+	TargetVersion string                   `json:"targetVersion"`
+	Operation     string                   `json:"operation"`
+	Runtime       *runner.AndroidRuntime   `json:"runtime"`
+	Setup         *runner.TargetSetup      `json:"setup"`
+	Diagnostic    *runner.TargetDiagnostic `json:"diagnostic"`
 }
 
 type testState struct {
@@ -73,6 +74,7 @@ type testState struct {
 	// baseline, so the test may still pass.
 	setup          bool
 	setupRecovered bool
+	diagnostic     bool
 	// reportedAttempt counts the assertion steps the worker reported as passed
 	// in the attempt in progress; reportedFinal and finalStatus keep the last
 	// completed attempt's count and status.
@@ -202,6 +204,13 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			state.setup, state.setupRecovered = true, frame.Setup.Recovery != nil && frame.Setup.Recovery.Restored
 			frame.Setup.TestID = frame.TestID
 			validation.TargetSetup = append(validation.TargetSetup, *frame.Setup)
+		case "target_diagnostic":
+			if !nativeTarget(identity.Target) || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.diagnostic || frame.Diagnostic == nil || !validTargetDiagnostic(*frame.Diagnostic) {
+				return invalid("missing, foreign, repeated or malformed target diagnostic")
+			}
+			state.diagnostic = true
+			frame.Diagnostic.TestID = frame.TestID
+			validation.TargetDiagnostics = append(validation.TargetDiagnostics, *frame.Diagnostic)
 		case "step_end":
 			if summarizing || state == nil || !state.active || frame.Retry != state.retry || !stepID.MatchString(frame.StepID) || steps[frame.StepID] {
 				return invalid("foreign, duplicate or late step")
@@ -248,6 +257,8 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("Android test passed without runtime identity")
 				case frame.Status == "passed" && state.setup && !state.setupRecovered:
 					return invalid("target test passed after an unrecovered setup classification")
+				case frame.Status == "passed" && state.diagnostic:
+					return invalid("target test passed with a failure diagnostic")
 				}
 			}
 			if state.expected != "" && state.expected != frame.ExpectedStatus {
@@ -351,6 +362,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if len(validation.TargetSetup) != 0 {
 				validation.Description += fmt.Sprintf("; %d test(s) carry a driver setup classification", len(validation.TargetSetup))
+			}
+			if len(validation.TargetDiagnostics) != 0 {
+				validation.Description += fmt.Sprintf("; %d opt-in failure diagnostic(s)", len(validation.TargetDiagnostics))
 			}
 			if (frame.Status == "passed") != (validation.FailureCount == 0) {
 				return invalid("inconsistent terminal outcome")
@@ -469,6 +483,8 @@ func decodeEvent(raw []byte) (event, error) {
 		fields = append(fields, "testId", "retry", "runtime")
 	case "target_setup":
 		fields = append(fields, "testId", "retry", "setup")
+	case "target_diagnostic":
+		fields = append(fields, "testId", "retry", "diagnostic")
 	case "step_end":
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
 		if frame.Operation != "" {
@@ -531,6 +547,22 @@ func decodeEvent(raw []byte) (event, error) {
 			return frame, fmt.Errorf("invalid setup")
 		}
 	}
+	if value := values["diagnostic"]; value != nil {
+		var diagnostic map[string]json.RawMessage
+		if json.Unmarshal(value, &diagnostic) != nil {
+			return frame, fmt.Errorf("invalid diagnostic")
+		}
+		for _, key := range []string{"operation", "reason", "elapsedMs", "windowsBefore", "windowsAfter"} {
+			if diagnostic[key] == nil {
+				return frame, fmt.Errorf("invalid diagnostic")
+			}
+		}
+		for key := range diagnostic {
+			if !oneOf(key, "operation", "reason", "elapsedMs", "x", "y", "point", "viewportWidth", "viewportHeight", "windowsBefore", "windowsAfter", "focusBefore", "focusAfter") {
+				return frame, fmt.Errorf("invalid diagnostic")
+			}
+		}
+	}
 	if value := values["artifacts"]; value != nil {
 		var artifacts []map[string]json.RawMessage
 		if json.Unmarshal(value, &artifacts) != nil {
@@ -551,7 +583,19 @@ var setupReasons = map[string][]string{
 	runner.SetupBlocked:  {"device-locked", "screen-off"},
 	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
 	runner.SetupMismatch: {},
+	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
+}
+
+var stopReason = regexp.MustCompile(`^[a-z_]{1,64}$`)
+
+func validTargetDiagnostic(d runner.TargetDiagnostic) bool {
+	pixel := func(v int) bool { return v >= 0 && v <= 65535 }
+	focus := func(v string) bool { return oneOf(v, "", "app", "foreign", "none", "unknown") }
+	return d.TestID == "" && (oneOf(d.Operation, targetActions...) || oneOf(d.Operation, targetAssertions...)) && stopReason.MatchString(d.Reason) &&
+		d.ElapsedMS >= 0 && d.ElapsedMS <= 3_600_000 && pixel(d.X) && pixel(d.Y) && (d.Point || (d.X == 0 && d.Y == 0)) &&
+		pixel(d.ViewportWidth) && pixel(d.ViewportHeight) && (d.ViewportWidth == 0) == (d.ViewportHeight == 0) &&
+		d.WindowsBefore >= -1 && d.WindowsBefore <= 1024 && d.WindowsAfter >= -1 && d.WindowsAfter <= 1024 && focus(d.FocusBefore) && focus(d.FocusAfter)
 }
 
 func nativeTarget(target string) bool {
@@ -561,6 +605,9 @@ func nativeTarget(target string) bool {
 func validTargetSetup(s runner.TargetSetup) bool {
 	reasons, known := setupReasons[s.Classification]
 	if !known || !oneOf(s.Reason, reasons...) || !oneOf(s.Stage, runner.SetupStageOpen, runner.SetupStageRecheck) || s.TestID != "" {
+		return false
+	}
+	if s.Classification == runner.SetupObserver && s.Stage != runner.SetupStageRecheck {
 		return false
 	}
 	if s.Recovery == nil {

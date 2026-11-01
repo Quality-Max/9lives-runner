@@ -58,10 +58,16 @@ type Receipt struct {
 	// TargetSetup lists the native target tests whose driver classified the
 	// device or app state before, or after a failed, application assertion:
 	// blocked (locked device), dirty (state left by a previous test),
-	// mismatch (declared build or posture) or unknown. A test with a record
+	// mismatch (declared build or posture), observer (the accessibility
+	// snapshot disagreed with the window manager) or unknown. A test with a record
 	// whose recovery did not restore the baseline cannot pass; its failure is
 	// inconclusive setup evidence, not an application defect.
-	TargetSetup         []TargetSetup         `json:"targetSetup,omitempty"`
+	TargetSetup []TargetSetup `json:"targetSetup,omitempty"`
+	// TargetDiagnostics lists bounded, metadata-only records a native driver
+	// captured when a target operation failed and the test opted in: timing,
+	// requested coordinates, viewport and app window counts before and after.
+	// They describe the failure without claiming its cause.
+	TargetDiagnostics   []TargetDiagnostic    `json:"targetDiagnostics,omitempty"`
 	Target              string                `json:"target,omitempty"`
 	AgentProvenance     *ProvenanceAssessment `json:"agentProvenance,omitempty"`
 	Goals               []GoalReceipt         `json:"goals,omitempty"`
@@ -162,6 +168,28 @@ type TargetSetup struct {
 	Recovery       *SetupRecovery `json:"recovery,omitempty"`
 }
 
+// TargetDiagnostic is one opt-in failure diagnostic of a native target
+// operation; see Receipt.TargetDiagnostics. Windows and focus are the app's
+// window count and focus class at the last mutation and after the failure;
+// -1 and "" mean not observed.
+type TargetDiagnostic struct {
+	TestID    string `json:"testId"`
+	Operation string `json:"operation"`
+	// Reason is the stop reason the operation failed with.
+	Reason    string `json:"reason"`
+	ElapsedMS int    `json:"elapsedMs"`
+	X         int    `json:"x,omitempty"`
+	Y         int    `json:"y,omitempty"`
+	// Point says X and Y are the requested coordinates (0,0 is a valid point).
+	Point          bool   `json:"point,omitempty"`
+	ViewportWidth  int    `json:"viewportWidth,omitempty"`
+	ViewportHeight int    `json:"viewportHeight,omitempty"`
+	WindowsBefore  int    `json:"windowsBefore"`
+	WindowsAfter   int    `json:"windowsAfter"`
+	FocusBefore    string `json:"focusBefore,omitempty"`
+	FocusAfter     string `json:"focusAfter,omitempty"`
+}
+
 // SetupRecovery is a recorded, user-declared recovery step; see TargetSetup.
 type SetupRecovery struct {
 	Method   string `json:"method"`
@@ -171,10 +199,15 @@ type SetupRecovery struct {
 
 // Setup classifications and the stages at which they are recorded.
 const (
-	SetupBlocked      = "blocked"
-	SetupDirty        = "dirty"
-	SetupMismatch     = "mismatch"
-	SetupUnknown      = "unknown"
+	SetupBlocked  = "blocked"
+	SetupDirty    = "dirty"
+	SetupMismatch = "mismatch"
+	SetupUnknown  = "unknown"
+	// SetupObserver: the accessibility snapshot disagreed with the window
+	// manager after a failed assertion (an element reported displayed in a
+	// window that no longer exists), so the failure is an observer
+	// staleness, not an application or gesture failure.
+	SetupObserver     = "observer"
 	SetupStageOpen    = "open"
 	SetupStageRecheck = "recheck"
 )

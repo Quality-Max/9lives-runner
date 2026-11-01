@@ -6,7 +6,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize} from './targets';
+import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation} from './targets';
 import {deviceStatePattern, imePattern, parseDeviceState, parseIme, parseWindows, windowPattern} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
@@ -32,6 +32,13 @@ export type AndroidTargetOptions = {
    * times until the baseline returns. Recorded in the receipt; never clears
    * data, force-stops or changes settings. */
   recovery?: {back: number};
+  /** Opt-in failure diagnostics: the app's window count and focus are read
+   * before each gesture and again when an operation fails, and a metadata
+   * record (timing, requested point, viewport, windows) is attached to the
+   * failed test. With it, a hidden-assertion failure whose window the window
+   * manager no longer lists is classified as observer staleness. No
+   * screenshot, hierarchy, text or log is captured. */
+  diagnostics?: {gestures: boolean};
 } & ({
   avd: string; apk: string; headless?: boolean; deviceSerial?: never;
 } | {
@@ -130,7 +137,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   const backPresses = options.recovery?.back ?? 0;
   if ((options.baseline !== undefined && (Object.keys(options.baseline).some(k => k !== 'windows') || !Number.isInteger(expectedWindows) || expectedWindows < 1 || expectedWindows > 16)) ||
       (options.recovery !== undefined && (Object.keys(options.recovery).some(k => k !== 'back') || !Number.isInteger(backPresses) || backPresses < 1 || backPresses > 16)) ||
-      ((options.baseline !== undefined || options.recovery !== undefined) && !physical)) throw failure('invalid_configuration');
+      ((options.baseline !== undefined || options.recovery !== undefined) && !physical) ||
+      (options.diagnostics !== undefined && (Object.keys(options.diagnostics).some(k => k !== 'gestures') || typeof options.diagnostics.gestures !== 'boolean'))) throw failure('invalid_configuration');
+  const diagnostics = options.diagnostics?.gestures === true;
   for (const [id, control] of Object.entries(controls)) {
     if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/.test(id) || !control ||
         Object.keys(control).some(k => !['text', 'accessibilityId', 'accessibilityIdSuffix', 'className', 'selected'].includes(k)) ||
@@ -161,8 +170,16 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // Device-state reads filter on the device and stay in memory. They never
   // request, store or bypass a credential, and never change lock settings.
   const readDeviceState = async (c: TargetContext) => parseDeviceState(await adbRun(shell(`(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096`), c));
+  const readWindows = async (c: TargetContext): Promise<WindowObservation> => parseWindows(await adbRun(shell(`dumpsys window windows 2>/dev/null | grep -E "${windowPattern}" | head -c 8192`), c), options.appPackage);
+  // With diagnostics, the window state before the last gesture; a read that
+  // fails leaves the gesture to proceed and the observation absent.
+  let lastGesture: WindowObservation | undefined;
+  const observeGesture = async (c: TargetContext) => {
+    if (!diagnostics) return;
+    try { lastGesture = await readWindows(c); } catch { lastGesture = undefined; }
+  };
   const readBaseline = async (c: TargetContext) => {
-    const windows = parseWindows(await adbRun(shell(`dumpsys window windows 2>/dev/null | grep -E "${windowPattern}" | head -c 8192`), c), options.appPackage);
+    const windows = await readWindows(c);
     const ime = parseIme(await adbRun(shell(`dumpsys input_method 2>/dev/null | grep -E "${imePattern}" | head -c 1024`), c));
     // First difference wins; unknown components cannot classify anything.
     return windows.focus === 'foreign' ? 'foreign-focus' : windows.windows > expectedWindows ? 'extra-window' : ime === 'shown' ? 'ime-showing' : undefined;
@@ -237,7 +254,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     return result[0];
   };
   const handle = (id: string): TargetHandle => ({
-    tap: async c => { await endpoint(`/element/${await resolveOne(id, c)}/click`, c, 'POST', {}); },
+    tap: async c => { const ref = await resolveOne(id, c); await observeGesture(c); await endpoint(`/element/${ref}/click`, c, 'POST', {}); },
     fill: async (value, c) => {
       const ref = await resolveOne(id, c);
       await endpoint(`/element/${ref}/clear`, c, 'POST', {});
@@ -259,7 +276,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     // One supported UiAutomator2 gesture inside the resolved element; the
     // driver reports whether more content exists, which is not retained.
     scroll: async (direction, percent, c) => {
-      await endpoint('/execute/sync', c, 'POST', {script: 'mobile: scrollGesture', args: [{elementId: await resolveOne(id, c), direction, percent}]});
+      const ref = await resolveOne(id, c);
+      await observeGesture(c);
+      await endpoint('/execute/sync', c, 'POST', {script: 'mobile: scrollGesture', args: [{elementId: ref, direction, percent}]});
     },
     bounds: async c => rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)),
   });
@@ -508,7 +527,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     async observeTestId(id, c) { return (await matches(id, c)).slice(0, 2).map(() => handle(id)); },
     setup: () => setupRecord,
-    async back(c) { await endpoint('/back', c, 'POST', {}); },
+    async back(c) { await observeGesture(c); await endpoint('/back', c, 'POST', {}); },
     keyboardShown,
     // Back dismisses a shown keyboard without touching the selected input
     // method; the result is read back rather than assumed.
@@ -523,6 +542,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     async tapAt(point, c) {
       if (!pixel(point.x) || !pixel(point.y)) throw failure('invalid_point');
+      await observeGesture(c);
       await endpoint('/actions', c, 'POST', {actions: [{type: 'pointer', id: 'finger1', parameters: {pointerType: 'touch'}, actions: [
         {type: 'pointerMove', duration: 0, x: point.x, y: point.y}, {type: 'pointerDown', button: 0}, {type: 'pause', duration: 50}, {type: 'pointerUp', button: 0},
       ]}]});
@@ -537,14 +557,38 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     async terminate(c) { await appCommand('mobile: terminateApp', c); },
     async activate(c) { await appCommand('mobile: activateApp', c); },
     // After a completed assertion failure: did the phone become unavailable?
-    // Read-only; an owned emulator cannot lock itself and reports nothing.
-    async recheck(c) {
-      if (!physical || !session) return undefined;
+    // Read-only; an owned emulator cannot lock itself. With diagnostics, a
+    // hidden assertion that failed although the app lost a window since the
+    // last gesture is the accessibility snapshot disagreeing with the window
+    // manager: observer staleness, attributed to neither the app nor the tap.
+    async recheck(c, failed) {
+      if (!session) return undefined;
       check(c);
-      const state = await readDeviceState(c);
-      if (state === 'unlocked') return undefined;
-      if (state === 'unknown') return {classification: 'unknown', reason: 'device-state-unknown', stage: 'recheck'};
-      return {classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'recheck'};
+      if (physical) {
+        const state = await readDeviceState(c);
+        if (state === 'unknown') return {classification: 'unknown', reason: 'device-state-unknown', stage: 'recheck'};
+        if (state !== 'unlocked') return {classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'recheck'};
+      }
+      if (diagnostics && failed.operation === 'assert-hidden' && lastGesture && lastGesture.windows > 0) {
+        const now = await readWindows(c);
+        if (now.windows < lastGesture.windows) return {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'};
+      }
+      return undefined;
+    },
+    // Metadata only: what was asked, how long it took, and the app's windows
+    // before the last gesture and now. Nothing is retried and no cause is claimed.
+    async diagnose(f, c) {
+      if (!diagnostics) return undefined;
+      const record: TargetDiagnostic = {operation: f.operation, reason: f.reason, elapsedMs: f.elapsedMs, windowsBefore: lastGesture?.windows ?? -1, windowsAfter: -1,
+        ...(f.point ? {x: f.point.x, y: f.point.y, point: true as const} : {}), ...(lastGesture ? {focusBefore: lastGesture.focus} : {})};
+      if (closed || !session) return record;
+      try {
+        const after = await readWindows(c);
+        record.windowsAfter = after.windows; record.focusAfter = after.focus;
+        const r = rect(await endpoint('/window/rect', c));
+        if (r.width > 0 && r.height > 0) { record.viewportWidth = r.width; record.viewportHeight = r.height; }
+      } catch { /* partial record */ }
+      return record;
     },
     close,
   };

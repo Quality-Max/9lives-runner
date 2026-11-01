@@ -194,6 +194,22 @@ devices only; an owned emulator starts fresh for each test. The markers are
 tested against dumpsys excerpts; they are not qualified on arbitrary phones
 or Android builds.
 
+With `diagnostics: {gestures: true}` the driver reads the app's window count
+and focus (the same filtered `dumpsys window windows` lines) before each
+gesture and again when an operation fails, and attaches one record per
+failed test: the operation, its stop reason, elapsed time, the requested
+coordinates of a touch, the viewport and the window counts before and after.
+It is printed under the job and kept as `targetDiagnostics`. The record
+describes what was observed and claims no cause; screenshot stability is
+not read as input readiness and nothing is retried. With the opt-in, a
+`toBeHidden()` that fails after the window manager dropped one of the app's
+windows since the last gesture is classified `setup observer`
+(`window-gone-element-displayed`): the accessibility snapshot still listed
+an element whose window was gone, as the field investigation of an
+intermittent modal dismissal established. An element that is still in a
+listed window is a real failure. No screenshot, hierarchy, text or log is
+captured, and the reads are off without the opt-in.
+
 The phone is leased exclusively by a host-local lock. Existing UiAutomator2
 automation is rejected. Normal close stops only the leased helper, removes its
 ADB forward and restores the hidden-API policy values and any preexisting

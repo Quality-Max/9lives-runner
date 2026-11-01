@@ -66,7 +66,8 @@ environment problem read as an application failure. Throwing
 `TargetSetupError({classification, reason, stage: 'open'})` from `open`
 stops the session with reason `setup_<classification>`, where the
 classification is `blocked` (a locked device), `dirty` (state a previous
-test left behind), `mismatch` or `unknown`, and the reason is one of a
+test left behind), `mismatch`, `observer` (the accessibility snapshot
+disagreed with the window manager) or `unknown`, and the reason is one of a
 closed list the engine checks. Two optional hooks complete it: `setup()` is
 read after a successful open and returns the record of a declared recovery
 that restored the baseline, so the receipt shows the test ran from it; and
@@ -126,6 +127,17 @@ unique step IDs, terminal test results and a consistent final outcome. The
 list comes from the same worker, so it detects inconsistent evidence, not
 tests the worker chose to omit. Missing, foreign, duplicate, stale, malformed
 and truncated evidence cannot pass.
+
+A driver may also implement `diagnose(failure, context)`, called once per
+test when an operation fails, while the driver is still open, to return a
+bounded `TargetDiagnostic`: operation, stop reason, elapsed time, the
+requested point of a touch, the viewport and the app's window count/focus at
+the last gesture and after the failure. It is attached as
+`9l.target-diagnostic`, reaches Go as one `target_diagnostic` frame per
+attempt and is kept as `targetDiagnostics`; a passed test cannot carry one.
+`recheck` receives the failed operation, and a driver may answer it with the
+`observer` classification (`window-gone-element-displayed`) after a failed
+hidden assertion only.
 
 A `target_setup` frame carries the classification, reason, stage and, for a
 declared recovery, its method, press count and whether it restored the

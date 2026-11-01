@@ -2,8 +2,8 @@ import {test as base, type Locator, type Page, type TestInfo} from '@playwright/
 import {setTimeout as delay} from 'node:timers/promises';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
-import {TargetSetupError, targetSetupType, validTargetSetup, type TargetSetupRecord} from './target-setup';
-export {TargetSetupError, validTargetSetup, type TargetSetupRecord, type SetupClassification} from './target-setup';
+import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
+export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate'] as const;
@@ -61,7 +61,10 @@ export interface TargetDriver extends TargetIdentity {
    * classify the device state (a locked phone, for example) so the failure
    * reads as inconclusive setup, never as an application defect. It must only
    * read state; it never acts on the device. Its own errors are ignored. */
-  recheck?(context: TargetContext): Promise<TargetSetupRecord | undefined>;
+  recheck?(context: TargetContext, failed: {operation: string}): Promise<TargetSetupRecord | undefined>;
+  /** Opt-in: describe a failed operation as bounded metadata, captured before
+   * fixture teardown. Read-only; errors are ignored; one record per test. */
+  diagnose?(failure: {operation: string; reason: string; elapsedMs: number; point?: TargetPoint}, context: TargetContext): Promise<TargetDiagnostic | undefined>;
 }
 
 const defaultOperationMs = 5_000;
@@ -82,6 +85,7 @@ const stopped = (reason: string, cause?: unknown) => new TargetStopped(reason, c
 const recheckMs = 5_000;
 // A closed metadata record; the reporter forwards it as one target_setup frame.
 const attachSetup = (record: TargetSetupRecord) => base.info().attach('9l.target-setup', {body: Buffer.from(JSON.stringify(record)), contentType: targetSetupType});
+const attachDiagnostic = (record: TargetDiagnostic) => base.info().attach('9l.target-diagnostic', {body: Buffer.from(JSON.stringify(record)), contentType: targetDiagnosticType});
 const boundedText = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max;
 
 /** Deterministic shared operations; browser/device handles stay in the worker. */
@@ -91,6 +95,7 @@ export class TargetApp {
   private busy = false;
   private reason = 'canceled';
   private closing?: Promise<void>;
+  private diagnosed = false;
   private externalAbort = () => this.stop('canceled');
 
   constructor(private driver: TargetDriver, expected: TargetIdentity, private options: {deadlineMs: number; signal?: AbortSignal}) {
@@ -132,7 +137,19 @@ export class TargetApp {
   /** Permanently stop this session, including a pending mutation. */
   cancel() { this.stop('canceled'); }
 
-  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs, maxTimeoutMs = maxOperationMs, deadlineReason = () => 'deadline'): Promise<T> {
+  /** Opt-in failure diagnostics: ask the driver once per test, while it is
+   * still open, and attach only a validated record. Never changes the outcome. */
+  private async diagnose(operation: string, reason: string, startedAt: number, point?: TargetPoint) {
+    if (this.diagnosed || !this.driver.diagnose || this.closing) return;
+    this.diagnosed = true;
+    let record: TargetDiagnostic | undefined;
+    try {
+      record = await this.driver.diagnose({operation, reason, elapsedMs: Math.max(0, Date.now() - startedAt), ...(point ? {point} : {})}, {signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
+    } catch { record = undefined; }
+    if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
+  }
+
+  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs, maxTimeoutMs = maxOperationMs, deadlineReason = () => 'deadline', point?: TargetPoint): Promise<T> {
     // The SDK location marks this as a typed target step for the reporter.
     return base.step(`9l target ${operation}`, async () => {
       if (this.controller.signal.aborted) throw stopped(this.reason);
@@ -142,6 +159,7 @@ export class TargetApp {
       }
       this.busy = true;
       const deadlineMs = Math.min(this.options.deadlineMs, Date.now() + timeoutMs);
+      const startedAt = Date.now();
       const signal = this.controller.signal;
       const work = Promise.resolve().then(() => { signal.throwIfAborted(); return body({signal, deadlineMs}); });
       let settled = false;
@@ -173,7 +191,12 @@ export class TargetApp {
         // Keep the first reason (deadline, cancellation, a missing control...)
         // and the local cause. Neither crosses the engine bridge.
         if (!signal.aborted && Date.now() >= deadlineMs) expire();
-        if (signal.aborted) throw error instanceof TargetStopped ? error : stopped(this.reason, error);
+        if (signal.aborted) {
+          // The driver may already be released (an Android deadline closes
+          // it); the driver answers with what it still knows, or nothing.
+          await this.diagnose(operation, this.reason, startedAt, point);
+          throw error instanceof TargetStopped ? error : stopped(this.reason, error);
+        }
         if (error instanceof TargetSetupError) {
           // The driver classified the device/app state before the operation
           // could establish anything about the application.
@@ -182,6 +205,7 @@ export class TargetApp {
           throw stopped(this.reason, error);
         }
         this.stop(error instanceof TargetStopped ? error.reason : 'operation_failed', false);
+        await this.diagnose(operation, this.reason, startedAt, point);
         throw error instanceof TargetStopped ? error : stopped(this.reason, error);
       } finally {
         clearTimeout(timer);
@@ -243,7 +267,7 @@ export class TargetApp {
       if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
       let record: TargetSetupRecord | undefined;
       try {
-        record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
+        record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)}, {operation});
       } catch { record = undefined; }
       if (record === undefined) throw error;
       if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
@@ -274,7 +298,7 @@ export class TargetApp {
     return this.perform('tap-at', async context => {
       if (!validPoint(point)) throw stopped('invalid_point');
       await this.optional('tapAt')({x: point.x, y: point.y}, context);
-    }, options.timeoutMs);
+    }, options.timeoutMs, maxOperationMs, () => 'deadline', validPoint(point) ? {x: point.x, y: point.y} : undefined);
   }
   viewport(options: TargetOperationOptions = {}) {
     return this.perform('viewport', async context => {

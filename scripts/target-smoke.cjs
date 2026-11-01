@@ -138,6 +138,22 @@ assert.equal(lifecycle.summary.receipts[0].targetAssertions, 4);
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');
+// With opt-in diagnostics, a hidden assertion the window manager contradicts
+// is classified as observer staleness and the failure carries a metadata record.
+const observer = invoke('observer', {targets: ['android-fake:finance'], grep: 'outside touch', file: operations, extra: ['--failure-details']});
+assert.equal(observer.code, 1);
+assert.equal(observer.summary.receipts[0].status, 'failed');
+assert.deepEqual(observer.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'}]);
+assert.equal(observer.summary.receipts[0].failures[0].class, 'setup');
+const diagnostic = observer.summary.receipts[0].targetDiagnostics[0];
+assert.equal(diagnostic.operation, 'assert-hidden');
+assert.equal(diagnostic.reason, 'assertion_failed', 'observer: the operation\'s own failure, before reclassification');
+assert.deepEqual([diagnostic.windowsBefore, diagnostic.windowsAfter, diagnostic.viewportWidth], [2, 1, 400]);
+assert(diagnostic.elapsedMs >= 250 && diagnostic.elapsedMs < 5000, `observer: poll duration recorded, got ${diagnostic.elapsedMs}`);
+assert.equal(observer.summary.receipts[0].targetDiagnostics.length, 1, 'observer: one record per test');
+const clean = invoke('healthy-modal', {targets: ['web:finance', 'android-fake:finance'], grep: 'outside touch', file: operations});
+assert.equal(clean.code, 0, 'healthy modal dismissal passes on both targets');
+for (const receipt of clean.summary.receipts) assert.equal(receipt.targetDiagnostics, undefined, `${receipt.target}: no diagnostics without a failure`);
 // A platform skip is complete only when pinned, like any other SDK skip.
 const skip = 'one deterministic scenario|skipped on the native target';
 const unpinned = invoke('skip-unpinned', {grep: skip});

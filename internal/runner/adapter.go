@@ -76,9 +76,10 @@ type DiagnosticsChannel interface {
 }
 
 type Validation struct {
-	AndroidRuntimes []AndroidRuntime
-	TargetSetup     []TargetSetup
-	GoalFailed      bool
+	AndroidRuntimes   []AndroidRuntime
+	TargetSetup       []TargetSetup
+	TargetDiagnostics []TargetDiagnostic
+	GoalFailed        bool
 	// NonGoalFailureCount counts unexpected test failures in tests with no
 	// failed goal steps. Legacy adapters may leave this zero; it is consulted
 	// only when GoalFailed is true.
