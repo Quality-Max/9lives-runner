@@ -36,7 +36,6 @@ const modes = process.argv.slice(2).length ? process.argv.slice(2) : ['healthy',
 const rejectionReasons = {
   'install-fail': 'open_failed_apk_install',
   unavailable: 'open_failed_emulator_boot',
-  digest: 'open_failed_configuration',
   version: 'open_failed_configuration',
 };
 for (const mode of modes) {
@@ -75,6 +74,11 @@ for (const mode of modes) {
     assert.equal(facts.started,true,`${mode}: app onClick must actually be in flight`);
     assert.equal(facts.clickDispatches,1);assert(frames.some(f=>f.operation==='tap'&&f.status==='failed'));
     assert.equal(facts.stopReason,mode==='cancel'?'canceled':'deadline');
+  }
+  if (mode==='digest') {
+    // A wrong fixture digest is a build mismatch classified before install, not a driver fault.
+    assert.deepEqual(receipt.targetSetup.map(({testId, ...rest}) => rest), [{classification:'mismatch', reason:'build-digest', stage:'open'}], 'digest: setup mismatch');
+    assert.equal(facts.stopReason,'setup_mismatch');
   }
   if (mode==='missing'||mode==='ambiguous') {
     assert.equal(facts.clickDispatches,0);assert.equal(facts.stopReason,mode==='missing'?'missing_test_id':'ambiguous_test_id');
