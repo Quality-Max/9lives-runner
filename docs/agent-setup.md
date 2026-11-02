@@ -54,6 +54,10 @@ Read https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/skills/qua
 Improve the test while preserving its requirements. Keep execution in QualityMax's cloud and report the exact revision and run evidence.
 ```
 
+Inside a QualityMax coding session, QualityMax installs a pinned `9l`, starts
+`9l mcp` offline and collects its receipts after every turn; see
+[QualityMax coding sessions](qualitymax-coding-sessions.md).
+
 The skill routes multi-page discovery and generation to QualityMax, local
 source inspection to the coding agent and available 9lives tools, and final
 verification to the hosted runner. Jev stays within the project's existing
