@@ -50,6 +50,7 @@ type event struct {
 	TargetID      string                   `json:"targetId"`
 	TargetVersion string                   `json:"targetVersion"`
 	Operation     string                   `json:"operation"`
+	Reason        string                   `json:"reason"`
 	Runtime       *runner.AndroidRuntime   `json:"runtime"`
 	Setup         *runner.TargetSetup      `json:"setup"`
 	Diagnostic    *runner.TargetDiagnostic `json:"diagnostic"`
@@ -87,6 +88,40 @@ type testState struct {
 	// after the worker had reported a passed assertion step in it: the body
 	// ran before a modifier relabeled the result.
 	skippedAfterAssertions bool
+	// failedAttempt is the failed step the attempt in progress attributes
+	// its failure to, and failedFinal that of the last completed attempt;
+	// see attribute. setupClass is a setup classification that was not
+	// recovered.
+	failedAttempt failedStep
+	failedFinal   failedStep
+	setupClass    string
+}
+
+// failedStep is the step a test's failure is attributed to, with the number
+// of failed steps in the same attempt.
+type failedStep struct {
+	category, operation, reason string
+	count                       int
+}
+
+// attribute keeps the first failed target operation, else the first failed
+// assertion, else the first failed step. A typed target step ends after the
+// browser calls inside it, and a test.step after the expect inside it, so
+// the first failure alone would name the wrapper's child or the wrapper.
+func (step *failedStep) attribute(category, operation, reason string) {
+	rank := func(category, operation string) int {
+		switch {
+		case operation != "":
+			return 2
+		case category == "assertion":
+			return 1
+		}
+		return 0
+	}
+	step.count++
+	if step.count == 1 || rank(category, operation) > rank(step.category, step.operation) {
+		step.category, step.operation, step.reason = category, operation, reason
+	}
 }
 
 func TargetID(target string) string {
@@ -192,6 +227,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				return invalid("missing or changed declared outcome")
 			}
 			state.retry, state.active, state.reportedAttempt, state.declared = frame.Retry, true, 0, frame.ExpectedStatus
+			state.failedAttempt = failedStep{}
 		case "target_runtime":
 			if !strings.HasPrefix(identity.Target, "android:") || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.runtime || frame.Runtime == nil || !validAndroidRuntime(*frame.Runtime) {
 				return invalid("missing, foreign or malformed Android runtime")
@@ -211,6 +247,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if frame.Setup.Recovery == nil || !frame.Setup.Recovery.Restored {
 				state.setupUnrecovered = true
+				state.setupClass = frame.Setup.Classification
 			}
 			frame.Setup.TestID = frame.TestID
 			validation.TargetSetup = append(validation.TargetSetup, *frame.Setup)
@@ -228,9 +265,17 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if !oneOf(frame.Category, "action", "assertion", "browser", "fixture", "other", "goal") || !oneOf(frame.Status, "passed", "failed") {
 				return invalid("unsupported step outcome")
 			}
+			// A stop reason is the target fixture's closed token for a failed
+			// typed operation; nothing else of an error crosses the bridge.
+			if frame.Reason != "" && (frame.Operation == "" || frame.Status != "failed" || !stopReason.MatchString(frame.Reason)) {
+				return invalid("unsupported target stop reason")
+			}
 			steps[frame.StepID] = true
 			if frame.Category == "assertion" && frame.Status == "passed" {
 				state.reportedAttempt++
+			}
+			if frame.Status == "failed" {
+				state.failedAttempt.attribute(frame.Category, frame.Operation, frame.Reason)
 			}
 			if frame.Operation != "" {
 				assertion := oneOf(frame.Operation, targetAssertions...)
@@ -286,6 +331,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			state.statuses = append(state.statuses, frame.Status)
 			if frame.Status != "skipped" {
 				state.reportedFinal, state.finalStatus = state.reportedAttempt, frame.Status
+				state.failedFinal = state.failedAttempt
 			} else {
 				// From the last attempt only: a skip before any reported
 				// assertion step did not run the body, whatever an earlier
@@ -331,6 +377,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					validation.PassedWithoutAssertions++
 				}
 				if frame.Outcome == "unexpected" {
+					if len(validation.FailedTests) < runner.MaxFailureSummaryTests {
+						validation.FailedTests = append(validation.FailedTests, failedTest(frame.TestID, state))
+					}
 					validation.FailureCount++
 					// Preserve failures in other tests even if a goal failed
 					// (including a caught goal error) elsewhere in this file.
@@ -396,6 +445,18 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		validation.Description += "; 9l.target/2; required target tests; worker-reported target assertion count only"
 	}
 	return validation, nil
+}
+
+// failedTest summarizes a failed test from its validated frames only: its
+// digest, final status, attributed step and setup classification.
+func failedTest(id string, state *testState) runner.FailedTestSummary {
+	step := state.failedFinal
+	return runner.FailedTestSummary{
+		TestID: id, Status: state.finalStatus,
+		Class: runner.EngineFailureClass(state.finalStatus, step.category, step.reason, state.setupClass),
+		Step:  step.category, Operation: step.operation, Reason: step.reason, Setup: state.setupClass,
+		FailedSteps: min(step.count, runner.MaxFailureSummaryCount), Attempts: len(state.statuses),
+	}
 }
 
 // Match Playwright test.outcome(): an expected attempt after an unexpected
@@ -504,6 +565,9 @@ func decodeEvent(raw []byte) (event, error) {
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
 		if frame.Operation != "" {
 			fields = append(fields, "operation")
+		}
+		if frame.Reason != "" {
+			fields = append(fields, "reason")
 		}
 	case "test_end":
 		fields = append(fields, "testId", "retry", "status", "expectedStatus", "artifacts")

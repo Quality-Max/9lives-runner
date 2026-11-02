@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {closeSync, openSync, writeSync} from 'node:fs';
-import type {Reporter, FullConfig, Suite, TestCase, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
+import type {Reporter, FullConfig, Suite, TestCase, TestError, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validAndroidRuntime, androidRuntimeType} from './android-runtime';
 import {validTargetSetup, targetSetupType, validTargetDiagnostic, targetDiagnosticType} from './target-setup';
@@ -10,6 +10,13 @@ function insideAssertion(step: TestStep) {
     if (ancestor.category === 'expect') return true;
   }
   return false;
+}
+
+// A typed target step fails only with "9lives target stopped: <reason>", where
+// the reason is the fixture's own token. Only a token of that exact form crosses
+// the bridge; any other error text, or none, sends no reason.
+function targetStopReason(error: TestError | undefined) {
+  return /^(?:Error: )?9lives target stopped: ([a-z_]{1,64})$/.exec(error?.message ?? '')?.[1];
 }
 
 // Worker logs, error messages, step titles, URLs and attachment bodies never enter
@@ -70,10 +77,12 @@ export default class EngineReporter implements Reporter {
     if (step.category === 'expect' && insideAssertion(step)) return;
     const categories: Record<string, string> = {'test.step': 'action', expect: 'assertion', 'pw:api': 'browser', fixture: 'fixture'};
     const operation = this.target && step.category === 'test.step' && step.location?.file === targetStepFile && step.title.startsWith('9l target ') ? step.title.slice('9l target '.length) : undefined;
+    const reason = operation && step.error ? targetStopReason(step.error) : undefined;
     this.emit('step_end', {
       testId: this.testId(test), retry: result.retry, stepId: `step-${++this.stepSeq}`,
       category: operation ? operation.startsWith('assert-') ? 'assertion' : 'action' : step.category === 'test.step' && step.title === '9l goal' ? 'goal' : categories[step.category] ?? 'other', status: step.error ? 'failed' : 'passed',
       ...(operation ? {operation} : {}),
+      ...(reason ? {reason} : {}),
     });
   }
   onTestEnd(test: TestCase, result: TestResult) {

@@ -16,7 +16,70 @@ SDK versions.
   frames. A driver or SDK that declares `9l.target/1` is rejected with the
   upgrade message: update the CLI and `@9l/playwright` together. Plan,
   progress event and `9l version` stay at version 1; `9l.engine/1` is
-  unchanged.
+  unchanged. Version 2 receipts also carry this release's `failureSummary`
+  and provenance `dependencyChanges`.
+### Receipts
+
+- Every receipt that did not pass now keeps a bounded, metadata-only
+  `failureSummary`, with or without `--failure-details` (#213), so the
+  reason for an earlier failed attempt is not lost when the project's own
+  output is overwritten. `stop` names why the attempt ended
+  (`test_failed`, `goal_failed`, `deadline`, `canceled`,
+  `invalid_evidence`, `evidence_truncated`, `exit_without_failure`,
+  `provenance_changed`, `not_started` or `infrastructure`), `failedTests`
+  counts the failed tests in validated evidence, and `tests` describes up to
+  20 of them (`testsTruncated` when more failed): with `--sdk`, the engine's
+  SHA-256 test ID (the one `targetSetup` and `targetDiagnostics` use), the
+  failure `class`, the `status` of the last completed Playwright attempt,
+  the category of the failed `step` it is attributed to (the first failed
+  target operation, else assertion, else step), the target `operation` and
+  its stop `reason`, an unrecovered `setup` classification, and
+  `failedSteps` and `attempts` counts. The class comes from structured
+  facts only: a target stop reason `assertion_failed` or a failed `expect`
+  is `assertion`, `deadline` is `action-timeout`, a `setup_*` reason or an
+  unrecovered setup record is `setup`, a timed-out test is `timeout`. For
+  plain Playwright runs the entries keep only the class and status of the
+  report's failures. The summary never holds titles, locations, error
+  messages, stack frames, page or app text, URLs, selector values,
+  environment values or credentials; Go validates it as a closed record
+  and drops any entry outside it, keeping the count. `9l run` and
+  `9l result` print the entries under a failed job when no detailed
+  failures are listed. To carry the reason, a failed typed target step's
+  `step_end` frame gains an optional `reason` token (`[a-z_]{1,64}`, from
+  the fixture's own `9lives target stopped: <reason>`); no other error text
+  crosses the bridge. Go still accepts frames without it, but an older CLI
+  rejects a stream that carries it, so update the CLI and `@9l/playwright`
+  together. The receipt field is additive and ships with the receipt
+  version change of the next beta; the published schemas are regenerated.
+  The spec location of an SDK failure is not in the summary: the engine
+  stream carries no locations, and `--failure-details` still adds titles,
+  lines and errors.
+
+### Provenance
+
+- Imported local helpers are part of agent provenance (#215). `9l
+  provenance` writes snapshot version 2, which adds `dependencies` (the
+  repo-relative path, kind and SHA-256 of every module the spec reaches
+  through relative `import`, `export … from`, `import('…')` and
+  `require('…')`, plus the lockfile nearest the spec) and
+  `dependenciesSHA256`; file contents are never stored. Editing an imported
+  helper after the snapshot was a `matched` spec before; it is now a
+  mismatch, `assess` and `run` report `dependencies: "mismatch"` with
+  `dependencyChanges` naming the modified, added or removed path, and `run`
+  refuses or invalidates the attempt. Capture parses source lexically and
+  never executes it. An import that cannot be resolved, resolves outside the
+  repository (including through a symlink), is absolute (`/`, `\`, a drive
+  letter or UNC path, on every OS) or has a non-literal argument,
+  and a graph over 256 local modules, 1 MiB per module, 8 MiB together or
+  64 MiB per lockfile, fails capture, so provenance stays unknown instead of
+  matching. Package, built-in and path-alias imports are not followed and
+  `node_modules` is not read; installed packages are covered only through
+  the lockfile digest, and files read at runtime are not covered. The scan
+  is not a full parser, so unusual syntax can hide an import on the same
+  line. Version 1 snapshots are still accepted and compared with
+  `scope: "spec"`; the assessment and receipt schemas gain the optional
+  fields, and older CLIs reject version 2 snapshots. The snapshot size limit
+  is 256 KiB, up from 4 KiB.
 
 ### Android (experimental)
 

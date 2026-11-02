@@ -160,7 +160,14 @@ the test; `9l run` and `9l result` print each under the job, and with
 result is inconclusive setup evidence; it does not say the application
 behaved correctly.
 
-Typed target steps record only the operation enum, category and outcome. The
+Typed target steps record only the operation enum, category and outcome, and
+for a failed operation the stop reason token it failed with (`[a-z_]{1,64}`,
+such as `assertion_failed`, `deadline`, `operation_failed` or
+`setup_blocked`), read only from the fixture's own `9lives target stopped:`
+error. The receipt's `failureSummary` keeps them per failed test, with the
+test's setup classification, so an assertion failure, an operation that could
+not run, a deadline and a locked device stay distinguishable without
+`--failure-details` or a rerun. The
 reporter counts only steps created by the SDK's own target module; a user step
 titled `9l target ...` is an ordinary step. Passed target tests require at
 least one successful target assertion and no failed target operation.

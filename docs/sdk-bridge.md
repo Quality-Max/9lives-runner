@@ -155,6 +155,15 @@ copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
 
+A failed typed target step (see [targets](targets.md)) also sends its stop
+reason, a `[a-z_]{1,64}` token taken only from the fixture's own
+`9lives target stopped: <reason>` error; any other error text sends none. From
+the validated stream alone, Go builds the receipt's `failureSummary`: per
+failed test, its hashed ID, class, final status, the category, operation and
+stop reason of the failed step, an unrecovered setup classification and
+counts. It is kept without any opt-in and holds no titles, locations or error
+text; see [the CLI reference](cli.md).
+
 `9l run --sdk --failure-details` is the opt-in exception for receipts, not for
 the protocol: Playwright's JSON reporter runs beside the engine reporter and
 writes to a separate private per-attempt file. After the attempt validates
