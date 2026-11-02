@@ -168,7 +168,7 @@ test('attached phone classifies a locked device and leaked state as setup, never
   const appWindow = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
   const focus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
   const device = {state: 'showing=false\nmInputRestricted=false\nmWakefulness=Awake', windows: [appWindow, focus].join('\n'), ime: 'mInputShown=false'};
-  let commands = [], sessions = 0, backPresses = 0, onBack = () => {};
+  let commands = [], sessions = 0, backPresses = 0, onBack = () => {}, failReads = false;
   const serial = `test-${randomUUID()}`;
   let opened = [];
   try {
@@ -186,7 +186,7 @@ test('attached phone classifies a locked device and leaked state as setup, never
       if (command[0] === 'get-state') result = 'device';
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
-      else if (script.includes('dumpsys window; dumpsys power')) result = device.state;
+      else if (script.includes('dumpsys window; dumpsys power')) { if (failReads) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = device.state; }
       else if (script.includes('dumpsys window windows')) result = device.windows;
       else if (script.includes('dumpsys input_method')) result = device.ime;
       else if (script.includes('pm path io.appium.settings')) result = 'absent';
@@ -269,6 +269,22 @@ test('attached phone classifies a locked device and leaked state as setup, never
     onBack = () => {};
     await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 3, restored: false}});
     assert.equal(backPresses, 3);
+    // A reading the driver cannot interpret after Back is not a restored baseline.
+    onBack = () => { device.ime = 'mInputShown=false'; device.windows = [appWindow, '  mCurrentFocus=null'].join('\n'); };
+    await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 1, restored: false}});
+    device.windows = [appWindow, focus].join('\n');
+    onBack = () => {};
+    // Before any Back press, an unreadable baseline classifies nothing.
+    device.ime = 'mImeWindowVis=0x0';
+    driver = await open({recovery: {back: 3}});
+    assert.equal(driver.setup(), undefined);
+    assert.equal(backPresses, 0);
+    // A phone that cannot be read at a recheck is unknown, not silently unlocked.
+    failReads = true;
+    assert.deepEqual(await driver.recheck(context()), {classification: 'unknown', reason: 'device-state-unknown', stage: 'recheck'});
+    failReads = false;
+    await driver.close();
+    device.ime = 'mInputShown=true';
     assert(!commands.some(a => a.includes('clear') || a.includes('force-stop') && a.includes(base.appPackage) || a.includes('uninstall')), 'recovery never clears, stops or removes the app');
     // A clean baseline records nothing.
     device.ime = 'mInputShown=false';

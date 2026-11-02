@@ -4,7 +4,7 @@
 // unfamiliar Android build is reported as unknown, never guessed.
 
 /** Keyguard and wakefulness markers from `dumpsys window` and `dumpsys power`. */
-export const deviceStatePattern = 'mShowingLockscreen=|isStatusBarKeyguard=|KeyguardServiceDelegate|mKeyguardShowing=|mDreamingLockscreen=|mInputRestricted=|mWakefulness=';
+export const deviceStatePattern = 'mShowingLockscreen=|isStatusBarKeyguard=|(^| )showing=|mKeyguardShowing=|mDreamingLockscreen=|mInputRestricted=|mWakefulness=';
 export type DeviceState = 'unlocked' | 'locked' | 'screen-off' | 'unknown';
 export function parseDeviceState(text: string): DeviceState {
   const wakefulness = /mWakefulness=(\w+)/.exec(text)?.[1];
