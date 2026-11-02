@@ -51,6 +51,31 @@ test('the outer deadline after a false observation keeps the outer deadline', as
   finally { await app.close(); }
 });
 
+// Read times vary: one slow read early, fast ones after, and a slow one again
+// once 600 ms have passed. Budgeting only on the last read would start that
+// slow read near the end, overrun the bound and release the Android driver;
+// budgeting on the slowest read so far ends the assertion in time.
+test('a failing assertion with uneven read times ends before its bound and keeps the Android driver', async () => {
+  let closed = 0, reads = 0;
+  const started = Date.now();
+  const read = async (context: TargetContext) => {
+    reads++;
+    await delay(reads === 1 || Date.now() - started >= 600 ? 400 : 50, undefined, {signal: context.signal});
+    return 'wrong';
+  };
+  const driver: TargetDriver = {
+    kind: 'android', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
+    open: async () => {}, reset: async () => {}, close: async () => { closed++; },
+    observeTestId: async () => [{tap: async () => {}, fill: async () => {}, visible: async () => true, state: async () => true, text: read}],
+  };
+  const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 5000});
+  try {
+    await expect(app.getByTestId('receipt').toHaveText('wanted', 1000)).rejects.toThrow('assertion_failed');
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(closed).toBe(0);
+  } finally { await app.close(); }
+});
+
 test('an Android operation deadline closes the driver even when abort settles its transport', async () => {
   let closed = 0;
   const driver: TargetDriver = {
