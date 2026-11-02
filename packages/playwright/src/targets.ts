@@ -382,9 +382,9 @@ export class TargetApp {
         if (!validRect(rect)) throw stopped('invalid_property');
         return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
       }, options.timeoutMs),
-      toBeVisible: (timeoutMs?: number) => assertion('assert-visible', (handle, context) => handle.visible(context), timeoutMs),
+      toBeVisible: (timeoutMs?: number) => assertion('assert-visible', async (handle, context) => await visibility(handle, context), timeoutMs),
       /** Passes when the control is absent or not displayed. */
-      toBeHidden: (timeoutMs?: number) => assertion('assert-hidden', async (handle, context) => !await handle.visible(context), timeoutMs, true),
+      toBeHidden: (timeoutMs?: number) => assertion('assert-hidden', async (handle, context) => !await visibility(handle, context), timeoutMs, true),
       toHaveText: (value: string, timeoutMs?: number) => {
         if (!boundedText(value, 4096)) return assertion('assert-text', async () => { throw stopped('invalid_value'); }, timeoutMs);
         return assertion('assert-text', async (handle, context) => {
@@ -400,6 +400,13 @@ export class TargetApp {
   }
 }
 
+// A driver's visibility answer counts only as a boolean: a missing or
+// malformed return proves neither visible nor hidden.
+const visibility = async (handle: TargetHandle, context: TargetContext) => {
+  const visible: unknown = await handle.visible(context);
+  if (typeof visible !== 'boolean') throw stopped('invalid_property');
+  return visible;
+};
 const coordinate = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
 // A rectangle origin may be negative: a control scrolled partly above or
 // left of the viewport still has geometry. Tap coordinates and sizes do not.

@@ -371,7 +371,12 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				validation.Description += fmt.Sprintf("; %d skipped test(s) had reported a passed assertion step", validation.SkippedAfterAssertions)
 			}
 			if len(validation.TargetSetup) != 0 {
-				validation.Description += fmt.Sprintf("; %d test(s) carry a driver setup classification", len(validation.TargetSetup))
+				// A test may carry an open and a recheck record; count tests, not records.
+				classified := map[string]bool{}
+				for _, setup := range validation.TargetSetup {
+					classified[setup.TestID] = true
+				}
+				validation.Description += fmt.Sprintf("; %d test(s) carry a driver setup classification", len(classified))
 			}
 			if len(validation.TargetDiagnostics) != 0 {
 				validation.Description += fmt.Sprintf("; %d opt-in failure diagnostic(s)", len(validation.TargetDiagnostics))
