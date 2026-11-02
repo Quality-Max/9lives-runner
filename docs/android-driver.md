@@ -160,8 +160,9 @@ through the local `apksigner`. The runtime receipt records `versionCode`,
 
 To update the app in place from a project script, `installInPlace({sdkRoot,
 deviceSerial, apk})` takes the same exclusive device lease a test takes
-(`device_in_use` while a test or another installer holds it), reads the new
-APK's package and signer, compares the signer with the installed app's and
+(`device_in_use` while a test or another installer holds it), copies the new
+APK into a private snapshot that it hashes, inspects and installs, so a build
+replacing the file meanwhile changes nothing, reads its package and signer, compares the signer with the installed app's and
 refuses on a difference before any device change; a package not yet
 installed is a first installation. Otherwise it runs `adb install -r`,
 verifies the installed digest, releases only its own lease and returns the

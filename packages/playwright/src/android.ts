@@ -747,6 +747,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   };
 }
 
+const maxApkBytes = 256 * 1024 * 1024;
+
 /** Install or update an app on an explicitly selected device without
  * uninstalling or clearing its data. The APK's signing certificate must
  * match the installed app's, read through the local apksigner; a different
@@ -760,41 +762,49 @@ export async function installInPlace(options: {sdkRoot: string; deviceSerial: st
   const c: TargetContext = {signal: new AbortController().signal, deadlineMs: Date.now() + Math.min(Math.max(options.timeoutMs ?? 300_000, 1_000), 900_000)};
   const apk = resolve(options.apk);
   const info = await stat(apk);
-  if (!info.isFile() || info.size > 256 * 1024 * 1024) throw failure('invalid_apk');
-  const apkSHA256 = createHash('sha256').update(await readFile(apk)).digest('hex');
-  const badging = await command(join(tools, 'aapt2'), ['dump', 'badging', apk], c, env);
-  const appPackage = /^package: name='([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)'/m.exec(badging)?.[1];
-  if (!appPackage) throw failure('unreadable_package');
-  const signer = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', apk], c, env));
-  if (!signer) throw failure('unreadable_signer');
-  const run = (args: string[]) => command(adb, ['-s', options.deviceSerial, ...args], c, env);
-  // The same exclusive lease a test takes: never install under a running
-  // test or beside another installer. Only the lease this call created is released.
-  const lock = androidLeasePath(options.deviceSerial);
-  await mkdir(dirname(lock), {recursive: true, mode: 0o700});
-  try { await mkdir(lock, {mode: 0o700}); } catch { throw failure('device_in_use'); }
+  if (!info.isFile() || info.size > maxApkBytes) throw failure('invalid_apk');
+  // One private snapshot is hashed, inspected, verified and installed, so a
+  // build or download replacing the caller's file meanwhile changes nothing.
+  const bytes = await readFile(apk);
+  if (bytes.length > maxApkBytes) throw failure('invalid_apk');
+  const apkSHA256 = createHash('sha256').update(bytes).digest('hex');
+  const scratch = await mkdtemp(join(process.env.TMPDIR ?? homedir(), '9l-install-'));
   try {
-    if (await run(['get-state']) !== 'device' || await run(['shell', 'getprop', 'ro.kernel.qemu']) === '1') throw failure('not_physical_device');
-    // pm path exits nonzero for an absent package: a first installation, not a transport failure.
-    const path = await run(shellArgs(`pm path ${appPackage} 2>/dev/null || true`));
-    if (path) {
-      if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
-      const scratch = await mkdtemp(join(process.env.TMPDIR ?? homedir(), '9l-install-'));
-      try {
+    const snapshot = join(scratch, 'app.apk');
+    await writeFile(snapshot, bytes, {mode: 0o600});
+    const badging = await command(join(tools, 'aapt2'), ['dump', 'badging', snapshot], c, env);
+    const appPackage = /^package: name='([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)'/m.exec(badging)?.[1];
+    if (!appPackage) throw failure('unreadable_package');
+    const signer = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', snapshot], c, env));
+    if (!signer) throw failure('unreadable_signer');
+    const run = (args: string[]) => command(adb, ['-s', options.deviceSerial, ...args], c, env);
+    // The same exclusive lease a test takes: never install under a running
+    // test or beside another installer. Only the lease this call created is released.
+    const lock = androidLeasePath(options.deviceSerial);
+    await mkdir(dirname(lock), {recursive: true, mode: 0o700});
+    try { await mkdir(lock, {mode: 0o700}); } catch { throw failure('device_in_use'); }
+    try {
+      if (await run(['get-state']) !== 'device' || await run(['shell', 'getprop', 'ro.kernel.qemu']) === '1') throw failure('not_physical_device');
+      // pm path exits nonzero for an absent package: a first installation, not a transport failure.
+      const path = await run(shellArgs(`pm path ${appPackage} 2>/dev/null || true`));
+      if (path) {
+        if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
         const pulled = join(scratch, 'installed.apk');
         await run(['pull', path.slice(8), pulled]);
         const installed = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', pulled], c, env));
         if (installed !== signer) throw failure('signer_mismatch');
-      } finally { await rm(scratch, {recursive: true, force: true}); }
+      }
+      await run(['install', '--no-streaming', '-r', snapshot]);
+      const installedPath = await run(['shell', 'pm', 'path', appPackage]);
+      if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(installedPath)) throw failure('unsupported_installed_build');
+      const digest = (await run(['shell', 'sha256sum', installedPath.slice(8)])).split(/\s+/)[0];
+      if (digest !== apkSHA256) throw failure('installed_build_changed');
+      const version = parsePackageVersion(await run(shellArgs(`dumpsys package ${appPackage} 2>/dev/null | grep -E "${packagePattern}" | head -c 2048`)));
+      return {appPackage, apkSHA256, signer, ...version};
+    } finally {
+      await rm(lock, {recursive: true, force: true});
     }
-    await run(['install', '--no-streaming', '-r', apk]);
-    const installedPath = await run(['shell', 'pm', 'path', appPackage]);
-    if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(installedPath)) throw failure('unsupported_installed_build');
-    const digest = (await run(['shell', 'sha256sum', installedPath.slice(8)])).split(/\s+/)[0];
-    if (digest !== apkSHA256) throw failure('installed_build_changed');
-    const version = parsePackageVersion(await run(shellArgs(`dumpsys package ${appPackage} 2>/dev/null | grep -E "${packagePattern}" | head -c 2048`)));
-    return {appPackage, apkSHA256, signer, ...version};
   } finally {
-    await rm(lock, {recursive: true, force: true});
+    await rm(scratch, {recursive: true, force: true});
   }
 }

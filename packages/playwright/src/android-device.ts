@@ -88,15 +88,17 @@ export function parsePosture(text: string): Posture {
   return ({OPENED: 'opened', HALF_OPENED: 'half-opened', CLOSED: 'closed'} as Record<string, Posture>)[name ?? ''] ?? 'unknown';
 }
 
-/** Package version from `dumpsys package <pkg>`. */
+/** Package version from `dumpsys package <pkg>`. Each field starts its own
+ * (indented) line, so text inside another field's value never matches. */
 export const packagePattern = 'versionCode=|versionName=';
 export type PackageVersion = {versionCode: string; versionName: string};
 export function parsePackageVersion(text: string): PackageVersion {
-  const code = /versionCode=([0-9]{1,10})(?:[\s]|$)/.exec(text)?.[1];
-  const name = /versionName=([A-Za-z0-9._+-]{1,64})[ \t]*$/m.exec(text)?.[1];
+  const code = /^[ \t]*versionCode=([0-9]{1,10})(?:[ \t]|$)/m.exec(text)?.[1];
+  const name = /^[ \t]*versionName=([A-Za-z0-9._+-]{1,64})[ \t]*$/m.exec(text)?.[1];
   return {versionCode: code ?? 'unknown', versionName: name ?? 'unknown'};
 }
-/** The first signer's certificate digest from `apksigner verify --print-certs`. */
+/** The first signer's certificate digest from `apksigner verify --print-certs`:
+ * a complete output line, so a certificate DN quoting one never matches. */
 export function parseSigner(text: string): string | undefined {
-  return /Signer #1 certificate SHA-256 digest: ([a-f0-9]{64})/.exec(text)?.[1];
+  return /^Signer #1 certificate SHA-256 digest: ([a-f0-9]{64})[ \t]*$/m.exec(text)?.[1];
 }

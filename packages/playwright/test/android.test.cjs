@@ -698,7 +698,7 @@ test('attached phone verifies the installed build against declared identity and 
   const artifactDigest = createHash('sha256').update('synthetic artifact bytes').digest('hex');
   const device = {digest: artifactDigest, version: '    versionCode=28 minSdk=24 targetSdk=35\n    versionName=1.4.0', installedSigner: 'a1'.repeat(32), installed: true};
   const commands = [];
-  let sessions = 0;
+  let sessions = 0, onInspect = () => {}, installedBytes;
   const serial = `test-${randomUUID()}`;
   const opened = [];
   try {
@@ -712,11 +712,11 @@ test('attached phone verifies the installed build against declared identity and 
       commands.push([path.basename(file), ...args]);
       if (path.basename(file) === 'apksigner') {
         const target = args[2];
-        const signer = target.endsWith('installed.apk') ? device.installedSigner : target === artifact ? 'a1'.repeat(32) : 'b2'.repeat(32);
+        const signer = target.endsWith('installed.apk') ? device.installedSigner : require('node:fs').readFileSync(target, 'utf8') === 'synthetic artifact bytes' ? 'a1'.repeat(32) : 'b2'.repeat(32);
         queueMicrotask(() => callback(null, `Signer #1 certificate DN: CN=9l\nSigner #1 certificate SHA-256 digest: ${signer}\n`));
         return new EventEmitter();
       }
-      if (path.basename(file) === 'aapt2') { queueMicrotask(() => callback(null, "package: name='dev.ninelives.fixture' versionCode='28' versionName='1.4.0'")); return new EventEmitter(); }
+      if (path.basename(file) === 'aapt2') { onInspect(); queueMicrotask(() => callback(null, "package: name='dev.ninelives.fixture' versionCode='28' versionName='1.4.0'")); return new EventEmitter(); }
       const command = args.slice(2);
       const script = command[1] === 'sh' ? command[3] : '';
       let result = '';
@@ -725,7 +725,7 @@ test('attached phone verifies the installed build against declared identity and 
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') { if (!device.installed) { queueMicrotask(() => callback(new Error('exit 1'))); return new EventEmitter(); } result = 'package:/data/app/test/base.apk'; }
       else if (script.includes('pm path dev.ninelives.fixture')) result = device.installed ? 'package:/data/app/test/base.apk' : '';
-      else if (command[0] === 'install') { device.installed = true; result = 'Success'; }
+      else if (command[0] === 'install') { device.installed = true; installedBytes = require('node:fs').readFileSync(command.at(-1), 'utf8'); result = 'Success'; }
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
       else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
       else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
@@ -797,8 +797,17 @@ test('attached phone verifies the installed build against declared identity and 
     commands.length = 0;
     assert.deepEqual(await installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact}), {appPackage: 'dev.ninelives.fixture', apkSHA256: artifactDigest, signer: 'a1'.repeat(32), versionCode: '29', versionName: '1.4.0'});
     const install = commands.find(c => c.includes('install'));
-    assert.deepEqual(install.slice(3), ['install', '--no-streaming', '-r', artifact]);
+    assert.deepEqual(install.slice(3, 6), ['install', '--no-streaming', '-r']);
+    assert(install[6] !== artifact && path.basename(path.dirname(install[6])).startsWith('9l-install-'), 'the private snapshot is installed, not the caller\'s path');
+    assert.equal(await fs.access(install[6]).then(() => true, () => false), false, 'the snapshot is removed');
     assert(!commands.some(c => c.includes('uninstall') || c.includes('clear')));
+    // A build replacing the caller's file after it was read changes nothing:
+    // the inspected, verified and installed bytes are the snapshot's.
+    onInspect = () => { require('node:fs').writeFileSync(artifact, 'replaced by a concurrent build'); };
+    assert.deepEqual(await installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact}), {appPackage: 'dev.ninelives.fixture', apkSHA256: artifactDigest, signer: 'a1'.repeat(32), versionCode: '29', versionName: '1.4.0'});
+    assert.equal(installedBytes, 'synthetic artifact bytes');
+    onInspect = () => {};
+    await fs.writeFile(artifact, 'synthetic artifact bytes');
     assert.equal(await fs.access(androidLeasePath(serial)).then(() => true, () => false), false, 'the installer releases its lease');
     // A first installation: no package yet, nothing to pull or compare, install proceeds.
     device.installed = false;
