@@ -175,7 +175,8 @@ helpers, hidden-API policies or an Appium session touch the device. After a
 completed assertion failure it rechecks the same markers, so a phone that
 locked while a readiness poll was running is classified instead of looking
 like a missing control; a build whose markers it does not recognize is
-reported as `unknown`. The driver never requests, stores or bypasses a PIN,
+reported as `unknown`, and a phone whose state cannot be read before the
+test is an `unknown` setup classification rather than an open failure. The driver never requests, stores or bypasses a PIN,
 never attempts to unlock and never changes the lock or timeout settings.
 
 After launching the activity it compares the app's state with a declared
