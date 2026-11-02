@@ -224,8 +224,8 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				state.reportedAttempt++
 			}
 			if frame.Operation != "" {
-				assertion := oneOf(frame.Operation, "assert-visible", "assert-text", "assert-state")
-				if !targeted || !oneOf(frame.Operation, "open", "reset", "tap", "fill", "assert-visible", "assert-text", "assert-state") || (assertion && frame.Category != "assertion") || (!assertion && frame.Category != "action") {
+				assertion := oneOf(frame.Operation, targetAssertions...)
+				if !targeted || !(assertion || oneOf(frame.Operation, targetActions...)) || (assertion && frame.Category != "assertion") || (!assertion && frame.Category != "action") {
 					return invalid("unsupported target operation")
 				}
 				if frame.Status == "failed" {
@@ -409,6 +409,11 @@ func outcome(state *testState) string {
 	}
 	return "expected"
 }
+
+// The typed operations of the shared target fixture (9l.target/1). Queries
+// such as bounds and viewport are actions: executed, never assertions.
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate"}
+var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
 
 // Capabilities is the exact capability list a hello frame must carry. The
 // SDK declares the same list in its package metadata so doctor can compare

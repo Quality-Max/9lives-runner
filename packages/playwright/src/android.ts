@@ -6,7 +6,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord} from './targets';
+import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize} from './targets';
 import {deviceStatePattern, imePattern, parseDeviceState, parseIme, parseWindows, windowPattern} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
@@ -265,7 +265,32 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       if (value !== 'true' && value !== 'false' && typeof value !== 'boolean') throw failure('unavailable_state');
       return value === true || value === 'true';
     },
+    // One supported UiAutomator2 gesture inside the resolved element; the
+    // driver reports whether more content exists, which is not retained.
+    scroll: async (direction, percent, c) => {
+      await endpoint('/execute/sync', c, 'POST', {script: 'mobile: scrollGesture', args: [{elementId: await resolveOne(id, c), direction, percent}]});
+    },
+    bounds: async c => rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)),
   });
+  const pixel = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+  const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
+  // Only finite numbers are rounded: a null or boolean field is a malformed
+  // response, never a zero. Origins may be negative for a partly scrolled-out control.
+  const rect = (value: any): TargetRect => {
+    const fields = [value?.x, value?.y, value?.width, value?.height];
+    if (!fields.every(field => typeof field === 'number' && Number.isFinite(field))) throw failure('invalid_property');
+    const r = {x: Math.round(value.x), y: Math.round(value.y), width: Math.round(value.width), height: Math.round(value.height)};
+    if (!offset(r.x) || !offset(r.y) || !pixel(r.width) || !pixel(r.height)) throw failure('invalid_property');
+    return r;
+  };
+  const keyboardShown = async (c: TargetContext) => {
+    check(c);
+    const ime = parseIme(await adbRun(shell(`dumpsys input_method 2>/dev/null | grep -E "${imePattern}" | head -c 1024`), c));
+    if (ime === 'unknown') throw failure('unavailable_state');
+    return ime === 'shown';
+  };
+  const appCommand = (script: 'mobile: terminateApp' | 'mobile: activateApp', c: TargetContext) =>
+    endpoint('/execute/sync', c, 'POST', {script, args: [{appId: options.appPackage}]});
   const cleanup = async () => {
     await Promise.all([stop(emulator), stop(server)]);
     // Aborting HTTP alone cannot stop an already dispatched native action.
@@ -516,6 +541,34 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     async observeTestId(id, c) { return (await matches(id, c)).slice(0, 2).map(() => handle(id)); },
     setup: () => setupRecord,
+    async back(c) { await endpoint('/back', c, 'POST', {}); },
+    keyboardShown,
+    // Back dismisses a shown keyboard without touching the selected input
+    // method; the result is read back rather than assumed.
+    async hideKeyboard(c) {
+      if (!await keyboardShown(c)) return;
+      await endpoint('/back', c, 'POST', {});
+      for (;;) {
+        if (!await keyboardShown(c)) return;
+        if (Date.now() + 100 >= c.deadlineMs) throw failure('keyboard_not_hidden');
+        await delay(100, undefined, {signal: c.signal});
+      }
+    },
+    async tapAt(point, c) {
+      if (!pixel(point.x) || !pixel(point.y)) throw failure('invalid_point');
+      await endpoint('/actions', c, 'POST', {actions: [{type: 'pointer', id: 'finger1', parameters: {pointerType: 'touch'}, actions: [
+        {type: 'pointerMove', duration: 0, x: point.x, y: point.y}, {type: 'pointerDown', button: 0}, {type: 'pause', duration: 50}, {type: 'pointerUp', button: 0},
+      ]}]});
+    },
+    async viewport(c): Promise<TargetSize> {
+      const r = rect(await endpoint('/window/rect', c));
+      if (r.width === 0 || r.height === 0) throw failure('invalid_property');
+      return {width: r.width, height: r.height};
+    },
+    // Terminate is a force-stop of the configured package only; data, the
+    // installation and device settings are untouched. Activate relaunches it.
+    async terminate(c) { await appCommand('mobile: terminateApp', c); },
+    async activate(c) { await appCommand('mobile: activateApp', c); },
     // After a completed assertion failure: did the phone become unavailable?
     // Read-only; an owned emulator cannot lock itself and reports nothing.
     async recheck(c) {

@@ -43,8 +43,20 @@ platform); as with any SDK skip, the run is complete only with a matching
 The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `getByTestId(id)`. Observed controls expose `tap({timeoutMs}?)`,
 `fill(value, {timeoutMs}?)`, `toBeVisible(timeoutMs?)`,
-`toHaveText(exactText, timeoutMs?)` and
-`toHaveState('enabled' | 'checked', boolean, timeoutMs?)`.
+`toHaveText(exactText, timeoutMs?)`,
+`toHaveState('enabled' | 'checked', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
+(absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle
+in device coordinates; the origin may be negative for a control scrolled
+partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
+(one bounded gesture inside that control, by a fraction of its size, 0.5 by
+default). The app also exposes `back()`, `tapAt({x, y})` (one touch down/up
+at integer device coordinates: physical pixels on Android, CSS pixels in the
+web viewport; a point at or beyond the viewport the driver reports is refused
+before dispatch) and `viewport()`, which are portable, and the Android-only
+`toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()` and
+`activate()`. A driver without an operation fails it with the stable reason
+`unsupported_operation`; it never substitutes another action. Queries such
+as `bounds` and `viewport` are recorded as executed actions, not assertions.
 Specs load without 9l, so `playwright test --list` and editors can discover
 them; using `app` requires `9l run --sdk --target`.
 See [the shared fixture](../testdata/sdk/targets/shared.spec.ts) for one scenario
