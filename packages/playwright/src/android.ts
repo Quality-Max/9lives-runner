@@ -78,10 +78,10 @@ const timeout = (c: TargetContext) => {
 };
 // Native command output stays in memory and never becomes an error message,
 // diagnostic artifact or receipt. These commands have explicit, fixed arguments.
-function command(file: string, args: string[], c: TargetContext, env: NodeJS.ProcessEnv): Promise<string> {
+function command(file: string, args: string[], c: TargetContext, env: NodeJS.ProcessEnv, streams: 'stdout' | 'both' = 'stdout'): Promise<string> {
   return new Promise((yes, no) => execFile(file, args, {
     signal: c.signal, timeout: timeout(c), maxBuffer: 64 * 1024, env,
-  }, (error, stdout) => error ? no(failure('device_command_failed')) : yes(stdout.trim())));
+  }, (error, stdout, stderr) => error ? no(failure('device_command_failed')) : yes((streams === 'both' ? `${stdout}\n${stderr}` : stdout).trim())));
 }
 async function freePort() {
   const server = createServer();
@@ -675,7 +675,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             } else if (dirty(reading)) throw new TargetSetupError({classification: 'dirty', reason: reading, stage: 'open'});
             identity = {device: 'physical', deviceHash: createHash('sha256').update(serial).digest('hex')};
           } else {
-            const emulatorVersion = await command(emulatorPath, ['-version'], c, env);
+            // macOS prints the version line on stdout, Linux on stderr.
+            const emulatorVersion = await command(emulatorPath, ['-version'], c, env, 'both');
             const version = /Android emulator version ([0-9.]+)/.exec(emulatorVersion)?.[1];
             if (!version) throw failure('unknown_emulator_version');
             identity = {emulator: version};
