@@ -43,6 +43,32 @@ SDK versions.
   stream carries no locations, and `--failure-details` still adds titles,
   lines and errors.
 
+### Provenance
+
+- Imported local helpers are part of agent provenance (#215). `9l
+  provenance` writes snapshot version 2, which adds `dependencies` (the
+  repo-relative path, kind and SHA-256 of every module the spec reaches
+  through relative `import`, `export … from`, `import('…')` and
+  `require('…')`, plus the lockfile nearest the spec) and
+  `dependenciesSHA256`; file contents are never stored. Editing an imported
+  helper after the snapshot was a `matched` spec before; it is now a
+  mismatch, `assess` and `run` report `dependencies: "mismatch"` with
+  `dependencyChanges` naming the modified, added or removed path, and `run`
+  refuses or invalidates the attempt. Capture parses source lexically and
+  never executes it. An import that cannot be resolved, resolves outside the
+  repository (including through a symlink), is absolute (`/`, `\`, a drive
+  letter or UNC path, on every OS) or has a non-literal argument,
+  and a graph over 256 local modules, 1 MiB per module, 8 MiB together or
+  64 MiB per lockfile, fails capture, so provenance stays unknown instead of
+  matching. Package, built-in and path-alias imports are not followed and
+  `node_modules` is not read; installed packages are covered only through
+  the lockfile digest, and files read at runtime are not covered. The scan
+  is not a full parser, so unusual syntax can hide an import on the same
+  line. Version 1 snapshots are still accepted and compared with
+  `scope: "spec"`; the assessment and receipt schemas gain the optional
+  fields, and older CLIs reject version 2 snapshots. The snapshot size limit
+  is 256 KiB, up from 4 KiB.
+
 ### Android (experimental)
 
 - Installed-app identity (#217). The Android runtime receipt gains

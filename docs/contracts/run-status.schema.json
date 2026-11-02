@@ -11,6 +11,15 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceDependency"
+          },
+          "type": "array"
+        },
+        "dependenciesSHA256": {
+          "type": "string"
+        },
         "repositorySHA256": {
           "type": "string"
         },
@@ -534,6 +543,15 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "type": "string"
+        },
+        "dependencyChanges": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceChange"
+          },
+          "type": "array"
+        },
         "expected": {
           "$ref": "#/$defs/AgentProvenance"
         },
@@ -556,6 +574,44 @@
         "commit",
         "source",
         "repository"
+      ],
+      "type": "object"
+    },
+    "ProvenanceChange": {
+      "properties": {
+        "change": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "change"
+      ],
+      "type": "object"
+    },
+    "ProvenanceDependency": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "sha256"
       ],
       "type": "object"
     },
