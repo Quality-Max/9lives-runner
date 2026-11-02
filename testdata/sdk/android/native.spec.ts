@@ -1,5 +1,5 @@
 import {createTargetTest, type TargetDriver} from '@9l/playwright';
-import {androidDefaults, androidTargetDriver, androidToolPaths} from '@9l/playwright/android';
+import {androidDefaults, androidTargetDriver} from '@9l/playwright/android';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -58,7 +58,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       if (mode === 'cancel' || mode === 'blocked') probe = (async () => {
         for (let i = 0; i < 80; i++) {
           try {
-            await command(androidToolPaths(sdk).adb, ['-s', serial, 'shell', 'run-as', fixture.appPackage, 'test', '-f', 'files/started'], {timeout: 1000, maxBuffer: 1024});
+            await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'shell', 'run-as', fixture.appPackage, 'test', '-f', 'files/started'], {timeout: 1000, maxBuffer: 1024});
             started = true;
             if (mode === 'cancel') app.cancel();
             return;
@@ -112,7 +112,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     await probe;
     let deviceStopped = false;
     if (serial) {
-      try { await command(androidToolPaths(sdk).adb, ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      try { await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
       catch { deviceStopped = true; }
     }
     // Only bounded synthetic probe facts; no serial/handles or device output.

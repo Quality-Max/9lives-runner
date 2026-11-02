@@ -745,14 +745,16 @@ test('attached phone verifies the installed build against declared identity and 
     process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
     process.env.TMPDIR = dir;
     cp.execFile = (file, args, options, callback) => {
-      commands.push([path.basename(file), ...args]);
-      if (path.basename(file) === 'apksigner') {
+      // The SDK names Windows tools adb.exe, aapt2.exe and apksigner.bat.
+      const tool = path.basename(file).replace(/\.(exe|bat)$/, '');
+      commands.push([tool, ...args]);
+      if (tool === 'apksigner') {
         const target = args[2];
         const signer = target.endsWith('installed.apk') ? device.installedSigner : require('node:fs').readFileSync(target, 'utf8') === 'synthetic artifact bytes' ? 'a1'.repeat(32) : 'b2'.repeat(32);
         queueMicrotask(() => callback(null, `Signer #1 certificate DN: CN=9l\nSigner #1 certificate SHA-256 digest: ${signer}\n`));
         return new EventEmitter();
       }
-      if (path.basename(file) === 'aapt2') { onInspect(); queueMicrotask(() => callback(null, "package: name='dev.ninelives.fixture' versionCode='28' versionName='1.4.0'")); return new EventEmitter(); }
+      if (tool === 'aapt2') { onInspect(); queueMicrotask(() => callback(null, "package: name='dev.ninelives.fixture' versionCode='28' versionName='1.4.0'")); return new EventEmitter(); }
       const command = args.slice(2);
       const script = command[1] === 'sh' ? command[3] : '';
       let result = '';

@@ -6,7 +6,12 @@
 // directories exist; it never runs a tool, downloads or writes anything.
 import {statSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {join, resolve} from 'node:path';
+import {posix, win32} from 'node:path';
+
+// Paths follow the platform being described, so a Windows SDK root keeps its
+// separators and drive and a macOS or Linux candidate stays POSIX wherever
+// the code runs; by default that is the host's own platform.
+const paths = (platform: NodeJS.Platform) => platform === 'win32' ? win32 : posix;
 
 /** The Appium server and UiAutomator2 driver releases the adapter is qualified with. */
 export const androidVersions = {appium: '3.8.0', uiautomator2: '8.7.0'} as const;
@@ -40,8 +45,8 @@ const set = (value: string | undefined) => typeof value === 'string' && value.tr
  * the standard Homebrew prefixes, then the Android Studio default for the
  * platform. `brew` itself is not run. */
 export function androidSdkCandidates(options: AndroidDiscoveryOptions = {}): AndroidCandidate[] {
-  const env = options.env ?? process.env, platform = options.platform ?? process.platform;
-  const home = options.home ?? (set(env.HOME) ?? homedir());
+  const env = options.env ?? process.env, platform = options.platform ?? process.platform, {join} = paths(platform);
+  const home = options.home ?? (set(platform === 'win32' ? env.USERPROFILE : env.HOME) ?? homedir());
   const prefixes = [set(env.HOMEBREW_PREFIX), '/opt/homebrew', '/usr/local', '/home/linuxbrew/.linuxbrew'].filter((p): p is string => p !== undefined);
   const candidates: AndroidCandidate[] = platform === 'win32' ? [] :
     [...new Set(prefixes)].map(prefix => ({path: join(prefix, 'share/android-commandlinetools'), source: 'homebrew' as const}));
@@ -59,7 +64,8 @@ export function androidSdkCandidates(options: AndroidDiscoveryOptions = {}): And
  * Relative values resolve against the current directory. */
 export function androidDefaults(options: AndroidDiscoveryOptions = {}): AndroidDefaults {
   const env = options.env ?? process.env, exists = options.isDirectory ?? directory;
-  const home = options.home ?? (set(env.HOME) ?? homedir());
+  const platform = options.platform ?? process.platform, {join, resolve} = paths(platform);
+  const home = options.home ?? (set(platform === 'win32' ? env.USERPROFILE : env.HOME) ?? homedir());
   const result: AndroidDefaults = {};
   const androidHome = set(env.ANDROID_HOME), sdkRoot = set(env.ANDROID_SDK_ROOT);
   if (androidHome) {
@@ -68,7 +74,7 @@ export function androidDefaults(options: AndroidDiscoveryOptions = {}): AndroidD
   } else if (sdkRoot) {
     Object.assign(result, {sdkRoot: resolve(sdkRoot), sdkSource: 'ANDROID_SDK_ROOT'});
   } else {
-    const found = androidSdkCandidates({...options, env, home}).find(candidate => exists(candidate.path));
+    const found = androidSdkCandidates({...options, env, home, platform}).find(candidate => exists(candidate.path));
     if (found) Object.assign(result, {sdkRoot: found.path, sdkSource: found.source});
   }
   const tools = set(env.NINELIVES_ANDROID_TOOLS);
@@ -79,7 +85,7 @@ export function androidDefaults(options: AndroidDiscoveryOptions = {}): AndroidD
 
 /** The SDK executables the driver runs, under one SDK root. */
 export function androidToolPaths(sdkRoot: string, platform: NodeJS.Platform = process.platform) {
-  const windows = platform === 'win32';
+  const windows = platform === 'win32', {join} = paths(platform);
   const buildTools = join(sdkRoot, 'build-tools', androidBuildTools);
   return {
     adb: join(sdkRoot, 'platform-tools', windows ? 'adb.exe' : 'adb'),
@@ -91,7 +97,8 @@ export function androidToolPaths(sdkRoot: string, platform: NodeJS.Platform = pr
 }
 
 /** The pinned packages' manifests and the Appium entry point under a tooling directory. */
-export function androidToolingPaths(toolsRoot: string) {
+export function androidToolingPaths(toolsRoot: string, platform: NodeJS.Platform = process.platform) {
+  const {join} = paths(platform);
   return {
     appium: join(toolsRoot, 'node_modules/appium/package.json'),
     appiumEntry: join(toolsRoot, 'node_modules/appium/index.js'),

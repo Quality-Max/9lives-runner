@@ -3,11 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const {androidDefaults, androidToolPaths} = require('../packages/playwright/dist/android-env');
 const root = path.resolve(__dirname, '..');
-// The same discovery the driver applies to an omitted sdkRoot; see 9l doctor --android.
-const sdk = androidDefaults().sdkRoot;
-assert(sdk, 'No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');
 const work = path.join(root, '.context', 'android-qualification', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
 const engine = path.join(work, '9l');
@@ -31,7 +27,8 @@ assert.equal(creation.status,0);
 const provenance = path.join(work,'creation.json'); fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
 // Device identifiers stay in memory. Persist only preservation/cleanup facts.
 function emulatorSet() {
-  const r=sync(androidToolPaths(sdk).adb,['devices']);assert.equal(r.status,0);
+  const sdk=require('../packages/playwright/dist/android-env').androidDefaults().sdkRoot;assert(sdk,'No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');
+  const r=sync(path.join(sdk,'platform-tools/adb'),['devices']);assert.equal(r.status,0);
   return r.stdout.split('\n').map(line=>/^(emulator-[0-9]+)\s+device$/.exec(line)?.[1]).filter(Boolean).sort().join(',');
 }
 const results = [];

@@ -14,6 +14,10 @@ exports.androidToolingPaths = androidToolingPaths;
 const node_fs_1 = require("node:fs");
 const node_os_1 = require("node:os");
 const node_path_1 = require("node:path");
+// Paths follow the platform being described, so a Windows SDK root keeps its
+// separators and drive and a macOS or Linux candidate stays POSIX wherever
+// the code runs; by default that is the host's own platform.
+const paths = (platform) => platform === 'win32' ? node_path_1.win32 : node_path_1.posix;
 /** The Appium server and UiAutomator2 driver releases the adapter is qualified with. */
 exports.androidVersions = { appium: '3.8.0', uiautomator2: '8.7.0' };
 /** The build-tools release whose aapt2 and apksigner the adapter runs. */
@@ -35,20 +39,20 @@ const set = (value) => typeof value === 'string' && value.trim() !== '' ? value 
  * the standard Homebrew prefixes, then the Android Studio default for the
  * platform. `brew` itself is not run. */
 function androidSdkCandidates(options = {}) {
-    const env = options.env ?? process.env, platform = options.platform ?? process.platform;
-    const home = options.home ?? (set(env.HOME) ?? (0, node_os_1.homedir)());
+    const env = options.env ?? process.env, platform = options.platform ?? process.platform, { join } = paths(platform);
+    const home = options.home ?? (set(platform === 'win32' ? env.USERPROFILE : env.HOME) ?? (0, node_os_1.homedir)());
     const prefixes = [set(env.HOMEBREW_PREFIX), '/opt/homebrew', '/usr/local', '/home/linuxbrew/.linuxbrew'].filter((p) => p !== undefined);
     const candidates = platform === 'win32' ? [] :
-        [...new Set(prefixes)].map(prefix => ({ path: (0, node_path_1.join)(prefix, 'share/android-commandlinetools'), source: 'homebrew' }));
+        [...new Set(prefixes)].map(prefix => ({ path: join(prefix, 'share/android-commandlinetools'), source: 'homebrew' }));
     if (platform === 'darwin')
-        candidates.push({ path: (0, node_path_1.join)(home, 'Library/Android/sdk'), source: 'android-studio' });
+        candidates.push({ path: join(home, 'Library/Android/sdk'), source: 'android-studio' });
     else if (platform === 'win32') {
         const local = set(env.LOCALAPPDATA);
         if (local)
-            candidates.push({ path: (0, node_path_1.join)(local, 'Android/Sdk'), source: 'android-studio' });
+            candidates.push({ path: join(local, 'Android/Sdk'), source: 'android-studio' });
     }
     else
-        candidates.push({ path: (0, node_path_1.join)(home, 'Android/Sdk'), source: 'android-studio' });
+        candidates.push({ path: join(home, 'Android/Sdk'), source: 'android-studio' });
     return candidates;
 }
 /** The SDK root and pinned-tooling directory the driver uses when its options
@@ -59,46 +63,48 @@ function androidSdkCandidates(options = {}) {
  * Relative values resolve against the current directory. */
 function androidDefaults(options = {}) {
     const env = options.env ?? process.env, exists = options.isDirectory ?? directory;
-    const home = options.home ?? (set(env.HOME) ?? (0, node_os_1.homedir)());
+    const platform = options.platform ?? process.platform, { join, resolve } = paths(platform);
+    const home = options.home ?? (set(platform === 'win32' ? env.USERPROFILE : env.HOME) ?? (0, node_os_1.homedir)());
     const result = {};
     const androidHome = set(env.ANDROID_HOME), sdkRoot = set(env.ANDROID_SDK_ROOT);
     if (androidHome) {
-        Object.assign(result, { sdkRoot: (0, node_path_1.resolve)(androidHome), sdkSource: 'ANDROID_HOME' });
-        if (sdkRoot && (0, node_path_1.resolve)(sdkRoot) !== result.sdkRoot)
+        Object.assign(result, { sdkRoot: resolve(androidHome), sdkSource: 'ANDROID_HOME' });
+        if (sdkRoot && resolve(sdkRoot) !== result.sdkRoot)
             result.sdkRootIgnored = true;
     }
     else if (sdkRoot) {
-        Object.assign(result, { sdkRoot: (0, node_path_1.resolve)(sdkRoot), sdkSource: 'ANDROID_SDK_ROOT' });
+        Object.assign(result, { sdkRoot: resolve(sdkRoot), sdkSource: 'ANDROID_SDK_ROOT' });
     }
     else {
-        const found = androidSdkCandidates({ ...options, env, home }).find(candidate => exists(candidate.path));
+        const found = androidSdkCandidates({ ...options, env, home, platform }).find(candidate => exists(candidate.path));
         if (found)
             Object.assign(result, { sdkRoot: found.path, sdkSource: found.source });
     }
     const tools = set(env.NINELIVES_ANDROID_TOOLS);
     if (tools)
-        Object.assign(result, { toolsRoot: (0, node_path_1.resolve)(tools), toolsSource: 'NINELIVES_ANDROID_TOOLS' });
+        Object.assign(result, { toolsRoot: resolve(tools), toolsSource: 'NINELIVES_ANDROID_TOOLS' });
     else if (home)
-        Object.assign(result, { toolsRoot: (0, node_path_1.join)(home, exports.androidToolsDirectory), toolsSource: 'default' });
+        Object.assign(result, { toolsRoot: join(home, exports.androidToolsDirectory), toolsSource: 'default' });
     return result;
 }
 /** The SDK executables the driver runs, under one SDK root. */
 function androidToolPaths(sdkRoot, platform = process.platform) {
-    const windows = platform === 'win32';
-    const buildTools = (0, node_path_1.join)(sdkRoot, 'build-tools', exports.androidBuildTools);
+    const windows = platform === 'win32', { join } = paths(platform);
+    const buildTools = join(sdkRoot, 'build-tools', exports.androidBuildTools);
     return {
-        adb: (0, node_path_1.join)(sdkRoot, 'platform-tools', windows ? 'adb.exe' : 'adb'),
-        emulator: (0, node_path_1.join)(sdkRoot, 'emulator', windows ? 'emulator.exe' : 'emulator'),
+        adb: join(sdkRoot, 'platform-tools', windows ? 'adb.exe' : 'adb'),
+        emulator: join(sdkRoot, 'emulator', windows ? 'emulator.exe' : 'emulator'),
         buildTools,
-        aapt2: (0, node_path_1.join)(buildTools, windows ? 'aapt2.exe' : 'aapt2'),
-        apksigner: (0, node_path_1.join)(buildTools, windows ? 'apksigner.bat' : 'apksigner'),
+        aapt2: join(buildTools, windows ? 'aapt2.exe' : 'aapt2'),
+        apksigner: join(buildTools, windows ? 'apksigner.bat' : 'apksigner'),
     };
 }
 /** The pinned packages' manifests and the Appium entry point under a tooling directory. */
-function androidToolingPaths(toolsRoot) {
+function androidToolingPaths(toolsRoot, platform = process.platform) {
+    const { join } = paths(platform);
     return {
-        appium: (0, node_path_1.join)(toolsRoot, 'node_modules/appium/package.json'),
-        appiumEntry: (0, node_path_1.join)(toolsRoot, 'node_modules/appium/index.js'),
-        uiautomator2: (0, node_path_1.join)(toolsRoot, 'node_modules/appium-uiautomator2-driver/package.json'),
+        appium: join(toolsRoot, 'node_modules/appium/package.json'),
+        appiumEntry: join(toolsRoot, 'node_modules/appium/index.js'),
+        uiautomator2: join(toolsRoot, 'node_modules/appium-uiautomator2-driver/package.json'),
     };
 }
