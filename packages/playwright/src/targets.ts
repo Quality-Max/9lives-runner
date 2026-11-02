@@ -144,10 +144,19 @@ export class TargetApp {
     // with what it knows; the driver decides what it can read.
     if (this.diagnosed || !this.driver.diagnose) return;
     this.diagnosed = true;
-    let record: TargetDiagnostic | undefined;
+    // Bounded like the recheck: a hook still running at the bound is
+    // abandoned and its late record discarded, so the failure reports on time.
+    const bound = Math.min(this.options.deadlineMs, Date.now() + recheckMs);
+    const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
+    const late = Symbol('late');
+    let record: TargetDiagnostic | typeof late | undefined;
     try {
-      record = await this.driver.diagnose({operation, reason, elapsedMs: Math.max(0, Date.now() - startedAt), ...(point ? {point} : {})}, {signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
+      record = await Promise.race([
+        this.driver.diagnose({operation, reason, elapsedMs: Math.max(0, Date.now() - startedAt), ...(point ? {point} : {})}, {signal, deadlineMs: bound}),
+        new Promise<typeof late>(resolve => signal.addEventListener('abort', () => resolve(late), {once: true})),
+      ]);
     } catch { record = undefined; }
+    if (record === late) return;
     if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
   }
 
