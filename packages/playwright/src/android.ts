@@ -483,7 +483,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
                 await adbRun(['shell', 'input', 'keyevent', 'KEYCODE_BACK'], c);
                 presses++;
                 await delay(500, undefined, {signal: c.signal});
-                reading = await readBaseline(c);
+                // A failed read after Back is an unknown, unrestored baseline:
+                // the Back already sent stays on the record. Cancellation, the
+                // deadline and a closed driver still propagate.
+                try { reading = await readBaseline(c); } catch (error) {
+                  if (c.signal.aborted || Date.now() >= c.deadlineMs || closed) throw error;
+                  reading = 'unknown';
+                }
               }
               const recovery = {method: 'back' as const, presses, restored: reading === 'clean'};
               if (reading !== 'clean') throw new TargetSetupError({classification: 'dirty', reason, stage: 'open', recovery});
