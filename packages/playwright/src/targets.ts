@@ -308,6 +308,9 @@ export class TargetApp {
       const matches = await this.driver.observeTestId(id, context);
       context.signal.throwIfAborted();
       if (!Array.isArray(matches) || matches.length > 1) throw stopped('ambiguous_test_id');
+      // Only an empty observation is absence; a reported match without a
+      // handle (null, undefined, a hole) is malformed lookup evidence.
+      if (matches.length === 1 && (!(0 in matches) || typeof matches[0] !== 'object' || matches[0] === null)) throw stopped('invalid_property');
       return matches[0];
     };
     const required = async (context: TargetContext) => {
@@ -394,7 +397,7 @@ function locatorHandle(locator: Locator): TargetHandle {
         const dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
         const dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
         element.scrollBy({left: dx * element.clientWidth * percent, top: dy * element.clientHeight * percent, behavior: 'instant'});
-      }, {direction, percent});
+      }, {direction, percent}, {timeout: remaining(context)});
     },
     bounds: async context => {
       const box = await locator.boundingBox({timeout: remaining(context)});

@@ -31,6 +31,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },
     observeTestId: async (id: string) => {
       if (mode === 'ambiguous') return [null, null] as unknown as TargetHandle[];
+      if (mode === 'malformed-handle') return [undefined] as unknown as TargetHandle[];
       if (mode === 'missing' || !running || !['amount', 'send', 'receipt', 'status', 'list', 'button'].includes(id)) return [];
       return [{
         tap: async (context: TargetContext) => {
