@@ -135,14 +135,14 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			caps := frame.Capabilities
 			if targeted {
 				if frame.TargetVersion != TargetVersion || len(caps) != 5 || caps[4] != TargetVersion {
-					return invalid("unsupported target contract")
+					return invalid("unsupported target contract; update the CLI and @9l/playwright together")
 				}
 				caps = caps[:4]
 			} else if frame.TargetVersion != "" {
 				return invalid("unexpected target contract")
 			}
 			if frame.Type != "hello" || frame.TotalTests < 1 || frame.TotalTests > maxEvents || !equalCapabilities(caps) {
-				return invalid("missing handshake, unsupported capabilities or zero tests")
+				return invalid("missing handshake, unsupported capabilities or zero tests; update the CLI and @9l/playwright together")
 			}
 			total = frame.TotalTests
 			continue

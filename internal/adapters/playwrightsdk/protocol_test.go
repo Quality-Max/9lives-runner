@@ -543,10 +543,27 @@ func TestRuntimeExpectedFailureIsCountedButKeepsPlaywrightSemantics(t *testing.T
 	}
 }
 
+func TestOldSDKRejectionExplainsCoordinatedUpgrade(t *testing.T) {
+	for _, targeted := range []bool{false, true} {
+		frames, identity := passingFrames(), owner
+		caps := []string{"steps", "artifact-metadata", "terminal-outcomes"}
+		if targeted {
+			frames = targetFrames()
+			identity.Target = "web:finance"
+			caps = append(caps, TargetVersion)
+		}
+		frames[0]["capabilities"] = caps
+		_, err := New().ValidateAttempt(stream(frames), identity)
+		if err == nil || !strings.Contains(err.Error(), "update the CLI and @9l/playwright together") {
+			t.Fatalf("targeted %v: expected coordinated-upgrade diagnostic, got %v", targeted, err)
+		}
+	}
+}
+
 // A test reported skipped after the worker reported a passed assertion step
 // in that attempt ran its body (microsoft/playwright#43676 for test.skip()
 // in an afterEach). It still needs a pin and still counts as skipped; the
-// receipt says the body ran. A skip with no step before it is not reported.
+// receipt says the body ran. Other steps and failed assertions do not count.
 func TestSkipAfterReportedAssertionIsCounted(t *testing.T) {
 	skipped, other := strings.Repeat("b", 64), strings.Repeat("c", 64)
 	pinTitle := "tests/hooks.spec.ts › relabeled › runs then skips"
@@ -555,13 +572,26 @@ func TestSkipAfterReportedAssertionIsCounted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, asserted := range []bool{true, false} {
+	for _, step := range []struct {
+		category string
+		status   string
+	}{
+		{"assertion", "passed"},
+		{"assertion", "failed"},
+		{"browser", "passed"},
+		{"action", "passed"},
+		{"fixture", "passed"},
+		{"other", "passed"},
+		{"goal", "passed"},
+		{"", ""},
+	} {
+		asserted := step.category == "assertion" && step.status == "passed"
 		frames := []map[string]any{
 			{"type": "hello", "capabilities": Capabilities, "totalTests": 2},
 			{"type": "test_begin", "testId": skipped, "retry": 0, "expectedStatus": "passed"},
 		}
-		if asserted {
-			frames = append(frames, map[string]any{"type": "step_end", "testId": skipped, "retry": 0, "stepId": "step-1", "category": "assertion", "status": "passed"})
+		if step.category != "" {
+			frames = append(frames, map[string]any{"type": "step_end", "testId": skipped, "retry": 0, "stepId": "step-1", "category": step.category, "status": step.status})
 		}
 		frames = append(frames,
 			map[string]any{"type": "test_end", "testId": skipped, "retry": 0, "status": "skipped", "expectedStatus": "skipped", "artifacts": []any{}},
@@ -581,7 +611,7 @@ func TestSkipAfterReportedAssertionIsCounted(t *testing.T) {
 			want = 1
 		}
 		if err != nil || validation.ExecutedTests != 1 || validation.SkippedTests != 1 || validation.SkippedAfterAssertions != want || validation.ReportedAssertions != 1 {
-			t.Fatalf("asserted %v: %+v, %v", asserted, validation, err)
+			t.Fatalf("step %+v: %+v, %v", step, validation, err)
 		}
 		if strings.Contains(validation.Description, "had reported a passed assertion step") != asserted {
 			t.Fatalf("asserted %v: description %q", asserted, validation.Description)
