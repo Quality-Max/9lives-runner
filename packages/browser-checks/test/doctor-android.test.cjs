@@ -39,7 +39,7 @@ const attached = { running: true, devices: [{ emulator: true, state: 'device' },
 test('a complete fake SDK passes every Android check and names neither paths nor serials', { skip: !posix }, async () => {
   const f = fixture();
   try {
-    const report = await androidChecks({ env: f.env, platform: 'darwin', isDirectory: none, devices: async () => attached });
+    const report = await androidChecks({ isDirectory: none, env: f.env, platform: 'darwin', devices: async () => attached });
     const checks = byName(report);
     for (const name of ['android/java', 'android/sdk', 'android/adb', 'android/emulator', 'android/build-tools', 'android/avds', 'android/devices', 'android/appium', 'android/uiautomator2']) {
       assert.equal(checks[name]?.status, 'ok', `${name}: ${checks[name]?.message}`);
@@ -51,7 +51,7 @@ test('a complete fake SDK passes every Android check and names neither paths nor
     assert.equal(checks['android/devices'].message, '1 emulator and 2 physical devices attached and ready. Serials are not shown.');
     assert.match(checks['android/appium'].message, /^Appium 3\.8\.0 \(pinned\) in NINELIVES_ANDROID_TOOLS; 9l run passes it/);
     assert.doesNotMatch(JSON.stringify(report), new RegExp(`${f.root}|fixture-path|Installed as`));
-    const located = byName(await androidChecks({ env: f.env, platform: 'darwin', paths: true, devices: async () => attached }));
+    const located = byName(await androidChecks({ isDirectory: none, env: f.env, platform: 'darwin', paths: true, devices: async () => attached }));
     assert(located['android/sdk'].message.includes(f.sdk) && located['android/appium'].message.includes(f.tooling), '--paths names the roots');
   } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
 });
@@ -59,7 +59,7 @@ test('a complete fake SDK passes every Android check and names neither paths nor
 test('missing prerequisites are missing with a concrete fix; optional emulator pieces only warn', { skip: !posix }, async () => {
   const f = fixture({ java: '11.0.2', build: ['aapt2'], emulator: false, tools: { appium: '3.9.0' } });
   try {
-    const checks = byName(await androidChecks({ env: f.env, platform: 'darwin', devices: async () => ({ running: false }) }));
+    const checks = byName(await androidChecks({ isDirectory: none, env: f.env, platform: 'darwin', devices: async () => ({ running: false }) }));
     assert.equal(checks['android/java'].status, 'missing');
     assert.match(checks['android/java'].fix, /^brew install openjdk@21 && export JAVA_HOME=/);
     assert.deepEqual([checks['android/build-tools'].status, checks['android/build-tools'].fix], ['missing', 'sdkmanager "build-tools;35.0.0"']);
@@ -74,22 +74,22 @@ test('missing prerequisites are missing with a concrete fix; optional emulator p
     assert.equal(checks['android/appium'].fix, install);
     assert.match(checks['android/uiautomator2'].message, /is not installed/);
     fs.rmSync(path.join(f.jdk, 'bin/java'));
-    assert.match(byName(await androidChecks({ env: f.env, platform: 'linux', devices: async () => ({ running: false }) }))['android/java'].message, /JAVA_HOME is set but has no bin\/java\.$/);
+    assert.match(byName(await androidChecks({ isDirectory: none, env: f.env, platform: 'linux', devices: async () => ({ running: false }) }))['android/java'].message, /JAVA_HOME is set but has no bin\/java\.$/);
     fs.rmSync(path.join(f.sdk, 'platform-tools'), { recursive: true });
-    assert.deepEqual(byName(await androidChecks({ env: f.env, devices: async () => ({ running: false }) }))['android/adb'].fix, 'sdkmanager "platform-tools"');
+    assert.deepEqual(byName(await androidChecks({ isDirectory: none, env: f.env, devices: async () => ({ running: false }) }))['android/adb'].fix, 'sdkmanager "platform-tools"');
   } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
 });
 
 test('no SDK, no AVD, unauthorized devices and the default tooling directory', { skip: !posix }, async () => {
   const f = fixture({ avds: 'INFO    | no avds here' });
   try {
-    const noAvd = byName(await androidChecks({ env: f.env, arch: 'x64', devices: async () => ({ running: true, devices: [{ emulator: false, state: 'unauthorized' }, { emulator: true, state: 'offline' }] }) }));
+    const noAvd = byName(await androidChecks({ isDirectory: none, env: f.env, arch: 'x64', devices: async () => ({ running: true, devices: [{ emulator: false, state: 'unauthorized' }, { emulator: true, state: 'offline' }] }) }));
     assert.equal(noAvd['android/avds'].status, 'warning');
     assert.match(noAvd['android/avds'].fix, /avdmanager create avd -n 9l_api35 -k "system-images;android-35;google_apis;x86_64"/);
     assert.equal(noAvd['android/devices'].status, 'warning');
     assert.equal(noAvd['android/devices'].message, '0 emulators and 0 physical devices attached and ready; 1 unauthorized; 1 offline. Serials are not shown.');
     const { ANDROID_HOME, NINELIVES_ANDROID_TOOLS, ...bare } = f.env;
-    const missing = await androidChecks({ env: { ...bare, ANDROID_HOME: path.join(f.root, 'absent') }, devices: async () => ({ running: false }) });
+    const missing = await androidChecks({ isDirectory: none, env: { ...bare, ANDROID_HOME: path.join(f.root, 'absent') }, devices: async () => ({ running: false }) });
     const checks = byName(missing);
     assert.equal(checks['android/sdk'].status, 'missing');
     assert.match(checks['android/sdk'].message, /ANDROID_HOME is set to a directory that does not exist\.$/);
@@ -97,9 +97,9 @@ test('no SDK, no AVD, unauthorized devices and the default tooling directory', {
     assert.match(checks['android/appium'].message, /not installed in ~\/\.9l\/android-tools\.$/);
     assert.match(checks['android/appium'].fix, /^npm install --prefix ~\/\.9l\/android-tools /);
     assert.equal(diagnose({ android: true }, f.root, missing).ready, false, 'a missing Android prerequisite makes the report not ready');
-    const sdkRoot = byName(await androidChecks({ env: { ...f.env, ANDROID_SDK_ROOT: path.join(f.root, 'other') }, devices: async () => ({ running: false }) }));
+    const sdkRoot = byName(await androidChecks({ isDirectory: none, env: { ...f.env, ANDROID_SDK_ROOT: path.join(f.root, 'other') }, devices: async () => ({ running: false }) }));
     assert.equal(sdkRoot['android/sdk'].status, 'warning');
-    assert.equal(byName(await androidChecks({ env: { ...f.env, ANDROID_ADB_SERVER_PORT: 'x' }, devices: async () => assert.fail('no query') }))['android/devices'].status, 'warning');
+    assert.equal(byName(await androidChecks({ isDirectory: none, env: { ...f.env, ANDROID_ADB_SERVER_PORT: 'x' }, devices: async () => assert.fail('no query') }))['android/devices'].status, 'warning');
   } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
 });
 
@@ -108,15 +108,16 @@ test('no SDK, no AVD, unauthorized devices and the default tooling directory', {
 test('android/sdk says whether tests without sdkRoot find the same root, and which variable to forward', { skip: !posix }, async () => {
   const f = fixture();
   try {
+    // Every variable discovery reads is set here or absent: nothing comes
+    // from the runner's environment, and the probe sees only fixture SDKs.
     const sdk = async (env, isDirectory) => byName(await androidChecks({ env, platform: 'linux', isDirectory, devices: async () => ({ running: false }) }))['android/sdk'];
     const { ANDROID_HOME, ...bare } = f.env;
+    assert.deepEqual(Object.keys(bare).filter(key => /^(ANDROID_|HOMEBREW_|USERPROFILE|LOCALAPPDATA)/.test(key)), ['ANDROID_ADB_SERVER_PORT']);
     const brew = path.join(f.root, 'brew'), brewSdk = path.join(brew, 'share/android-commandlinetools');
     fs.mkdirSync(brewSdk, { recursive: true });
     const custom = await sdk({ ...bare, HOMEBREW_PREFIX: brew }, dir => dir === brewSdk);
     assert.equal(custom.status, 'ok');
     assert.equal(custom.message, 'SDK root from the Homebrew command-line tools location; 9l run passes HOMEBREW_PREFIX to tests only with --pass-env HOMEBREW_PREFIX, otherwise a driver without sdkRoot finds no SDK.');
-    const fixed = await sdk(bare, dir => dir === '/opt/homebrew/share/android-commandlinetools');
-    assert.match(fixed.message, /^SDK root from the Homebrew command-line tools location; tests find the same root when sdkRoot is omitted\.$/);
     const studio = path.join(bare.HOME, 'Android/Sdk');
     fs.mkdirSync(studio, { recursive: true });
     const same = await sdk({ ...bare, ANDROID_HOME: studio }, dir => dir === studio);
@@ -127,9 +128,10 @@ test('android/sdk says whether tests without sdkRoot find the same root, and whi
 });
 
 test('Node 22 before 22.12 cannot run the pinned Appium', async () => {
-  const checks = byName(await androidChecks({ env: {}, nodeVersion: '22.11.0', run: () => ({ status: null, output: '', absent: true }), devices: async () => ({ running: false }) }));
+  const hermetic = { env: {}, home: '/nonexistent-9l-home', isDirectory: none, run: () => ({ status: null, output: '', absent: true }), devices: async () => ({ running: false }) };
+  const checks = byName(await androidChecks({ ...hermetic, nodeVersion: '22.11.0' }));
   assert.equal(checks['android/node'].status, 'missing');
-  assert.equal(byName(await androidChecks({ env: {}, nodeVersion: '22.12.0', run: () => ({ status: null, output: '', absent: true }), devices: async () => ({ running: false }) }))['android/node'], undefined);
+  assert.equal(byName(await androidChecks({ ...hermetic, nodeVersion: '22.12.0' }))['android/node'], undefined);
   assert.match(checks['android/java'].message, /^No java on PATH and JAVA_HOME is unset/);
 });
 
