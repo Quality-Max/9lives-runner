@@ -78,8 +78,11 @@ export default class EngineReporter implements Reporter {
   }
   onTestEnd(test: TestCase, result: TestResult) {
     if (result.attachments.length > 32) { this.emit('engine_error'); return; }
-    // One bounded classification per attempt, from a native target only.
-    if (result.attachments.filter(attachment => attachment.name === '9l.target-setup').length > 1 || result.attachments.filter(attachment => attachment.name === '9l.target-diagnostic').length > 1) { this.emit('engine_error'); return; }
+    // Bounded classifications from a native target only: at most one made
+    // before the test ran (a recovered baseline) and one from a recheck.
+    const setups = result.attachments.filter(attachment => attachment.name === '9l.target-setup');
+    const stages = setups.map(attachment => { try { return JSON.parse(attachment.body?.toString('utf8') ?? '')?.stage; } catch { return undefined; } });
+    if (result.attachments.filter(attachment => attachment.name === '9l.target-diagnostic').length > 1 || setups.length > 2 || (setups.length === 2 && !(stages[0] === 'open' && stages[1] === 'recheck'))) { this.emit('engine_error'); return; }
     for (const attachment of result.attachments) {
       if (attachment.name === '9l.target-diagnostic') {
         if (!this.target || this.target.kind === 'web' || attachment.contentType !== targetDiagnosticType || !attachment.body || attachment.body.length > 1024) { this.emit('engine_error'); return; }

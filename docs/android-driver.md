@@ -186,9 +186,15 @@ defaults to one. An extra window, foreign focus or an open keyboard stops
 the test as `setup dirty` (`extra-window`, `foreign-focus`, `ime-showing`):
 state a previous test left behind, not an application failure. With
 `recovery: {back: N}` the driver presses Back up to N times, half a second
-apart, until the baseline returns, and records the method, the press count
-and whether it restored the baseline; a restored baseline lets the test run
-and keeps the record in the receipt, an unrestored one fails the test.
+apart, until the baseline is observed again, and records the method, the
+press count and whether it restored the baseline. Restored means the
+declared window count, the app's focus and a hidden keyboard were all read
+back; a reading the driver cannot interpret after Back is not a restored
+baseline. A restored baseline lets the test run and keeps the record in the
+receipt; an unrestored one fails the test. A reading the driver cannot
+interpret before any Back press classifies nothing and the test proceeds. A
+phone whose state cannot be read at a recheck (disconnected, adb gone) is
+reported as `unknown`.
 Recovery never clears data, force-stops or changes settings, and nothing
 beyond those counts and enums is retained. Both checks apply to attached
 devices only; an owned emulator starts fresh for each test. The markers are
@@ -207,8 +213,14 @@ not read as input readiness and nothing is retried. With the opt-in, a
 windows since the last gesture is classified `setup observer`
 (`window-gone-element-displayed`): the accessibility snapshot still listed
 an element whose window was gone, as the field investigation of an
-intermittent modal dismissal established. An element that is still in a
-listed window is a real failure. No screenshot, hierarchy, text or log is
+intermittent modal dismissal established. This is a heuristic: UiAutomator2
+does not report which window an element belongs to, so the driver applies it
+only to a dismissal sequence (a gesture, then a hidden assertion on the next
+operation; a fill, text or state read in between disarms it) and only with
+the opt-in, and the diagnostic keeps the window counts either way. A control
+in a window that is still listed, or any failure outside that sequence, is a
+real failure. A window dump that cannot be read counts as unobserved, never
+as zero windows. No screenshot, hierarchy, text or log is
 captured, and the reads are off without the opt-in.
 
 At attachment the driver reads the physical displays (`DisplayDeviceInfo`

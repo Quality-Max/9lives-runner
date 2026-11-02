@@ -105,6 +105,15 @@ assert.equal(lockRecheck.summary.receipts[0].failures[0].class, 'setup');
 const recheckFrames = fs.readFileSync(lockRecheck.summary.receipts[0].evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
 assert(recheckFrames.some(f => f.operation === 'assert-text' && f.status === 'failed'), 'lock-recheck: the assertion step stays failed');
 assert.equal(recheckFrames.filter(f => f.type === 'target_setup').length, 1);
+// A recovered baseline before the test and a lock found after the failed
+// assertion are both kept, and the test stays failed.
+const recoveredThenLock = invoke('recovered-then-lock', {extra: ['--failure-details']});
+assert.equal(recoveredThenLock.code, 1);
+assert.equal(recoveredThenLock.summary.receipts[0].validated, true, 'recovered-then-lock: two records at distinct stages validate');
+assert.deepEqual(recoveredThenLock.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [
+  {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}},
+  {classification: 'blocked', reason: 'device-locked', stage: 'recheck'},
+]);
 const recovered = invoke('dirty-recovered');
 assert.equal(recovered.code, 0, 'dirty-recovered: the test ran from the restored baseline');
 assert.deepEqual(recovered.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}}]);
@@ -140,6 +149,12 @@ for (const receipt of portable.summary.receipts) {
 const lifecycle = invoke('lifecycle', {targets: ['android-fake:finance'], grep: 'native only', file: operations});
 assert.equal(lifecycle.code, 0, 'lifecycle: keyboard and restart pass on the native target');
 assert.equal(lifecycle.summary.receipts[0].targetAssertions, 4);
+const unemulated = invoke('unemulated', {targets: ['web:unemulated'], grep: 'portable', file: operations});
+assert.equal(unemulated.code, 0, 'viewport: null still reports a real viewport');
+const edge = invoke('edge', {targets: ['web:finance', 'android-fake:finance'], grep: 'outside the viewport', file: operations, extra: ['--failure-details']});
+assert.notEqual(edge.code, 0);
+for (const receipt of edge.summary.receipts) assert(receipt.failures[0].message.includes('9lives target stopped: invalid_point'), `${receipt.target}: edge touch refused before dispatch`);
+assert(!edge.mutations.includes('mutation'));
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');
@@ -158,7 +173,17 @@ assert(diagnostic.elapsedMs >= 250 && diagnostic.elapsedMs < 5000, `observer: po
 assert.equal(observer.summary.receipts[0].targetDiagnostics.length, 1, 'observer: one record per test');
 const clean = invoke('healthy-modal', {targets: ['web:finance', 'android-fake:finance'], grep: 'outside touch', file: operations});
 assert.equal(clean.code, 0, 'healthy modal dismissal passes on both targets');
-for (const receipt of clean.summary.receipts) assert.equal(receipt.targetDiagnostics, undefined, `${receipt.target}: no diagnostics without a failure`);
+for (const receipt of clean.summary.receipts) {
+  assert.equal(receipt.targetDiagnostics, undefined, `${receipt.target}: no diagnostics without a failure`);
+  assert.equal(receipt.targetAssertions, 2, `${receipt.target}: the modal was seen open before the dismissal was asserted`);
+}
+// An app that ignores the outside touch fails the same hidden assertion as an
+// ordinary assertion failure: no observer classification, no diagnostics.
+const ignored = invoke('ignored-touch', {targets: ['android-fake:finance'], grep: 'outside touch', file: operations, extra: ['--failure-details']});
+assert.equal(ignored.code, 1);
+assert(ignored.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'ignored-touch: plain assertion failure');
+assert.equal(ignored.summary.receipts[0].targetSetup, undefined);
+assert.equal(ignored.summary.receipts[0].targetDiagnostics, undefined);
 // A platform skip is complete only when pinned, like any other SDK skip.
 const skip = 'one deterministic scenario|skipped on the native target';
 const unpinned = invoke('skip-unpinned', {grep: skip});

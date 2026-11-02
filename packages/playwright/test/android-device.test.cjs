@@ -16,6 +16,17 @@ test('keyguard and wakefulness markers classify the device without guessing', ()
   assert.equal(parseDeviceState('mWakefulness=Awake'), 'unknown');
 });
 
+// The driver filters dumpsys on the device with deviceStatePattern; the
+// parser must see the standalone keyguard line that filter keeps.
+test('the on-device filter keeps every line the keyguard parser needs', () => {
+  const {deviceStatePattern} = require('../dist/android-device');
+  const filter = text => text.split('\n').filter(line => new RegExp(deviceStatePattern).test(line)).join('\n');
+  const locked = ['WINDOW MANAGER POLICY STATE (dumpsys window policy)', '    KeyguardServiceDelegate', '      showing=true', '      occluded=false', '    mAodShowing=false', 'POWER MANAGER (dumpsys power)', '  mWakefulness=Awake'].join('\n');
+  assert.equal(parseDeviceState(filter(locked)), 'locked');
+  assert.equal(parseDeviceState(filter(locked.replace('showing=true', 'showing=false'))), 'unlocked');
+  assert.equal(parseDeviceState(filter('    KeyguardServiceDelegate\n      aodShowing=true\n  mWakefulness=Awake')), 'unknown');
+});
+
 test('app windows are counted by package and focus is classified', () => {
   const text = [
     '  Window #0 Window{1a2b3c u0 NavigationBar0}:',
