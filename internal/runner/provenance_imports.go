@@ -71,7 +71,7 @@ type graphModule struct{ abs, rel string }
 type importGraph struct {
 	ctx     context.Context
 	root    string
-	seen    []os.FileInfo
+	seen    map[string]bool // repo-relative real paths already queued
 	queue   []graphModule
 	deps    []ProvenanceDependency
 	bytes   int64
@@ -80,8 +80,13 @@ type importGraph struct {
 
 // captureDependencies digests the spec's transitive local imports and the
 // nearest lockfile. Source is scanned lexically and never executed.
-func captureDependencies(ctx context.Context, root, specAbs, specRel string, specData []byte, specInfo os.FileInfo) ([]ProvenanceDependency, error) {
-	g := &importGraph{ctx: ctx, root: root, seen: []os.FileInfo{specInfo}}
+//
+// Modules are identified by their real repo-relative path, not by file
+// identity: relative imports resolve from a module's directory, so a hard
+// link (or a second spelling on a case-insensitive file system) is followed
+// and recorded separately. That can only add entries, never drop one.
+func captureDependencies(ctx context.Context, root, specAbs, specRel string, specData []byte) ([]ProvenanceDependency, error) {
+	g := &importGraph{ctx: ctx, root: root, seen: map[string]bool{specRel: true}}
 	if err := g.follow(graphModule{specAbs, specRel}, specData); err != nil {
 		return nil, err
 	}
@@ -179,7 +184,7 @@ func (g *importGraph) follow(module graphModule, data []byte) error {
 		if err != nil || !info.Mode().IsRegular() {
 			return graphError("import %s in %s:%d is not a regular file", quoteSpecifier(specifier), module.rel, ref.line)
 		}
-		if slices.ContainsFunc(g.seen, func(seen os.FileInfo) bool { return os.SameFile(seen, info) }) {
+		if g.seen[rel] {
 			continue
 		}
 		if !validDependencyPath(rel) {
@@ -188,7 +193,7 @@ func (g *importGraph) follow(module graphModule, data []byte) error {
 		if g.modules++; g.modules > provenanceMaxModules {
 			return graphError("more than %d local modules", provenanceMaxModules)
 		}
-		g.seen = append(g.seen, info)
+		g.seen[rel] = true
 		g.queue = append(g.queue, graphModule{real, rel})
 	}
 	return nil
@@ -239,7 +244,9 @@ func (g *importGraph) lockfiles(dir string) error {
 			if err != nil {
 				return err
 			}
-			g.deps = append(g.deps, ProvenanceDependency{Path: rel, Kind: DependencyLockfile, SHA256: sum})
+			if err := g.addLockfile(rel, sum); err != nil {
+				return err
+			}
 		}
 		rel, err := filepath.Rel(g.root, dir)
 		if found || err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -247,6 +254,24 @@ func (g *importGraph) lockfiles(dir string) error {
 		}
 		dir = filepath.Dir(dir)
 	}
+}
+
+// addLockfile records a lockfile once per path. A lockfile the spec also
+// imports (for example as JSON), or two lockfile names linked to one file,
+// keeps a single entry of kind lockfile; differing digests mean it changed
+// during capture.
+func (g *importGraph) addLockfile(rel, sum string) error {
+	for index, dep := range g.deps {
+		if dep.Path == rel {
+			if dep.SHA256 != sum {
+				return graphError("lockfile %s changed during capture", rel)
+			}
+			g.deps[index].Kind = DependencyLockfile
+			return nil
+		}
+	}
+	g.deps = append(g.deps, ProvenanceDependency{Path: rel, Kind: DependencyLockfile, SHA256: sum})
+	return nil
 }
 
 func (g *importGraph) lockfile(path string) (string, string, error) {
@@ -423,6 +448,10 @@ func scanImports(src []byte) ([]importRef, error) {
 	s := &importScanner{}
 	n, i, line, depth := len(src), 0, 1, 0
 	var templates []int // brace depth at each open template substitution
+	// A UTF-8 byte order mark is not part of the first token. The caller
+	// hashes the original bytes; only the scan skips it.
+	src = bytes.TrimPrefix(src, []byte("\xef\xbb\xbf"))
+	n = len(src)
 	if bytes.HasPrefix(src, []byte("#!")) {
 		for i < n && src[i] != '\n' {
 			i++

@@ -552,7 +552,10 @@ fixtures, are digested but not parsed. The lockfiles (`package-lock.json`,
 root are digested too. Each entry in `dependencies` is a repo-relative `path`,
 a `kind` (`import` or `lockfile`) and a `sha256` of its bytes; contents are
 never stored. `dependenciesSHA256` digests the sorted list, and an empty list
-is omitted.
+is omitted. Modules are identified by their real repo-relative path, so a hard
+link reached from two directories is followed from each, and a lockfile the
+spec also imports is recorded once as a lockfile. A leading UTF-8 byte order
+mark is skipped when scanning and kept in the digest.
 
 Package, built-in and path-alias imports (`@playwright/test`, `node:fs`,
 `@/helpers`, `#internal`) are not followed, and files under `node_modules`
@@ -577,8 +580,10 @@ A version 2 comparison has `scope: "spec-and-local-imports"` and a
 `dependencies` status. When it is `mismatch`, `dependencyChanges` names each
 `modified`, `added` or `removed` path, and the text output prints one line per
 change. Version 1 snapshots are still accepted and compared with
-`scope: "spec"`: imported modules are not compared, and the text output says
-so. Capture a new snapshot to cover them.
+`scope: "spec"`: `assess` and both `run` checks capture the checkout without
+its import graph, so imported modules are neither compared nor scanned (an
+import a version 2 capture would refuse does not make the comparison
+unknown), and the text output says so. Capture a new snapshot to cover them.
 
 Assessment compares the supplied snapshot with the current checkout; mismatches
 remain advisory and unavailable capture remains unknown, with a generic warning

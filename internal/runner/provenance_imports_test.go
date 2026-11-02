@@ -350,6 +350,7 @@ func TestScanImports(t *testing.T) {
 		"const from = 'not-an-import'; ({ import: 'nor-this' });":                  nil,
 		"import type { T } from './types';":                                        {"./types"},
 		`import 'c:\\x\\y'; import "it\"s"; import 'a\'b';`:                        {`c:\x\y`, `it"s`, `a'b`},
+		"\xef\xbb\xbfimport './bom';":                                              {"./bom"},
 		"const s = 'unterminated\nimport './ok';":                                  {"./ok"},
 		"require();": nil,
 	} {
@@ -408,5 +409,101 @@ func TestAgentProvenanceDependencyRecordValidation(t *testing.T) {
 	r := CompareAgentProvenance(v1, capture(t, filepath.Join(repo, "t.spec.ts")))
 	if r.Status != "matched" || r.Scope != ProvenanceScopeSpec || r.Dependencies != "" {
 		t.Fatalf("version 1 record not compared as spec scope: %+v", r)
+	}
+}
+
+// Hard links share file identity but not resolution context: each alias's
+// relative imports resolve from its own directory, so both are followed and
+// an edit behind the second alias is a mismatch.
+func TestProvenanceHardLinkAliasesAreFollowedSeparately(t *testing.T) {
+	repo := importRepo(t, map[string]string{
+		"t.spec.ts":  "import './a/entry.js';\nimport './b/entry.js';\n",
+		"a/entry.js": "import './dep.js';\n",
+		"a/dep.js":   "export const a = 1;\n",
+		"b/dep.js":   "export const b = 1;\n",
+	})
+	if err := os.Link(filepath.Join(repo, "a/entry.js"), filepath.Join(repo, "b/entry.js")); err != nil {
+		t.Skip("hard links unavailable")
+	}
+	spec := filepath.Join(repo, "t.spec.ts")
+	creation := capture(t, spec)
+	if got := dependencyPaths(creation); !reflect.DeepEqual(got, []string{"import:a/dep.js", "import:a/entry.js", "import:b/dep.js", "import:b/entry.js"}) {
+		t.Fatalf("dependencies = %v", got)
+	}
+	mustWrite(t, filepath.Join(repo, "b/dep.js"), "export const b = 2;\n", 0o600)
+	r := CompareAgentProvenance(creation, capture(t, spec))
+	if r.Status != "mismatch" || !reflect.DeepEqual(r.DependencyChanges, []ProvenanceChange{{"b/dep.js", DependencyImport, "modified"}}) {
+		t.Fatalf("edit behind a hard-link alias not detected: %+v", r)
+	}
+}
+
+// A UTF-8 byte order mark does not hide the first import; the source digest
+// still covers the original bytes.
+func TestProvenanceByteOrderMarkDoesNotHideImports(t *testing.T) {
+	source := "\xef\xbb\xbfimport './helper.js';\n"
+	repo := importRepo(t, map[string]string{"t.spec.ts": source, "helper.ts": "export {};\n"})
+	p := capture(t, filepath.Join(repo, "t.spec.ts"))
+	if got := dependencyPaths(p); !reflect.DeepEqual(got, []string{"import:helper.ts"}) || p.Source != provenanceHash([]byte(source)) {
+		t.Fatalf("dependencies = %v source=%s", got, p.Source)
+	}
+}
+
+// A spec that imports its nearest lockfile records one entry of kind
+// lockfile, and the snapshot it writes is accepted again.
+func TestProvenanceImportedLockfileIsRecordedOnce(t *testing.T) {
+	repo := importRepo(t, map[string]string{"t.spec.ts": "const lock = require('./package-lock.json');\n", "package-lock.json": "{\"lockfileVersion\": 3}\n"})
+	spec := filepath.Join(repo, "t.spec.ts")
+	creation := capture(t, spec)
+	if got := dependencyPaths(creation); !reflect.DeepEqual(got, []string{"lockfile:package-lock.json"}) {
+		t.Fatalf("dependencies = %v", got)
+	}
+	mustWrite(t, filepath.Join(repo, "package-lock.json"), "{\"lockfileVersion\": 4}\n", 0o600)
+	r := CompareAgentProvenance(creation, capture(t, spec))
+	if r.Status != "mismatch" || !reflect.DeepEqual(r.DependencyChanges, []ProvenanceChange{{"package-lock.json", DependencyLockfile, "modified"}}) {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+// A version 1 snapshot is compared with a spec-only capture through
+// execution: an import that version 2 cannot follow does not make it unknown,
+// and a spec edit is still refused.
+func TestVersion1ProvenanceStaysSpecOnlyThroughExecution(t *testing.T) {
+	for _, change := range []string{"none", "helper", "spec"} {
+		t.Run(change, func(t *testing.T) {
+			repo := importRepo(t, map[string]string{"t.spec.ts": "const driver = await import(process.env.DRIVER);\nimport './helper';\n", "helper.ts": "export {};\n"})
+			spec := filepath.Join(repo, "t.spec.ts")
+			if _, err := CaptureAgentProvenance(context.Background(), spec, "fixture-agent"); err == nil {
+				t.Fatal("version 2 capture followed a non-literal import")
+			}
+			creation, err := CaptureAgentProvenanceFor(context.Background(), spec, AgentProvenance{Version: 1, Agent: "fixture-agent"})
+			if err != nil || creation.Version != 1 || creation.Dependencies != nil {
+				t.Fatalf("version 1 capture: %+v %v", creation, err)
+			}
+			switch change {
+			case "helper":
+				mustWrite(t, filepath.Join(repo, "helper.ts"), "export const changed = 1;\n", 0o600)
+			case "spec":
+				mustWrite(t, spec, "// changed\n", 0o600)
+			}
+			e := &provenanceExecutor{}
+			job := fakeJob("job-001", "success", 0)
+			job.Spec = spec
+			summary, err := Execute(context.Background(), Plan{Version: 1, RunID: "run-provenance", Jobs: []Job{job}}, ExecuteOptions{AgentProvenance: &creation, Executor: e, Adapters: []Adapter{fakeAdapter{}}, MaxAttempts: 3, ReceiptDir: t.TempDir()})
+			if err != nil || len(summary.Receipts) != 1 {
+				t.Fatal(err)
+			}
+			r := summary.Receipts[0]
+			if change == "spec" {
+				if summary.Complete || r.Status != StatusError || e.calls != 0 || r.AgentProvenance.Source != "mismatch" {
+					t.Fatalf("version 1 spec edit executed: %+v", r.AgentProvenance)
+				}
+				return
+			}
+			// Version 1 never compared imports, so a helper edit stays matched
+			// there, as before; the scope says so.
+			if !summary.Complete || r.Status != StatusPassed || e.calls != 1 || r.AgentProvenance.Status != "matched" || r.AgentProvenance.Scope != ProvenanceScopeSpec || r.AgentProvenance.Dependencies != "" || r.AgentProvenance.After == nil || r.AgentProvenance.After.Version != 1 {
+				t.Fatalf("version 1 comparison not spec-only: %+v", r.AgentProvenance)
+			}
+		})
 	}
 }

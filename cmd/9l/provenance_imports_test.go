@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -97,5 +98,19 @@ func TestProvenanceCommandCoversImportedHelpers(t *testing.T) {
 	stderr.Reset()
 	if code := run([]string{"provenance", spec, "--agent", "fixture-agent"}, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "non-literal specifier") {
 		t.Fatalf("unresolvable capture: code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	// A version 1 snapshot of the same checkout is compared spec-only, so the
+	// import that version 2 cannot follow does not make it unknown.
+	v1, err := runner.CaptureAgentProvenanceFor(context.Background(), spec, runner.AgentProvenance{Version: 1, Agent: "fixture-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(v1)
+	if err := os.WriteFile(snapshot, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, warning = assess()
+	if p := report.AgentProvenance; p.Status != "matched" || p.Scope != runner.ProvenanceScopeSpec || p.Dependencies != "" || warning != "" {
+		t.Fatalf("version 1 snapshot: %+v %q", p, warning)
 	}
 }

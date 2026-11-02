@@ -210,7 +210,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			fmt.Fprintln(errOut, "9l:", err)
 			return 2
 		}
-		actual, err := runner.CaptureAgentProvenance(ctx, fs.Arg(0), expected.Agent)
+		actual, err := runner.CaptureAgentProvenanceFor(ctx, fs.Arg(0), expected)
 		if graph := (runner.ImportGraphError{}); errors.As(err, &graph) {
 			// Our own bounded message naming repo-relative paths; raw Git
 			// errors are never emitted.

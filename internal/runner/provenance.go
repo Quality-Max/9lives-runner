@@ -141,6 +141,10 @@ func validDependencies(p AgentProvenance) bool {
 // An import graph that cannot be captured completely returns an
 // ImportGraphError, so provenance stays unknown rather than matching.
 func CaptureAgentProvenance(ctx context.Context, spec, agent string) (AgentProvenance, error) {
+	return captureAgentProvenance(ctx, spec, agent, AgentProvenanceVersion)
+}
+
+func captureAgentProvenance(ctx context.Context, spec, agent string, version int) (AgentProvenance, error) {
 	var empty AgentProvenance
 	if !provenanceID.MatchString(agent) {
 		return empty, errors.New("invalid agent identifier")
@@ -206,13 +210,29 @@ func CaptureAgentProvenance(ctx context.Context, spec, agent string) (AgentProve
 	if err != nil || len(data) > provenanceSourceLimit {
 		return empty, errors.New("source unavailable or too large")
 	}
-	deps, err := captureDependencies(ctx, root, abs, filepath.ToSlash(rel), data, info)
-	if err != nil {
-		return empty, err
+	p := AgentProvenance{Version: version, Agent: agent, Repository: provenanceHash([]byte(root)), Branch: branch, Commit: commit, Source: provenanceHash(data), SourcePath: provenanceHash([]byte(filepath.ToSlash(rel)))}
+	if version >= 2 {
+		deps, err := captureDependencies(ctx, root, abs, filepath.ToSlash(rel), data)
+		if err != nil {
+			return empty, err
+		}
+		p.Dependencies, p.DependenciesSHA256 = deps, dependenciesDigest(deps)
 	}
-	p := AgentProvenance{AgentProvenanceVersion, agent, provenanceHash([]byte(root)), branch, commit, provenanceHash(data), provenanceHash([]byte(filepath.ToSlash(rel))), deps, dependenciesDigest(deps)}
 	raw, _ := json.Marshal(p)
 	return ParseAgentProvenance(raw)
+}
+
+// CaptureAgentProvenanceFor captures the checkout in the form of expected, so
+// the two can be compared: a version 1 creation snapshot is checked against a
+// spec-only capture, as before version 2, and an import that a version 2
+// capture could not follow does not turn an otherwise valid version 1
+// comparison unknown. A version 2 snapshot always captures the import graph.
+func CaptureAgentProvenanceFor(ctx context.Context, spec string, expected AgentProvenance) (AgentProvenance, error) {
+	version := AgentProvenanceVersion
+	if expected.Version == 1 {
+		version = 1
+	}
+	return captureAgentProvenance(ctx, spec, expected.Agent, version)
 }
 
 type limitedProvenanceOutput struct{ buffer bytes.Buffer }

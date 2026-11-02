@@ -389,7 +389,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	if opts.AgentProvenance != nil {
 		unknown := UnknownAgentProvenance()
 		receipt.AgentProvenance = &unknown
-		actual, err := CaptureAgentProvenance(ctx, job.Spec, opts.AgentProvenance.Agent)
+		actual, err := CaptureAgentProvenanceFor(ctx, job.Spec, *opts.AgentProvenance)
 		if err != nil {
 			reason := "agent branch/source provenance unavailable; execution refused"
 			if graph := (ImportGraphError{}); errors.As(err, &graph) {
@@ -549,7 +549,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	}
 	receipt.Evidence.StderrTruncated = output.StderrTruncated
 	if opts.AgentProvenance != nil {
-		actual, err := CaptureAgentProvenance(parent, job.Spec, opts.AgentProvenance.Agent)
+		actual, err := CaptureAgentProvenanceFor(parent, job.Spec, *opts.AgentProvenance)
 		if err != nil {
 			unknown := UnknownAgentProvenance()
 			unknown.Expected, unknown.Before = receipt.AgentProvenance.Expected, receipt.AgentProvenance.Before
