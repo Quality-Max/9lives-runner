@@ -508,8 +508,9 @@ HEAD fail capture.
 Snapshot version 2 also covers the spec's local import graph. Capture scans
 the spec and every local module it reaches, without executing them, for
 `import … from`, `export … from`, side-effect `import '…'`, and
-`import('…')` or `require('…')` with one literal argument. Relative and
-absolute specifiers are resolved as the Playwright loader does: the exact
+`import('…')` or `require('…')` with one literal argument. Relative
+specifiers (`./`, `../`, and `.\`/`..\` where backslash is a path separator)
+are resolved as the Playwright loader does: the exact
 file, then `.js`→`.jsx`/`.ts`/`.tsx`, `.jsx`→`.tsx`, `.cjs`→`.cts`,
 `.mjs`→`.mts`, an extensionless name with `.js`, `.ts`, `.jsx`, `.tsx`,
 `.cjs`, `.mjs`, `.cts` or `.mts`, then a directory's `index` file. Script and
@@ -527,7 +528,10 @@ Package, built-in and path-alias imports (`@playwright/test`, `node:fs`,
 are not read: installed packages are left to the lockfile. Capture fails,
 so provenance stays unknown rather than matching, when a local import cannot
 be resolved, resolves outside the repository (including through a symlink),
-is a `file:` URL or uses escape sequences, when `import()` or `require()` has
+is a `file:` URL or uses escape sequences other than `\\` and quotes, when a
+specifier is absolute (a leading `/` or `\`, a drive letter such as `C:` or a
+UNC path, treated as outside the repository on every OS, even when it names a
+file inside it), when `import()` or `require()` has
 a non-literal argument, or when the graph exceeds 256 local modules, 1 MiB per
 module, 8 MiB together or 64 MiB per lockfile. `9l provenance` then exits 2
 with the reason, `assess` warns with it, and `run` refuses execution with it

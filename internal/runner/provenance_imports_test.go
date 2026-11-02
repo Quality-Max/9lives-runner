@@ -193,11 +193,6 @@ func TestProvenanceImportGraphFailsClosed(t *testing.T) {
 		"outside": {files: map[string]string{"t.spec.ts": "import '../outside';\n"}, setup: func(t *testing.T, repo string) {
 			mustWrite(t, filepath.Join(filepath.Dir(repo), "outside.ts"), "export {};\n", 0o600)
 		}, reason: "outside the repository"},
-		"absolute outside": {files: map[string]string{}, setup: func(t *testing.T, repo string) {
-			outside := filepath.Join(filepath.Dir(repo), "abs.ts")
-			mustWrite(t, outside, "export {};\n", 0o600)
-			mustWrite(t, filepath.Join(repo, "t.spec.ts"), fmt.Sprintf("import %q;\n", filepath.ToSlash(outside)), 0o600)
-		}, reason: "outside the repository"},
 		"symlink outside": {files: map[string]string{"t.spec.ts": "import './link';\n"}, setup: func(t *testing.T, repo string) {
 			outside := filepath.Join(filepath.Dir(repo), "target.ts")
 			mustWrite(t, outside, "export {};\n", 0o600)
@@ -248,6 +243,58 @@ func TestProvenanceImportGraphFailsClosed(t *testing.T) {
 				t.Fatalf("err = %v, want import graph error containing %q", err, c.reason)
 			}
 		})
+	}
+}
+
+// jsString writes s as a single-quoted JavaScript string literal.
+func jsString(s string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(s) + "'"
+}
+
+// An absolute specifier names a host path, not a module relative to the
+// importer, so every form fails capture on every OS, even one that names a
+// file inside the repository: POSIX, rooted backslash, drive-letter and UNC.
+func TestProvenanceAbsoluteSpecifiersAreOutsideOnEveryOS(t *testing.T) {
+	repo := importRepo(t, map[string]string{"inside.ts": "export {};\n"})
+	outside := filepath.Join(filepath.Dir(repo), "abs.ts")
+	mustWrite(t, outside, "export {};\n", 0o600)
+	inside := filepath.Join(repo, "inside.ts")
+	for _, specifier := range []string{
+		outside, filepath.ToSlash(outside), inside, filepath.ToSlash(inside),
+		"/etc/hosts", `\etc\hosts`, "C:/Windows/win.ini", `c:\Windows\win.ini`, "C:relative.ts",
+		`\\server\share\x.ts`, "//server/share/x.ts", `\\?\C:\x.ts`,
+	} {
+		for _, form := range []string{"import %s;\n", "export * from %s;\n", "await import(%s);\n", "require(%s);\n"} {
+			source := fmt.Sprintf(form, jsString(specifier))
+			mustWrite(t, filepath.Join(repo, "t.spec.ts"), source, 0o600)
+			_, err := CaptureAgentProvenance(context.Background(), filepath.Join(repo, "t.spec.ts"), "fixture-agent")
+			var graph ImportGraphError
+			if !errors.As(err, &graph) || !strings.Contains(err.Error(), "is an absolute path, which provenance treats as outside the repository") {
+				t.Errorf("%q: err = %v", source, err)
+			}
+		}
+	}
+	for specifier, want := range map[string]bool{
+		"/x": true, `\x`: true, "C:/x": true, "z:x": true, `\\s\x`: true, "//s/x": true,
+		"./x": false, ".": false, "node:fs": false, "@scope/x": false, "1:x": false, "x": false,
+	} {
+		if absoluteSpecifier(specifier) != want {
+			t.Errorf("absoluteSpecifier(%q) != %v", specifier, want)
+		}
+	}
+}
+
+// A backslash relative specifier resolves where backslash is a separator and
+// otherwise fails capture; it is never skipped as a package.
+func TestProvenanceBackslashRelativeSpecifier(t *testing.T) {
+	repo := importRepo(t, map[string]string{"t.spec.ts": `import '.\\helpers\\a';` + "\n", "helpers/a.ts": "export {};\n"})
+	p, err := CaptureAgentProvenance(context.Background(), filepath.Join(repo, "t.spec.ts"), "fixture-agent")
+	if filepath.Separator == '\\' {
+		if err != nil || !reflect.DeepEqual(dependencyPaths(p), []string{"import:helpers/a.ts"}) {
+			t.Fatalf("windows: %v %v", dependencyPaths(p), err)
+		}
+	} else if !strings.Contains(fmt.Sprint(err), `import ".\\helpers\\a" in t.spec.ts:1 cannot be resolved`) {
+		t.Fatalf("posix: %v", err)
 	}
 }
 
@@ -302,6 +349,7 @@ func TestScanImports(t *testing.T) {
 		"obj.require(x); obj?.import(y); import.meta.url; function require(id) {}": nil,
 		"const from = 'not-an-import'; ({ import: 'nor-this' });":                  nil,
 		"import type { T } from './types';":                                        {"./types"},
+		`import 'c:\\x\\y'; import "it\"s"; import 'a\'b';`:                        {`c:\x\y`, `it"s`, `a'b`},
 		"const s = 'unterminated\nimport './ok';":                                  {"./ok"},
 		"require();": nil,
 	} {

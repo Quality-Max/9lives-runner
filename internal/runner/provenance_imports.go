@@ -109,6 +109,36 @@ func captureDependencies(ctx context.Context, root, specAbs, specRel string, spe
 	return g.deps, nil
 }
 
+// absoluteSpecifier reports a module specifier that names a host path rather
+// than a path relative to the importer: a leading slash or backslash
+// (including UNC `//server` and `\\server`) or a drive letter (`C:`). It is
+// classified the same way on every OS, because a specifier is not a host path.
+func absoluteSpecifier(specifier string) bool {
+	if strings.HasPrefix(specifier, "/") || strings.HasPrefix(specifier, `\`) {
+		return true
+	}
+	if len(specifier) >= 2 && specifier[1] == ':' {
+		c := specifier[0] | 0x20
+		return c >= 'a' && c <= 'z'
+	}
+	return false
+}
+
+// relativeSpecifier reports `.`, `..` and paths starting with either and a
+// slash or backslash. A backslash form resolves only where it is a separator
+// (Windows); elsewhere it cannot be resolved and fails capture.
+func relativeSpecifier(specifier string) bool {
+	if specifier == "." || specifier == ".." {
+		return true
+	}
+	for _, prefix := range []string{"./", "../", `.\`, `..\`} {
+		if strings.HasPrefix(specifier, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // follow queues the local modules that one source file imports.
 func (g *importGraph) follow(module graphModule, data []byte) error {
 	refs, err := scanImports(data)
@@ -117,20 +147,18 @@ func (g *importGraph) follow(module graphModule, data []byte) error {
 	}
 	for _, ref := range refs {
 		specifier := ref.specifier
-		local := specifier == "." || specifier == ".." || strings.HasPrefix(specifier, "./") || strings.HasPrefix(specifier, "../") || strings.HasPrefix(specifier, "/")
-		if strings.HasPrefix(specifier, "file:") {
+		switch {
+		case ref.escaped:
+			// The decoded specifier is unknown, so it cannot be classified.
+			return graphError("import %s in %s:%d uses escape sequences", quoteSpecifier(specifier), module.rel, ref.line)
+		case strings.HasPrefix(specifier, "file:"):
 			return graphError("file URL import %s in %s:%d is not supported", quoteSpecifier(specifier), module.rel, ref.line)
-		}
-		if !local {
+		case absoluteSpecifier(specifier):
+			return graphError("import %s in %s:%d is an absolute path, which provenance treats as outside the repository", quoteSpecifier(specifier), module.rel, ref.line)
+		case !relativeSpecifier(specifier):
 			continue // a package, built-in or path alias; packages are left to the lockfile
 		}
-		if ref.escaped {
-			return graphError("import %s in %s:%d uses escape sequences", quoteSpecifier(specifier), module.rel, ref.line)
-		}
-		base := specifier
-		if !filepath.IsAbs(base) {
-			base = filepath.Join(filepath.Dir(module.abs), filepath.FromSlash(specifier))
-		}
+		base := filepath.Join(filepath.Dir(module.abs), filepath.FromSlash(specifier))
 		resolved := resolveLocalModule(filepath.Clean(base), true)
 		if resolved == "" {
 			return graphError("import %s in %s:%d cannot be resolved", quoteSpecifier(specifier), module.rel, ref.line)
@@ -408,7 +436,11 @@ func scanImports(src []byte) ([]importRef, error) {
 			c := src[i]
 			switch {
 			case c == '\\':
-				escaped = true
+				if i+1 < n && strings.IndexByte("\\'\"`", src[i+1]) >= 0 {
+					value.WriteByte(src[i+1])
+				} else {
+					escaped = true
+				}
 				if i+1 < n && src[i+1] == '\n' {
 					line++
 				}
@@ -466,7 +498,13 @@ func scanImports(src []byte) ([]importRef, error) {
 			for i++; i < n; i++ {
 				ch := src[i]
 				if ch == '\\' {
-					escaped = true
+					// Decode the escapes a path can need; anything else
+					// leaves the value unknown.
+					if i+1 < n && strings.IndexByte("\\'\"`", src[i+1]) >= 0 {
+						value.WriteByte(src[i+1])
+					} else {
+						escaped = true
+					}
 					if i+1 < n && src[i+1] == '\n' {
 						line++
 					}

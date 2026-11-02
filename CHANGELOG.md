@@ -19,7 +19,8 @@ SDK versions.
   `dependencyChanges` naming the modified, added or removed path, and `run`
   refuses or invalidates the attempt. Capture parses source lexically and
   never executes it. An import that cannot be resolved, resolves outside the
-  repository (including through a symlink) or has a non-literal argument,
+  repository (including through a symlink), is absolute (`/`, `\`, a drive
+  letter or UNC path, on every OS) or has a non-literal argument,
   and a graph over 256 local modules, 1 MiB per module, 8 MiB together or
   64 MiB per lockfile, fails capture, so provenance stays unknown instead of
   matching. Package, built-in and path-alias imports are not followed and
