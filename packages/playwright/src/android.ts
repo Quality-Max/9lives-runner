@@ -174,9 +174,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   const interrupted = (c: TargetContext) => c.signal.aborted || Date.now() >= c.deadlineMs || closed;
   const readDeviceState = async (c: TargetContext) => parseDeviceState(await adbRun(shell(`(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096`), c));
   // A dump that yields neither a window nor a focus line was not observed
-  // (unavailable, empty or truncated); it is never read as zero windows.
+  // (unavailable or empty); it is never read as zero windows. Nor was one cut
+  // at the byte bound: only output ending in the completion marker counts.
+  const windowsEnd = '9l-windows-end';
   const readWindows = async (c: TargetContext): Promise<WindowObservation | undefined> => {
-    const windows = parseWindows(await adbRun(shell(`dumpsys window windows 2>/dev/null | grep -E "${windowPattern}" | head -c 8192`), c), options.appPackage);
+    const dump = await adbRun(shell(`{ dumpsys window windows 2>/dev/null | grep -E "${windowPattern}"; echo ${windowsEnd}; } | head -c 8192`), c);
+    if (!dump.endsWith(windowsEnd)) return undefined;
+    const windows = parseWindows(dump.slice(0, -windowsEnd.length), options.appPackage);
     return windows.windows === 0 && windows.focus === 'unknown' ? undefined : windows;
   };
   // With diagnostics, the window state before the last gesture; a read that
@@ -185,9 +189,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // visibility read between the gesture and a hidden assertion disarms the
   // observer heuristic: it describes a dismissal sequence (gesture, then the
   // control should be gone), nothing else.
-  let lastGesture: WindowObservation | undefined, armed = false;
-  const observeGesture = async (c: TargetContext) => {
+  // A touch's requested point stays with its observation, so a failure
+  // after the touch (the hidden assertion) still reports where it was sent;
+  // any other gesture replaces it.
+  let lastGesture: WindowObservation | undefined, lastPoint: {x: number; y: number} | undefined, armed = false;
+  const observeGesture = async (c: TargetContext, point?: {x: number; y: number}) => {
     if (!diagnostics) return;
+    lastPoint = point;
     try { lastGesture = await readWindows(c); } catch { lastGesture = undefined; }
     armed = lastGesture !== undefined;
   };
@@ -592,7 +600,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     async tapAt(point, c) {
       if (!pixel(point.x) || !pixel(point.y)) throw failure('invalid_point');
-      await observeGesture(c);
+      await observeGesture(c, {x: point.x, y: point.y});
       await endpoint('/actions', c, 'POST', {actions: [{type: 'pointer', id: 'finger1', parameters: {pointerType: 'touch'}, actions: [
         {type: 'pointerMove', duration: 0, x: point.x, y: point.y}, {type: 'pointerDown', button: 0}, {type: 'pause', duration: 50}, {type: 'pointerUp', button: 0},
       ]}]});
@@ -641,8 +649,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     // before the last gesture and now. Nothing is retried and no cause is claimed.
     async diagnose(f, c) {
       if (!diagnostics) return undefined;
+      const point = f.point ?? lastPoint;
       const record: TargetDiagnostic = {operation: f.operation, reason: f.reason, elapsedMs: f.elapsedMs, windowsBefore: lastGesture?.windows ?? -1, windowsAfter: -1,
-        ...(f.point ? {x: f.point.x, y: f.point.y, point: true as const} : {}), ...(lastGesture ? {focusBefore: lastGesture.focus} : {})};
+        ...(point ? {x: point.x, y: point.y, point: true as const} : {}), ...(lastGesture ? {focusBefore: lastGesture.focus} : {})};
       if (closed || !session) return record;
       try {
         const after = await readWindows(c);
