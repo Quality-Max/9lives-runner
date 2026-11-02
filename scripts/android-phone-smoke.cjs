@@ -13,6 +13,12 @@ const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const serial = process.env.NINELIVES_ANDROID_SERIAL;
 if (!serial) throw Error('set NINELIVES_ANDROID_SERIAL to the authorized phone');
+// A selection is checked before anything touches the phone: a typo must not
+// qualify a matrix that never ran the requested case.
+const caseNames = ['phone-healthy', 'phone-operations', 'phone-diagnostics', 'phone-dirty', 'phone-dirty-recovered', 'phone-posture', 'phone-width', 'phone-screen-off', 'phone-locked'];
+const selected = process.argv.slice(2);
+const unknown = selected.filter(name => !caseNames.includes(name));
+if (unknown.length) throw Error(`unknown cases: ${unknown.join(', ')}`);
 const sdk = process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools';
 const adbPath = path.join(sdk, 'platform-tools/adb');
 const work = path.join(root, '.context', 'android-phone-qualification', `smoke-${Date.now()}`);
@@ -51,6 +57,9 @@ const record = result => { results.push(result); fs.writeFileSync(path.join(work
 const {installInPlace} = require(path.join(root, 'packages/playwright/dist/android'));
 const installed = () => shell('pm path dev.ninelives.fixture 2>/dev/null || true');
 (async () => {
+  // The run owns the fixture app only if it installs it: an app already on
+  // the phone (another signer, kept data) is never replaced or removed.
+  if (installed() !== '') throw new assert.AssertionError({message: 'dev.ninelives.fixture is already installed; uninstall it or use another phone'});
   try {
     const first = await installInPlace({sdkRoot: sdk, deviceSerial: serial, apk: fixtures['phone-a'].apk});
     assert.equal(first.apkSHA256, fixtures['phone-a'].apkSHA256);
@@ -65,6 +74,9 @@ const installed = () => shell('pm path dev.ninelives.fixture 2>/dev/null || true
     record({mode: 'install', qualified: true, versionCode: first.versionCode, versionName: first.versionName});
   } catch (error) {
     record({mode: 'install', qualified: false, reason: error instanceof assert.AssertionError ? String(error.message).split('\n')[0].slice(0, 200) : String(error?.message ?? 'unexpected').slice(0, 120)});
+    // Without the run's own installation nothing else is meaningful, and
+    // nothing on the phone is changed further.
+    throw new assert.AssertionError({message: 'installation failed; the matrix did not run'});
   }
   const creation = sync(engine, ['provenance', spec, '--agent', 'codex']);
   assert.equal(creation.status, 0);
@@ -94,14 +106,18 @@ const installed = () => shell('pm path dev.ninelives.fixture 2>/dev/null || true
     {mode: 'phone-screen-off', grep: 'native transfer', before: () => { adb('shell', 'input', 'keyevent', 'KEYCODE_SLEEP'); sync('sleep', ['3']); }},
     {mode: 'phone-locked', grep: 'native transfer', before: () => { adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'); sync('sleep', ['3']); }},
   ];
-  const selected = process.argv.slice(2);
+  assert.deepEqual(cases.map(c => c.mode), caseNames);
   for (const {mode, grep, before} of cases.filter(c => !selected.length || selected.includes(c.mode))) {
     try {
       if (mode === 'phone-locked') {
         // Only meaningful when waking leaves the keyguard showing.
         before();
-        const state = shell('(dumpsys window; dumpsys power) 2>/dev/null | grep -E "mShowingLockscreen=|isStatusBarKeyguard=|(^| )showing=|mKeyguardShowing=" | head -c 4096');
-        if (!/(showing|mShowingLockscreen|mKeyguardShowing|isStatusBarKeyguard)=true/.test(state)) { record({mode, qualified: true, skipped: 'no lock screen after wake'}); continue; }
+        // The driver's own reader: only an observed unlocked state may skip;
+        // an unreadable, asleep or locked reading runs the case.
+        const {deviceStatePattern, parseDeviceState} = require(path.join(root, 'packages/playwright/dist/android-device'));
+        const reading = adb('shell', 'sh', '-c', `'(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096'`);
+        assert.equal(reading.status, 0, 'phone-locked: the device state could not be read');
+        if (parseDeviceState(reading.stdout) === 'unlocked') { record({mode, qualified: true, skipped: 'no lock screen after wake'}); continue; }
       } else before?.();
       const probe = path.join(work, `${mode}-probe.json`);
       const r = sync(engine, ['run', spec, '--sdk', '--config', config, '--target', 'android:finance', '--agent-provenance', provenance,
