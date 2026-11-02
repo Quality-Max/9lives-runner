@@ -160,6 +160,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   const shell = (script: string) => ['shell', 'sh', '-c', `'${script}'`];
   // Device-state reads filter on the device and stay in memory. They never
   // request, store or bypass a credential, and never change lock settings.
+  // A failed device read during cancellation, past the deadline or after
+  // close is that interruption, never a reading of the device.
+  const interrupted = (c: TargetContext) => c.signal.aborted || Date.now() >= c.deadlineMs || closed;
   const readDeviceState = async (c: TargetContext) => parseDeviceState(await adbRun(shell(`(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096`), c));
   // A baseline reading is clean only when every component was observed as
   // declared; a difference is a dirty reason; anything else is unknown and
@@ -355,7 +358,14 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             await mkdir(lock, {mode: 0o700}); lease = lock;
             await installedBuild(c);
             stage = 'device_state';
-            const state = await readDeviceState(c);
+            // A phone that cannot be read before the test is in an unknown
+            // state, not an open failure; cancellation, the deadline and a
+            // closed driver still propagate.
+            let state: Awaited<ReturnType<typeof readDeviceState>>;
+            try { state = await readDeviceState(c); } catch (error) {
+              if (interrupted(c)) throw error;
+              throw new TargetSetupError({classification: 'unknown', reason: 'device-state-unknown', stage: 'open'});
+            }
             if (state === 'locked' || state === 'screen-off') throw new TargetSetupError({classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'open'});
             stage = 'device_attach';
             if (await adbRun(['shell', 'sh', '-c', "'pidof io.appium.uiautomator2.server io.appium.uiautomator2.server.test || true'"], c)) throw failure('device_automation_in_use');
@@ -453,16 +463,20 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
               // restored baseline.
               const reason = reading;
               let presses = 0;
+              // A failed Back or a failed read after one leaves an unknown,
+              // unrestored baseline: the presses already completed stay on the
+              // record. Cancellation, the deadline and a closed driver still propagate.
               while (dirty(reading) && presses < backPresses) {
                 check(c);
-                await adbRun(['shell', 'input', 'keyevent', 'KEYCODE_BACK'], c);
+                try { await adbRun(['shell', 'input', 'keyevent', 'KEYCODE_BACK'], c); } catch (error) {
+                  if (interrupted(c)) throw error;
+                  reading = 'unknown';
+                  break;
+                }
                 presses++;
                 await delay(500, undefined, {signal: c.signal});
-                // A failed read after Back is an unknown, unrestored baseline:
-                // the Back already sent stays on the record. Cancellation, the
-                // deadline and a closed driver still propagate.
                 try { reading = await readBaseline(c); } catch (error) {
-                  if (c.signal.aborted || Date.now() >= c.deadlineMs || closed) throw error;
+                  if (interrupted(c)) throw error;
                   reading = 'unknown';
                 }
               }
@@ -511,7 +525,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       try { state = await readDeviceState(c); } catch (error) {
         // A phone that cannot be read (disconnected, adb gone) has an unknown
         // state; cancellation, the deadline and a closed driver still propagate.
-        if (c.signal.aborted || Date.now() >= c.deadlineMs || closed) throw error;
+        if (interrupted(c)) throw error;
         state = 'unknown';
       }
       if (state === 'unlocked') return undefined;

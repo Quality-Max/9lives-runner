@@ -168,7 +168,7 @@ test('attached phone classifies a locked device and leaked state as setup, never
   const appWindow = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
   const focus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
   const device = {state: 'showing=false\nmInputRestricted=false\nmWakefulness=Awake', windows: [appWindow, focus].join('\n'), ime: 'mInputShown=false'};
-  let commands = [], sessions = 0, backPresses = 0, onBack = () => {}, failReads = false, failWindows = false;
+  let commands = [], sessions = 0, backPresses = 0, onBack = () => {}, failReads = false, failWindows = false, failBackAfter = Infinity;
   const serial = `test-${randomUUID()}`;
   let opened = [];
   try {
@@ -191,7 +191,7 @@ test('attached phone classifies a locked device and leaked state as setup, never
       else if (script.includes('dumpsys input_method')) result = device.ime;
       else if (script.includes('pm path io.appium.settings')) result = 'absent';
       else if (script.includes('echo present')) result = 'absent';
-      else if (command[1] === 'input' && command[3] === 'KEYCODE_BACK') { backPresses++; onBack(); }
+      else if (command[1] === 'input' && command[3] === 'KEYCODE_BACK') { if (backPresses >= failBackAfter) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } backPresses++; onBack(); }
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
       else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
       queueMicrotask(() => callback(null, result));
@@ -233,6 +233,11 @@ test('attached phone classifies a locked device and leaked state as setup, never
     assert(!commands.some(a => a[2] === 'settings' && a[3] === 'put'), 'no policy changed on a locked device');
     device.state = 'showing=false\nmWakefulness=Asleep';
     await open({}, {classification: 'blocked', reason: 'screen-off', stage: 'open'});
+    // A phone that cannot be read before the test is unknown, not an open failure.
+    failReads = true;
+    await open({}, {classification: 'unknown', reason: 'device-state-unknown', stage: 'open'});
+    assert.equal(sessions, 0);
+    failReads = false;
     // An unrecognized build is unknown, which does not block the test.
     device.state = 'mWakefulness=Awake';
     let driver = await open({});
@@ -279,6 +284,10 @@ test('attached phone classifies a locked device and leaked state as setup, never
     await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 1, restored: false}});
     failWindows = false;
     onBack = () => {};
+    // So does a Back command that fails after an earlier one completed.
+    failBackAfter = 1;
+    await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 1, restored: false}});
+    failBackAfter = Infinity;
     // Before any Back press, an unreadable baseline classifies nothing.
     device.ime = 'mImeWindowVis=0x0';
     driver = await open({recovery: {back: 3}});
