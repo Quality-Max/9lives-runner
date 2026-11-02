@@ -208,6 +208,9 @@ func TestSetupRecordsPerStage(t *testing.T) {
 	if err != nil || len(v.TargetSetup) != 2 || v.TargetSetup[0].Stage != runner.SetupStageOpen || v.TargetSetup[1].Stage != runner.SetupStageRecheck {
 		t.Fatalf("recovered baseline then lock not kept: %+v %v", v, err)
 	}
+	if !strings.Contains(v.Description, "1 test(s) carry a driver setup classification") {
+		t.Fatalf("two records for one test count as one test: %s", v.Description)
+	}
 	for name, frames := range map[string][]map[string]any{
 		"two rechecks":       with(rechecked, rechecked),
 		"two open records":   with(recovered, recovered),

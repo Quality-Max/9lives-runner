@@ -86,3 +86,9 @@ test('a touch outside the viewport is refused', async ({app}) => {
   const viewport = await app.viewport();
   await app.tapAt({x: viewport.width, y: 0});
 });
+
+// A driver that answers visibility with anything but a boolean proves nothing.
+test('a malformed visibility result is not hidden', async ({app}) => {
+  await app.open();
+  await app.getByTestId('status').toBeHidden();
+});
