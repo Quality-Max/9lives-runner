@@ -163,6 +163,14 @@ function createAnalyzer(ts) {
         if (factory.app) targetTests.add(declaration.name.text);
       }
     }
+    // test.use(...) anywhere in the file, at file or suite scope, that may
+    // set `app` replaces the fixture for some of its tests: none is trusted.
+    (function overrides(node) {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'use'
+        && ts.isIdentifier(node.expression.expression) && targetTests.has(node.expression.expression.text)
+        && (node.arguments.length !== 1 || mayDefineApp(node.arguments[0]))) targetTests.delete(node.expression.expression.text);
+      ts.forEachChild(node, overrides);
+    })(file);
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
       return { line: pos.line + 1, column: pos.character + 1 };
@@ -659,20 +667,70 @@ function createAnalyzer(ts) {
                 }
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
-              // A control: app.getByTestId(...) on a target app, or a name bound to one.
-              const targetControl = node => {
+              // Target provenance is read from declarations, not scan order: every
+              // name declared in this function (nested functions included) and
+              // every name written anywhere in it.
+              const declared = new Map(), written = new Set();
+              const declareName = (name, node) => declared.set(name, [...(declared.get(name) || []), node]);
+              const writes = node => {
+                if (ts.isIdentifier(node)) written.add(node.text);
+                else ts.forEachChild(node, writes);
+              };
+              (function walk(node) {
+                if (ts.isVariableDeclaration(node) || ts.isParameter(node)) boundNames(node.name).forEach(name => declareName(name, node));
+                else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isFunctionExpression(node) || ts.isClassExpression(node))
+                  && node.name && ts.isIdentifier(node.name)) declareName(node.name.text, node);
+                if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) writes(node.left);
+                if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
+                  && [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)) writes(node.operand);
+                ts.forEachChild(node, walk);
+              })(fn);
+              // The scope a parameter or block-scoped declaration binds in;
+              // null for var, functions and classes, which this does not follow.
+              const scopeOf = declaration => {
+                if (ts.isParameter(declaration)) return declaration.parent;
+                if (!ts.isVariableDeclaration(declaration) || !ts.isVariableDeclarationList(declaration.parent)
+                  || !(declaration.parent.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let))) return null;
+                return ts.isVariableStatement(declaration.parent.parent) ? declaration.parent.parent.parent : declaration.parent.parent;
+              };
+              const depth = node => { let n = 0; for (; node; node = node.parent) n++; return n; };
+              // The innermost declaration of a name in this function whose scope
+              // holds the use, or null when it cannot be read.
+              const bindingOf = use => {
+                const declarations = declared.get(use.text) || [];
+                if (written.has(use.text) || declarations.some(declaration => !scopeOf(declaration))) return null;
+                const visible = declarations.filter(declaration => contains(scopeOf(declaration), use));
+                return visible.sort((a, b) => depth(scopeOf(b)) - depth(scopeOf(a)))[0] || null;
+              };
+              // 'app' for the target app, 'control' for a control from
+              // app.getByTestId(...), or undefined. A parameter of this function
+              // keeps the kind its caller gave it; a const holds a control from
+              // its declaration on. A name that is written is neither.
+              const targetKind = node => {
                 node = bare(node);
-                if (ts.isIdentifier(node)) return targets.get(node.text) === 'control';
+                if (ts.isIdentifier(node)) {
+                  const declaration = bindingOf(node);
+                  if (!declaration) return undefined;
+                  if (ts.isParameter(declaration)) return fn.parameters.includes(declaration) ? targets.get(node.text) : undefined;
+                  if (!(declaration.parent.flags & ts.NodeFlags.Const) || !ts.isIdentifier(declaration.name) || !declaration.initializer
+                    || declaration.end > node.pos) return undefined;
+                  return targetKind(declaration.initializer) === 'control' ? 'control' : undefined;
+                }
                 return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'getByTestId'
-                  && ts.isIdentifier(bare(node.expression.expression)) && targets.get(bare(node.expression.expression).text) === 'app';
+                  && targetKind(node.expression.expression) === 'app' ? 'control' : undefined;
               };
               // A target assertion's matcher, or null for any other call.
               const targetMatcher = call => {
                 if (!ts.isPropertyAccessExpression(call.expression)) return null;
-                const name = call.expression.name.text, receiver = bare(call.expression.expression);
-                if (targetControlMatchers.has(name) && targetControl(receiver)) return name;
-                if (targetAppMatchers.has(name) && ts.isIdentifier(receiver) && targets.get(receiver.text) === 'app') return name;
+                const name = call.expression.name.text, kind = targetKind(call.expression.expression);
+                if (targetControlMatchers.has(name) && kind === 'control') return name;
+                if (targetAppMatchers.has(name) && kind === 'app') return name;
                 return null;
+              };
+              // The identifier a call chain starts from.
+              const rootNode = expression => {
+                while (ts.isPropertyAccessExpression(expression) || ts.isCallExpression(expression)) expression = expression.expression;
+                return ts.isIdentifier(expression) ? expression : null;
               };
               // The outermost nested function being scanned, if any.
               let nested = null;
@@ -733,7 +791,8 @@ function createAnalyzer(ts) {
                   while (ts.isPropertyAccessExpression(callee) && ['then', 'catch', 'finally'].includes(callee.name.text) && ts.isCallExpression(callee.expression)) callee = callee.expression.expression;
                   const combinator = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
                     && callee.expression.text === 'Promise' && ['all', 'allSettled', 'race', 'any'].includes(callee.name.text);
-                  if (!combinator && !expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
+                  const start = rootNode(child.expression);
+                  if (!combinator && !expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression)) && !(start && targetKind(start))) {
                     const helper = ts.isIdentifier(child.expression) ? resolveHelper(child.expression.text, child, fn) : null;
                     if (!helper || (!helper.marked && (ctx.depth >= 4 || ctx.stack.has(helper.fn) || order.expansions >= 64))) {
                       limited('unresolved-helper', child);
@@ -757,7 +816,7 @@ function createAnalyzer(ts) {
                       helper.fn.parameters.forEach((parameter, index) => {
                         const argument = child.arguments[index];
                         if (ts.isIdentifier(parameter.name) && argument && roots.has(root(argument))) helperRoots.add(parameter.name.text);
-                        const kind = argument && ts.isIdentifier(argument) ? targets.get(argument.text) : argument && targetControl(argument) ? 'control' : undefined;
+                        const kind = argument && targetKind(argument);
                         if (ts.isIdentifier(parameter.name) && kind) { helperRoots.add(parameter.name.text); helperTargets.set(parameter.name.text, kind); }
                       });
                       const settled = consumed(child);
@@ -788,7 +847,7 @@ function createAnalyzer(ts) {
                     let anchor = child;
                     while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
                     const [first] = child.arguments;
-                    const isAbsence = native === 'toBeHidden' || (native === 'toHaveKeyboard' && !!first && first.kind === ts.SyntaxKind.FalseKeyword);
+                    const isAbsence = native === 'toBeHidden' || (native === 'toHaveKeyboard' && !!first && bare(first).kind === ts.SyntaxKind.FalseKeyword);
                     assertion(child, annotations(anchor, 'outcome'), ctx.floating || !consumed(child), isAbsence, `target:${native}`, caught(child, 'reject'));
                   }
                   // The matcher call, rather than expect(...), expect.poll(...) or a
@@ -822,18 +881,6 @@ function createAnalyzer(ts) {
                       assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments),
                         known, isCaught);
                     }
-                  }
-                }
-                // A const bound to a control keeps it a target control. Any other
-                // binding of that name is not one (scan order follows source order).
-                if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name)) {
-                  const constant = ts.isVariableDeclarationList(child.parent) && (child.parent.flags & ts.NodeFlags.Const);
-                  if (constant && child.initializer && targetControl(child.initializer)) {
-                    targets.set(child.name.text, 'control');
-                    roots.add(child.name.text);
-                  } else if (targets.get(child.name.text) === 'control') {
-                    targets.delete(child.name.text);
-                    roots.delete(child.name.text);
                   }
                 }
                 // A loop repeats its body an unknown number of times. Its

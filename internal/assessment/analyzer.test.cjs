@@ -1137,3 +1137,33 @@ test('a target app is credited only when the factory and its fixture are known',
   assert.deepEqual(rebound.tests[0].assertions.map(a => a.matcher), ['target:toBeVisible']);
   assert.deepEqual(rebound.tests[0].limits.map(l => l.code), ['unresolved-helper']);
 });
+
+test('target provenance follows overrides, writes and lexical scope', () => {
+  const head = `import {createTargetTest} from '@9l/playwright';\nconst test = createTargetTest({});\n`;
+  const credited = body => analyze(head + body).tests.map(t => t.assertions.map(a => `${a.matcher}@${a.line}${a.absence ? ':absence' : ''}`));
+  // A test.use that may set app replaces the fixture; other options do not.
+  assert.deepEqual(credited(`test.use({app: fake});\ntest('t', async ({app}) => { await app.toHaveKeyboard(true); });`), [[]]);
+  assert.deepEqual(credited(`test.describe('s', () => { test.use(options); test('t', async ({app}) => { await app.toHaveKeyboard(true); }); });`), [[]]);
+  assert.deepEqual(credited(`test.use({locale: 'de-DE'});\ntest('t', async ({app}) => { await app.toHaveKeyboard(true); });`), [['target:toHaveKeyboard@4']]);
+  // A written fixture or helper parameter is not the app any more.
+  assert.deepEqual(credited(`test('t', async ({app}) => { app = fake; await app.toHaveKeyboard(true); });`), [[]]);
+  assert.deepEqual(credited(`async function check(app) { app = fake; await app.toHaveKeyboard(true); }\ntest('t', async ({app}) => { await check(app); });`), [[]]);
+  // Each use resolves to its innermost declaration: an inner control does not
+  // leak out, an inner non-control does not hide an outer control, and a
+  // shadowing parameter is not the app.
+  assert.deepEqual(credited(`test('t', async ({app}) => {
+    const c = other();
+    { const c = app.getByTestId('a'); await c.toBeVisible(); }
+    await c.toBeVisible();
+  });`), [['target:toBeVisible@5']]);
+  assert.deepEqual(credited(`test('t', async ({app}) => {
+    const c = app.getByTestId('a');
+    { const c = other(); }
+    await c.toBeVisible();
+  });`), [['target:toBeVisible@6']]);
+  assert.deepEqual(credited(`test('t', async ({app}) => { for (const app of others) await app.toHaveKeyboard(true); });`), [[]]);
+  // Wrapped arguments are read through parentheses and type assertions.
+  assert.deepEqual(credited(`async function sent(app) { await app.toHaveKeyboard((false)); }
+test('t', async ({app}) => { await sent((app)); await sent(app as TargetApp); await app.toHaveKeyboard((false) as boolean); });`),
+  [['target:toHaveKeyboard@3:absence', 'target:toHaveKeyboard@3:absence', 'target:toHaveKeyboard@4:absence']]);
+});

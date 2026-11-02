@@ -252,9 +252,13 @@ to a same-file helper, and `app.toHaveKeyboard(...)`. `toBeHidden` and
 `toHaveKeyboard(false)` are absence checks. Actions such as `tap`, `fill` or
 `back` are not assertions, so a target test with only actions receives
 `no-direct-assertion`. The app is not treated as a target app when an
-`.extend(...)` argument may define `app` (an `app` key, a computed key, or a
-spread the analyzer cannot read); a factory from another module or a `let`
-binding is not recognized. Recognition is source evidence only: at run time a
+`.extend(...)` or `test.use(...)` argument may define `app` (an `app` key, a
+computed key, or a spread or value the analyzer cannot read); a factory from
+another module or a `let` binding is not recognized. Each use of a name is
+resolved to its innermost declaration in scope, so a control declared in a
+block does not leak out of it and a parameter that shadows `app` is not the
+app; a name that is ever written, or declared with `var` or as a function, is
+neither the app nor a control. Recognition is source evidence only: at run time a
 target assertion is reported by the worker (`targetAssertions`) and is never
 independently verified.
 

@@ -103,9 +103,10 @@ SDK versions.
   helper), and `app.toHaveKeyboard(...)`, are credited as asynchronous
   assertions named `target:<matcher>`, with the usual await, catch, outcome and
   absence rules (`toBeHidden` and `toHaveKeyboard(false)` are absence checks).
-  The `app` fixture is the target app only when no `.extend(...)` can redefine
-  it; a factory from another module, a `let` binding or an unreadable extension
-  stays unrecognized. Recognition is source evidence only: a target test's
+  The `app` fixture is the target app only when no `.extend(...)` or
+  `test.use(...)` can redefine it and it is never written; names resolve to
+  their innermost declaration in scope. A factory from another module, a `let`
+  binding or an unreadable extension stays unrecognized. Recognition is source evidence only: a target test's
   runtime `targetAssertions` stay worker-reported and `verifiedAssertions`
   stays 0. Policy is `assessment-source-v16`; the analyzer helper version is
   13; report version 3 and suite version 1 are unchanged.
