@@ -4,6 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
+  'operations','diagnostics','width-mismatch','version-mismatch'];
+// `--list` prints the cases (CI checks its job groups cover them); an unknown
+// case is refused before anything is built or booted.
+if (process.argv[2] === '--list') { console.log(allModes.join('\n')); process.exit(0); }
+const unknownModes = process.argv.slice(2).filter(mode => !allModes.includes(mode));
+if (unknownModes.length) throw Error(`unknown cases: ${unknownModes.join(', ')}`);
 const work = path.join(root, '.context', 'android-qualification', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
 const engine = path.join(work, '9l');
@@ -32,8 +39,6 @@ function emulatorSet() {
   return r.stdout.split('\n').map(line=>/^(emulator-[0-9]+)\s+device$/.exec(line)?.[1]).filter(Boolean).sort().join(',');
 }
 const results = [];
-const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
-  'operations','diagnostics','width-mismatch','version-mismatch'];
 const modes = process.argv.slice(2).length ? process.argv.slice(2) : allModes;
 // Native operations and their diagnostics run the second spec test.
 const operationModes = ['operations','diagnostics'];

@@ -174,7 +174,9 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     await app.terminate();
     await app.getByTestId('send').toBeHidden();
     await app.activate();
-    await app.getByTestId('send').toBeVisible();
+    // activateApp returns before a cold relaunch has drawn the app; a slow
+    // CI emulator can take longer than the default assertion bound.
+    await app.getByTestId('send').toBeVisible(30000);
   } catch (error) {
     const e = error as {reason?: unknown; cause?: {message?: unknown}};
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;

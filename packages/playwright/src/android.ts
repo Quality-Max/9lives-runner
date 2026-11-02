@@ -441,17 +441,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (ime === 'unknown') throw failure('unavailable_state');
     return ime === 'shown';
   };
-  // terminateApp force-stops the app, then waits for its process to exit;
-  // the driver's own 500 ms default is too short on a cold emulator, so it
-  // waits up to 5 s within the operation's remaining time.
   // Brought to the front with the launcher intent, which matches the task's
   // root intent: a bare `am start -n` stacks a second instance of a
   // standard-launch activity on top of the one the session started.
   const launch = ['shell', 'am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER',
     '-n', `${options.appPackage}/${options.activity}`];
-  const appCommand = (script: 'mobile: terminateApp' | 'mobile: activateApp', c: TargetContext) =>
-    endpoint('/execute/sync', c, 'POST', {script, args: [{appId: options.appPackage,
-      ...(script === 'mobile: terminateApp' ? {timeout: Math.max(1, Math.min(5000, c.deadlineMs - Date.now() - 500))} : {})}]});
+  const appCommand = (script: 'mobile: activateApp', c: TargetContext) =>
+    endpoint('/execute/sync', c, 'POST', {script, args: [{appId: options.appPackage}]});
   const cleanup = async () => {
     await Promise.all([stop(emulator), stop(server)]);
     // Aborting HTTP alone cannot stop an already dispatched native action.
@@ -753,7 +749,19 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     // Terminate is a force-stop of the configured package only; data, the
     // installation and device settings are untouched. Activate relaunches it.
-    async terminate(c) { disarm(); await appCommand('mobile: terminateApp', c); },
+    // The driver's own force-stop of the configured package, then a bounded
+    // wait until no process of it is left: Appium's terminateApp gave up after
+    // its own short exit check on a slow emulator.
+    async terminate(c) {
+      disarm();
+      check(c);
+      await adbRun(['shell', 'am', 'force-stop', options.appPackage], c);
+      for (;;) {
+        if (await adbRun(shell(`pidof ${options.appPackage} || true`), c) === '') return;
+        if (Date.now() + 250 >= c.deadlineMs) throw failure('terminate_failed');
+        await delay(250, undefined, {signal: c.signal});
+      }
+    },
     async activate(c) { disarm(); await appCommand('mobile: activateApp', c); },
     // After a completed assertion failure: did the phone become unavailable?
     // Read-only; an owned emulator cannot lock itself. With diagnostics, a

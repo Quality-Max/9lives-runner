@@ -341,7 +341,8 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-ops-'));
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
   const requests = [];
-  let ime = 'mInputShown=false', backs = 0, hideOnBack = true, rectValue = {x: 12.4, y: 160, width: 1080, height: 600};
+  let ime = 'mInputShown=false', backs = 0, hideOnBack = true, rectValue = {x: 12.4, y: 160, width: 1080, height: 600}, pidChecks = 0;
+  const adbCommands = [];
   const serial = `test-${randomUUID()}`;
   let driver;
   try {
@@ -362,6 +363,9 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
       else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
       else if (script.includes('dumpsys input_method')) result = ime;
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
+      // The process lingers for two checks after the force-stop.
+      else if (script.includes('pidof dev.ninelives.fixture')) result = ++pidChecks <= 2 ? '4242' : '';
+      else if (command[1] === 'am' && command[2] === 'force-stop') adbCommands.push(command.join(' '));
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
       else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
       queueMicrotask(() => callback(null, result));
@@ -425,12 +429,16 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
     assert.deepEqual(actions.body.actions[0].actions.map(a => a.type), ['pointerMove', 'pointerDown', 'pause', 'pointerUp']);
     assert.deepEqual([actions.body.actions[0].actions[0].x, actions.body.actions[0].actions[0].y], [900, 1200]);
     await assert.rejects(driver.tapAt({x: -1, y: 0}, context()), /invalid_point/);
+    // Terminate force-stops the configured package itself and returns once no
+    // process of it is left; no Appium terminate command is sent.
+    const before = requests.length;
     await driver.terminate(context());
-    const terminate = requests.at(-1).body;
-    assert.equal(terminate.script, 'mobile: terminateApp');
-    assert.equal(terminate.args[0].appId, 'dev.ninelives.fixture');
-    // The exit check waits up to 5 s, within the operation's remaining time.
-    assert(terminate.args[0].timeout > 1000 && terminate.args[0].timeout <= 5000, `terminate timeout ${terminate.args[0].timeout}`);
+    assert.deepEqual(adbCommands, ['shell am force-stop dev.ninelives.fixture']);
+    assert.equal(pidChecks, 3);
+    assert.equal(requests.length, before, 'terminate sends no Appium request');
+    // A process that never exits fails the operation at its deadline.
+    pidChecks = -1000;
+    await assert.rejects(driver.terminate({signal: new AbortController().signal, deadlineMs: Date.now() + 600}), /terminate_failed/);
     await driver.activate(context());
     assert.deepEqual(requests.at(-1).body, {script: 'mobile: activateApp', args: [{appId: 'dev.ninelives.fixture'}]});
     assert(!requests.some(r => r.path.includes('/appium/device/') || r.path.includes('reset')), 'no reset, clear or device endpoints');
