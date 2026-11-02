@@ -147,6 +147,27 @@ Pass `deviceSerial` instead of `avd` and `apk` to attach to an explicitly select
 authorized physical device. Keep the serial in a private local file outside
 source control. `apkSHA256` must match the installed single-base APK; split APKs
 are rejected. The driver checks the build before and after session creation.
+A different installed digest stops the test as `setup mismatch`
+(`build-digest`) before any application operation. `expected` declares
+more of the build: `apk` names a local artifact (a downloaded build) whose
+digest the installation must match, and may replace `apkSHA256`;
+`versionCode` and `versionName` are compared with the device's package
+manager (`build-version`); `signerSHA256` with the SHA-256 of the installed
+base APK's first signing certificate (`build-signer`), read by pulling that
+APK into the attempt's private scratch directory, only when declared, and
+through the local `apksigner`. The runtime receipt records `versionCode`,
+`versionName` and `signer` (or `unknown`) beside the verified `apkSHA256`.
+
+To update the app in place from a project script, `installInPlace({sdkRoot,
+deviceSerial, apk})` takes the same exclusive device lease a test takes
+(`device_in_use` while a test or another installer holds it), copies the new
+APK into a private snapshot that it hashes, inspects and installs, so a build
+replacing the file meanwhile changes nothing, reads its package and signer, compares the signer with the installed app's and
+refuses on a difference before any device change; a package not yet
+installed is a first installation. Otherwise it runs `adb install -r`,
+verifies the installed digest, releases only its own lease and returns the
+package, digest, signer and versions for the reviewed build metadata. It
+never uninstalls, clears data or runs inside a test.
 It installs the pinned automation helpers, preserves the installed app and its
 data, and rejects `app.reset()` before issuing a device command.
 

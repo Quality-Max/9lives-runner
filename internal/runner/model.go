@@ -161,6 +161,12 @@ type AndroidRuntime struct {
 	DisplayHeight string `json:"displayHeight"`
 	Density       string `json:"density"`
 	Posture       string `json:"posture"`
+	// VersionCode, VersionName and Signer identify the installed build as
+	// the device reported it: the package manager's versions and the
+	// SHA-256 of the first signing certificate, or "unknown" when not read.
+	VersionCode string `json:"versionCode"`
+	VersionName string `json:"versionName"`
+	Signer      string `json:"signer"`
 }
 
 // TargetSetup is one worker-reported setup classification of a native target

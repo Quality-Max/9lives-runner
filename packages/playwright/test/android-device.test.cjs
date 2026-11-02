@@ -82,6 +82,23 @@ test('fold posture comes from the committed device state only', () => {
   assert.equal(parsePosture(''), 'unknown');
 });
 
+const {parsePackageVersion, parseSigner} = require('../dist/android-device');
+
+test('package versions and the signer digest are read from tool output only', () => {
+  assert.deepEqual(parsePackageVersion('    versionCode=29 minSdk=24 targetSdk=35\n    versionName=1.4.0\n'), {versionCode: '29', versionName: '1.4.0'});
+  assert.deepEqual(parsePackageVersion('    versionName=1.4.0 (debug)\n'), {versionCode: 'unknown', versionName: 'unknown'});
+  assert.deepEqual(parsePackageVersion(''), {versionCode: 'unknown', versionName: 'unknown'});
+  assert.equal(parseSigner(`Signer #1 certificate DN: CN=9l Synthetic Fixture\nSigner #1 certificate SHA-256 digest: ${'f'.repeat(64)}\nSigner #1 certificate SHA-1 digest: ${'1'.repeat(40)}`), 'f'.repeat(64));
+  assert.equal(parseSigner('DOES NOT VERIFY'), undefined);
+  // A certificate DN quoting a digest line cannot supply the signer.
+  assert.equal(parseSigner(`Signer #1 certificate DN: CN=Signer #1 certificate SHA-256 digest: ${'e'.repeat(64)}\nSigner #1 certificate SHA-256 digest: ${'f'.repeat(64)}`), 'f'.repeat(64));
+  assert.equal(parseSigner(`Signer #1 certificate DN: CN=Signer #1 certificate SHA-256 digest: ${'e'.repeat(64)}`), undefined);
+  // A field only counts at the start of its own line.
+  assert.deepEqual(parsePackageVersion('    versionName=debug versionName=1.4.0\n'), {versionCode: 'unknown', versionName: 'unknown'});
+  assert.deepEqual(parsePackageVersion('    versionName=build-versionCode=28\n'), {versionCode: 'unknown', versionName: 'unknown'});
+  assert.deepEqual(parsePackageVersion('    flags=[ versionCode=28 ]\n    versionName=1.4.0\n'), {versionCode: 'unknown', versionName: '1.4.0'});
+});
+
 const {parseLogicalDisplays} = require('../dist/android-device');
 
 test('the logical layout follows rotation and density overrides, per physical display', () => {

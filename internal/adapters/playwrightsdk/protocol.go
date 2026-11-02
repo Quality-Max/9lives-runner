@@ -529,12 +529,12 @@ func decodeEvent(raw []byte) (event, error) {
 	// Artifact objects are a closed metadata schema too.
 	if value := values["runtime"]; value != nil {
 		var runtime map[string]json.RawMessage
-		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture"}
+		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture", "versionCode", "versionName", "signer"}
 		if json.Unmarshal(value, &runtime) != nil {
 			return frame, fmt.Errorf("invalid runtime")
 		}
 		if string(runtime["device"]) == `"physical"` {
-			keys = []string{"appPackage", "apkSHA256", "api", "release", "abi", "device", "deviceHash", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture"}
+			keys = []string{"appPackage", "apkSHA256", "api", "release", "abi", "device", "deviceHash", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture", "versionCode", "versionName", "signer"}
 		}
 		if len(runtime) != len(keys) {
 			return frame, fmt.Errorf("invalid runtime")
@@ -602,7 +602,7 @@ func decodeEvent(raw []byte) (event, error) {
 var setupReasons = map[string][]string{
 	runner.SetupBlocked:  {"device-locked", "screen-off"},
 	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
-	runner.SetupMismatch: {"posture", "display-width"},
+	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer"},
 	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
 }
@@ -648,7 +648,10 @@ func validAndroidRuntime(r runner.AndroidRuntime) bool {
 			(r.Device == "physical" && r.Emulator == "" && testID.MatchString(r.DeviceHash))) &&
 		r.Appium == "3.8.0" && r.UIAutomator2 == "8.7.0" && oneOf(r.ABI, "arm64-v8a", "x86_64") &&
 		(r.Display == "unknown" || displayID.MatchString(r.Display)) && pixels.MatchString(r.DisplayWidth) && pixels.MatchString(r.DisplayHeight) && regexp.MustCompile(`^[0-9]{1,4}$`).MatchString(r.Density) &&
-		oneOf(r.Posture, "opened", "half-opened", "closed", "flat", "unknown")
+		oneOf(r.Posture, "opened", "half-opened", "closed", "flat", "unknown") &&
+		(r.VersionCode == "unknown" || regexp.MustCompile(`^[0-9]{1,10}$`).MatchString(r.VersionCode)) &&
+		(r.VersionName == "unknown" || regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`).MatchString(r.VersionName)) &&
+		(r.Signer == "unknown" || testID.MatchString(r.Signer))
 }
 
 var displayID = regexp.MustCompile(`^[0-9]{1,24}$`)

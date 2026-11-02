@@ -79,10 +79,19 @@
         "release": {
           "type": "string"
         },
+        "signer": {
+          "type": "string"
+        },
         "testId": {
           "type": "string"
         },
         "uiautomator2": {
+          "type": "string"
+        },
+        "versionCode": {
+          "type": "string"
+        },
+        "versionName": {
           "type": "string"
         },
         "worker": {
@@ -103,7 +112,10 @@
         "displayWidth",
         "displayHeight",
         "density",
-        "posture"
+        "posture",
+        "versionCode",
+        "versionName",
+        "signer"
       ],
       "type": "object"
     },
