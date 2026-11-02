@@ -51,6 +51,23 @@ See [the shared fixture](../testdata/sdk/targets/shared.spec.ts) for one scenari
 written once, and [the fake driver](../testdata/sdk/targets/fake-finance.ts) for
 the worker-side contract.
 
+A native driver may classify the device or app state instead of letting an
+environment problem read as an application failure. Throwing
+`TargetSetupError({classification, reason, stage: 'open'})` from `open`
+stops the session with reason `setup_<classification>`, where the
+classification is `blocked` (a locked device), `dirty` (state a previous
+test left behind), `mismatch` or `unknown`, and the reason is one of a
+closed list the engine checks. Two optional hooks complete it: `setup()` is
+read after a successful open and returns the record of a declared recovery
+that restored the baseline, so the receipt shows the test ran from it; and
+`recheck(context)` is called after a completed assertion failure while the
+driver is still open, returning a `stage: 'recheck'` record when the device
+became unavailable meanwhile, or nothing. A recheck only reads state, runs
+under its own five-second bound, and its errors or a late result are
+ignored. The test still fails; the record is attached as `9l.target-setup`
+and reaches Go as a `target_setup` frame: at most one made before the test
+ran and one from a recheck per attempt.
+
 The web lifecycle provides `open(page, context)` and `reset(page, context)`;
 ordinary Playwright owns the page. `native(target)` synchronously constructs a
 `TargetDriver`; resource acquisition belongs in its bounded `open(context)`.
@@ -102,6 +119,17 @@ list comes from the same worker, so it detects inconsistent evidence, not
 tests the worker chose to omit. Missing, foreign, duplicate, stale, malformed
 and truncated evidence cannot pass.
 
+A `target_setup` frame carries the classification, reason, stage and, for a
+declared recovery, its method, press count and whether it restored the
+baseline; nothing else. Go accepts one per stage per attempt from a native
+target (a recovered baseline before the test and a recheck after a failed
+assertion can both be present), rejects a reason outside its classification,
+and rejects a passed test with any record that was not recovered. The receipt lists them as `targetSetup`, bound to
+the test; `9l run` and `9l result` print each under the job, and with
+`--failure-details` the failure's class is `setup`. The record says the
+result is inconclusive setup evidence; it does not say the application
+behaved correctly.
+
 Typed target steps record only the operation enum, category and outcome. The
 reporter counts only steps created by the SDK's own target module; a user step
 titled `9l target ...` is an ordinary step. Passed target tests require at
@@ -121,7 +149,9 @@ The smoke checks a shared passing scenario, a planted wrong finance result
 that fails the exact-text check, missing/ambiguous controls and their reason
 codes, incompatible drivers, a caught failure, a forged step title,
 cancellation, a worker-side operation timeout, a driver that ignores the
-deadline and Go's deadline during a pending mutation, unpinned and pinned skips, a re-rendered web control,
+deadline and Go's deadline during a pending mutation, a locked device before
+any operation and during an assertion poll, a recovered dirty baseline,
+unpinned and pinned skips, a re-rendered web control,
 one-attempt behavior, plain `--list` discovery and ordinary Playwright
 compatibility. Bounded receipts
 are saved under `.context/target-contract/`. Creation provenance currently

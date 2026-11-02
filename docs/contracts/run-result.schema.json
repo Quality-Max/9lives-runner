@@ -422,6 +422,12 @@
         "targetAssertions": {
           "type": "integer"
         },
+        "targetSetup": {
+          "items": {
+            "$ref": "#/$defs/TargetSetup"
+          },
+          "type": "array"
+        },
         "termination": {
           "$ref": "#/$defs/Termination"
         },
@@ -462,6 +468,25 @@
       ],
       "type": "object"
     },
+    "SetupRecovery": {
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "presses": {
+          "type": "integer"
+        },
+        "restored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "method",
+        "presses",
+        "restored"
+      ],
+      "type": "object"
+    },
     "Skipped": {
       "properties": {
         "input": {
@@ -474,6 +499,32 @@
       "required": [
         "input",
         "reason"
+      ],
+      "type": "object"
+    },
+    "TargetSetup": {
+      "properties": {
+        "classification": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "recovery": {
+          "$ref": "#/$defs/SetupRecovery"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "testId",
+        "classification",
+        "reason",
+        "stage"
       ],
       "type": "object"
     },

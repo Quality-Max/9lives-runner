@@ -51,6 +51,7 @@ type event struct {
 	TargetVersion string                 `json:"targetVersion"`
 	Operation     string                 `json:"operation"`
 	Runtime       *runner.AndroidRuntime `json:"runtime"`
+	Setup         *runner.TargetSetup    `json:"setup"`
 }
 
 type testState struct {
@@ -67,6 +68,13 @@ type testState struct {
 	targetFailed bool
 	assertions   int
 	runtime      bool
+	// setupOpen and setupRecheck record a driver classification made before
+	// the test ran and one made after a failed assertion; setupUnrecovered
+	// that a record exists whose recovery did not restore the baseline (a
+	// recheck record never does), so the test cannot pass.
+	setupOpen        bool
+	setupRecheck     bool
+	setupUnrecovered bool
 	// reportedAttempt counts the assertion steps the worker reported as passed
 	// in the attempt in progress; reportedFinal and finalStatus keep the last
 	// completed attempt's count and status.
@@ -189,6 +197,21 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			state.runtime = true
 			frame.Runtime.TestID = frame.TestID
 			validation.AndroidRuntimes = append(validation.AndroidRuntimes, *frame.Runtime)
+		case "target_setup":
+			if !nativeTarget(identity.Target) || summarizing || state == nil || !state.active || frame.Retry != state.retry || frame.Setup == nil || !validTargetSetup(*frame.Setup) ||
+				(frame.Setup.Stage == runner.SetupStageOpen && (state.setupOpen || state.setupRecheck)) || (frame.Setup.Stage == runner.SetupStageRecheck && state.setupRecheck) {
+				return invalid("missing, foreign, repeated or malformed target setup classification")
+			}
+			if frame.Setup.Stage == runner.SetupStageOpen {
+				state.setupOpen = true
+			} else {
+				state.setupRecheck = true
+			}
+			if frame.Setup.Recovery == nil || !frame.Setup.Recovery.Restored {
+				state.setupUnrecovered = true
+			}
+			frame.Setup.TestID = frame.TestID
+			validation.TargetSetup = append(validation.TargetSetup, *frame.Setup)
 		case "step_end":
 			if summarizing || state == nil || !state.active || frame.Retry != state.retry || !stepID.MatchString(frame.StepID) || steps[frame.StepID] {
 				return invalid("foreign, duplicate or late step")
@@ -233,6 +256,8 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("target test passed without a successful target assertion")
 				case frame.Status == "passed" && strings.HasPrefix(identity.Target, "android:") && !state.runtime:
 					return invalid("Android test passed without runtime identity")
+				case frame.Status == "passed" && state.setupUnrecovered:
+					return invalid("target test passed after an unrecovered setup classification")
 				}
 			}
 			if state.expected != "" && state.expected != frame.ExpectedStatus {
@@ -333,6 +358,14 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			if validation.SkippedAfterAssertions != 0 {
 				validation.Description += fmt.Sprintf("; %d skipped test(s) had reported a passed assertion step", validation.SkippedAfterAssertions)
+			}
+			if len(validation.TargetSetup) != 0 {
+				// A test may carry an open and a recheck record; count tests, not records.
+				classified := map[string]bool{}
+				for _, setup := range validation.TargetSetup {
+					classified[setup.TestID] = true
+				}
+				validation.Description += fmt.Sprintf("; %d test(s) carry a driver setup classification", len(classified))
 			}
 			if (frame.Status == "passed") != (validation.FailureCount == 0) {
 				return invalid("inconsistent terminal outcome")
@@ -444,6 +477,8 @@ func decodeEvent(raw []byte) (event, error) {
 		fields = append(fields, "testId", "retry", "expectedStatus")
 	case "target_runtime":
 		fields = append(fields, "testId", "retry", "runtime")
+	case "target_setup":
+		fields = append(fields, "testId", "retry", "setup")
 	case "step_end":
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
 		if frame.Operation != "" {
@@ -489,6 +524,23 @@ func decodeEvent(raw []byte) (event, error) {
 			}
 		}
 	}
+	if value := values["setup"]; value != nil {
+		var setup map[string]json.RawMessage
+		if json.Unmarshal(value, &setup) != nil || setup["classification"] == nil || setup["reason"] == nil || setup["stage"] == nil {
+			return frame, fmt.Errorf("invalid setup")
+		}
+		keys := 3
+		if recovery := setup["recovery"]; recovery != nil {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(recovery, &fields) != nil || len(fields) != 3 || fields["method"] == nil || fields["presses"] == nil || fields["restored"] == nil {
+				return frame, fmt.Errorf("invalid setup recovery")
+			}
+			keys++
+		}
+		if len(setup) != keys {
+			return frame, fmt.Errorf("invalid setup")
+		}
+	}
 	if value := values["artifacts"]; value != nil {
 		var artifacts []map[string]json.RawMessage
 		if json.Unmarshal(value, &artifacts) != nil {
@@ -501,6 +553,32 @@ func decodeEvent(raw []byte) (event, error) {
 		}
 	}
 	return frame, nil
+}
+
+// setupReasons lists the closed reasons a driver may report per
+// classification. A reason outside its classification is invalid evidence.
+var setupReasons = map[string][]string{
+	runner.SetupBlocked:  {"device-locked", "screen-off"},
+	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
+	runner.SetupMismatch: {},
+	runner.SetupUnknown:  {"device-state-unknown"},
+}
+
+func nativeTarget(target string) bool {
+	return strings.HasPrefix(target, "android:") || strings.HasPrefix(target, "android-fake:")
+}
+
+func validTargetSetup(s runner.TargetSetup) bool {
+	reasons, known := setupReasons[s.Classification]
+	if !known || !oneOf(s.Reason, reasons...) || !oneOf(s.Stage, runner.SetupStageOpen, runner.SetupStageRecheck) || s.TestID != "" {
+		return false
+	}
+	if s.Recovery == nil {
+		return true
+	}
+	// A recovery is a declared step taken before the test ran, only for state
+	// a previous test left behind.
+	return s.Classification == runner.SetupDirty && s.Stage == runner.SetupStageOpen && s.Recovery.Method == "back" && s.Recovery.Presses >= 0 && s.Recovery.Presses <= 16
 }
 
 var androidPackage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$`)

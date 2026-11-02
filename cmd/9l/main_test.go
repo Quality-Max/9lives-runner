@@ -416,3 +416,28 @@ func TestPrintResultFlagsFlakyPasses(t *testing.T) {
 		t.Fatalf("unexpected output:\n%s", out.String())
 	}
 }
+
+func TestPrintResultExplainsTargetSetupClassifications(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Passed: 1, Complete: true, Receipts: []runner.Receipt{
+		{Status: runner.StatusFailed, Spec: "tests/planner.spec.ts", ExecutedTests: 2, FailureCount: 2, TargetSetup: []runner.TargetSetup{
+			{TestID: "a", Classification: runner.SetupBlocked, Reason: "device-locked", Stage: runner.SetupStageRecheck},
+			{TestID: "b", Classification: runner.SetupDirty, Reason: "extra-window", Stage: runner.SetupStageOpen, Recovery: &runner.SetupRecovery{Method: "back", Presses: 3, Restored: false}},
+		}},
+		{Status: runner.StatusPassed, Spec: "tests/coherence.spec.ts", ExecutedTests: 1, TargetSetup: []runner.TargetSetup{
+			{TestID: "c", Classification: runner.SetupDirty, Reason: "ime-showing", Stage: runner.SetupStageOpen, Recovery: &runner.SetupRecovery{Method: "back", Presses: 1, Restored: true}},
+		}},
+	}})
+	for _, want := range []string{
+		"           setup blocked: device-locked (rechecked after a failed assertion); inconclusive, not an application failure\n",
+		"           setup dirty: extra-window (before any application operation); back recovery did not restore the baseline after 3 press(es); inconclusive, not an application failure\n",
+		"  PASSED   tests/coherence.spec.ts\n           setup dirty: ime-showing (before any application operation); back recovery restored the baseline after 1 press(es), the test ran from it\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in:\n%s", want, out.String())
+		}
+	}
+	if got := setupSummary(runner.TargetSetup{Classification: runner.SetupUnknown, Reason: "device-state-unknown", Stage: runner.SetupStageRecheck}); got != "setup unknown: device-state-unknown (rechecked after a failed assertion); the device state could not be determined, so the failure is inconclusive" {
+		t.Fatalf("unexpected unknown summary: %s", got)
+	}
+}
