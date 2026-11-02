@@ -220,6 +220,31 @@ assert.equal(listing.status, 0, listing.stderr);
 // Existing ordinary specs still run without SDK opt-in.
 assert.equal(sync(process.execPath, [path.join(root, 'node_modules', '@playwright', 'test', 'cli.js'),
   'test', 'testdata/sdk/tests/nested/config.spec.ts', '--config', 'testdata/sdk/playwright.config.ts', '--reporter=line']).status, 0);
+// The creation snapshot covers the spec's local driver helper: editing it
+// afterwards refuses execution before the worker starts and names the helper.
+assert.deepEqual(JSON.parse(creation.stdout).dependencies.map(d => [d.kind, d.path]), [['import', 'targets/fake-finance.ts']]);
+const helper = path.join(project, 'targets/fake-finance.ts');
+const helperSource = fs.readFileSync(helper, 'utf8');
+fs.appendFileSync(helper, '\n// edited after the creation snapshot\n');
+const driftEffects = path.join(work, 'helper-drift.effects');
+const drift = sync(engine, ['run', spec, '--sdk', '--target', 'android-fake:finance', '--config', config, '--grep', 'one deterministic scenario',
+  '--attempts', '3', '--timeout', '20s', '--format', 'json', '--receipt-dir', path.join(work, 'helper-drift'), '--agent-provenance', provenance,
+  '--pass-env', 'NINELIVES_TARGET_CASE', '--pass-env', 'NINELIVES_TARGET_EFFECTS'],
+{env: {...process.env, NINELIVES_TARGET_CASE: 'healthy', NINELIVES_TARGET_EFFECTS: driftEffects}});
+fs.writeFileSync(helper, helperSource);
+const driftSummary = JSON.parse(drift.stdout);
+fs.writeFileSync(path.join(work, 'helper-drift.json'), drift.stdout, {mode: 0o600});
+assert.equal(drift.status, 3, 'helper drift: incomplete, never green');
+assert.equal(driftSummary.outcome, 'incomplete');
+const driftReceipt = driftSummary.receipts[0];
+assert.equal(driftReceipt.status, 'error');
+assert.equal(driftReceipt.attempt, 1, 'helper drift: not retried');
+assert.equal(driftReceipt.agentProvenance.status, 'mismatch');
+assert.equal(driftReceipt.agentProvenance.source, 'matched', 'helper drift: the spec itself is unchanged');
+assert.equal(driftReceipt.agentProvenance.dependencies, 'mismatch');
+assert.deepEqual(driftReceipt.agentProvenance.dependencyChanges, [{path: 'targets/fake-finance.ts', kind: 'import', change: 'modified'}]);
+assert(!fs.existsSync(driftEffects), 'helper drift: the worker never started');
+cases.push({mode: 'helper-drift', file: path.basename(spec), outcome: driftSummary.outcome, statuses: [driftReceipt.status], attempts: [driftReceipt.attempt]});
 fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify({version: 1, cases, ordinaryPlaywright: 'passed'}, null, 2));
-console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; pinned skip, re-rendered web control and plain listing passed; one attempt each.');
+console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
 console.log(`Bounded receipts: ${path.relative(root, work)}`);
