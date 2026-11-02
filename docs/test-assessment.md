@@ -433,7 +433,10 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v15` adds the
+inputs invalidate prior assessments. Policy `assessment-source-v16` recognizes
+`createTargetTest` declarations and credits target assertions as
+`target:<matcher>`; the helper version is 13, report version 3 and suite
+version 1 are unchanged. Policy `assessment-source-v15` adds the
 `after-hook-fail` rule and the `afterHookFails` fact; the helper version is
 12, report version 3 and suite version 1 are unchanged. Policy
 `assessment-source-v14` reads a
