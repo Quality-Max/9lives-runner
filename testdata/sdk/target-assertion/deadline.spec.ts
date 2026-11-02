@@ -51,16 +51,17 @@ test('the outer deadline after a false observation keeps the outer deadline', as
   finally { await app.close(); }
 });
 
-// Read times vary: one slow read early, fast ones after, and a slow one again
-// once 600 ms have passed. Budgeting only on the last read would start that
-// slow read near the end, overrun the bound and release the Android driver;
-// budgeting on the slowest read so far ends the assertion in time.
+// Read times vary: one slow read early (300 ms), fast ones after, and a slower
+// one (400 ms) once 600 ms have passed. The first read leaves room to poll on,
+// so only a budget that remembers the slowest read stops before that late
+// read; one on the last read alone, with or without margin, starts it near
+// the end, overruns the bound and releases the Android driver.
 test('a failing assertion with uneven read times ends before its bound and keeps the Android driver', async () => {
   let closed = 0, reads = 0;
   const started = Date.now();
   const read = async (context: TargetContext) => {
     reads++;
-    await delay(reads === 1 || Date.now() - started >= 600 ? 400 : 50, undefined, {signal: context.signal});
+    await delay(reads === 1 ? 300 : Date.now() - started >= 600 ? 400 : 50, undefined, {signal: context.signal});
     return 'wrong';
   };
   const driver: TargetDriver = {
@@ -72,6 +73,7 @@ test('a failing assertion with uneven read times ends before its bound and keeps
   try {
     await expect(app.getByTestId('receipt').toHaveText('wanted', 1000)).rejects.toThrow('assertion_failed');
     expect(Date.now() - started).toBeLessThan(1000);
+    expect(reads).toBeGreaterThan(1);
     expect(closed).toBe(0);
   } finally { await app.close(); }
 });
