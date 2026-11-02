@@ -267,8 +267,8 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("Android test passed without runtime identity")
 				case frame.Status == "passed" && state.setupUnrecovered:
 					return invalid("target test passed after an unrecovered setup classification")
-				case frame.Status == "passed" && state.diagnostic:
-					return invalid("target test passed with a failure diagnostic")
+				case frame.Status != "failed" && frame.Status != "timedOut" && state.diagnostic:
+					return invalid("only a failed target test can carry a failure diagnostic")
 				}
 			}
 			if state.expected != "" && state.expected != frame.ExpectedStatus {

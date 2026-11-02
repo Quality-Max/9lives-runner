@@ -153,6 +153,11 @@ func TestTargetDiagnosticIsBoundedMetadataOnAFailedTest(t *testing.T) {
 	if _, err := New().ValidateAttempt(stream(passing), identity); err == nil {
 		t.Fatal("a diagnostic belongs to a failed test only")
 	}
+	skipped := diagnosticFrames(minimal)
+	skipped[4]["status"], skipped[5]["status"], skipped[5]["expectedStatus"], skipped[6]["outcome"], skipped[6]["skipKey"], skipped[7]["status"] = "passed", "skipped", "skipped", "skipped", SkipPinKey("pinned skip"), "passed"
+	if _, err := New().ValidateAttempt(stream(skipped), identity); err == nil || !strings.Contains(err.Error(), "failure diagnostic") {
+		t.Fatalf("a skipped test cannot carry a failure diagnostic: %v", err)
+	}
 	for name, change := range map[string]func(map[string]any){
 		"unknown operation":  func(d map[string]any) { d["operation"] = "screenshot" },
 		"content reason":     func(d map[string]any) { d["reason"] = "Close model picker still displayed" },

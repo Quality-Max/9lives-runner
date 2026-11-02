@@ -159,9 +159,12 @@ const edge = invoke('edge', {targets: ['web:finance', 'android-fake:finance'], g
 assert.notEqual(edge.code, 0);
 for (const receipt of edge.summary.receipts) assert(receipt.failures[0].message.includes('9lives target stopped: invalid_point'), `${receipt.target}: edge touch refused before dispatch`);
 assert(!edge.mutations.includes('mutation'));
-const malformed = invoke('malformed-visibility', {targets: ['android-fake:finance'], grep: 'malformed visibility', file: operations, extra: ['--failure-details']});
-assert.notEqual(malformed.code, 0, 'malformed-visibility: an undefined answer cannot pass toBeHidden');
-assert(malformed.summary.receipts[0].failures[0].message.includes('9lives target stopped: invalid_property'), 'malformed-visibility: stable reason');
+// Neither an undefined visibility answer nor a match without a handle is absence.
+for (const mode of ['malformed-visibility', 'malformed-handle']) {
+  const malformed = invoke(mode, {targets: ['android-fake:finance'], grep: 'malformed visibility', file: operations, extra: ['--failure-details']});
+  assert.notEqual(malformed.code, 0, `${mode}: cannot pass toBeHidden`);
+  assert(malformed.summary.receipts[0].failures[0].message.includes('9lives target stopped: invalid_property'), `${mode}: stable reason`);
+}
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');

@@ -175,7 +175,7 @@ test('attached phone classifies a locked device and leaked state as setup, never
   const appWindow = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
   const focus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
   const device = {state: 'showing=false\nmInputRestricted=false\nmWakefulness=Awake', windows: [appWindow, focus].join('\n'), ime: 'mInputShown=false'};
-  let commands = [], sessions = 0, backPresses = 0, onBack = () => {}, failReads = false, failWindows = false;
+  let commands = [], sessions = 0, backPresses = 0, onBack = () => {}, failReads = false, failWindows = false, failBackAfter = Infinity;
   const serial = `test-${randomUUID()}`;
   let opened = [];
   try {
@@ -194,11 +194,11 @@ test('attached phone classifies a locked device and leaked state as setup, never
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) { if (failReads) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = device.state; }
-      else if (script.includes('dumpsys window windows')) { if (failWindows) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = device.windows; }
+      else if (script.includes('dumpsys window windows')) { if (failWindows) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = `${device.windows}\n9l-windows-end`; }
       else if (script.includes('dumpsys input_method')) result = device.ime;
       else if (script.includes('pm path io.appium.settings')) result = 'absent';
       else if (script.includes('echo present')) result = 'absent';
-      else if (command[1] === 'input' && command[3] === 'KEYCODE_BACK') { backPresses++; onBack(); }
+      else if (command[1] === 'input' && command[3] === 'KEYCODE_BACK') { if (backPresses >= failBackAfter) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } backPresses++; onBack(); }
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
       else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
       queueMicrotask(() => callback(null, result));
@@ -240,6 +240,11 @@ test('attached phone classifies a locked device and leaked state as setup, never
     assert(!commands.some(a => a[2] === 'settings' && a[3] === 'put'), 'no policy changed on a locked device');
     device.state = 'showing=false\nmWakefulness=Asleep';
     await open({}, {classification: 'blocked', reason: 'screen-off', stage: 'open'});
+    // A phone that cannot be read before the test is unknown, not an open failure.
+    failReads = true;
+    await open({}, {classification: 'unknown', reason: 'device-state-unknown', stage: 'open'});
+    assert.equal(sessions, 0);
+    failReads = false;
     // An unrecognized build is unknown, which does not block the test.
     device.state = 'mWakefulness=Awake';
     let driver = await open({});
@@ -286,6 +291,10 @@ test('attached phone classifies a locked device and leaked state as setup, never
     await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 1, restored: false}});
     failWindows = false;
     onBack = () => {};
+    // So does a Back command that fails after an earlier one completed.
+    failBackAfter = 1;
+    await open({recovery: {back: 3}}, {classification: 'dirty', reason: 'ime-showing', stage: 'open', recovery: {method: 'back', presses: 1, restored: false}});
+    failBackAfter = Infinity;
     // Before any Back press, an unreadable baseline classifies nothing.
     device.ime = 'mImeWindowVis=0x0';
     driver = await open({recovery: {back: 3}});
@@ -350,7 +359,7 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
-      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
       else if (script.includes('dumpsys input_method')) result = ime;
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
@@ -444,7 +453,7 @@ test('attached phone diagnostics are metadata only and classify observer stalene
   const activity = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
   const dialog = '  Window #2 Window{7a8b9c u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
   const focus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
-  let windows = [activity, dialog, focus].join('\n'), windowReads = 0;
+  let windows = [activity, dialog, focus].join('\n'), windowReads = 0, truncated = false;
   const serial = `test-${randomUUID()}`;
   let driver, plain;
   try {
@@ -462,7 +471,7 @@ test('attached phone diagnostics are metadata only and classify observer stalene
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
-      else if (script.includes('dumpsys window windows')) { windowReads++; result = windows; }
+      else if (script.includes('dumpsys window windows')) { windowReads++; result = truncated ? windows : `${windows}\n9l-windows-end`; }
       else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
@@ -502,7 +511,8 @@ test('attached phone diagnostics are metadata only and classify observer stalene
     assert.deepEqual(await driver.recheck(context(), {operation: 'assert-hidden'}), {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'});
     assert.equal(await driver.recheck(context(), {operation: 'assert-visible'}), undefined, 'only a hidden assertion can be stale this way');
     const record = await driver.diagnose({operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 10000}, context());
-    assert.deepEqual(record, {operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 10000, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
+    // The hidden assertion's record keeps the touch it follows.
+    assert.deepEqual(record, {operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 10000, x: 1000, y: 2300, point: true, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
     const tap = await driver.diagnose({operation: 'tap-at', reason: 'deadline', elapsedMs: 5000, point: {x: 1000, y: 2300}}, context());
     assert.deepEqual([tap.x, tap.y, tap.point], [1000, 2300, true]);
     assert(!JSON.stringify(record).includes('MainActivity') && !JSON.stringify(record).includes('Window{'), 'no window titles or hierarchy');
@@ -510,6 +520,13 @@ test('attached phone diagnostics are metadata only and classify observer stalene
     windows = [activity, dialog, focus].join('\n');
     await driver.tapAt({x: 1000, y: 2300}, context());
     assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    // A dump cut at its byte bound is unobserved: windows pushed past the cap
+    // never look like a window that disappeared.
+    windows = [activity, focus].join('\n');
+    truncated = true;
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    assert.equal((await driver.diagnose({operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 1}, context())).windowsAfter, -1);
+    truncated = false;
     // An unavailable dump after the gesture is unobserved, never zero windows.
     windows = '';
     assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
@@ -523,7 +540,7 @@ test('attached phone diagnostics are metadata only and classify observer stalene
     assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
     // Disarming keeps the pre-gesture observation as diagnostic metadata.
     assert.deepEqual(await driver.diagnose({operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1}, context()),
-      {operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
+      {operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1, x: 1000, y: 2300, point: true, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
     // So do keyboard, geometry and viewport reads.
     for (const between of [c => driver.keyboardShown(c), c => field.bounds(c), c => driver.viewport(c)]) {
       windows = [activity, dialog, focus].join('\n');
@@ -573,7 +590,7 @@ test('attached phone records its active display and posture, checks declared req
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
   const inner = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644672", 1812 x 2176, density 374, state ON}';
   const cover = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644673", 904 x 2316, density 420, state OFF}';
-  const device = {displays: [inner, cover].join('\n'), posture: "  Committed state: DeviceState{identifier=2, name='OPENED'}"};
+  const device = {displays: [inner, cover].join('\n'), posture: "  Committed state: DeviceState{identifier=2, name='OPENED'}", truncated: false, holdCapture: false};
   const png = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.from('synthetic image bytes')]);
   const screencaps = [];
   let sessions = 0;
@@ -590,14 +607,20 @@ test('attached phone records its active display and posture, checks declared req
       const command = args.slice(2);
       const script = command[1] === 'sh' ? command[3] : '';
       let result = '';
-      if (command[0] === 'exec-out') { screencaps.push(command); queueMicrotask(() => callback(null, png)); return new EventEmitter(); }
+      if (command[0] === 'exec-out') {
+        screencaps.push(command);
+        // A held capture answers only when its signal aborts it.
+        if (device.holdCapture) options.signal.addEventListener('abort', () => callback(new Error('aborted')), {once: true});
+        else queueMicrotask(() => callback(null, png));
+        return new EventEmitter();
+      }
       if (command[0] === 'get-state') result = 'device';
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
-      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
       else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
-      else if (script.includes('dumpsys display')) result = device.displays;
+      else if (script.includes('dumpsys display')) result = device.truncated ? device.displays : `${device.displays}\n9l-displays-end`;
       else if (script.includes('dumpsys device_state')) result = device.posture;
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
@@ -668,6 +691,19 @@ test('attached phone records its active display and posture, checks declared req
     assert.deepEqual(screencaps.at(-1), ['exec-out', 'screencap', '-p']);
     await driver.close();
     await open({requires: {minWidthDp: 1}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    // A dump cut at its byte bound names no display, even when what survived
+    // holds a single wide one: the powered cover display may be what was cut.
+    device.displays = inner.replace('state ON', 'state OFF'); device.truncated = true;
+    await open({requires: {minWidthDp: 640}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    driver = await open({});
+    assert.equal(driver.runtime().display, 'unknown');
+    // Closing the driver cancels a capture still in flight.
+    device.truncated = false; device.holdCapture = true;
+    const pending = driver.screenDigest(context());
+    pending.catch(() => {});
+    await driver.close();
+    await assert.rejects(Promise.race([pending, new Promise(resolve => setTimeout(resolve, 1000, 'still pending'))]), /screenshot_failed/);
+    device.holdCapture = false;
     for (const requires of [{}, {posture: 'OPENED'}, {minWidthDp: 0}, {minWidthDp: 1.5}, {width: 640}]) {
       assert.throws(() => androidTargetDriver({...base, requires}), /invalid_configuration/);
     }
