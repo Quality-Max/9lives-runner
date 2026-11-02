@@ -26,10 +26,10 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v15"
+const Policy = "assessment-source-v16"
 
 // helperVersion is the version of the analyzer's facts.
-const helperVersion = 12
+const helperVersion = 13
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -88,7 +88,8 @@ type Assertion struct {
 	// assertion.
 	Caught bool `json:"caught"`
 	// Matcher is a matcher name from the pinned Playwright API, "custom" for
-	// any other matcher, or "assertion-helper" for a marked helper call.
+	// any other matcher, "assertion-helper" for a marked helper call, or
+	// "target:" and a @9l/playwright target assertion (9l.target/1).
 	Matcher string `json:"matcher"`
 }
 type AnalysisLimit struct {
@@ -189,8 +190,8 @@ type Finding struct {
 type AssertionSummary struct {
 	Count int `json:"count"`
 	// Matchers are the distinct matcher names, sorted: names from the pinned
-	// Playwright API, "custom" for any other matcher and "assertion-helper"
-	// for a marked helper call.
+	// Playwright API, "custom" for any other matcher, "assertion-helper"
+	// for a marked helper call and "target:" names for target assertions.
 	Matchers []string `json:"matchers"`
 }
 type Test struct {
@@ -388,7 +389,7 @@ func (b *boundedOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 var moduleName = regexp.MustCompile(`^(?:[@A-Za-z0-9._/-]{1,214}|\(unnamed module\))$`)
 
-var matcherName = regexp.MustCompile(`^(?:to[A-Z][A-Za-z]{0,62}|custom|assertion-helper)$`)
+var matcherName = regexp.MustCompile(`^(?:to[A-Z][A-Za-z]{0,62}|target:to(?:BeVisible|BeHidden|HaveText|HaveState|HaveKeyboard)|custom|assertion-helper)$`)
 
 func validFacts(f Facts, source []byte, titles bool) bool {
 	if f.Version != helperVersion || f.Compiler != parserVersion || f.Tests == nil || len(f.Tests) > 256 || len(f.UnrecognizedTestImports) > 8 || len(f.UnrecognizedTestImports) > 0 && len(f.Tests) > 0 {
@@ -470,7 +471,7 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 // supplied: requirement references stay unchecked and purpose stays unknown.
 func Build(source, contract []byte, c Contract, facts Facts) Report {
 	report := Report{AgentProvenance: runner.UnknownAgentProvenance(), Version: ReportVersion, Policy: Policy, SourceSHA256: digest(source), Compiler: facts.Compiler, Execution: "not_run", Completeness: "partial", Tests: []Test{}, Limits: []string{
-		"Named test/expect imports and inline tests only; dynamic generation, custom fixtures and helper assertions may be omitted.",
+		"Named test/expect imports, createTargetTest declarations and inline tests only; dynamic generation, custom fixtures and helper assertions may be omitted.",
 		"Outcome annotations are reviewed coverage claims, not semantic or behavioral proof. Source-only assessment cannot establish correctness.",
 		"No test, configuration or application module is executed. Runtime evidence requires a separate attributed control experiment.",
 	}}
@@ -601,7 +602,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 		}
 		sort.Strings(t.Assertions.Matchers)
 		if credited == 0 && !fact.Unsupported {
-			message := "No direct expect matcher was recognized; helper assertions remain unknown."
+			message := "No direct expect matcher or target assertion was recognized; helper assertions remain unknown."
 			if probes > 0 {
 				message = "Every recognized matcher has its failure caught, so none can fail the test; helper assertions remain unknown."
 			}

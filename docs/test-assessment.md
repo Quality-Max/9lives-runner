@@ -240,13 +240,41 @@ waits, exclusive/disabled syntax and recognized asynchronous matcher findings.
 Unsupported analysis never produces `no-direct-assertion`; a supported body
 with no recognized assertion still produces a suspected absence finding.
 
+Target tests are recognized too. A file-level `const` initialized with
+`createTargetTest(...)` imported from `@9l/playwright`, under any alias and
+optionally followed by `.extend(...)` calls, declares tests like `test`. In
+such a test the `app` fixture (also when renamed, as in `{app: phone}`) is the
+target app, and these calls are asynchronous assertions with the same await,
+catch, outcome and absence rules as a Playwright matcher: `toBeVisible`,
+`toBeHidden`, `toHaveText` and `toHaveState` on a control from
+`app.getByTestId(...)`, whether written directly, held in a `const` or passed
+to a same-file helper, and `app.toHaveKeyboard(...)`. `toBeHidden` and
+`toHaveKeyboard(false)` are absence checks. Actions such as `tap`, `fill` or
+`back` are not assertions, so a target test with only actions receives
+`no-direct-assertion`. The app is not treated as a target app when an
+`.extend(...)` or `test.use(...)` argument may define `app` (an `app` key, a
+computed key, or a spread or value the analyzer cannot read); a factory from
+another module or a `let` binding is not recognized. Each use of a name is
+resolved to its innermost declaration in scope, so a control declared in a
+block does not leak out of it and a parameter that shadows `app` is not the
+app; a name that is ever written (also by a `for…of`/`for…in` header), or
+declared with `var` or as a function, is neither the app nor a control, and a
+`const` in a `case` clause is scoped to the whole `switch`. Nothing in a
+function is credited once it assigns a property named like a target matcher or
+`getByTestId`, nothing is passed to a helper at or after a spread argument, and
+a target promise handed to `expect(...)` is that matcher's subject rather than
+an assertion. A target test binding that is used other than by calling it or
+reading a property (an alias, `test['use']`, an argument) is not trusted. Recognition is source evidence only: at run time a
+target assertion is reported by the worker (`targetAssertions`) and is never
+independently verified.
+
 Each test lists the assertions it is credited with as
 `assertions: {"count": N, "matchers": [...]}`: every recognized matcher in its
 body and in the same-file helpers resolved from it, and every marked helper
 call, whatever limits the test also has. `matchers` holds the distinct names,
 sorted: names from the pinned Playwright API, `custom` for any other matcher
-and `assertion-helper` for a marked helper call; other source identifiers are
-not reported. Caught probes are not counted. The text report prints
+`assertion-helper` for a marked helper call and `target:<matcher>` for a
+target assertion; other source identifiers are not reported. Caught probes are not counted. The text report prints
 `recognized assertions: 2 (toBe, toEqual)` under a test with any. A test whose
 direct assertions sit beside one unresolved helper call therefore no longer
 reads like a test with no visible assertion, while the `unresolved-helper`
@@ -415,7 +443,10 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v15` adds the
+inputs invalidate prior assessments. Policy `assessment-source-v16` recognizes
+`createTargetTest` declarations and credits target assertions as
+`target:<matcher>`; the helper version is 13, report version 3 and suite
+version 1 are unchanged. Policy `assessment-source-v15` adds the
 `after-hook-fail` rule and the `afterHookFails` fact; the helper version is
 12, report version 3 and suite version 1 are unchanged. Policy
 `assessment-source-v14` reads a

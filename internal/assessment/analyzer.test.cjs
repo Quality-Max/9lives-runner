@@ -974,7 +974,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 12);
+  assert.equal(facts.version, 13);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {
@@ -1061,5 +1061,137 @@ test('after-hook test.fail() modifiers are attributed to the suite as conditiona
   // A test.fail('title', ...) declaration is not in the inventory, as before.
   assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false], [2, true]], [[2, false], [2, true]], [[4, true], [5, true], [6, false]], []]);
   assert(facts.tests.every(t => !t.disabled && t.conditionalSkips.length === 0));
-  assert.equal(facts.version, 12);
+  assert.equal(facts.version, 13);
+});
+
+test('createTargetTest tests credit target assertions on the app fixture and its controls', () => {
+  const facts = analyze(`import {createTargetTest as targetTest, expect} from '@9l/playwright';
+    // @9l-assertion-helper
+    import {expectReceipt} from './checks';
+    import {seed} from './data';
+    const test = targetTest({web: {open: async page => {}}}).extend({...(process.env.CI ? {} : {page: async () => {}})});
+    test('direct', async ({app}) => {
+      await app.open();
+      await app.getByTestId('amount').fill('5');
+      // @9l-outcome exact-receipt
+      await app.getByTestId('receipt').toHaveText('Sent $5');
+      await app.getByTestId('send').toHaveState('enabled', true);
+      await app.getByTestId('modal').toBeHidden();
+      await app.toHaveKeyboard(false);
+      await app.toHaveKeyboard(true);
+    });
+    test('aliased fixture and bound control', async ({app: phone}) => {
+      const status = phone.getByTestId('status');
+      await status.tap();
+      await status.toBeVisible();
+    });
+    test('actions only', async ({app}) => { await app.open(); await app.getByTestId('send').tap(); await app.back(); });
+    test('caught and unawaited', async ({app}) => {
+      await app.getByTestId('receipt').toHaveText('x').catch(() => {});
+      app.getByTestId('receipt').toBeVisible();
+    });
+    test('helpers', async ({app}) => { await expectReceipt(app); await seed(app); });
+    test.skip('disabled', async ({app}) => { await app.getByTestId('send').toBeVisible(); });
+    test('conditional', async ({app}) => { if (process.env.X) await app.getByTestId('send').toBeVisible(); });`);
+  const summary = facts.tests.map(t => t.assertions.map(a => [a.matcher, a.absence, a.unawaited, a.caught, a.outcomes.join()].join(':')));
+  assert.deepEqual(summary, [
+    ['target:toHaveText:false:false:false:exact-receipt', 'target:toHaveState:false:false:false:', 'target:toBeHidden:true:false:false:',
+      'target:toHaveKeyboard:true:false:false:', 'target:toHaveKeyboard:false:false:false:'],
+    ['target:toBeVisible:false:false:false:'],
+    [],
+    ['target:toHaveText:false:false:true:', 'target:toBeVisible:false:true:false:'],
+    ['assertion-helper:false:false:false:'],
+    ['target:toBeVisible:false:false:false:'],
+    ['target:toBeVisible:false:false:false:'],
+  ]);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], [], [], [], ['unresolved-helper'], [], ['conditional-flow']]);
+  assert.deepEqual(facts.tests.map(t => t.disabled), [false, false, false, false, false, true, false]);
+});
+
+test('a target app is credited only when the factory and its fixture are known', () => {
+  const credited = source => analyze(source).tests.map(t => t.assertions.map(a => a.matcher));
+  const body = `test('t', async ({app}) => { await app.getByTestId('send').toBeVisible(); });`;
+  // An extension that may redefine app, or a factory from another module, is not a target app.
+  for (const declaration of [
+    `import {createTargetTest} from '@9l/playwright'; const test = createTargetTest({}).extend({app: async ({}, use) => use({})});`,
+    `import {createTargetTest} from '@9l/playwright'; const test = createTargetTest({}).extend(fixtures);`,
+    `import {createTargetTest} from '@9l/playwright'; const test = createTargetTest({}).extend({...fixtures});`,
+  ]) assert.deepEqual(credited(`${declaration}\n${body}`), [[]], declaration);
+  assert.deepEqual(analyze(`import {createTargetTest} from './local'; const test = createTargetTest({});\n${body}`).tests, []);
+  // A plain Playwright test with its own app fixture is not a target test.
+  assert.deepEqual(credited(`import {test} from '@playwright/test';\n${body}`), [[]]);
+  // Not the factory result: a let binding, or a call made inside a function.
+  assert.deepEqual(analyze(`import {createTargetTest} from '@9l/playwright'; let test = createTargetTest({});\n${body}`).tests, []);
+  // A same-file helper given the app keeps its target assertions, at the test's call site.
+  const helped = analyze(`import {createTargetTest} from '@9l/playwright';
+    const test = createTargetTest({});
+    async function sent(app, id) { await app.getByTestId(id).toHaveText('Sent'); }
+    async function visible(control) { await control.toBeVisible(); }
+    test('t', async ({app}) => { await sent(app, 'receipt'); await visible(app.getByTestId('send')); });`);
+  assert.deepEqual(helped.tests[0].assertions.map(a => [a.matcher, a.line, a.site?.line]), [['target:toHaveText', 3, 5], ['target:toBeVisible', 4, 5]]);
+  assert.deepEqual(helped.tests[0].limits, []);
+  // A const rebound to something else is no longer a control.
+  const rebound = analyze(`import {createTargetTest} from '@9l/playwright';
+    const test = createTargetTest({});
+    test('t', async ({app}) => { { const c = app.getByTestId('a'); await c.toBeVisible(); } { const c = other(); await c.toBeVisible(); } });`);
+  assert.deepEqual(rebound.tests[0].assertions.map(a => a.matcher), ['target:toBeVisible']);
+  assert.deepEqual(rebound.tests[0].limits.map(l => l.code), ['unresolved-helper']);
+});
+
+test('target provenance follows overrides, writes and lexical scope', () => {
+  const head = `import {createTargetTest} from '@9l/playwright';\nconst test = createTargetTest({});\n`;
+  const credited = body => analyze(head + body).tests.map(t => t.assertions.map(a => `${a.matcher}@${a.line}${a.absence ? ':absence' : ''}`));
+  // A test.use that may set app replaces the fixture; other options do not.
+  assert.deepEqual(credited(`test.use({app: fake});\ntest('t', async ({app}) => { await app.toHaveKeyboard(true); });`), [[]]);
+  assert.deepEqual(credited(`test.describe('s', () => { test.use(options); test('t', async ({app}) => { await app.toHaveKeyboard(true); }); });`), [[]]);
+  assert.deepEqual(credited(`test.use({locale: 'de-DE'});\ntest('t', async ({app}) => { await app.toHaveKeyboard(true); });`), [['target:toHaveKeyboard@4']]);
+  // A written fixture or helper parameter is not the app any more.
+  assert.deepEqual(credited(`test('t', async ({app}) => { app = fake; await app.toHaveKeyboard(true); });`), [[]]);
+  assert.deepEqual(credited(`async function check(app) { app = fake; await app.toHaveKeyboard(true); }\ntest('t', async ({app}) => { await check(app); });`), [[]]);
+  // Each use resolves to its innermost declaration: an inner control does not
+  // leak out, an inner non-control does not hide an outer control, and a
+  // shadowing parameter is not the app.
+  assert.deepEqual(credited(`test('t', async ({app}) => {
+    const c = other();
+    { const c = app.getByTestId('a'); await c.toBeVisible(); }
+    await c.toBeVisible();
+  });`), [['target:toBeVisible@5']]);
+  assert.deepEqual(credited(`test('t', async ({app}) => {
+    const c = app.getByTestId('a');
+    { const c = other(); }
+    await c.toBeVisible();
+  });`), [['target:toBeVisible@6']]);
+  assert.deepEqual(credited(`test('t', async ({app}) => { for (const app of others) await app.toHaveKeyboard(true); });`), [[]]);
+  // Wrapped arguments are read through parentheses and type assertions.
+  assert.deepEqual(credited(`async function sent(app) { await app.toHaveKeyboard((false)); }
+test('t', async ({app}) => { await sent((app)); await sent(app as TargetApp); await app.toHaveKeyboard((false) as boolean); });`),
+  [['target:toHaveKeyboard@3:absence', 'target:toHaveKeyboard@3:absence', 'target:toHaveKeyboard@4:absence']]);
+});
+
+test('target provenance stays unknown when fixtures can be replaced out of sight', () => {
+  const head = `import {createTargetTest, expect} from '@9l/playwright';\nconst test = createTargetTest({});\n`;
+  const facts = body => analyze(head + body).tests;
+  const credited = body => facts(body).map(t => t.assertions.map(a => a.matcher));
+  const check = `test('t', async ({app}) => { await app.toHaveKeyboard(true); });`;
+  // The test binding escapes through an element access or an alias.
+  assert.deepEqual(credited(`test['use']({app: fake});\n${check}`), [[]]);
+  assert.deepEqual(credited(`const alias = test; alias.use({app: fake});\n${check}`), [[]]);
+  assert.deepEqual(credited(`register(test);\n${check}`), [[]]);
+  assert.deepEqual(credited(`test.describe('s', () => { test.beforeEach(async () => {}); ${check} });`), [['target:toHaveKeyboard']]);
+  // A shadowing app is neither credited nor exempt from the helper limit.
+  const shadow = facts(`import {verify} from './checks';\ntest('t', async ({app}) => { { const app = {verify}; await app.verify(); } });`);
+  assert.deepEqual(shadow[0].assertions, []);
+  assert.deepEqual(shadow[0].limits.map(l => l.code), ['unresolved-helper']);
+  // Loop headers write; a case declaration is scoped to the whole switch.
+  assert.deepEqual(credited(`test('t', async ({app}) => { for (app of [fake]) {} await app.toHaveKeyboard(true); });`), [[]]);
+  assert.deepEqual(credited(`test('t', async ({app}) => { switch (0) { case 0: const app = fake; case 1: await app.toHaveKeyboard(true); } });`), [[]]);
+  // Replacing a matcher on any object leaves the function's targets unknown.
+  assert.deepEqual(credited(`test('t', async ({app}) => { const control = app.getByTestId('x'); const alias = control; alias.toBeVisible = async () => {}; await control.toBeVisible(); });`), [[]]);
+  assert.deepEqual(credited(`test('t', async ({app}) => { other['toHaveKeyboard'] = noop; await app.toHaveKeyboard(true); });`), [[]]);
+  // After a spread argument, parameters receive unknown values.
+  assert.deepEqual(credited(`async function check(first, app, ...rest) { await app.toHaveKeyboard(true); }\ntest('t', async ({app}) => { await check(...[first, fake], app); });`), [[]]);
+  assert.deepEqual(credited(`async function check(first, app) { await app.toHaveKeyboard(true); }\ntest('t', async ({app}) => { await check(first, app); });`), [['target:toHaveKeyboard']]);
+  // A target promise handed to expect is that matcher's subject, not an assertion.
+  const rejected = facts(`test('t', async ({app}) => { await expect(app.getByTestId('r').toHaveText('wanted')).rejects.toThrow(); });`);
+  assert.deepEqual(rejected[0].assertions.map(a => [a.matcher, a.unawaited]), [['toThrow', false]]);
 });
