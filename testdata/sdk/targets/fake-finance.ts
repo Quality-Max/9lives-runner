@@ -43,7 +43,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
           effect('mutation'); status = mode === 'defect' || mode === 'lock-recheck' || mode === 'recovered-then-lock' ? 'Sent $50' : `Sent $${amount}`;
         },
         fill: async value => { if (id !== 'amount') throw new Error('unsupported'); amount = value; keyboard = true; },
-        visible: async () => id !== 'receipt' || !!status,
+        visible: async () => mode === 'malformed-visibility' ? undefined as unknown as boolean : id !== 'receipt' || !!status,
         text: async () => id === 'receipt' || id === 'status' ? status : amount,
         scroll: async (direction, percent) => { if (id !== 'list') throw new Error('unsupported'); status = `scrolled ${direction} ${percent}`; },
         bounds: async () => { if (id === 'button') return button; if (id === 'list') return list; throw new Error('unsupported'); },
