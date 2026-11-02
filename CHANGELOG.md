@@ -83,6 +83,11 @@ SDK versions.
 
 ### Android (experimental)
 
+- The emulator's version is read from both output streams (Linux prints it on
+  stderr) within 10 s, falling back to the emulator package's
+  `Pkg.Revision`; on hosted Linux runners `open` failed at the runtime
+  identity before.
+
 - Real-device qualification. `npm run smoke:android` gains native operations,
   opt-in diagnostics and display-width/build-version mismatch cases, and the
   healthy case checks the recorded display, posture, version and signer; a new
