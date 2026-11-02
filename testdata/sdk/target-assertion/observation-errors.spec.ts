@@ -3,7 +3,7 @@ import {TargetApp, targetCapabilities, type TargetDriver} from '@9l/playwright';
 
 function session(read: () => Promise<string>, absent = false) {
   const driver: TargetDriver = {
-    kind: 'android-fake', appId: 'assertion', version: '9l.target/1', capabilities: targetCapabilities,
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => {},
     observeTestId: async () => absent ? [] : [{
       tap: async () => {}, fill: async () => {}, visible: async () => true,

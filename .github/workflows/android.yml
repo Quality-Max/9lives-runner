@@ -1,0 +1,78 @@
+name: Android
+
+# Real-emulator qualification of the experimental Android target: the
+# synthetic fixture app on an owned API 35 emulator, every case of
+# `npm run smoke:android`. Hosted Linux runners provide KVM for the emulator.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/playwright/src/**'
+      - 'internal/adapters/playwrightsdk/**'
+      - 'internal/runner/**'
+      - 'testdata/android/**'
+      - 'testdata/sdk/android/**'
+      - 'testdata/sdk/android.config.ts'
+      - 'scripts/android-smoke.cjs'
+      - 'scripts/build-android-fixture.cjs'
+      - 'tools/android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      NINELIVES_ANDROID_AVD: QualityMax_API_35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Creation provenance binds a named branch; a pull request checkout is detached.
+      - name: Name the checked-out commit's branch
+        run: git switch -c android-qualification
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: 1.27.3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Use the runner's JDK 21
+        run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Allow the emulator to use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install the API 35 image and create the AVD
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null
+          "$sdkmanager" "platform-tools" "emulator" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64" > /dev/null
+          # The driver starts the emulator with a minimal environment, which
+          # finds AVDs only in the default $HOME/.android/avd.
+          mkdir -p "$HOME/.android/avd"
+          echo no | ANDROID_AVD_HOME="$HOME/.android/avd" "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$NINELIVES_ANDROID_AVD" -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+          env -i PATH="$PATH" HOME="$HOME" ANDROID_HOME="$ANDROID_HOME" "$ANDROID_HOME/emulator/emulator" -list-avds | grep -qx "$NINELIVES_ANDROID_AVD"
+      - name: Check hardware acceleration
+        run: |
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+      - run: npm ci
+      - run: npm ci --prefix tools/android --ignore-scripts
+      - name: Qualify the Android target on a real emulator
+        run: npm run smoke:android
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: android-qualification-${{ github.sha }}
+          path: .context/android-qualification/
+          if-no-files-found: ignore
+          include-hidden-files: true

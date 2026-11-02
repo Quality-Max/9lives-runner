@@ -4,4 +4,8 @@
   <item name="send" type="id" />
   <item name="receipt" type="id" />
   <item name="confirmed" type="id" />
+  <item name="status" type="id" />
+  <item name="open" type="id" />
+  <item name="dialog" type="id" />
+  <item name="list" type="id" />
 </resources>

@@ -32,7 +32,11 @@ function emulatorSet() {
   return r.stdout.split('\n').map(line=>/^(emulator-[0-9]+)\s+device$/.exec(line)?.[1]).filter(Boolean).sort().join(',');
 }
 const results = [];
-const modes = process.argv.slice(2).length ? process.argv.slice(2) : ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version'];
+const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
+  'operations','diagnostics','width-mismatch','version-mismatch'];
+const modes = process.argv.slice(2).length ? process.argv.slice(2) : allModes;
+// Native operations and their diagnostics run the second spec test.
+const operationModes = ['operations','diagnostics'];
 const rejectionReasons = {
   'install-fail': 'open_failed_apk_install',
   unavailable: 'open_failed_emulator_boot',
@@ -40,10 +44,11 @@ const rejectionReasons = {
 };
 for (const mode of modes) {
   try {
-  assert(['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version'].includes(mode));
+  assert(allModes.includes(mode));
   const beforeDevices=emulatorSet();
   const probe = path.join(work, `${mode}-probe.json`);
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
+    '--grep',operationModes.includes(mode)?'native operations':'native transfer',
     '--timeout','4m','--deadline','5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
     '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
     {env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
@@ -57,11 +62,23 @@ for (const mode of modes) {
     assert.equal(r.status,0);assert.equal(run.outcome,'passed');assert.equal(run.complete,true);
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,5);assert.equal(receipt.verifiedAssertions,0);
     assert.equal(receipt.androidRuntimes.length,1);assert.equal(facts.clickDispatches,1);
+    // The runtime names the targeted display and the installed build.
+    const rt=receipt.androidRuntimes[0];
+    assert.match(rt.display,/^[0-9]{1,24}$/,'healthy: active display id');
+    assert(Number(rt.displayWidth)>0&&Number(rt.displayHeight)>0&&Number(rt.density)>0,'healthy: display metrics');
+    assert(['opened','half-opened','closed','flat','unknown'].includes(rt.posture),'healthy: posture');
+    assert.deepEqual([rt.versionCode,rt.versionName],['7','1.4.0'],'healthy: installed version');
+    assert.match(rt.signer,/^[a-f0-9]{64}$/,'healthy: signer digest');
+    assert.equal(receipt.targetSetup,undefined);assert.equal(receipt.targetDiagnostics,undefined);
+    facts.runtime={display:rt.display,displayWidth:rt.displayWidth,displayHeight:rt.displayHeight,density:rt.density,posture:rt.posture,versionCode:rt.versionCode,versionName:rt.versionName};
+  } else if (mode==='operations') {
+    assert.equal(r.status,0,'operations: native operations pass');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,6);assert.equal(receipt.verifiedAssertions,0);
   } else {
     assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
     if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
   }
-  if (!['install-fail','unavailable','digest','version'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
+  if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
   const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';
   const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
   if (mode==='defect' || mode==='state-defect') {
@@ -80,6 +97,28 @@ for (const mode of modes) {
     assert.deepEqual(receipt.targetSetup.map(({testId, ...rest}) => rest), [{classification:'mismatch', reason:'build-digest', stage:'open'}], 'digest: setup mismatch');
     assert.equal(facts.stopReason,'setup_mismatch');
   }
+  if (mode==='operations') {
+    const ops=new Set(frames.filter(f=>f.operation).map(f=>f.operation));
+    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate']) assert(ops.has(op),`operations: ${op} ran`);
+  }
+  if (mode==='diagnostics') {
+    // The hidden assertion against the open dialog fails as an assertion,
+    // with real window counts: the dialog added a window, so no observer
+    // classification is made.
+    assert(frames.some(f=>f.operation==='assert-hidden'&&f.status==='failed'),'diagnostics: hidden assertion failed');
+    assert.equal(facts.stopReason,'assertion_failed');assert.equal(receipt.targetSetup,undefined,'diagnostics: no observer classification');
+    const d=receipt.targetDiagnostics?.[0];
+    assert(d&&d.operation==='assert-hidden'&&d.reason==='assertion_failed','diagnostics: one record');
+    assert(d.windowsBefore>=1&&d.windowsAfter>d.windowsBefore,`diagnostics: real window counts ${d.windowsBefore}->${d.windowsAfter}`);
+    assert(d.point===true&&d.viewportWidth>0,'diagnostics: the touch point and viewport are kept');
+    facts.diagnostic={windowsBefore:d.windowsBefore,windowsAfter:d.windowsAfter,focusBefore:d.focusBefore,focusAfter:d.focusAfter};
+  }
+  if (mode==='width-mismatch'||mode==='version-mismatch') {
+    // A declared requirement the device or build does not meet is a setup
+    // mismatch found from real dumpsys output before any test step.
+    assert.deepEqual(receipt.targetSetup.map(({testId,...rest})=>rest),[{classification:'mismatch',reason:mode==='width-mismatch'?'display-width':'build-version',stage:'open'}],`${mode}: setup mismatch`);
+    assert.equal(facts.stopReason,'setup_mismatch');
+  }
   if (mode==='missing'||mode==='ambiguous') {
     assert.equal(facts.clickDispatches,0);assert.equal(facts.stopReason,mode==='missing'?'missing_test_id':'ambiguous_test_id');
   }
@@ -87,8 +126,10 @@ for (const mode of modes) {
   const result={mode,outcome:run.outcome,status:receipt.status,validated:receipt.validated,targetAssertions:receipt.targetAssertions??0,...facts};
   results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
   console.log(JSON.stringify(result));
-  } catch {
-    const result={mode,qualified:false};results.push(result);
+  } catch (error) {
+    // Only the smoke's own assertion message, never subprocess or device output.
+    const reason=error instanceof assert.AssertionError ? String(error.message).split('\n')[0].slice(0,200) : 'unexpected';
+    const result={mode,qualified:false,reason};results.push(result);
     fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
     console.log(JSON.stringify(result));
   }

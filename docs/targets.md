@@ -89,7 +89,7 @@ ordinary Playwright owns the page. `native(target)` synchronously constructs a
 Native fixture resolution has no implicit browser, context or page dependency.
 `page` and ordinary `expect` remain available to existing web tests.
 
-Drivers declare `9l.target/1`, the selected kind/app alias, and the exact ordered
+Drivers declare `9l.target/2`, the selected kind/app alias, and the exact ordered
 `targetCapabilities`. They observe at most two handles for a test ID: zero is
 missing, two is ambiguous. Mutations require exactly one observed handle and
 never silently select the first match. The web driver acts through strict
@@ -124,8 +124,12 @@ close promise.
 
 ## Evidence and limits
 
-The existing `9l.engine/1` stream negotiates the additional `9l.target/1`
-capability. Every frame carries the selected target's SHA-256 ID (a fixed
+The existing `9l.engine/1` stream negotiates the additional `9l.target/2`
+capability. Version 2 (0.6.0-beta.2) added the native operations, the
+`target_setup` and `target_diagnostic` frames and the Android runtime's display,
+posture and build identity; a driver or SDK that declares `9l.target/1` is
+rejected with the upgrade message, so the CLI and `@9l/playwright` are updated
+together. Every frame carries the selected target's SHA-256 ID (a fixed
 digest of the public target name, not a secret) alongside run/job/attempt
 identity. Before execution, the reporter declares each test ID it will run; Go
 checks every frame against that list and requires a single test attempt,
@@ -156,7 +160,14 @@ the test; `9l run` and `9l result` print each under the job, and with
 result is inconclusive setup evidence; it does not say the application
 behaved correctly.
 
-Typed target steps record only the operation enum, category and outcome. The
+Typed target steps record only the operation enum, category and outcome, and
+for a failed operation the stop reason token it failed with (`[a-z_]{1,64}`,
+such as `assertion_failed`, `deadline`, `operation_failed` or
+`setup_blocked`), read only from the fixture's own `9lives target stopped:`
+error. The receipt's `failureSummary` keeps them per failed test, with the
+test's setup classification, so an assertion failure, an operation that could
+not run, a deadline and a locked device stay distinguishable without
+`--failure-details` or a rerun. The
 reporter counts only steps created by the SDK's own target module; a user step
 titled `9l target ...` is an ordinary step. Passed target tests require at
 least one successful target assertion and no failed target operation.
@@ -182,6 +193,6 @@ one-attempt behavior, plain `--list` discovery and ordinary Playwright
 compatibility. Bounded receipts
 are saved under `.context/target-contract/`. Creation provenance currently
 supports one job: single-target controls use it; the two-target baseline does
-not claim runtime provenance. Source assessment does not yet recognize
-`createTargetTest` declarations, so static assertion/requirement coverage is
-unknown for this fixture.
+not claim runtime provenance. `9l assess` recognizes `createTargetTest`
+declarations and credits target assertions as `target:<matcher>`; that is
+source evidence of what the spec asserts, not verification of what ran.

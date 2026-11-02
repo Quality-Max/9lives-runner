@@ -11,6 +11,15 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceDependency"
+          },
+          "type": "array"
+        },
+        "dependenciesSHA256": {
+          "type": "string"
+        },
         "repositorySHA256": {
           "type": "string"
         },
@@ -201,6 +210,65 @@
       ],
       "type": "object"
     },
+    "FailedTestSummary": {
+      "properties": {
+        "attempts": {
+          "type": "integer"
+        },
+        "class": {
+          "type": "string"
+        },
+        "failedSteps": {
+          "type": "integer"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "setup": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "type": "object"
+    },
+    "FailureSummary": {
+      "properties": {
+        "failedTests": {
+          "type": "integer"
+        },
+        "stop": {
+          "type": "string"
+        },
+        "tests": {
+          "items": {
+            "$ref": "#/$defs/FailedTestSummary"
+          },
+          "type": "array"
+        },
+        "testsTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stop",
+        "failedTests"
+      ],
+      "type": "object"
+    },
     "GoalDecisionReceipt": {
       "properties": {
         "action": {
@@ -298,6 +366,15 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "type": "string"
+        },
+        "dependencyChanges": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceChange"
+          },
+          "type": "array"
+        },
         "expected": {
           "$ref": "#/$defs/AgentProvenance"
         },
@@ -320,6 +397,44 @@
         "commit",
         "source",
         "repository"
+      ],
+      "type": "object"
+    },
+    "ProvenanceChange": {
+      "properties": {
+        "change": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "change"
+      ],
+      "type": "object"
+    },
+    "ProvenanceDependency": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "sha256"
       ],
       "type": "object"
     },
@@ -375,6 +490,9 @@
         },
         "failureCount": {
           "type": "integer"
+        },
+        "failureSummary": {
+          "$ref": "#/$defs/FailureSummary"
         },
         "failures": {
           "items": {
@@ -793,7 +911,7 @@
       "type": "integer"
     },
     "version": {
-      "const": 1,
+      "const": 2,
       "type": "integer"
     }
   },

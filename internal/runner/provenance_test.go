@@ -129,10 +129,11 @@ func TestAgentProvenanceRejectsMalformedRecordsAndDetachedBranch(t *testing.T) {
 	spec, p := provenanceFixture(t)
 	raw, _ := json.Marshal(p)
 	for _, invalid := range [][]byte{
-		[]byte(strings.Replace(string(raw), `"version":1`, `"version":1,"version":1`, 1)),
+		[]byte(strings.Replace(string(raw), `"version":2`, `"version":2,"version":2`, 1)),
 		append(append([]byte{}, raw...), []byte(` {}`)...),
 		[]byte(strings.Replace(string(raw), `"agent":"fixture-agent"`, `"agent":null`, 1)),
-		[]byte(strings.Replace(string(raw), `"version":1`, `"version":2`, 1)),
+		[]byte(strings.Replace(string(raw), `"version":2`, `"version":3`, 1)),
+		[]byte(strings.Replace(string(raw), `"version":2`, `"version":1`, 1)),
 	} {
 		if _, err := ParseAgentProvenance(invalid); err == nil {
 			t.Fatal("malformed record accepted")
@@ -144,16 +145,31 @@ func TestAgentProvenanceRejectsMalformedRecordsAndDetachedBranch(t *testing.T) {
 	}
 }
 
-// A compared assessment names its scope: the selected spec, not the modules
-// it imports. An unknown assessment compared nothing and carries no scope.
+// A compared assessment names its scope: a version 2 snapshot covers the spec
+// and its local imports; a version 1 snapshot covers only the selected spec.
+// An unknown assessment compared nothing and carries no scope.
 func TestProvenanceAssessmentScope(t *testing.T) {
 	_, p := provenanceFixture(t)
 	changed := p
 	changed.Source = provenanceHash([]byte("changed source"))
-	for name, assessment := range map[string]ProvenanceAssessment{"matched": CompareAgentProvenance(p, p), "mismatch": CompareAgentProvenance(p, changed)} {
-		raw, err := json.Marshal(assessment)
-		if err != nil || assessment.Status != name || !strings.Contains(string(raw), `"scope":"spec"`) {
+	v1 := p
+	v1.Version, v1.Dependencies, v1.DependenciesSHA256 = 1, nil, ""
+	for name, c := range map[string]struct {
+		assessment ProvenanceAssessment
+		status     string
+		scope      string
+	}{
+		"matched":     {CompareAgentProvenance(p, p), "matched", `"scope":"spec-and-local-imports"`},
+		"mismatch":    {CompareAgentProvenance(p, changed), "mismatch", `"scope":"spec-and-local-imports"`},
+		"v1 matched":  {CompareAgentProvenance(v1, p), "matched", `"scope":"spec"`},
+		"v1 mismatch": {CompareAgentProvenance(v1, changed), "mismatch", `"scope":"spec"`},
+	} {
+		raw, err := json.Marshal(c.assessment)
+		if err != nil || c.assessment.Status != c.status || !strings.Contains(string(raw), c.scope) {
 			t.Fatalf("%s: %s %v", name, raw, err)
+		}
+		if strings.HasPrefix(name, "v1") == strings.Contains(string(raw), `"dependencies":`) {
+			t.Fatalf("%s: dependency comparison does not match the snapshot version: %s", name, raw)
 		}
 	}
 	raw, _ := json.Marshal(UnknownAgentProvenance())

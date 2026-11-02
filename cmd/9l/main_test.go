@@ -158,6 +158,38 @@ func TestPrintResultShowsWhyAJobDidNotPass(t *testing.T) {
 	}
 }
 
+func TestPrintResultShowsTheFailureSummaryWithoutDetails(t *testing.T) {
+	id := strings.Repeat("c2", 32)
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/pay.spec.ts", FailureCount: 22,
+		FailureSummary: &runner.FailureSummary{Stop: runner.StopTestFailed, FailedTests: 22, TestsTruncated: true, Tests: []runner.FailedTestSummary{
+			{TestID: id, Class: runner.FailureSetup, Status: "failed", Step: "assertion", Operation: "assert-text", Reason: "assertion_failed", Setup: runner.SetupBlocked},
+			{TestID: id, Class: runner.FailureTimeout, Status: "timedOut", Step: "browser"},
+			{Class: runner.FailureAssertion, Status: "failed", Step: "assertion"},
+		}},
+	}}})
+	want := "  FAILED   tests/pay.spec.ts\n" +
+		"           ✗ test c2c2c2c2c2c2 [setup] in assert-text: assertion_failed (setup blocked)\n" +
+		"           ✗ test c2c2c2c2c2c2 [timeout] timed out in a failed browser step\n" +
+		"           ✗ test [assertion] in a failed assertion step\n" +
+		"           … 19 more failed test(s) not listed\n" +
+		"           --failure-details adds each failed test's title, line and error\n"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+	// Detailed failures already name each test; the summary is not repeated.
+	out.Reset()
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/pay.spec.ts", FailureCount: 1,
+		Failures:       []runner.TestFailure{{Title: "pays", Class: runner.FailureAssertion}},
+		FailureSummary: &runner.FailureSummary{Stop: runner.StopTestFailed, FailedTests: 1, Tests: []runner.FailedTestSummary{{TestID: id, Class: runner.FailureAssertion}}},
+	}}})
+	if strings.Contains(out.String(), "c2c2c2") || strings.Contains(out.String(), "--failure-details") {
+		t.Fatalf("summary repeated beside details:\n%s", out.String())
+	}
+}
+
 func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 	errorContext := filepath.Join(t.TempDir(), "test-results", "login", "error-context.md")
 	var out bytes.Buffer

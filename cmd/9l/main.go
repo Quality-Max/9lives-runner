@@ -120,7 +120,7 @@ Usage:
   9l doctor [--sdk [spec]] [--android] [--paths] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
   9l update [--check | --yes]  # check Latest; ask before replacing the runner
-  # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
+  # assess/run accept --agent-provenance <snapshot.json> for branch, source and local-import checks
 
 The Go runner currently executes Playwright specs from existing projects.
 It never reports an incomplete run green. run exits 0 passed, 1 failed,
@@ -210,8 +210,12 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			fmt.Fprintln(errOut, "9l:", err)
 			return 2
 		}
-		actual, err := runner.CaptureAgentProvenance(ctx, fs.Arg(0), expected.Agent)
-		if err != nil {
+		actual, err := runner.CaptureAgentProvenanceFor(ctx, fs.Arg(0), expected)
+		if graph := (runner.ImportGraphError{}); errors.As(err, &graph) {
+			// Our own bounded message naming repo-relative paths; raw Git
+			// errors are never emitted.
+			fmt.Fprintf(errOut, "9l: warning: requested agent provenance could not be captured (%s); provenance remains unknown\n", graph.Error())
+		} else if err != nil {
 			fmt.Fprintln(errOut, "9l: warning: requested agent provenance could not be captured; provenance remains unknown")
 		} else {
 			if actual.Source != report.SourceSHA256 {
@@ -310,11 +314,17 @@ func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
 func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
 	fmt.Fprint(out, "Agent branch/source provenance: ", report.AgentProvenance.Status)
-	if report.AgentProvenance.Scope == "spec" {
-		// "matched" is easy to over-trust: name what was compared.
-		fmt.Fprint(out, " (the selected spec, its path, branch, commit and workspace root; imported modules are not compared)")
+	// "matched" is easy to over-trust: name what was compared.
+	switch report.AgentProvenance.Scope {
+	case runner.ProvenanceScopeSpec:
+		fmt.Fprint(out, " (the selected spec, its path, branch, commit and workspace root; imported modules are not compared; recapture the snapshot to compare them)")
+	case runner.ProvenanceScopeImports:
+		fmt.Fprint(out, " (the selected spec, its path, its relative imports, the nearest lockfile, branch, commit and workspace root; package and path-alias imports are not followed)")
 	}
 	fmt.Fprintln(out)
+	for _, change := range report.AgentProvenance.DependencyChanges {
+		fmt.Fprintf(out, "Agent provenance %s %s: %s\n", change.Kind, change.Change, strconv.Quote(change.Path))
+	}
 	writeAssessmentTests(out, report, limits)
 	for _, limit := range report.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
@@ -1064,6 +1074,11 @@ func printResult(w io.Writer, result runner.RunSummary) {
 				clearable = clearable || !attachment.Retained
 			}
 		}
+		// Without per-test details (an engine run without --failure-details)
+		// the summary still says which tests failed and how.
+		if receipt.FailureSummary != nil && len(receipt.Failures) == 0 {
+			printFailureSummary(w, *receipt.FailureSummary)
+		}
 		printAnnotations(w, receipt.Annotations)
 		if receipt.FlakyTests > 0 {
 			fmt.Fprintf(w, "           %d test(s) passed only on a Playwright retry inside this attempt\n", receipt.FlakyTests)
@@ -1175,6 +1190,43 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 			label = "context"
 		}
 		fmt.Fprintf(w, "             %s: %s\n", receiptReason(label), receiptReason(displayPath(attachment.Path)))
+	}
+}
+
+// printFailureSummary shows each summarized failed test as its short engine
+// digest, class and attributed step; the summary has no titles or messages.
+func printFailureSummary(w io.Writer, summary runner.FailureSummary) {
+	// Loaded results drop malformed summaries; never format one regardless.
+	if summary.Validate() != nil {
+		return
+	}
+	for _, test := range summary.Tests {
+		line := "test"
+		if test.TestID != "" {
+			line += " " + test.TestID[:min(12, len(test.TestID))]
+		}
+		line += " [" + test.Class + "]"
+		if test.Status == "timedOut" {
+			line += " timed out"
+		}
+		if test.Operation != "" {
+			line += " in " + test.Operation
+		} else if test.Step != "" {
+			line += " in a failed " + test.Step + " step"
+		}
+		if test.Reason != "" {
+			line += ": " + test.Reason
+		}
+		if test.Setup != "" {
+			line += " (setup " + test.Setup + ")"
+		}
+		fmt.Fprintf(w, "           ✗ %s\n", receiptReason(line))
+	}
+	if summary.TestsTruncated && len(summary.Tests) > 0 {
+		fmt.Fprintf(w, "           … %d more failed test(s) not listed\n", summary.FailedTests-len(summary.Tests))
+	}
+	if len(summary.Tests) > 0 {
+		fmt.Fprintln(w, "           --failure-details adds each failed test's title, line and error")
 	}
 }
 

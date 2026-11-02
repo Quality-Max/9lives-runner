@@ -28,6 +28,12 @@ a run, but mixed release pairs are unqualified. Align versions first when
 investigating a bridge failure. A successful handshake still needs complete,
 valid execution evidence before an attempt can pass.
 
+Workers predating the `declared-outcomes` capability are rejected, including
+target workers. Update the CLI and `@9l/playwright` together when the handshake
+reports unsupported capabilities or an unsupported target contract. Declared
+outcomes remain required; the engine does not fall back to evidence that
+cannot distinguish declared and runtime result modifiers.
+
 Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
 the protocol and capabilities in a `hello` frame. Go controls the worker through
@@ -149,6 +155,15 @@ copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
 
+A failed typed target step (see [targets](targets.md)) also sends its stop
+reason, a `[a-z_]{1,64}` token taken only from the fixture's own
+`9lives target stopped: <reason>` error; any other error text sends none. From
+the validated stream alone, Go builds the receipt's `failureSummary`: per
+failed test, its hashed ID, class, final status, the category, operation and
+stop reason of the failed step, an unrecovered setup classification and
+counts. It is kept without any opt-in and holds no titles, locations or error
+text; see [the CLI reference](cli.md).
+
 `9l run --sdk --failure-details` is the opt-in exception for receipts, not for
 the protocol: Playwright's JSON reporter runs beside the engine reporter and
 writes to a separate private per-attempt file. After the attempt validates
@@ -190,7 +205,7 @@ cover malformed, duplicate, foreign, late and incomplete evidence. Live provider
 verified replay and independent behavioral verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
-`9l.target/1`, a target identity digest, a declared test list, typed
+`9l.target/2`, a target identity digest, a declared test list, typed
 deterministic operation outcomes and, from a native driver, at most one
 `target_setup` classification per attempt (`blocked`, `dirty`, `mismatch` or
 `unknown`, a closed reason, the stage and a recorded recovery), kept in the

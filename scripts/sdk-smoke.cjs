@@ -142,7 +142,7 @@ async function main() {
   const passing = invoke('testdata/sdk/tests/checkout.spec.ts');
   assert.equal(passing.code, 0);
   assert.equal(passing.summary.complete, true);
-  assert.equal(passing.summary.version, 1);
+  assert.equal(passing.summary.version, 2);
   assert.equal(passing.summary.outcome, 'passed');
   assert.equal(passing.summary.plannedJobs, 1);
   const receipt = passing.summary.receipts[0];
@@ -179,12 +179,29 @@ async function main() {
   assert.equal(failing.summary.receipts[0].status, 'failed');
   assert.equal(failing.summary.receipts[0].failureCount, 1);
   assert.equal(failing.summary.receipts[0].failures, undefined); // titles and errors stay out by default
+  // The failure summary is kept without the opt-in: the expect inside the
+  // n9l.step is the cause, not its wrapper, and no title, selector or text of
+  // the error reaches the receipt.
+  const failingSummary = failing.summary.receipts[0].failureSummary;
+  assert.equal(failingSummary.stop, 'test_failed');
+  assert.equal(failingSummary.failedTests, 1);
+  assert.equal(failingSummary.tests.length, 1);
+  const {testId, ...failedTest} = failingSummary.tests[0];
+  assert.match(testId, /^[a-f0-9]{64}$/);
+  assert.deepEqual(failedTest, {class: 'assertion', status: 'failed', step: 'assertion', failedSteps: 2, attempts: 1});
+  const failingReceipt = fs.readFileSync(failing.summary.receipts[0].receiptPath, 'utf8');
+  assert.deepEqual(JSON.parse(failingReceipt).failureSummary, failingSummary);
+  for (const leaked of ['Order confirmed', 'Order rejected', 'toHaveText', 'getByRole', 'business failure', 'verify the required outcome']) {
+    assert(!failingReceipt.includes(leaked), `failure receipt carries no ${leaked}`);
+  }
+  assert.equal(receipt.failureSummary, undefined); // a passed receipt has none
   // Opt-in failure details come from Playwright's JSON reporter beside the
   // evidence stream; the validated stream itself still carries no titles.
   const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details']);
   assert.equal(detailed.code, 1);
   assert.equal(detailed.summary.receipts[0].status, 'failed');
   const [detail] = detailed.summary.receipts[0].failures;
+  assert.deepEqual(detailed.summary.receipts[0].failureSummary.tests.map(({testId, ...rest}) => rest), [failedTest], 'the summary does not depend on --failure-details');
   assert.equal(detail.title, 'business failure remains a failure');
   assert.match(detail.location, /defect\.spec\.ts:\d+$/);
   assert.match(detail.message, /toHaveText/);

@@ -160,6 +160,7 @@ func LoadStatus(root, runID string) (RunStatus, error) {
 	var result RunSummary
 	if err := readJSON(filepath.Join(directory, "result.json"), &result); err == nil {
 		upgradeResult(&result, plan)
+		dropMalformedFailureSummaries(&result)
 		status.Result = &result
 		if result.Complete {
 			status.State = "completed"
@@ -218,7 +219,22 @@ func LoadResult(root, runID string) (RunSummary, error) {
 		}
 		upgradeResult(&result, plan)
 	}
+	if err == nil {
+		dropMalformedFailureSummaries(&result)
+	}
 	return result, err
+}
+
+// dropMalformedFailureSummaries removes a persisted failure summary that is
+// not the closed record the runner writes. A saved result is untrusted input:
+// a hand-edited or corrupted summary is withheld rather than shown or
+// repaired, as for a receipt written before summaries existed.
+func dropMalformedFailureSummaries(result *RunSummary) {
+	for index := range result.Receipts {
+		if summary := result.Receipts[index].FailureSummary; summary != nil && summary.Validate() != nil {
+			result.Receipts[index].FailureSummary = nil
+		}
+	}
 }
 
 // upgradeResult fills the version 1 fields of a result written by CLI 0.1.1

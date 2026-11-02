@@ -132,9 +132,13 @@ type Receipt struct {
 	// such as a test recording why it returned early. A passed receipt with
 	// annotations may not have exercised everything its tests can check.
 	Annotations []TestAnnotation `json:"annotations,omitempty"`
-	Termination *Termination     `json:"termination,omitempty"`
-	Evidence    Evidence         `json:"evidence"`
-	ReceiptPath string           `json:"receiptPath,omitempty"`
+	// FailureSummary says why an attempt that did not pass ended, on every
+	// such receipt, with or without --failure-details. It holds closed
+	// tokens, counts and test digests only; see FailureSummary.
+	FailureSummary *FailureSummary `json:"failureSummary,omitempty"`
+	Termination    *Termination    `json:"termination,omitempty"`
+	Evidence       Evidence        `json:"evidence"`
+	ReceiptPath    string          `json:"receiptPath,omitempty"`
 }
 
 // AndroidRuntime is sanitized, worker-reported app/build/runtime attribution.
@@ -311,6 +315,81 @@ const (
 	MaxFailureMessageBytes = 1 << 10
 )
 
+// FailureSummary is the bounded, metadata-only account of an attempt that did
+// not pass. It is built from the receipt's own status and from validated
+// structured evidence, never from message prose, so it carries no error
+// messages, stack frames, test titles, page or app text, URLs, selector
+// values, environment values or credentials, and it is kept without
+// --failure-details. It explains a failure; it does not change the status.
+type FailureSummary struct {
+	// Stop is why the attempt ended without a pass, one of the Stop*
+	// tokens: test_failed, goal_failed, deadline, canceled,
+	// invalid_evidence, evidence_truncated, exit_without_failure,
+	// provenance_changed, not_started or infrastructure.
+	Stop string `json:"stop"`
+	// FailedTests counts the failed tests in validated evidence (zero when
+	// the evidence did not validate). Tests describes at most
+	// MaxFailureSummaryTests of them, and TestsTruncated says that fewer
+	// are described than failed.
+	FailedTests    int                 `json:"failedTests"`
+	Tests          []FailedTestSummary `json:"tests,omitempty"`
+	TestsTruncated bool                `json:"testsTruncated,omitempty"`
+}
+
+// FailedTestSummary is one failed test of a FailureSummary.
+type FailedTestSummary struct {
+	// TestID is the engine's SHA-256 test digest, the one targetSetup,
+	// targetDiagnostics and androidRuntimes carry for the same test. A
+	// plain Playwright report has no such digest; see the receipt's
+	// failures for its titles.
+	TestID string `json:"testId,omitempty"`
+	// Class is one of the TestFailure classes. With the engine it is derived
+	// from the test's final status, setup records and failed step; with a
+	// plain report it is the report failure's class.
+	Class string `json:"class"`
+	// Status is the status of the test's last completed Playwright attempt:
+	// failed, timedOut, or passed for a test that was expected to fail.
+	Status string `json:"status,omitempty"`
+	// Step is the category of the failed step the failure is attributed to
+	// (assertion, action, browser, fixture, goal or other): the first failed
+	// target operation, else the first failed assertion, else the first
+	// failed step of the last completed attempt. Operation is the target
+	// operation of that step, and Reason the stop reason token the target
+	// fixture failed it with, such as assertion_failed, deadline,
+	// operation_failed or setup_blocked.
+	Step      string `json:"step,omitempty"`
+	Operation string `json:"operation,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	// Setup is the driver's setup classification of the test (blocked,
+	// dirty, mismatch, observer or unknown) when one was not recovered.
+	Setup string `json:"setup,omitempty"`
+	// FailedSteps counts the failed steps of the last completed attempt and
+	// Attempts the test's Playwright attempts in this receipt's attempt.
+	FailedSteps int `json:"failedSteps,omitempty"`
+	Attempts    int `json:"attempts,omitempty"`
+}
+
+// Bounds of a FailureSummary.
+const (
+	MaxFailureSummaryTests = 20
+	MaxFailureSummaryCount = 10000
+	MaxFailureTokenBytes   = 64
+)
+
+// FailureSummary stop tokens; see FailureSummary.Stop.
+const (
+	StopTestFailed         = "test_failed"
+	StopGoalFailed         = "goal_failed"
+	StopDeadline           = "deadline"
+	StopCanceled           = "canceled"
+	StopInvalidEvidence    = "invalid_evidence"
+	StopEvidenceTruncated  = "evidence_truncated"
+	StopExitWithoutFailure = "exit_without_failure"
+	StopProvenanceChanged  = "provenance_changed"
+	StopNotStarted         = "not_started"
+	StopInfrastructure     = "infrastructure"
+)
+
 type Termination struct {
 	Kind              string `json:"kind"`
 	Detail            string `json:"detail,omitempty"`
@@ -356,10 +435,10 @@ type ProgressEvent struct {
 // docs/contracts.md.
 const (
 	PlanVersion          = 1
-	ReceiptVersion       = 1
+	ReceiptVersion       = 2
 	ProgressEventVersion = 1
-	RunSummaryVersion    = 1
-	RunStatusVersion     = 1
+	RunSummaryVersion    = 2
+	RunStatusVersion     = 2
 )
 
 // RunOutcome is the normative classification of a run for hosts. Complete is

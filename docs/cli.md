@@ -153,6 +153,35 @@
   reported only with `--failure-details`: Playwright's JSON reporter then
   writes a separate private report beside the evidence stream, which explains
   failures and never validates the run.
+- Failure summary: every receipt that did not pass carries `failureSummary`,
+  with or without `--failure-details`. `stop` says why the attempt ended:
+  `test_failed`, `goal_failed` (only a goal's own test failed), `deadline`,
+  `canceled`, `invalid_evidence`, `evidence_truncated`,
+  `exit_without_failure` (the process failed but no test did),
+  `provenance_changed`, `not_started` or `infrastructure`. `failedTests`
+  counts the failed tests in validated evidence and `tests` describes up to
+  20 of them (`testsTruncated` when more failed). With `--sdk` each entry
+  has the engine's SHA-256 `testId` (the one `targetSetup`,
+  `targetDiagnostics` and `androidRuntimes` use for the same test), the
+  failure `class` (the classes above), the `status` of the last completed
+  Playwright attempt, the category of the failed `step` the failure is
+  attributed to (the first failed target operation, else the first failed
+  assertion, else the first failed step), the target `operation` and its stop
+  `reason` (such as `assertion_failed`, `deadline`, `operation_failed`,
+  `setup_blocked`), an unrecovered `setup` classification, and the
+  `failedSteps` and Playwright `attempts` of the test. The class is derived
+  from those facts alone: a stop reason `assertion_failed` or a failed
+  `expect` is `assertion`, `deadline` is `action-timeout`, a `setup_*`
+  reason or unrecovered setup record is `setup`, a timed-out test is
+  `timeout`, and any other stop reason is `other`. Without `--sdk` an entry
+  keeps only the class and status of the report's failure. The summary holds
+  closed tokens, counts and digests only, never titles, locations, messages,
+  stack frames, page or app text, URLs, selector values, environment values
+  or credentials; Go validates it as a closed record and drops an entry
+  outside it while keeping the count. When a job lists no detailed failures,
+  `9l run` and `9l result` print each entry, as `✗ test 1a2b3c4d5e6f
+  [assertion] in assert-text: assertion_failed`. Each attempt has its own
+  receipt directory, so a later run never overwrites an earlier summary.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
@@ -181,11 +210,16 @@
   report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
   `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
-  commit and test source for later assessment/execution checks. A `matched`
-  assessment has `scope: "spec"`: it compared the selected spec's bytes, its
-  path, the branch, commit and workspace root. Helpers, page objects and the
-  module under test are not compared, so `matched` does not mean unchanged
-  dependencies; the text output says so.
+  commit and test source for later assessment/execution checks. Snapshot
+  version 2 also digests the spec's transitive relative imports (helpers,
+  page objects, JSON fixtures) and the nearest lockfile; a `matched`
+  assessment then has `scope: "spec-and-local-imports"`, and a mismatch
+  names each changed file in `dependencyChanges`. Package and path-alias
+  imports and installed packages are not compared. An import that cannot be
+  resolved, leaves the repository or is non-literal, or a graph over the
+  bounds, fails capture so provenance stays unknown. Version 1 snapshots
+  compare only the spec (`scope: "spec"`); see
+  [agent provenance](test-assessment.md#agent-creation-and-execution-provenance).
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
   proposals remain unverified and require approval.
 - `9l heal`: execute a failing Playwright spec, verify a selector-only

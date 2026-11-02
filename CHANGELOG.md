@@ -6,8 +6,103 @@ SDK versions.
 
 ## Unreleased
 
+### Contracts
+
+- Receipt, run result and run status are version 2, and the shared target
+  contract is `9l.target/2`. The experimental Android runtime record gained
+  required fields (the targeted display, posture and installed build
+  identity), which a version 1 validator would reject, and `9l.target/2` adds
+  the native operations and the `target_setup` and `target_diagnostic`
+  frames. A driver or SDK that declares `9l.target/1` is rejected with the
+  upgrade message: update the CLI and `@9l/playwright` together. Plan,
+  progress event and `9l version` stay at version 1; `9l.engine/1` is
+  unchanged. Version 2 receipts also carry this release's `failureSummary`
+  and provenance `dependencyChanges`.
+### Receipts
+
+- Every receipt that did not pass now keeps a bounded, metadata-only
+  `failureSummary`, with or without `--failure-details` (#213), so the
+  reason for an earlier failed attempt is not lost when the project's own
+  output is overwritten. `stop` names why the attempt ended
+  (`test_failed`, `goal_failed`, `deadline`, `canceled`,
+  `invalid_evidence`, `evidence_truncated`, `exit_without_failure`,
+  `provenance_changed`, `not_started` or `infrastructure`), `failedTests`
+  counts the failed tests in validated evidence, and `tests` describes up to
+  20 of them (`testsTruncated` when more failed): with `--sdk`, the engine's
+  SHA-256 test ID (the one `targetSetup` and `targetDiagnostics` use), the
+  failure `class`, the `status` of the last completed Playwright attempt,
+  the category of the failed `step` it is attributed to (the first failed
+  target operation, else assertion, else step), the target `operation` and
+  its stop `reason`, an unrecovered `setup` classification, and
+  `failedSteps` and `attempts` counts. The class comes from structured
+  facts only: a target stop reason `assertion_failed` or a failed `expect`
+  is `assertion`, `deadline` is `action-timeout`, a `setup_*` reason or an
+  unrecovered setup record is `setup`, a timed-out test is `timeout`. For
+  plain Playwright runs the entries keep only the class and status of the
+  report's failures. The summary never holds titles, locations, error
+  messages, stack frames, page or app text, URLs, selector values,
+  environment values or credentials; Go validates it as a closed record
+  and drops any entry outside it, keeping the count. `9l run` and
+  `9l result` print the entries under a failed job when no detailed
+  failures are listed. To carry the reason, a failed typed target step's
+  `step_end` frame gains an optional `reason` token (`[a-z_]{1,64}`, from
+  the fixture's own `9lives target stopped: <reason>`); no other error text
+  crosses the bridge. Go still accepts frames without it, but an older CLI
+  rejects a stream that carries it, so update the CLI and `@9l/playwright`
+  together. The receipt field is additive and ships with the receipt
+  version change of the next beta; the published schemas are regenerated.
+  The spec location of an SDK failure is not in the summary: the engine
+  stream carries no locations, and `--failure-details` still adds titles,
+  lines and errors.
+
+### Provenance
+
+- Imported local helpers are part of agent provenance (#215). `9l
+  provenance` writes snapshot version 2, which adds `dependencies` (the
+  repo-relative path, kind and SHA-256 of every module the spec reaches
+  through relative `import`, `export … from`, `import('…')` and
+  `require('…')`, plus the lockfile nearest the spec) and
+  `dependenciesSHA256`; file contents are never stored. Editing an imported
+  helper after the snapshot was a `matched` spec before; it is now a
+  mismatch, `assess` and `run` report `dependencies: "mismatch"` with
+  `dependencyChanges` naming the modified, added or removed path, and `run`
+  refuses or invalidates the attempt. Capture parses source lexically and
+  never executes it. An import that cannot be resolved, resolves outside the
+  repository (including through a symlink), is absolute (`/`, `\`, a drive
+  letter or UNC path, on every OS) or has a non-literal argument,
+  and a graph over 256 local modules, 1 MiB per module, 8 MiB together or
+  64 MiB per lockfile, fails capture, so provenance stays unknown instead of
+  matching. Package, built-in and path-alias imports are not followed and
+  `node_modules` is not read; installed packages are covered only through
+  the lockfile digest, and files read at runtime are not covered. The scan
+  is not a full parser, so unusual syntax can hide an import on the same
+  line. Version 1 snapshots are still accepted and compared with
+  `scope: "spec"`; the assessment and receipt schemas gain the optional
+  fields, and older CLIs reject version 2 snapshots. The snapshot size limit
+  is 256 KiB, up from 4 KiB.
+
 ### Android (experimental)
 
+- Real-device qualification. `npm run smoke:android` gains native operations,
+  opt-in diagnostics and display-width/build-version mismatch cases, and the
+  healthy case checks the recorded display, posture, version and signer; a new
+  `Android` workflow runs it on an API 35 emulator on hosted Linux runners.
+  `scripts/android-phone-smoke.cjs` qualifies attached-device mode on an
+  authorized phone. Running both on an API 35 emulator and an API 37 foldable
+  found and fixed:
+  - the driver's own `am start -n` stacked a second instance of a
+    standard-launch activity on the one the session started, so every
+    attached-device test failed as `dirty` `extra-window`; the app is now
+    brought forward with the launcher intent;
+  - API 35 and later print the focused window only in `dumpsys window
+    displays`, one line per display, with a powered-off display's `null`
+    first; focus is read there, and the app's focus on any display wins;
+  - a failing assertion whose last native read overran its bound ended by its
+    deadline, which on Android releases the driver before diagnostics or the
+    recheck; polling now stops while the next read, as slow as the last,
+    would still finish in time;
+  - `terminate()` failed on a slow emulator because the driver's 500 ms
+    process-exit check expired; it now waits up to 5 s within the operation.
 - Android setup outside this repository. `9l doctor --android` checks Java
   (17 or newer, from `JAVA_HOME` or `PATH`), the SDK root, `adb` (with its
   version), the emulator, `build-tools/35.0.0` `aapt2` and `apksigner`, the
@@ -140,6 +235,24 @@ SDK versions.
   `recheck()`, exercised by the offline target smoke; the device readers
   are unit-tested against dumpsys excerpts and remain unqualified on
   arbitrary phones.
+
+### Assessment
+
+- `9l assess` recognizes target tests (#210). A file-level
+  `const test = createTargetTest(...)` from `@9l/playwright`, under any import
+  alias and optionally followed by `.extend(...)`, declares tests. In them, a
+  `toBeVisible`, `toBeHidden`, `toHaveText` or `toHaveState` call on a control
+  from `app.getByTestId(...)` (directly, through a `const` or a same-file
+  helper), and `app.toHaveKeyboard(...)`, are credited as asynchronous
+  assertions named `target:<matcher>`, with the usual await, catch, outcome and
+  absence rules (`toBeHidden` and `toHaveKeyboard(false)` are absence checks).
+  The `app` fixture is the target app only when no `.extend(...)` or
+  `test.use(...)` can redefine it and it is never written; names resolve to
+  their innermost declaration in scope. A factory from another module, a `let`
+  binding or an unreadable extension stays unrecognized. Recognition is source evidence only: a target test's
+  runtime `targetAssertions` stay worker-reported and `verifiedAssertions`
+  stays 0. Policy is `assessment-source-v16`; the analyzer helper version is
+  13; report version 3 and suite version 1 are unchanged.
 
 ## 0.6.0-beta.1 — 2026-10-29
 

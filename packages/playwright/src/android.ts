@@ -87,10 +87,10 @@ const timeout = (c: TargetContext) => {
 };
 // Native command output stays in memory and never becomes an error message,
 // diagnostic artifact or receipt. These commands have explicit, fixed arguments.
-function command(file: string, args: string[], c: TargetContext, env: NodeJS.ProcessEnv): Promise<string> {
+function command(file: string, args: string[], c: TargetContext, env: NodeJS.ProcessEnv, streams: 'stdout' | 'both' = 'stdout'): Promise<string> {
   return new Promise((yes, no) => execFile(file, args, {
     signal: c.signal, timeout: timeout(c), maxBuffer: 64 * 1024, env,
-  }, (error, stdout) => error ? no(failure('device_command_failed')) : yes(stdout.trim())));
+  }, (error, stdout, stderr) => error ? no(failure('device_command_failed')) : yes((streams === 'both' ? `${stdout}\n${stderr}` : stdout).trim())));
 }
 async function freePort() {
   const server = createServer();
@@ -203,7 +203,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // Explicit environment allowlist: no application/provider credentials reach
   // Appium, adb or the emulator. Go --pass-env remains necessary for test data.
   const env: NodeJS.ProcessEnv = {};
-  for (const key of ['PATH', 'HOME', 'TMPDIR', 'JAVA_HOME', 'SYSTEMROOT']) if (process.env[key]) env[key] = process.env[key];
+  // The AVD and user-config locations are paths, not credentials: without
+  // them an emulator whose AVDs live outside ~/.android/avd is not found.
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'JAVA_HOME', 'SYSTEMROOT', 'ANDROID_AVD_HOME', 'ANDROID_USER_HOME', 'ANDROID_EMULATOR_HOME']) if (process.env[key]) env[key] = process.env[key];
   env.ANDROID_HOME = sdk; env.ANDROID_SDK_ROOT = sdk;
   let emulator: ChildProcess | undefined, server: ChildProcess | undefined;
   let directory: string | undefined, serial = '', base = '', session = '';
@@ -225,9 +227,12 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // A dump that yields neither a window nor a focus line was not observed
   // (unavailable or empty); it is never read as zero windows. Nor was one cut
   // at the byte bound: only output ending in the completion marker counts.
+  // The window list comes from `dumpsys window windows`; the focus line is
+  // in `dumpsys window displays` (API 35 prints it only there), and the
+  // first focus line read wins.
   const windowsEnd = '9l-windows-end';
   const readWindows = async (c: TargetContext): Promise<WindowObservation | undefined> => {
-    const dump = await adbRun(shell(`{ dumpsys window windows 2>/dev/null | grep -E "${windowPattern}"; echo ${windowsEnd}; } | head -c 8192`), c);
+    const dump = await adbRun(shell(`{ { dumpsys window windows; dumpsys window displays; } 2>/dev/null | grep -E "${windowPattern}"; echo ${windowsEnd}; } | head -c 8192`), c);
     if (!dump.endsWith(windowsEnd)) return undefined;
     const windows = parseWindows(dump.slice(0, -windowsEnd.length), options.appPackage);
     return windows.windows === 0 && windows.focus === 'unknown' ? undefined : windows;
@@ -436,8 +441,17 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (ime === 'unknown') throw failure('unavailable_state');
     return ime === 'shown';
   };
+  // terminateApp force-stops the app, then waits for its process to exit;
+  // the driver's own 500 ms default is too short on a cold emulator, so it
+  // waits up to 5 s within the operation's remaining time.
+  // Brought to the front with the launcher intent, which matches the task's
+  // root intent: a bare `am start -n` stacks a second instance of a
+  // standard-launch activity on top of the one the session started.
+  const launch = ['shell', 'am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER',
+    '-n', `${options.appPackage}/${options.activity}`];
   const appCommand = (script: 'mobile: terminateApp' | 'mobile: activateApp', c: TargetContext) =>
-    endpoint('/execute/sync', c, 'POST', {script, args: [{appId: options.appPackage}]});
+    endpoint('/execute/sync', c, 'POST', {script, args: [{appId: options.appPackage,
+      ...(script === 'mobile: terminateApp' ? {timeout: Math.max(1, Math.min(5000, c.deadlineMs - Date.now() - 500))} : {})}]});
   const cleanup = async () => {
     await Promise.all([stop(emulator), stop(server)]);
     // Aborting HTTP alone cannot stop an already dispatched native action.
@@ -643,7 +657,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           let identity: {emulator: string} | {device: 'physical'; deviceHash: string};
           if (physical) {
             await installedBuild(c);
-            await adbRun(['shell', 'am', 'start', '-W', '-n', `${options.appPackage}/${options.activity}`], c);
+            await adbRun(launch, c);
             stage = 'baseline';
             let reading = await readBaseline(c);
             if (dirty(reading) && backPresses > 0) {
@@ -675,7 +689,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             } else if (dirty(reading)) throw new TargetSetupError({classification: 'dirty', reason: reading, stage: 'open'});
             identity = {device: 'physical', deviceHash: createHash('sha256').update(serial).digest('hex')};
           } else {
-            const emulatorVersion = await command(emulatorPath, ['-version'], c, env);
+            // macOS prints the version line on stdout, Linux on stderr.
+            const emulatorVersion = await command(emulatorPath, ['-version'], c, env, 'both');
             const version = /Android emulator version ([0-9.]+)/.exec(emulatorVersion)?.[1];
             if (!version) throw failure('unknown_emulator_version');
             identity = {emulator: version};
@@ -703,7 +718,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       if (!session) throw failure('session_unavailable');
       await adbRun(['shell', 'am', 'force-stop', options.appPackage], c);
       if (await adbRun(['shell', 'pm', 'clear', options.appPackage], c) !== 'Success') throw failure('reset_failed');
-      await adbRun(['shell', 'am', 'start', '-W', '-n', `${options.appPackage}/${options.activity}`], c);
+      await adbRun(launch, c);
     },
     async observeTestId(id, c) { return (await matches(id, c)).slice(0, 2).map(() => handle(id)); },
     setup: () => setupRecord,
