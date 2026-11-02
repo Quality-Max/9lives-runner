@@ -52,13 +52,28 @@
         "appium": {
           "type": "string"
         },
+        "density": {
+          "type": "string"
+        },
         "device": {
           "type": "string"
         },
         "deviceHash": {
           "type": "string"
         },
+        "display": {
+          "type": "string"
+        },
+        "displayHeight": {
+          "type": "string"
+        },
+        "displayWidth": {
+          "type": "string"
+        },
         "emulator": {
+          "type": "string"
+        },
+        "posture": {
           "type": "string"
         },
         "release": {
@@ -83,7 +98,12 @@
         "abi",
         "appium",
         "uiautomator2",
-        "worker"
+        "worker",
+        "display",
+        "displayWidth",
+        "displayHeight",
+        "density",
+        "posture"
       ],
       "type": "object"
     },

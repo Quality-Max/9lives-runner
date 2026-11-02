@@ -152,6 +152,15 @@ type AndroidRuntime struct {
 	Appium       string `json:"appium"`
 	UIAutomator2 string `json:"uiautomator2"`
 	Worker       string `json:"worker"`
+	// Display is the physical display the session targeted (its id or
+	// "unknown"), with its pixel size and density, and Posture the fold
+	// posture the device reported: opened, half-opened, closed, flat (no
+	// fold) or unknown.
+	Display       string `json:"display"`
+	DisplayWidth  string `json:"displayWidth"`
+	DisplayHeight string `json:"displayHeight"`
+	Density       string `json:"density"`
+	Posture       string `json:"posture"`
 }
 
 // TargetSetup is one worker-reported setup classification of a native target

@@ -41,6 +41,9 @@ test('geometry, touch, scrolling and back are portable', async ({app}) => {
   await app.getByTestId('list').scroll('down', {percent: 0.5});
   await app.getByTestId('status').toHaveText(web ? 'scrolled' : 'scrolled down 0.5');
   await app.getByTestId('absent').toBeHidden();
+  // Two digests of a settled screen agree; neither image leaves the worker.
+  const settled = await app.screenDigest();
+  if (settled !== await app.screenDigest() || !/^[a-f0-9]{64}$/.test(settled)) throw new Error('screen digest unstable');
   await app.back();
   await app.getByTestId('status').toHaveText('back');
 });

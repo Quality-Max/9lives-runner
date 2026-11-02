@@ -110,8 +110,9 @@ the worker process group on outer cancellation/deadline and removes temporary
 native output after the worker exits. The shared adb daemon is preserved.
 
 Receipts contain only the exact APK SHA-256, package, Android API/release/ABI,
-emulator/Appium/UiAutomator2 versions and a hashed worker identity bound to the
-required test and attempt. They do not establish independent verification:
+emulator/Appium/UiAutomator2 versions, the targeted display (its physical id or
+`unknown`, size, density and fold posture) and a hashed worker identity bound
+to the required test and attempt. They do not establish independent verification:
 `targetAssertions` counts worker-reported checks, `verifiedAssertions` stays 0
 and source assertion coverage remains unknown. Source assessment does not yet
 recognize `createTargetTest`. The independently sourced M2 outcome mapping is
@@ -222,6 +223,27 @@ in a window that is still listed, or any failure outside that sequence, is a
 real failure. A window dump that cannot be read counts as unobserved, never
 as zero windows. No screenshot, hierarchy, text or log is
 captured, and the reads are off without the opt-in.
+
+At attachment the driver reads the physical displays (`DisplayDeviceInfo`
+lines of `dumpsys display`: id, size, density, power state) and the committed
+fold posture of `dumpsys device_state`. The session targets the single
+powered display; two powered displays or none readable record `unknown`.
+`app.screenDigest()` captures that display by id with `screencap -d` and
+returns only the SHA-256 of the PNG, computed in memory, for settling checks
+such as comparing two captures; the image is never written, attached or
+returned. The recorded size and density are the display's current logical layout from
+its `DisplayInfo` (the app size follows rotation, the density follows
+overrides), falling back to the physical metrics when the dump has none.
+`requires: {posture, minWidthDp}` declares what a layout-dependent spec
+needs: another posture, or an active display whose logical width in dp
+(width times 160 over density) is below the minimum, stops the test as
+`setup mismatch` (`posture`, `display-width`). The check runs after
+attachment or boot and before the Appium session that would launch the app,
+so a mismatch changes nothing on the device. Posture names are matched
+exactly against the device's state names (`OPENED`, `HALF_OPENED`,
+`CLOSED`); any other name is `unknown` and a device without the service is
+`flat`. No foldable
+was available for qualification.
 
 The phone is leased exclusively by a host-local lock. Existing UiAutomator2
 automation is rejected. Normal close stops only the leased helper, removes its

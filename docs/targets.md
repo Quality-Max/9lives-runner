@@ -52,7 +52,9 @@ partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, time
 default). The app also exposes `back()`, `tapAt({x, y})` (one touch down/up
 at integer device coordinates: physical pixels on Android, CSS pixels in the
 web viewport; a point at or beyond the viewport the driver reports is refused
-before dispatch) and `viewport()`, which are portable, and the Android-only
+before dispatch), `viewport()` and `screenDigest()` (the SHA-256 of a screenshot
+of the target display, computed in memory; the image is never retained),
+which are portable, and the Android-only
 `toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()` and
 `activate()`. A driver without an operation fails it with the stable reason
 `unsupported_operation`; it never substitutes another action. Queries such
