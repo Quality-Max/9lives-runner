@@ -310,9 +310,10 @@ the spec or prove its assertions protect the requirement. See the
 
 ## Compatibility
 
-The experimental Android adapter is available in the `0.6.0-beta` releases.
-Use the matching beta CLI and SDK; see [beta installation](docs/releases.md#beta-releases)
-and [Android setup and qualification limits](docs/android-driver.md).
+The experimental Android target (Appium with UiAutomator2) is available in the
+`0.6.0-beta` releases. Use the matching beta CLI and SDK; see
+[beta installation](docs/releases.md#beta-releases) and
+[Android setup and qualification limits](docs/android-driver.md).
 The stable pairing below remains the default installation.
 
 | Component | Qualified | Boundary |
@@ -323,6 +324,7 @@ The stable pairing below remains the default installation.
 | Node | 24 (22 minimum) | |
 | CLI | 0.5.5 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
 | SDK | `@9l/playwright` 0.5.5, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| Android (experimental, `0.6.0-beta` releases) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
@@ -332,11 +334,25 @@ same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
 versions, but is not a qualified pairing; align both versions before diagnosing
 a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
-An experimental [shared target contract](docs/targets.md) dispatches one
-deterministic scenario to web and an in-memory native fixture. The experimental
-[Android adapter](docs/android-driver.md) supports an owned local emulator and
-explicit installed-app attachment to a physical device, with qualification
-limited to the documented runtime and scenarios.
+An experimental [shared target contract](docs/targets.md) (`9l.target/2`)
+dispatches one deterministic scenario to web and to native targets with the
+same `app` fixture. The experimental [Android target](docs/android-driver.md)
+drives an owned local emulator, or an installed app on an explicitly selected
+phone, through Appium and UiAutomator2. It supports:
+
+- **Native operations:** tap, fill, touch at a point, Back, scroll, bounds,
+  viewport, keyboard, terminate and activate, with visible, hidden, text and
+  state assertions.
+- **Setup classification:** a locked device, a screen that is off, state a
+  previous test left behind, or a posture, width or build that doesn't match
+  is reported as a setup problem, not an application failure.
+- **Identity and evidence:** the installed build identity, the active display
+  and fold posture, and opt-in metadata-only gesture diagnostics.
+
+`9l doctor --android` checks Java, the SDK, AVDs, devices and the pinned
+Appium tooling. Every emulator case runs in CI on hosted Linux, and the
+attached-device cases passed on one Android 17 foldable. Target assertions are
+reported by the worker and are not independently verified.
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
