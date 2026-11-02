@@ -675,9 +675,18 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             } else if (dirty(reading)) throw new TargetSetupError({classification: 'dirty', reason: reading, stage: 'open'});
             identity = {device: 'physical', deviceHash: createHash('sha256').update(serial).digest('hex')};
           } else {
-            // macOS prints the version line on stdout, Linux on stderr.
-            const emulatorVersion = await command(emulatorPath, ['-version'], c, env, 'both');
-            const version = /Android emulator version ([0-9.]+)/.exec(emulatorVersion)?.[1];
+            // macOS prints the version line on stdout, Linux on stderr; where
+            // `-version` fails under the driver's minimal environment, the
+            // emulator package's own revision identifies the same build.
+            let version: string | undefined;
+            try {
+              const bounded = {...c, deadlineMs: Math.min(c.deadlineMs, Date.now() + 10_000)};
+              version = /Android emulator version ([0-9.]+)/.exec(await command(emulatorPath, ['-version'], bounded, env, 'both'))?.[1];
+            } catch { check(c); }
+            if (!version) {
+              const properties = await readFile(join(sdk, 'emulator', 'source.properties'), 'utf8').catch(() => '');
+              version = /^Pkg\.Revision=([0-9]{1,3}(?:\.[0-9]{1,5}){0,3})\s*$/m.exec(properties)?.[1];
+            }
             if (!version) throw failure('unknown_emulator_version');
             identity = {emulator: version};
           }
