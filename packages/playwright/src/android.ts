@@ -11,7 +11,9 @@ import {activeDisplay, deviceStatePattern, displayPattern, imePattern, packagePa
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
 import {androidVersions, type AndroidRuntime} from './android-runtime';
+import {androidDefaults, androidToolPaths, androidToolingPaths} from './android-env';
 export {androidVersions, androidRuntimeType, validAndroidRuntime, type AndroidRuntime} from './android-runtime';
+export {androidDefaults, androidSdkCandidates, androidToolPaths, androidToolingPaths, androidToolsInstall, androidBuildTools, type AndroidDefaults, type AndroidSource} from './android-env';
 /** Explicit aliases for apps without resource IDs. All matches remain strict
  * and scoped to the configured package; arbitrary XPath is not accepted. */
 export type AndroidControl = ({accessibilityId: string; text?: never; accessibilityIdSuffix?: never} |
@@ -20,7 +22,14 @@ export type AndroidControl = ({accessibilityId: string; text?: never; accessibil
   className?: string; selected?: boolean;
 };
 export type AndroidTargetOptions = {
-  appId: string; sdkRoot: string; toolsRoot: string;
+  appId: string;
+  /** The Android SDK root. Defaults to androidDefaults(): ANDROID_HOME,
+   * ANDROID_SDK_ROOT, then common install locations. */
+  sdkRoot?: string;
+  /** The directory whose node_modules holds the pinned Appium and
+   * UiAutomator2 packages. Defaults to NINELIVES_ANDROID_TOOLS, else
+   * ~/.9l/android-tools. Nothing is downloaded. */
+  toolsRoot?: string;
   /** The expected SHA-256 of the installed base APK. May be omitted only
    * when `expected.apk` names the artifact to compare the installation with. */
   apkSHA256?: string; appPackage: string; activity: string;
@@ -183,8 +192,14 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
         (control.className !== undefined && !/^android\.(view|widget)\.[A-Za-z]{1,64}$/.test(control.className)) ||
         (control.selected !== undefined && typeof control.selected !== 'boolean')) throw failure('invalid_controls');
   }
-  const sdk = resolve(options.sdkRoot), tools = resolve(options.toolsRoot);
-  const adb = join(sdk, 'platform-tools', 'adb'), emulatorPath = join(sdk, 'emulator', 'emulator');
+  // Explicit roots win; omitted ones come from the same discovery doctor reports.
+  const defaults = options.sdkRoot === undefined || options.toolsRoot === undefined ? androidDefaults() : {};
+  const sdkRoot = options.sdkRoot ?? defaults.sdkRoot, toolsRoot = options.toolsRoot ?? defaults.toolsRoot;
+  if (!sdkRoot) throw failure('sdk_not_found');
+  if (!toolsRoot) throw failure('tools_not_found');
+  const sdk = resolve(sdkRoot), tools = resolve(toolsRoot);
+  const sdkTools = androidToolPaths(sdk), tooling = androidToolingPaths(tools);
+  const adb = sdkTools.adb, emulatorPath = sdkTools.emulator;
   // Explicit environment allowlist: no application/provider credentials reach
   // Appium, adb or the emulator. Go --pass-env remains necessary for test data.
   const env: NodeJS.ProcessEnv = {};
@@ -288,10 +303,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     const digest = await adbRun(['shell', 'sha256sum', await installedPath(c)], c);
     if (digest.split(/\s+/)[0] !== expectedDigest) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
   };
-  const buildTools = join(sdk, 'build-tools/35.0.0');
   // apksigner prints only certificate facts; the first signer's digest is kept.
   const signerOf = async (apk: string, c: TargetContext) => {
-    const signer = parseSigner(await command(join(buildTools, 'apksigner'), ['verify', '--print-certs', apk], c, env));
+    const signer = parseSigner(await command(sdkTools.apksigner, ['verify', '--print-certs', apk], c, env));
     if (!signer) throw failure('unreadable_signer');
     return signer;
   };
@@ -493,8 +507,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             apkBytes = await readFile(apk);
             if (createHash('sha256').update(apkBytes).digest('hex') !== expectedDigest) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
           }
-          const appiumPkg = JSON.parse(await readFile(join(tools, 'node_modules/appium/package.json'), 'utf8'));
-          const driverPkg = JSON.parse(await readFile(join(tools, 'node_modules/appium-uiautomator2-driver/package.json'), 'utf8'));
+          const appiumPkg = JSON.parse(await readFile(tooling.appium, 'utf8'));
+          const driverPkg = JSON.parse(await readFile(tooling.uiautomator2, 'utf8'));
           if (appiumPkg.version !== androidVersions.appium || driverPkg.version !== androidVersions.uiautomator2) throw failure('driver_version_mismatch');
           const scratch = process.env.NINELIVES_TARGET_SCRATCH_DIR;
           if (!scratch) throw failure('missing_owned_scratch');
@@ -507,7 +521,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           const installedAPK = join(directory, 'fixture.apk');
           if (apkBytes) {
             await writeFile(installedAPK, apkBytes, {mode: 0o400});
-            const badging = await command(join(sdk, 'build-tools/35.0.0/aapt2'), ['dump', 'badging', installedAPK], c, env);
+            const badging = await command(sdkTools.aapt2, ['dump', 'badging', installedAPK], c, env);
             if (/^package: name='([^']+)'/.exec(badging)?.[1] !== options.appPackage) throw failure('apk_package_mismatch');
           }
           await writeFile(join(directory, 'package.json'), JSON.stringify({private: true, dependencies: {appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2}}));
@@ -592,7 +606,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           base = `http://127.0.0.1:${appiumPort}/${owner}`;
           check(c);
           stage = 'server_start';
-          server = spawn(process.execPath, [join(tools, 'node_modules/appium/index.js'), '--address', '127.0.0.1', '--port', String(appiumPort), '--base-path', `/${owner}`, '--use-drivers', 'uiautomator2', '--log-level', 'error', '--log-no-colors'], {env, cwd: directory, stdio: 'ignore'});
+          server = spawn(process.execPath, [tooling.appiumEntry, '--address', '127.0.0.1', '--port', String(appiumPort), '--base-path', `/${owner}`, '--use-drivers', 'uiautomator2', '--log-level', 'error', '--log-no-colors'], {env, cwd: directory, stdio: 'ignore'});
           server.on('error', () => {});
           for (;;) {
             check(c);
@@ -782,9 +796,11 @@ const maxApkBytes = 256 * 1024 * 1024;
  * match the installed app's, read through the local apksigner; a different
  * signer refuses before any device change. Returns the installed identity
  * for the project's reviewed build metadata. Never runs inside a test. */
-export async function installInPlace(options: {sdkRoot: string; deviceSerial: string; apk: string; timeoutMs?: number}) {
+export async function installInPlace(options: {sdkRoot?: string; deviceSerial: string; apk: string; timeoutMs?: number}) {
   if (!/^[a-zA-Z0-9_.:-]{1,128}$/.test(options.deviceSerial) || options.deviceSerial.startsWith('emulator-') || !options.apk) throw failure('invalid_configuration');
-  const sdk = resolve(options.sdkRoot), adb = join(sdk, 'platform-tools', 'adb'), tools = join(sdk, 'build-tools/35.0.0');
+  const sdkRoot = options.sdkRoot ?? androidDefaults().sdkRoot;
+  if (!sdkRoot) throw failure('sdk_not_found');
+  const sdk = resolve(sdkRoot), {adb, aapt2, apksigner} = androidToolPaths(sdk);
   const env: NodeJS.ProcessEnv = {ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk};
   for (const key of ['PATH', 'HOME', 'TMPDIR', 'JAVA_HOME', 'SYSTEMROOT']) if (process.env[key]) env[key] = process.env[key];
   const c: TargetContext = {signal: new AbortController().signal, deadlineMs: Date.now() + Math.min(Math.max(options.timeoutMs ?? 300_000, 1_000), 900_000)};
@@ -800,10 +816,10 @@ export async function installInPlace(options: {sdkRoot: string; deviceSerial: st
   try {
     const snapshot = join(scratch, 'app.apk');
     await writeFile(snapshot, bytes, {mode: 0o600});
-    const badging = await command(join(tools, 'aapt2'), ['dump', 'badging', snapshot], c, env);
+    const badging = await command(aapt2, ['dump', 'badging', snapshot], c, env);
     const appPackage = /^package: name='([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)'/m.exec(badging)?.[1];
     if (!appPackage) throw failure('unreadable_package');
-    const signer = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', snapshot], c, env));
+    const signer = parseSigner(await command(apksigner, ['verify', '--print-certs', snapshot], c, env));
     if (!signer) throw failure('unreadable_signer');
     const run = (args: string[]) => command(adb, ['-s', options.deviceSerial, ...args], c, env);
     // The same exclusive lease a test takes: never install under a running
@@ -819,7 +835,7 @@ export async function installInPlace(options: {sdkRoot: string; deviceSerial: st
         if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
         const pulled = join(scratch, 'installed.apk');
         await run(['pull', path.slice(8), pulled]);
-        const installed = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', pulled], c, env));
+        const installed = parseSigner(await command(apksigner, ['verify', '--print-certs', pulled], c, env));
         if (installed !== signer) throw failure('signer_mismatch');
       }
       await run(['install', '--no-streaming', '-r', snapshot]);

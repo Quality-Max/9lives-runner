@@ -48,7 +48,7 @@ try {
   assert.equal(packed.length, 1);
   assert.equal(packed[0].name, manifest.name);
   assert.equal(packed[0].version, manifest.version);
-  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'target-setup', 'android', 'android-runtime', 'android-device'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
+  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'target-setup', 'android', 'android-runtime', 'android-device', 'android-env'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
   assert.deepEqual(packed[0].files.map(file => file.path).sort(), expectedFiles);
   const tarball = path.join(work, packed[0].filename);
   const packedManifest = JSON.parse(call('tar', ['-xOf', tarball, 'package/package.json']));
@@ -68,7 +68,12 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(path.join(installed, 'package.json'))).version, manifest.version);
   stage = 'optional Android entry point';
   call(process.execPath, ['-e', `const assert = require('node:assert/strict');
-    assert.equal(typeof require('@9l/playwright/android').androidTargetDriver, 'function');
+    const android = require('@9l/playwright/android');
+    assert.equal(typeof android.androidTargetDriver, 'function');
+    // Discovery only reads the environment and checks directories.
+    const found = android.androidDefaults({env: {ANDROID_HOME: 'sdk-root', NINELIVES_ANDROID_TOOLS: 'android-tools'}});
+    assert.equal(found.sdkSource, 'ANDROID_HOME');
+    assert.equal(found.toolsSource, 'NINELIVES_ANDROID_TOOLS');
     for (const name of ['appium', 'appium-uiautomator2-driver']) {
       assert.throws(() => require.resolve(name), {code: 'MODULE_NOT_FOUND'});
     }`], consumer);

@@ -1,5 +1,6 @@
 // Closed, content-free metadata allowed across the native worker bridge.
-export const androidVersions = {appium: '3.8.0', uiautomator2: '8.7.0'} as const;
+import {androidVersions} from './android-env';
+export {androidVersions};
 export const androidRuntimeType = 'application/vnd.9l.android-runtime+json';
 export type AndroidRuntime = {
   appPackage: string; apkSHA256: string; api: string; release: string; abi: string;

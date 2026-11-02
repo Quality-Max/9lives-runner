@@ -861,6 +861,30 @@ test('attached phone verifies the installed build against declared identity and 
     await held.close();
     assert.equal(await fs.access(androidLeasePath(serial)).then(() => true, () => false), false, 'the installer never removes a lease it did not create');
     await assert.rejects(installInPlace({sdkRoot: dir, deviceSerial: 'emulator-5554', apk: artifact}), /invalid_configuration/);
+    // Omitted roots come from the discovery doctor reports; explicit ones win.
+    const discovered = path.join(dir, 'discovered-sdk'), files = [], mock = cp.execFile;
+    const saved = {home: process.env.ANDROID_HOME, root: process.env.ANDROID_SDK_ROOT, tools: process.env.NINELIVES_ANDROID_TOOLS};
+    cp.execFile = (file, ...rest) => { files.push(file); return mock(file, ...rest); };
+    process.env.ANDROID_HOME = discovered; delete process.env.ANDROID_SDK_ROOT; process.env.NINELIVES_ANDROID_TOOLS = dir;
+    try {
+      const {sdkRoot, toolsRoot, ...portable} = base;
+      const located = androidTargetDriver({...portable, apkSHA256: artifactDigest});
+      opened.push(located);
+      await located.open(context());
+      await located.close();
+      assert(files.length > 0 && files.every(file => file.startsWith(`${discovered}${path.sep}`)), 'the driver runs the discovered SDK tools');
+      files.length = 0;
+      assert.equal((await installInPlace({deviceSerial: serial, apk: artifact})).apkSHA256, artifactDigest);
+      assert(files.length > 0 && files.every(file => file.startsWith(`${discovered}${path.sep}`)), 'the installer runs the discovered SDK tools');
+      files.length = 0;
+      await installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact});
+      assert(files.length > 0 && files.every(file => !file.startsWith(discovered)), 'an explicit sdkRoot wins over discovery');
+    } finally {
+      cp.execFile = mock;
+      for (const [key, value] of [['ANDROID_HOME', saved.home], ['ANDROID_SDK_ROOT', saved.root], ['NINELIVES_ANDROID_TOOLS', saved.tools]]) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
   } finally {
     for (const driver of opened) await driver.close().catch(() => {});
     cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;

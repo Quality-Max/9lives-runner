@@ -1,5 +1,5 @@
 import {createTargetTest, type TargetDriver} from '@9l/playwright';
-import {androidTargetDriver} from '@9l/playwright/android';
+import {androidDefaults, androidTargetDriver, androidToolPaths} from '@9l/playwright/android';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -12,7 +12,7 @@ const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/an
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
   appId: target.appId,
-  sdkRoot: process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools',
+  // sdkRoot is omitted: the driver discovers it as `9l doctor --android` does.
   toolsRoot: resolve(__dirname, mode === 'version' ? '../../../.context/android-bad-version' : '../../../tools/android'),
   avd: mode === 'unavailable' ? '9l_missing_avd' : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
   apk: fixture.apk, apkSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.apkSHA256,
@@ -33,7 +33,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   let stopReason = '', driverReason = '';
   let serial = '', started = false, clickDispatches = 0;
   const readTiming: Record<string, {count: number; errors: number; maxMs: number}> = {};
-  const sdk = process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools';
+  const sdk = androidDefaults().sdkRoot ?? '';
   const command = promisify(execFile);
   let probe: Promise<void> | undefined;
   globalThis.fetch = async (input, init) => {
@@ -58,7 +58,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       if (mode === 'cancel' || mode === 'blocked') probe = (async () => {
         for (let i = 0; i < 80; i++) {
           try {
-            await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'shell', 'run-as', fixture.appPackage, 'test', '-f', 'files/started'], {timeout: 1000, maxBuffer: 1024});
+            await command(androidToolPaths(sdk).adb, ['-s', serial, 'shell', 'run-as', fixture.appPackage, 'test', '-f', 'files/started'], {timeout: 1000, maxBuffer: 1024});
             started = true;
             if (mode === 'cancel') app.cancel();
             return;
@@ -112,7 +112,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     await probe;
     let deviceStopped = false;
     if (serial) {
-      try { await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      try { await command(androidToolPaths(sdk).adb, ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
       catch { deviceStopped = true; }
     }
     // Only bounded synthetic probe facts; no serial/handles or device output.
