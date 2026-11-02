@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const path = require('node:path');
-const {androidDefaults, androidSdkCandidates, androidToolPaths, androidToolingPaths, androidToolsInstall, androidVersions} = require('../dist/android-env');
+const {androidDefaults, androidSdkCandidates, androidSdkVariables, androidToolPaths, androidToolingPaths, androidToolsInstall, androidVersions} = require('../dist/android-env');
+const fs = require('node:fs');
 const android = require('../dist/android');
 
 const home = '/home/fixture';
@@ -72,4 +73,17 @@ test('the Android entry point exports the discovery with the same pins', () => {
   for (const name of ['androidDefaults', 'androidSdkCandidates', 'androidToolPaths', 'androidToolingPaths', 'androidToolsInstall']) assert.equal(typeof android[name], 'function', name);
   assert.equal(android.androidBuildTools, '35.0.0');
   assert.equal(android.androidVersions, androidVersions, 'one pin for the runtime receipt and the discovery');
+});
+
+// The qualification setup discovers the SDK in the caller's shell; its test
+// workers must receive every variable that discovery read, or a default-root
+// worker can find another SDK or none.
+test('the qualification scripts forward every SDK discovery variable to their workers', () => {
+  assert.deepEqual([...androidSdkVariables], ['ANDROID_HOME', 'ANDROID_SDK_ROOT', 'HOMEBREW_PREFIX']);
+  for (const script of ['android-smoke.cjs', 'android-preservation.cjs']) {
+    const text = fs.readFileSync(path.join(__dirname, '../../../scripts', script), 'utf8');
+    const lists = [...text.matchAll(/'--pass-env',\s*'([^']*)'/g)].map(match => match[1].split(','));
+    assert(lists.length > 0, `${script}: no --pass-env list`);
+    for (const list of lists) for (const name of androidSdkVariables) assert(list.includes(name), `${script}: --pass-env lacks ${name}`);
+  }
 });

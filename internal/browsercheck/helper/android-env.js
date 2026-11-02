@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.androidToolsInstall = exports.androidToolsDirectory = exports.androidBuildTools = exports.androidVersions = void 0;
+exports.androidSdkVariables = exports.androidToolsInstall = exports.androidToolsDirectory = exports.androidBuildTools = exports.androidVersions = void 0;
 exports.androidSdkCandidates = androidSdkCandidates;
 exports.androidDefaults = androidDefaults;
 exports.androidToolPaths = androidToolPaths;
@@ -27,6 +27,10 @@ exports.androidToolsDirectory = '.9l/android-tools';
 /** The install command for the pinned tooling into a prefix directory. */
 const androidToolsInstall = (prefix) => `npm install --prefix ${prefix} --save-exact --ignore-scripts appium@${exports.androidVersions.appium} appium-uiautomator2-driver@${exports.androidVersions.uiautomator2}`;
 exports.androidToolsInstall = androidToolsInstall;
+/** The variables that can choose the SDK root. `9l run` passes none of them
+ * to tests unless named with --pass-env, so a worker can discover another
+ * root than the shell that ran doctor or a setup script. */
+exports.androidSdkVariables = ['ANDROID_HOME', 'ANDROID_SDK_ROOT', 'HOMEBREW_PREFIX'];
 const directory = (path) => { try {
     return (0, node_fs_1.statSync)(path).isDirectory();
 }

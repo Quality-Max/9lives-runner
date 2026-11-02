@@ -13,7 +13,7 @@ export {TargetSetupError, type TargetSetupRecord} from './targets';
 import {androidVersions, type AndroidRuntime} from './android-runtime';
 import {androidDefaults, androidToolPaths, androidToolingPaths} from './android-env';
 export {androidVersions, androidRuntimeType, validAndroidRuntime, type AndroidRuntime} from './android-runtime';
-export {androidDefaults, androidSdkCandidates, androidToolPaths, androidToolingPaths, androidToolsInstall, androidBuildTools, type AndroidDefaults, type AndroidSource} from './android-env';
+export {androidDefaults, androidSdkCandidates, androidSdkVariables, androidToolPaths, androidToolingPaths, androidToolsInstall, androidBuildTools, type AndroidDefaults, type AndroidSource} from './android-env';
 /** Explicit aliases for apps without resource IDs. All matches remain strict
  * and scoped to the configured package; arbitrary XPath is not accepted. */
 export type AndroidControl = ({accessibilityId: string; text?: never; accessibilityIdSuffix?: never} |

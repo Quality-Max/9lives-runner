@@ -23,6 +23,11 @@ export const androidToolsDirectory = '.9l/android-tools';
 export const androidToolsInstall = (prefix: string) =>
   `npm install --prefix ${prefix} --save-exact --ignore-scripts appium@${androidVersions.appium} appium-uiautomator2-driver@${androidVersions.uiautomator2}`;
 
+/** The variables that can choose the SDK root. `9l run` passes none of them
+ * to tests unless named with --pass-env, so a worker can discover another
+ * root than the shell that ran doctor or a setup script. */
+export const androidSdkVariables = ['ANDROID_HOME', 'ANDROID_SDK_ROOT', 'HOMEBREW_PREFIX'] as const;
+
 /** How a root was found: an environment variable, a common install location or the default tools directory. */
 export type AndroidSource = 'ANDROID_HOME' | 'ANDROID_SDK_ROOT' | 'homebrew' | 'android-studio' | 'NINELIVES_ANDROID_TOOLS' | 'default';
 export type AndroidCandidate = {path: string; source: AndroidSource};
