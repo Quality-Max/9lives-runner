@@ -96,7 +96,7 @@ to the WebDriver back endpoint (the Back key), `scroll` to UiAutomator2's
 `mobile: scrollGesture` inside the resolved element, `tapAt` to one W3C
 touch pointer down/up at device pixels, `bounds` and `viewport` to the
 element and window rectangles, and `terminate`/`activate` to
-`mobile: terminateApp`/`mobile: activateApp` for the configured package only
+a force-stop of the configured package (`am force-stop`, then a bounded wait until `pidof` finds no process) and `mobile: activateApp`, for the configured package only
 (a force-stop that keeps the app's data, then a relaunch). The keyboard is
 read from `mInputShown` of `dumpsys input_method`; `hideKeyboard` presses
 Back only while it is shown and reads the result back, so the selected input
