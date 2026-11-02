@@ -170,19 +170,29 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // Device-state reads filter on the device and stay in memory. They never
   // request, store or bypass a credential, and never change lock settings.
   const readDeviceState = async (c: TargetContext) => parseDeviceState(await adbRun(shell(`(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096`), c));
-  const readWindows = async (c: TargetContext): Promise<WindowObservation> => parseWindows(await adbRun(shell(`dumpsys window windows 2>/dev/null | grep -E "${windowPattern}" | head -c 8192`), c), options.appPackage);
+  // A dump that yields neither a window nor a focus line was not observed
+  // (unavailable, empty or truncated); it is never read as zero windows.
+  const readWindows = async (c: TargetContext): Promise<WindowObservation | undefined> => {
+    const windows = parseWindows(await adbRun(shell(`dumpsys window windows 2>/dev/null | grep -E "${windowPattern}" | head -c 8192`), c), options.appPackage);
+    return windows.windows === 0 && windows.focus === 'unknown' ? undefined : windows;
+  };
   // With diagnostics, the window state before the last gesture; a read that
-  // fails leaves the gesture to proceed and the observation absent.
+  // fails leaves the gesture to proceed and the observation absent. Any
+  // operation other than a visibility read between the gesture and a hidden
+  // assertion disarms the observer heuristic: it describes a dismissal
+  // sequence (gesture, then the control should be gone), nothing else.
   let lastGesture: WindowObservation | undefined;
   const observeGesture = async (c: TargetContext) => {
     if (!diagnostics) return;
     try { lastGesture = await readWindows(c); } catch { lastGesture = undefined; }
   };
+  const disarm = () => { lastGesture = undefined; };
   // A baseline reading is clean only when every component was observed as
   // declared; a difference is a dirty reason; anything else is unknown and
   // can neither classify the state nor count as a restored baseline.
   const readBaseline = async (c: TargetContext): Promise<'clean' | 'unknown' | 'foreign-focus' | 'extra-window' | 'ime-showing'> => {
     const windows = await readWindows(c);
+    if (!windows) return 'unknown';
     const ime = parseIme(await adbRun(shell(`dumpsys input_method 2>/dev/null | grep -E "${imePattern}" | head -c 1024`), c));
     if (windows.focus === 'foreign') return 'foreign-focus';
     if (windows.windows > expectedWindows) return 'extra-window';
@@ -262,6 +272,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   const handle = (id: string): TargetHandle => ({
     tap: async c => { const ref = await resolveOne(id, c); await observeGesture(c); await endpoint(`/element/${ref}/click`, c, 'POST', {}); },
     fill: async (value, c) => {
+      disarm();
       const ref = await resolveOne(id, c);
       await endpoint(`/element/${ref}/clear`, c, 'POST', {});
       await endpoint(`/element/${ref}/value`, c, 'POST', {text: value});
@@ -271,10 +282,12 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       if (typeof value !== 'boolean') throw failure('invalid_property'); return value;
     },
     text: async c => {
+      disarm();
       const value = await endpoint(`/element/${await resolveOne(id, c)}/text`, c);
       if (typeof value !== 'string' || Buffer.byteLength(value) > 4096) throw failure('invalid_property'); return value;
     },
     state: async (name, c) => {
+      disarm();
       const value = await endpoint(`/element/${await resolveOne(id, c)}/attribute/${name}`, c);
       if (value !== 'true' && value !== 'false' && typeof value !== 'boolean') throw failure('unavailable_state');
       return value === true || value === 'true';
@@ -545,6 +558,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     // Back dismisses a shown keyboard without touching the selected input
     // method; the result is read back rather than assumed.
     async hideKeyboard(c) {
+      disarm();
       if (!await keyboardShown(c)) return;
       await endpoint('/back', c, 'POST', {});
       for (;;) {
@@ -567,8 +581,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     // Terminate is a force-stop of the configured package only; data, the
     // installation and device settings are untouched. Activate relaunches it.
-    async terminate(c) { await appCommand('mobile: terminateApp', c); },
-    async activate(c) { await appCommand('mobile: activateApp', c); },
+    async terminate(c) { disarm(); await appCommand('mobile: terminateApp', c); },
+    async activate(c) { disarm(); await appCommand('mobile: activateApp', c); },
     // After a completed assertion failure: did the phone become unavailable?
     // Read-only; an owned emulator cannot lock itself. With diagnostics, a
     // hidden assertion that failed although the app lost a window since the
@@ -588,9 +602,14 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
         if (state === 'unknown') return {classification: 'unknown', reason: 'device-state-unknown', stage: 'recheck'};
         if (state !== 'unlocked') return {classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'recheck'};
       }
+      // Heuristic, opt-in and limited to a dismissal sequence: UiAutomator2
+      // does not say which window an element belongs to, so a hidden
+      // assertion that fails right after a gesture while the app lost a
+      // window is attributed to the snapshot, not proven. The diagnostic
+      // keeps the counts either way.
       if (diagnostics && failed.operation === 'assert-hidden' && lastGesture && lastGesture.windows > 0) {
         const now = await readWindows(c);
-        if (now.windows < lastGesture.windows) return {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'};
+        if (now && now.windows < lastGesture.windows) return {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'};
       }
       return undefined;
     },
@@ -603,7 +622,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       if (closed || !session) return record;
       try {
         const after = await readWindows(c);
-        record.windowsAfter = after.windows; record.focusAfter = after.focus;
+        if (after) { record.windowsAfter = after.windows; record.focusAfter = after.focus; }
         const r = rect(await endpoint('/window/rect', c));
         if (r.width > 0 && r.height > 0) { record.viewportWidth = r.width; record.viewportHeight = r.height; }
       } catch { /* partial record */ }

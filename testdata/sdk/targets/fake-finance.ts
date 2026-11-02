@@ -30,7 +30,12 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     back: async () => { status = keyboard ? status : 'back'; keyboard = false; },
     keyboardShown: async () => keyboard,
     hideKeyboard: async () => { keyboard = false; },
-    tapAt: async point => { status = point.x >= button.x && point.x < button.x + button.width && point.y >= button.y && point.y < button.y + button.height ? 'tapped' : mode === 'observer' ? 'stale dialog' : ''; },
+    // An outside touch dismisses the open "modal" unless the app ignores it
+    // (ignored-touch) or the snapshot keeps showing it (observer).
+    tapAt: async point => {
+      const inside = point.x >= button.x && point.x < button.x + button.width && point.y >= button.y && point.y < button.y + button.height;
+      status = inside ? 'tapped' : mode === 'observer' || mode === 'ignored-touch' ? status : '';
+    },
     viewport: async () => ({width: 400, height: 800}),
     terminate: async () => { running = false; status = ''; },
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },

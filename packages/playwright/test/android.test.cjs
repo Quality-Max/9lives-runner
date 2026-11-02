@@ -471,6 +471,7 @@ test('attached phone diagnostics are metadata only and classify observer stalene
       else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
       else if (url.endsWith('/window/rect')) value = {x: 0, y: 0, width: 1080, height: 2340};
       else if (url.endsWith('/displayed')) value = true;
+      else if (url.endsWith('/text')) value = '7';
       return new Response(JSON.stringify({value}), {status: 200});
     };
     const {androidTargetDriver} = require('../dist/android');
@@ -495,6 +496,17 @@ test('attached phone diagnostics are metadata only and classify observer stalene
     // The dialog still open: a real failure, not observer staleness.
     windows = [activity, dialog, focus].join('\n');
     await driver.tapAt({x: 1000, y: 2300}, context());
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    // An unavailable dump after the gesture is unobserved, never zero windows.
+    windows = '';
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    assert.equal((await driver.diagnose({operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 1}, context())).windowsAfter, -1);
+    // Another operation between the gesture and the hidden assertion disarms the heuristic.
+    windows = [activity, dialog, focus].join('\n');
+    await driver.tapAt({x: 1000, y: 2300}, context());
+    const [field] = await driver.observeTestId('amount', context());
+    await field.text(context());
+    windows = [activity, focus].join('\n');
     assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
     await driver.close();
     assert.equal((await driver.diagnose({operation: 'tap', reason: 'deadline', elapsedMs: 1}, context())).windowsAfter, -1, 'a closed driver answers with what it knows');

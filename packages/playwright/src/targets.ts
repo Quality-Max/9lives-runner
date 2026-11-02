@@ -140,7 +140,9 @@ export class TargetApp {
   /** Opt-in failure diagnostics: ask the driver once per test, while it is
    * still open, and attach only a validated record. Never changes the outcome. */
   private async diagnose(operation: string, reason: string, startedAt: number, point?: TargetPoint) {
-    if (this.diagnosed || !this.driver.diagnose || this.closing) return;
+    // A released driver (an Android deadline or cancellation) still answers
+    // with what it knows; the driver decides what it can read.
+    if (this.diagnosed || !this.driver.diagnose) return;
     this.diagnosed = true;
     let record: TargetDiagnostic | undefined;
     try {
@@ -191,6 +193,9 @@ export class TargetApp {
         // Keep the first reason (deadline, cancellation, a missing control...)
         // and the local cause. Neither crosses the engine bridge.
         if (!signal.aborted && Date.now() >= deadlineMs) expire();
+        // The operation is over: its timer must not fire while diagnostics
+        // or a recheck run, or it would release the driver under them.
+        clearTimeout(timer);
         if (signal.aborted) {
           // The driver may already be released (an Android deadline closes
           // it); the driver answers with what it still knows, or nothing.

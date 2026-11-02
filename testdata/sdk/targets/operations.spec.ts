@@ -10,6 +10,8 @@ const test = createTargetTest({
         <div data-testid="list" style="position:absolute;left:0;top:160px;width:400px;height:600px;overflow:auto"><div style="height:3000px"></div></div>
         <output data-testid="status" style="position:absolute;top:780px"></output>`);
       await page.evaluate(() => {
+        // A click anywhere but the button dismisses the "modal" the button opened.
+        document.addEventListener('click', event => { if (!(event.target as Element).closest('[data-testid=button]')) document.querySelector('[data-testid=status]')!.textContent = ''; });
         document.querySelector('[data-testid=list]')!.addEventListener('scroll', () => { document.querySelector('[data-testid=status]')!.textContent = 'scrolled'; });
         window.addEventListener('popstate', () => { document.querySelector('[data-testid=status]')!.textContent = 'back'; });
         history.pushState(null, '', '#second');
@@ -60,12 +62,18 @@ test('keyboard and process lifecycle are native only', async ({app}) => {
   await app.getByTestId('status').toHaveText('draft 7');
 });
 
-// An outside touch that should dismiss a modal. In the observer control the
-// dialog's window is gone but the snapshot still lists it: the hidden
-// assertion fails and the driver classifies the disagreement.
+// A modal is opened and seen before the outside touch that should dismiss
+// it, so the hidden assertion protects the dismissal: an ignored touch fails
+// it. In the observer control the dialog's window is gone but the snapshot
+// still lists it, and the driver classifies the disagreement.
 test('an outside touch dismisses the modal', async ({app}) => {
   await app.open();
-  await app.tapAt({x: 390, y: 790});
+  const button = await app.getByTestId('button').bounds();
+  await app.tapAt({x: button.x + 10, y: button.y + 10});
+  await app.getByTestId('status').toBeVisible();
+  const viewport = await app.viewport();
+  await app.tapAt({x: viewport.width - 10, y: viewport.height - 10});
+  // @9l-outcome modal-dismissed-by-outside-touch
   await app.getByTestId('status').toBeHidden(300);
 });
 

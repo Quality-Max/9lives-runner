@@ -168,7 +168,17 @@ assert(diagnostic.elapsedMs >= 250 && diagnostic.elapsedMs < 5000, `observer: po
 assert.equal(observer.summary.receipts[0].targetDiagnostics.length, 1, 'observer: one record per test');
 const clean = invoke('healthy-modal', {targets: ['web:finance', 'android-fake:finance'], grep: 'outside touch', file: operations});
 assert.equal(clean.code, 0, 'healthy modal dismissal passes on both targets');
-for (const receipt of clean.summary.receipts) assert.equal(receipt.targetDiagnostics, undefined, `${receipt.target}: no diagnostics without a failure`);
+for (const receipt of clean.summary.receipts) {
+  assert.equal(receipt.targetDiagnostics, undefined, `${receipt.target}: no diagnostics without a failure`);
+  assert.equal(receipt.targetAssertions, 2, `${receipt.target}: the modal was seen open before the dismissal was asserted`);
+}
+// An app that ignores the outside touch fails the same hidden assertion as an
+// ordinary assertion failure: no observer classification, no diagnostics.
+const ignored = invoke('ignored-touch', {targets: ['android-fake:finance'], grep: 'outside touch', file: operations, extra: ['--failure-details']});
+assert.equal(ignored.code, 1);
+assert(ignored.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'ignored-touch: plain assertion failure');
+assert.equal(ignored.summary.receipts[0].targetSetup, undefined);
+assert.equal(ignored.summary.receipts[0].targetDiagnostics, undefined);
 // A platform skip is complete only when pinned, like any other SDK skip.
 const skip = 'one deterministic scenario|skipped on the native target';
 const unpinned = invoke('skip-unpinned', {grep: skip});

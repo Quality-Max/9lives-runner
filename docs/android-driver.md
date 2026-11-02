@@ -212,8 +212,14 @@ not read as input readiness and nothing is retried. With the opt-in, a
 windows since the last gesture is classified `setup observer`
 (`window-gone-element-displayed`): the accessibility snapshot still listed
 an element whose window was gone, as the field investigation of an
-intermittent modal dismissal established. An element that is still in a
-listed window is a real failure. No screenshot, hierarchy, text or log is
+intermittent modal dismissal established. This is a heuristic: UiAutomator2
+does not report which window an element belongs to, so the driver applies it
+only to a dismissal sequence (a gesture, then a hidden assertion on the next
+operation; a fill, text or state read in between disarms it) and only with
+the opt-in, and the diagnostic keeps the window counts either way. A control
+in a window that is still listed, or any failure outside that sequence, is a
+real failure. A window dump that cannot be read counts as unobserved, never
+as zero windows. No screenshot, hierarchy, text or log is
 captured, and the reads are off without the opt-in.
 
 The phone is leased exclusively by a host-local lock. Existing UiAutomator2

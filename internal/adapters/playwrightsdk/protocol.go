@@ -572,6 +572,11 @@ func decodeEvent(raw []byte) (event, error) {
 				return frame, fmt.Errorf("invalid diagnostic")
 			}
 		}
+		// A requested point is both coordinates and the flag, or none of them;
+		// an omitted coordinate must not default to zero.
+		if hasPoint := diagnostic["point"] != nil; hasPoint != (diagnostic["x"] != nil) || hasPoint != (diagnostic["y"] != nil) || (hasPoint && string(diagnostic["point"]) != "true") {
+			return frame, fmt.Errorf("invalid diagnostic")
+		}
 	}
 	if value := values["artifacts"]; value != nil {
 		var artifacts []map[string]json.RawMessage

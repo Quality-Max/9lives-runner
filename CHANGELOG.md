@@ -22,8 +22,9 @@ SDK versions.
   classified `setup observer` (`window-gone-element-displayed`): the
   accessibility snapshot disagreeing with the window manager, as the field
   investigation established, rather than an application or gesture failure.
-  The classification is only made after a failed hidden assertion and only
-  with the opt-in; screenshot capture is not offered. Exercised by the
+  The classification is a heuristic, made only for a hidden assertion that
+  directly follows the gesture, only with the opt-in, and the diagnostic
+  keeps the counts; screenshot capture is not offered. Exercised by the
   offline target smoke through the fake driver; the window readers are
   unit-tested against dumpsys excerpts and remain unqualified on a device.
 
