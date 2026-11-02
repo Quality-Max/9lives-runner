@@ -7,6 +7,7 @@ project:
 9l doctor
 9l doctor --sdk --format json
 9l doctor --sdk tests/checkout.spec.ts   # also check one spec for prove
+9l doctor --android                      # also check the optional Android target
 ```
 
 The command checks which `9l` PATH selects, Node (22 minimum, 24
@@ -22,7 +23,8 @@ prints is persisted.
 Exit 0 means no required prerequisite is missing; warnings and unverified
 checks still apply. Exit 2 means setup is missing or diagnostics could not
 complete. `--sdk` makes the otherwise optional SDK required and, with a spec
-path after it, adds the [spec checks](#check-a-spec-for-prove).
+path after it, adds the [spec checks](#check-a-spec-for-prove). `--android`
+adds the [Android checks](#check-the-android-target).
 
 The `executable` check compares the file doctor runs from with the `9l` that
 PATH resolves to, without running either. Usually they are the same file.
@@ -56,10 +58,12 @@ it does not.
 Browser-file checks use Playwright's registry only for qualified versions
 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 and 1.64.1. An unknown registry cannot report ready.
 
-Doctor does not download anything, make network requests, launch a browser,
+Doctor does not download anything, make network requests (under `--android`
+it only asks a running adb server on loopback), launch a browser,
 load application config, log in, or write project files. Its embedded helper
 uses an owned temporary directory which is removed afterward, a ten-second
-budget, and the same restricted environment as browser checks. It resolves
+budget (forty under `--android`), and the same restricted environment as
+browser checks. It resolves
 installed packages and uses Playwright's registry code. Use trusted local
 dependencies. It does not establish that config is valid, that Linux libraries
 are installed, or that a target is reachable. A real scan verifies those paths.
@@ -153,6 +157,41 @@ Messages name basenames only; `--paths` adds the project and config
 directories, the literal `testDir` and the module a `test` was imported from. "testDir and testMatch unless literal" is listed as
 unverified whenever a spec was given. Passing a spec without `--sdk`, or a
 path that is not a file, is a usage error.
+
+## Check the Android target
+
+```sh
+9l doctor --android
+```
+
+`--android` adds `android/*` checks for the optional
+[Android driver](android-driver.md#set-up-a-host): `android/java` (17 or newer
+from `JAVA_HOME`, else `java` on `PATH`), `android/sdk` (the root found by
+the driver's own discovery and which variable or common location supplied
+it), `android/adb` with its version, `android/emulator`,
+`android/build-tools` (`aapt2` and `apksigner` in 35.0.0), `android/avds`
+(the names `emulator -list-avds` prints), `android/devices` (emulators and
+physical devices attached and ready, and how many are unauthorized or
+offline) and `android/appium` and `android/uiautomator2` (the pinned
+versions in `NINELIVES_ANDROID_TOOLS` or `~/.9l/android-tools`). Under Node
+22 before 22.12, `android/node` is missing too. A missing Java, SDK, `adb`,
+build-tools or pinned package is missing and doctor exits 2; a missing
+emulator or AVD, unauthorized or offline devices and a conflicting
+`ANDROID_SDK_ROOT` are warnings. Each comes with the fix command, such as
+`sdkmanager "build-tools;35.0.0"` or the pinned `npm install --prefix`.
+
+These are the only checks that run other programs: `java -version`,
+`adb version` and `emulator -list-avds`, each bounded at eight seconds, with
+the whole run bounded at forty. Device counts come from an adb server that
+is already listening on loopback (`ANDROID_ADB_SERVER_PORT`, else 5037);
+doctor never starts one, and serials stay in memory. The helper receives the
+SDK, Java, tooling, AVD-home and adb-port variables only under `--android`.
+AVD names are printed; paths only with `--paths`. Emulator boot, device
+authorization and lock state, installed app builds and Appium sessions stay
+unverified.
+
+Without `--android`, `9l doctor --sdk <spec>` adds a `spec/android` warning
+when the spec imports `@9l/playwright/android`, pointing to `--android`.
 
 ## Apply a repair explicitly
 

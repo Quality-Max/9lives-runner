@@ -193,7 +193,7 @@ function importCheck(name, code, bindings, providers, paths) {
 // config that will select the spec. Everything is read as text; neither the
 // spec nor any config is executed, and messages name only basenames unless
 // the CLI asked for paths.
-function specChecks(spec, paths = false) {
+function specChecks(spec, paths = false, android = false) {
     const checks = [];
     const name = node_path_1.default.basename(spec);
     const source = readBounded(spec, specLimit);
@@ -213,6 +213,11 @@ function specChecks(spec, paths = false) {
         checks.push(fixtures.has('page') || fixtures.has('context')
             ? { name: 'spec/fixtures', status: 'ok', message: `${name} takes the page or context fixture in a test or hook callback.` }
             : { name: 'spec/fixtures', status: 'warning', message: `${name}: no destructured page or context parameter found in a test or hook callback; prove faults reach only fetch and XHR made through those fixtures.` });
+        // A spec that constructs the Android driver needs the Android host
+        // prerequisites too; doctor checks them only when asked.
+        if (!android && bindings.some(binding => binding.module === `${sdkModule}/android`)) {
+            checks.push({ name: 'spec/android', status: 'warning', message: `${name} imports @9l/playwright/android; the Android prerequisites were not checked.`, fix: '9l doctor --android' });
+        }
     }
     const { config } = proveProject(spec);
     if (!config) {
@@ -263,7 +268,9 @@ function specChecks(spec, paths = false) {
         : { name: 'spec/config', status: 'warning', message: `${found} The spec is outside its literal testDir${named}, so prove will not select it.`, fix: 'move the spec under that testDir, or pass prove --config with a config that includes it' });
     return checks;
 }
-function diagnose(args, root = process.cwd()) {
+// Android checks run first (they are asynchronous) and are passed in, so the
+// report and its readiness are assembled in one place.
+function diagnose(args, root = process.cwd(), android) {
     const checks = [];
     if (args.executable && typeof args.executable === 'object')
         checks.push(executableCheck(args.executable));
@@ -366,11 +373,13 @@ function diagnose(args, root = process.cwd()) {
             checks.push({ name: `${mode}/browser`, status: 'warning', message: 'Browser files could not be verified for this package version.', fix });
         }
     }
+    if (android)
+        checks.push(...android.checks);
     if (spec)
-        checks.push(...specChecks(spec, args.paths === true));
+        checks.push(...specChecks(spec, args.paths === true, android !== undefined));
     return { version: 1, cliVersion: args.cliVersion, platform: `${process.platform}/${process.arch}`,
         ready: !checks.some(check => check.status === 'missing' || check.name.endsWith('/browser')), checks,
         unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login',
-            ...(spec ? ['testDir and testMatch unless literal'] : [])],
+            ...(spec ? ['testDir and testMatch unless literal'] : []), ...(android?.unverified ?? [])],
         next: 'Start your app, then run: 9l scan http://localhost:<port> --allow-private-network. No account is required.' };
 }

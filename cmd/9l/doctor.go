@@ -25,6 +25,7 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	format := fs.String("format", "text", "text or json")
 	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK; with a spec path, also check that spec for prove")
 	paths := fs.Bool("paths", false, "print executable and config paths for local use; never persisted")
+	android := fs.Bool("android", false, "also check the optional Android target: Java, SDK tools, AVDs, attached devices and the pinned Appium tooling")
 	// Flags may follow the spec, as with run and prove.
 	if err := fs.Parse(flagsFirst(args, map[string]bool{"-format": true, "--format": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -33,10 +34,10 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if fs.NArg() > 1 || (fs.NArg() == 1 && !*sdk) || (*format != "text" && *format != "json") {
-		fmt.Fprintln(errOut, "9l: doctor takes only --sdk [spec], --paths and --format text|json")
+		fmt.Fprintln(errOut, "9l: doctor takes only --sdk [spec], --android, --paths and --format text|json")
 		return 2
 	}
-	helperArgs := map[string]any{"cliVersion": version, "sdk": *sdk, "paths": *paths, "executable": executableFacts(*paths)}
+	helperArgs := map[string]any{"cliVersion": version, "sdk": *sdk, "paths": *paths, "android": *android, "executable": executableFacts(*paths)}
 	if fs.NArg() == 1 {
 		// The helper reads the spec as text and never executes it; refuse
 		// anything but a regular file here so the report names a real spec.
@@ -52,7 +53,14 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	// What this engine admits and can request, so the helper can judge an
 	// installed SDK by its declared protocol rather than by version string.
 	helperArgs["engine"] = map[string]any{"protocol": playwrightsdk.Version, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}
-	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: helperArgs}, browsercheck.Options{Timeout: 10 * time.Second})
+	options := browsercheck.Options{Timeout: 10 * time.Second}
+	if *android {
+		// The Android checks run java, adb and emulator, each bounded at
+		// eight seconds, and read the SDK and tooling locations from these.
+		options.Timeout = 40 * time.Second
+		options.Env = androidDoctorEnv
+	}
+	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: helperArgs}, options)
 	if err != nil {
 		// Never echo a helper's arbitrary stderr or project paths from diagnostics.
 		if errors.Is(err, browsercheck.ErrNodeUnavailable) {
@@ -94,6 +102,12 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	}
 	return 0
 }
+
+// androidDoctorEnv names the locations `doctor --android` reads, on top of
+// the browser-check allowlist: SDK, Java, tooling, AVD homes and the adb
+// server port. None of them is a credential.
+var androidDoctorEnv = []string{"ANDROID_HOME", "ANDROID_SDK_ROOT", "JAVA_HOME", "HOMEBREW_PREFIX", "NINELIVES_ANDROID_TOOLS",
+	"ANDROID_USER_HOME", "ANDROID_EMULATOR_HOME", "ANDROID_AVD_HOME", "ANDROID_ADB_SERVER_PORT"}
 
 // executableFacts compares the file doctor runs from with the 9l that PATH
 // resolves to, without executing either. The paths travel to the helper only
