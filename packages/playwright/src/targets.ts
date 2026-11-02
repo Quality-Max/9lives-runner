@@ -241,11 +241,19 @@ export class TargetApp {
       // the readiness poll. A positive answer reclassifies the failure as
       // setup; the assertion step stays failed and the test still fails.
       if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
+      // The hook gets a bounded signal; a stalled hook cannot keep the
+      // assertion pending, and a result after the bound, cancellation or
+      // close is discarded so it never rewrites the recorded failure.
+      const bound = Math.min(this.options.deadlineMs, Date.now() + recheckMs);
+      const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
       let record: TargetSetupRecord | undefined;
       try {
-        record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)});
+        record = await Promise.race([
+          this.driver.recheck({signal, deadlineMs: bound}),
+          new Promise<undefined>(resolve => signal.addEventListener('abort', () => resolve(undefined), {once: true})),
+        ]);
       } catch { record = undefined; }
-      if (record === undefined) throw error;
+      if (record === undefined || signal.aborted || this.closing) throw error;
       if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
       this.reason = `setup_${record.classification}`;
       await attachSetup(record);

@@ -161,12 +161,18 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // Device-state reads filter on the device and stay in memory. They never
   // request, store or bypass a credential, and never change lock settings.
   const readDeviceState = async (c: TargetContext) => parseDeviceState(await adbRun(shell(`(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096`), c));
-  const readBaseline = async (c: TargetContext) => {
+  // A baseline reading is clean only when every component was observed as
+  // declared; a difference is a dirty reason; anything else is unknown and
+  // can neither classify the state nor count as a restored baseline.
+  const readBaseline = async (c: TargetContext): Promise<'clean' | 'unknown' | 'foreign-focus' | 'extra-window' | 'ime-showing'> => {
     const windows = parseWindows(await adbRun(shell(`dumpsys window windows 2>/dev/null | grep -E "${windowPattern}" | head -c 8192`), c), options.appPackage);
     const ime = parseIme(await adbRun(shell(`dumpsys input_method 2>/dev/null | grep -E "${imePattern}" | head -c 1024`), c));
-    // First difference wins; unknown components cannot classify anything.
-    return windows.focus === 'foreign' ? 'foreign-focus' : windows.windows > expectedWindows ? 'extra-window' : ime === 'shown' ? 'ime-showing' : undefined;
+    if (windows.focus === 'foreign') return 'foreign-focus';
+    if (windows.windows > expectedWindows) return 'extra-window';
+    if (ime === 'shown') return 'ime-showing';
+    return windows.focus === 'app' && windows.windows === expectedWindows && ime === 'hidden' ? 'clean' : 'unknown';
   };
+  const dirty = (reading: Awaited<ReturnType<typeof readBaseline>>): reading is 'foreign-focus' | 'extra-window' | 'ime-showing' => reading !== 'clean' && reading !== 'unknown';
   let setupRecord: TargetSetupRecord | undefined;
   const installedBuild = async (c: TargetContext) => {
     if (await adbRun(['get-state'], c) !== 'device' || await adbRun(['shell', 'getprop', 'ro.kernel.qemu'], c) === '1') throw failure('not_physical_device');
@@ -460,22 +466,24 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             await installedBuild(c);
             await adbRun(['shell', 'am', 'start', '-W', '-n', `${options.appPackage}/${options.activity}`], c);
             stage = 'baseline';
-            let dirty = await readBaseline(c);
-            if (dirty !== undefined && backPresses > 0) {
-              // Declared, recorded and bounded: Back until the baseline returns.
-              const reason = dirty;
+            let reading = await readBaseline(c);
+            if (dirty(reading) && backPresses > 0) {
+              // Declared, recorded and bounded: Back until the baseline is
+              // observed again. An unknown reading after Back is not a
+              // restored baseline.
+              const reason = reading;
               let presses = 0;
-              while (dirty !== undefined && presses < backPresses) {
+              while (dirty(reading) && presses < backPresses) {
                 check(c);
                 await adbRun(['shell', 'input', 'keyevent', 'KEYCODE_BACK'], c);
                 presses++;
                 await delay(500, undefined, {signal: c.signal});
-                dirty = await readBaseline(c);
+                reading = await readBaseline(c);
               }
-              const recovery = {method: 'back' as const, presses, restored: dirty === undefined};
-              if (dirty !== undefined) throw new TargetSetupError({classification: 'dirty', reason, stage: 'open', recovery});
+              const recovery = {method: 'back' as const, presses, restored: reading === 'clean'};
+              if (reading !== 'clean') throw new TargetSetupError({classification: 'dirty', reason, stage: 'open', recovery});
               setupRecord = {classification: 'dirty', reason, stage: 'open', recovery};
-            } else if (dirty !== undefined) throw new TargetSetupError({classification: 'dirty', reason: dirty, stage: 'open'});
+            } else if (dirty(reading)) throw new TargetSetupError({classification: 'dirty', reason: reading, stage: 'open'});
             identity = {device: 'physical', deviceHash: createHash('sha256').update(serial).digest('hex')};
           } else {
             const emulatorVersion = await command(emulatorPath, ['-version'], c, env);
@@ -541,7 +549,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     async recheck(c) {
       if (!physical || !session) return undefined;
       check(c);
-      const state = await readDeviceState(c);
+      let state: Awaited<ReturnType<typeof readDeviceState>>;
+      try { state = await readDeviceState(c); } catch (error) {
+        // A phone that cannot be read (disconnected, adb gone) has an unknown
+        // state; cancellation, the deadline and a closed driver still propagate.
+        if (c.signal.aborted || Date.now() >= c.deadlineMs || closed) throw error;
+        state = 'unknown';
+      }
       if (state === 'unlocked') return undefined;
       if (state === 'unknown') return {classification: 'unknown', reason: 'device-state-unknown', stage: 'recheck'};
       return {classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'recheck'};
