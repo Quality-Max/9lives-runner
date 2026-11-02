@@ -30,6 +30,11 @@ function createAnalyzer(ts) {
     'toEqual', 'toHaveLength', 'toHaveProperty', 'toMatch', 'toMatchObject',
     'toStrictEqual', 'toThrow', 'toThrowError', 'toMatchSnapshot',
   ]);
+  // @9l/playwright target assertions (9l.target/1): on a control from
+  // app.getByTestId(...), and the app-level keyboard check. Each polls the
+  // driver and rejects when the state is not reached, so it is asynchronous.
+  const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState']);
+  const targetAppMatchers = new Set(['toHaveKeyboard']);
   // Page, frame, locator, handle and context methods whose function arguments
   // Playwright serializes and runs in the browser.
   const browserMethods = new Set(['evaluate', 'evaluateHandle', 'evaluateAll', '$eval', '$$eval', 'waitForFunction', 'addInitScript']);
@@ -104,7 +109,9 @@ function createAnalyzer(ts) {
       : ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     if (file.parseDiagnostics.length) throw new AnalysisError('syntax');
     if (javascript && !javaScriptOnly(file)) throw new AnalysisError('typescript-in-javascript');
-    const tests = new Set(), expects = new Set(), foreignTests = new Set();
+    // Target tests: a file-level `const test = createTargetTest(...)` from
+    // @9l/playwright declares a test whose `app` fixture drives a target.
+    const tests = new Set(), expects = new Set(), foreignTests = new Set(), factories = new Set(), targetTests = new Set();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
       const bindings = statement.importClause?.namedBindings;
@@ -122,6 +129,38 @@ function createAnalyzer(ts) {
         const imported = (binding.propertyName || binding.name).text;
         if (imported === 'test') tests.add(binding.name.text);
         if (imported === 'expect') expects.add(binding.name.text);
+        if (imported === 'createTargetTest' && statement.moduleSpecifier.text === '@9l/playwright') factories.add(binding.name.text);
+      }
+    }
+    // Whether fixtures passed to .extend() may define `app`: only object
+    // literals, and spreads of literals or of a conditional between them, are
+    // read; anything else may.
+    const mayDefineApp = node => {
+      while (ts.isParenthesizedExpression(node)) node = node.expression;
+      if (ts.isConditionalExpression(node)) return mayDefineApp(node.whenTrue) || mayDefineApp(node.whenFalse);
+      if (!ts.isObjectLiteralExpression(node)) return true;
+      return node.properties.some(property => ts.isSpreadAssignment(property) ? mayDefineApp(property.expression)
+        : !property.name || ts.isComputedPropertyName(property.name) || ((ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) && property.name.text === 'app'));
+    };
+    // createTargetTest(...), optionally followed by .extend(...) calls. The
+    // result declares tests; its `app` is the target app unless an extension
+    // may redefine it.
+    const targetFactory = node => {
+      let extendsApp = false;
+      while (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'extend') {
+        if (node.arguments.length !== 1 || mayDefineApp(node.arguments[0])) extendsApp = true;
+        node = node.expression.expression;
+      }
+      if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || !factories.has(node.expression.text)) return null;
+      return { app: !extendsApp };
+    };
+    for (const statement of file.statements) {
+      if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        const factory = declaration.initializer && targetFactory(declaration.initializer);
+        if (!ts.isIdentifier(declaration.name) || !factory) continue;
+        tests.add(declaration.name.text);
+        if (factory.app) targetTests.add(declaration.name.text);
       }
     }
     const location = node => {
@@ -322,7 +361,7 @@ function createAnalyzer(ts) {
     const budget = { facts: 0, visits: 0 };
     let direct = 0;
     (function count(node) {
-      if (ts.isCallExpression(node) && ((ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'waitForTimeout')
+      if (ts.isCallExpression(node) && ((ts.isPropertyAccessExpression(node.expression) && ['waitForTimeout', ...targetControlMatchers, ...targetAppMatchers].includes(node.expression.name.text))
         || expects.has(root(node.expression)))) direct++;
       ts.forEachChild(node, count);
     })(file);
@@ -384,11 +423,15 @@ function createAnalyzer(ts) {
           if (!callback || !(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) || !ts.isBlock(callback.body)) {
             limited('dynamic-callback', node);
           } else {
-            const fixtureRoots = new Set();
+            const fixtureRoots = new Set(), targetApps = new Set();
+            const target = targetTests.has(root(expr));
             for (const parameter of callback.parameters) {
               if (!ts.isObjectBindingPattern(parameter.name)) continue;
               for (const binding of parameter.name.elements) {
-                if (ts.isIdentifier(binding.name) && ['page', 'request', 'context', 'browser'].includes((binding.propertyName || binding.name).text)) fixtureRoots.add(binding.name.text);
+                if (!ts.isIdentifier(binding.name)) continue;
+                const fixture = (binding.propertyName || binding.name).text;
+                if (['page', 'request', 'context', 'browser'].includes(fixture)) fixtureRoots.add(binding.name.text);
+                if (target && fixture === 'app') { fixtureRoots.add(binding.name.text); targetApps.add(binding.name.text); }
               }
             }
             // Whether the last recognized fact was a fixed wait, in execution order
@@ -398,7 +441,9 @@ function createAnalyzer(ts) {
             // facts are attributed to the test's call site. `floating` means a
             // promise on the path from the test is neither awaited nor returned;
             // `returned` means the function's return value is consumed.
-            function scanFunction(fn, roots, declarationsAt, ctx) {
+            // `targets` holds the names bound to the app fixture ('app') and to a
+            // control a const took from app.getByTestId(...) ('control').
+            function scanFunction(fn, roots, declarationsAt, ctx, targets = new Map()) {
               const spend = () => { if (ctx.depth > 0 && ++budget.visits > inlineVisits) throw new Exhausted(); };
               // Conservatively exclude matcher facts if an imported binding is
               // redeclared in this function or an enclosing scope.
@@ -614,6 +659,21 @@ function createAnalyzer(ts) {
                 }
               };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
+              // A control: app.getByTestId(...) on a target app, or a name bound to one.
+              const targetControl = node => {
+                node = bare(node);
+                if (ts.isIdentifier(node)) return targets.get(node.text) === 'control';
+                return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'getByTestId'
+                  && ts.isIdentifier(bare(node.expression.expression)) && targets.get(bare(node.expression.expression).text) === 'app';
+              };
+              // A target assertion's matcher, or null for any other call.
+              const targetMatcher = call => {
+                if (!ts.isPropertyAccessExpression(call.expression)) return null;
+                const name = call.expression.name.text, receiver = bare(call.expression.expression);
+                if (targetControlMatchers.has(name) && targetControl(receiver)) return name;
+                if (targetAppMatchers.has(name) && ts.isIdentifier(receiver) && targets.get(receiver.text) === 'app') return name;
+                return null;
+              };
               // The outermost nested function being scanned, if any.
               let nested = null;
               const browserSide = child => ts.isCallExpression(child.parent) && child.parent.arguments.includes(child)
@@ -693,17 +753,19 @@ function createAnalyzer(ts) {
                       // Inline a same-file helper. Parameters given a browser
                       // fixture value are fixture roots inside it.
                       order.expansions++;
-                      const helperRoots = new Set();
+                      const helperRoots = new Set(), helperTargets = new Map();
                       helper.fn.parameters.forEach((parameter, index) => {
                         const argument = child.arguments[index];
                         if (ts.isIdentifier(parameter.name) && argument && roots.has(root(argument))) helperRoots.add(parameter.name.text);
+                        const kind = argument && ts.isIdentifier(argument) ? targets.get(argument.text) : argument && targetControl(argument) ? 'control' : undefined;
+                        if (ts.isIdentifier(parameter.name) && kind) { helperRoots.add(parameter.name.text); helperTargets.set(parameter.name.text, kind); }
                       });
                       const settled = consumed(child);
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
                           returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]),
-                          caught: { throw: handled(child, 'throw'), reject: handled(child, 'reject') } });
+                          caught: { throw: handled(child, 'throw'), reject: handled(child, 'reject') } }, helperTargets);
                       } catch (error) {
                         if (!(error instanceof Exhausted)) throw error;
                         fact.assertions.length = saved.assertions;
@@ -717,6 +779,17 @@ function createAnalyzer(ts) {
                         limited('unresolved-helper', child);
                       }
                     }
+                  }
+                  // A target assertion polls the driver and rejects when the state
+                  // is not reached. Hidden, and a keyboard expected not to show,
+                  // are absence checks.
+                  const native = targetMatcher(child);
+                  if (native) {
+                    let anchor = child;
+                    while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
+                    const [first] = child.arguments;
+                    const isAbsence = native === 'toBeHidden' || (native === 'toHaveKeyboard' && !!first && first.kind === ts.SyntaxKind.FalseKeyword);
+                    assertion(child, annotations(anchor, 'outcome'), ctx.floating || !consumed(child), isAbsence, `target:${native}`, caught(child, 'reject'));
                   }
                   // The matcher call, rather than expect(...), expect.poll(...) or a
                   // promise method chained after the matcher.
@@ -751,6 +824,18 @@ function createAnalyzer(ts) {
                     }
                   }
                 }
+                // A const bound to a control keeps it a target control. Any other
+                // binding of that name is not one (scan order follows source order).
+                if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name)) {
+                  const constant = ts.isVariableDeclarationList(child.parent) && (child.parent.flags & ts.NodeFlags.Const);
+                  if (constant && child.initializer && targetControl(child.initializer)) {
+                    targets.set(child.name.text, 'control');
+                    roots.add(child.name.text);
+                  } else if (targets.get(child.name.text) === 'control') {
+                    targets.delete(child.name.text);
+                    roots.delete(child.name.text);
+                  }
+                }
                 // A loop repeats its body an unknown number of times. Its
                 // assertions are recorded once and need no limit; a fixed wait in
                 // its body or in a condition or update, directly or through an
@@ -777,7 +862,8 @@ function createAnalyzer(ts) {
               if (ts.isBlock(fn.body)) ts.forEachChild(fn.body, scan);
               else scan(fn.body);
             }
-            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: { throw: false, reject: false } });
+            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: { throw: false, reject: false } },
+              new Map([...targetApps].map(name => [name, 'app'])));
           }
           results.push(fact);
           if (results.length > 256) throw new AnalysisError('limit');
@@ -805,7 +891,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => [...f.conditionalSkips, ...f.afterHookFails].map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 12, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 13, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -828,7 +914,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 12, error: code }));
+    process.stdout.write(JSON.stringify({ version: 13, error: code }));
     process.exitCode = 2;
   }
 }

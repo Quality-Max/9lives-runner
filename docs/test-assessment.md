@@ -240,13 +240,31 @@ waits, exclusive/disabled syntax and recognized asynchronous matcher findings.
 Unsupported analysis never produces `no-direct-assertion`; a supported body
 with no recognized assertion still produces a suspected absence finding.
 
+Target tests are recognized too. A file-level `const` initialized with
+`createTargetTest(...)` imported from `@9l/playwright`, under any alias and
+optionally followed by `.extend(...)` calls, declares tests like `test`. In
+such a test the `app` fixture (also when renamed, as in `{app: phone}`) is the
+target app, and these calls are asynchronous assertions with the same await,
+catch, outcome and absence rules as a Playwright matcher: `toBeVisible`,
+`toBeHidden`, `toHaveText` and `toHaveState` on a control from
+`app.getByTestId(...)`, whether written directly, held in a `const` or passed
+to a same-file helper, and `app.toHaveKeyboard(...)`. `toBeHidden` and
+`toHaveKeyboard(false)` are absence checks. Actions such as `tap`, `fill` or
+`back` are not assertions, so a target test with only actions receives
+`no-direct-assertion`. The app is not treated as a target app when an
+`.extend(...)` argument may define `app` (an `app` key, a computed key, or a
+spread the analyzer cannot read); a factory from another module or a `let`
+binding is not recognized. Recognition is source evidence only: at run time a
+target assertion is reported by the worker (`targetAssertions`) and is never
+independently verified.
+
 Each test lists the assertions it is credited with as
 `assertions: {"count": N, "matchers": [...]}`: every recognized matcher in its
 body and in the same-file helpers resolved from it, and every marked helper
 call, whatever limits the test also has. `matchers` holds the distinct names,
 sorted: names from the pinned Playwright API, `custom` for any other matcher
-and `assertion-helper` for a marked helper call; other source identifiers are
-not reported. Caught probes are not counted. The text report prints
+`assertion-helper` for a marked helper call and `target:<matcher>` for a
+target assertion; other source identifiers are not reported. Caught probes are not counted. The text report prints
 `recognized assertions: 2 (toBe, toEqual)` under a test with any. A test whose
 direct assertions sit beside one unresolved helper call therefore no longer
 reads like a test with no visible assertion, while the `unresolved-helper`

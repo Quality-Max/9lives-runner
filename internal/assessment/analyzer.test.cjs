@@ -974,7 +974,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 12);
+  assert.equal(facts.version, 13);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {
@@ -1061,5 +1061,79 @@ test('after-hook test.fail() modifiers are attributed to the suite as conditiona
   // A test.fail('title', ...) declaration is not in the inventory, as before.
   assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false], [2, true]], [[2, false], [2, true]], [[4, true], [5, true], [6, false]], []]);
   assert(facts.tests.every(t => !t.disabled && t.conditionalSkips.length === 0));
-  assert.equal(facts.version, 12);
+  assert.equal(facts.version, 13);
+});
+
+test('createTargetTest tests credit target assertions on the app fixture and its controls', () => {
+  const facts = analyze(`import {createTargetTest as targetTest, expect} from '@9l/playwright';
+    // @9l-assertion-helper
+    import {expectReceipt} from './checks';
+    import {seed} from './data';
+    const test = targetTest({web: {open: async page => {}}}).extend({...(process.env.CI ? {} : {page: async () => {}})});
+    test('direct', async ({app}) => {
+      await app.open();
+      await app.getByTestId('amount').fill('5');
+      // @9l-outcome exact-receipt
+      await app.getByTestId('receipt').toHaveText('Sent $5');
+      await app.getByTestId('send').toHaveState('enabled', true);
+      await app.getByTestId('modal').toBeHidden();
+      await app.toHaveKeyboard(false);
+      await app.toHaveKeyboard(true);
+    });
+    test('aliased fixture and bound control', async ({app: phone}) => {
+      const status = phone.getByTestId('status');
+      await status.tap();
+      await status.toBeVisible();
+    });
+    test('actions only', async ({app}) => { await app.open(); await app.getByTestId('send').tap(); await app.back(); });
+    test('caught and unawaited', async ({app}) => {
+      await app.getByTestId('receipt').toHaveText('x').catch(() => {});
+      app.getByTestId('receipt').toBeVisible();
+    });
+    test('helpers', async ({app}) => { await expectReceipt(app); await seed(app); });
+    test.skip('disabled', async ({app}) => { await app.getByTestId('send').toBeVisible(); });
+    test('conditional', async ({app}) => { if (process.env.X) await app.getByTestId('send').toBeVisible(); });`);
+  const summary = facts.tests.map(t => t.assertions.map(a => [a.matcher, a.absence, a.unawaited, a.caught, a.outcomes.join()].join(':')));
+  assert.deepEqual(summary, [
+    ['target:toHaveText:false:false:false:exact-receipt', 'target:toHaveState:false:false:false:', 'target:toBeHidden:true:false:false:',
+      'target:toHaveKeyboard:true:false:false:', 'target:toHaveKeyboard:false:false:false:'],
+    ['target:toBeVisible:false:false:false:'],
+    [],
+    ['target:toHaveText:false:false:true:', 'target:toBeVisible:false:true:false:'],
+    ['assertion-helper:false:false:false:'],
+    ['target:toBeVisible:false:false:false:'],
+    ['target:toBeVisible:false:false:false:'],
+  ]);
+  assert.deepEqual(facts.tests.map(t => t.limits.map(l => l.code)), [[], [], [], [], ['unresolved-helper'], [], ['conditional-flow']]);
+  assert.deepEqual(facts.tests.map(t => t.disabled), [false, false, false, false, false, true, false]);
+});
+
+test('a target app is credited only when the factory and its fixture are known', () => {
+  const credited = source => analyze(source).tests.map(t => t.assertions.map(a => a.matcher));
+  const body = `test('t', async ({app}) => { await app.getByTestId('send').toBeVisible(); });`;
+  // An extension that may redefine app, or a factory from another module, is not a target app.
+  for (const declaration of [
+    `import {createTargetTest} from '@9l/playwright'; const test = createTargetTest({}).extend({app: async ({}, use) => use({})});`,
+    `import {createTargetTest} from '@9l/playwright'; const test = createTargetTest({}).extend(fixtures);`,
+    `import {createTargetTest} from '@9l/playwright'; const test = createTargetTest({}).extend({...fixtures});`,
+  ]) assert.deepEqual(credited(`${declaration}\n${body}`), [[]], declaration);
+  assert.deepEqual(analyze(`import {createTargetTest} from './local'; const test = createTargetTest({});\n${body}`).tests, []);
+  // A plain Playwright test with its own app fixture is not a target test.
+  assert.deepEqual(credited(`import {test} from '@playwright/test';\n${body}`), [[]]);
+  // Not the factory result: a let binding, or a call made inside a function.
+  assert.deepEqual(analyze(`import {createTargetTest} from '@9l/playwright'; let test = createTargetTest({});\n${body}`).tests, []);
+  // A same-file helper given the app keeps its target assertions, at the test's call site.
+  const helped = analyze(`import {createTargetTest} from '@9l/playwright';
+    const test = createTargetTest({});
+    async function sent(app, id) { await app.getByTestId(id).toHaveText('Sent'); }
+    async function visible(control) { await control.toBeVisible(); }
+    test('t', async ({app}) => { await sent(app, 'receipt'); await visible(app.getByTestId('send')); });`);
+  assert.deepEqual(helped.tests[0].assertions.map(a => [a.matcher, a.line, a.site?.line]), [['target:toHaveText', 3, 5], ['target:toBeVisible', 4, 5]]);
+  assert.deepEqual(helped.tests[0].limits, []);
+  // A const rebound to something else is no longer a control.
+  const rebound = analyze(`import {createTargetTest} from '@9l/playwright';
+    const test = createTargetTest({});
+    test('t', async ({app}) => { { const c = app.getByTestId('a'); await c.toBeVisible(); } { const c = other(); await c.toBeVisible(); } });`);
+  assert.deepEqual(rebound.tests[0].assertions.map(a => a.matcher), ['target:toBeVisible']);
+  assert.deepEqual(rebound.tests[0].limits.map(l => l.code), ['unresolved-helper']);
 });
