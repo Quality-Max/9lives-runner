@@ -69,12 +69,14 @@ type testState struct {
 	targetFailed bool
 	assertions   int
 	runtime      bool
-	// setup records that the driver classified the device or app state in
-	// this attempt; setupRecovered that its declared recovery restored the
-	// baseline, so the test may still pass.
-	setup          bool
-	setupRecovered bool
-	diagnostic     bool
+	// setupOpen and setupRecheck record a driver classification made before
+	// the test ran and one made after a failed assertion; setupUnrecovered
+	// that a record exists whose recovery did not restore the baseline (a
+	// recheck record never does), so the test cannot pass.
+	setupOpen        bool
+	setupRecheck     bool
+	setupUnrecovered bool
+	diagnostic       bool
 	// reportedAttempt counts the assertion steps the worker reported as passed
 	// in the attempt in progress; reportedFinal and finalStatus keep the last
 	// completed attempt's count and status.
@@ -198,10 +200,18 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			frame.Runtime.TestID = frame.TestID
 			validation.AndroidRuntimes = append(validation.AndroidRuntimes, *frame.Runtime)
 		case "target_setup":
-			if !nativeTarget(identity.Target) || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.setup || frame.Setup == nil || !validTargetSetup(*frame.Setup) {
+			if !nativeTarget(identity.Target) || summarizing || state == nil || !state.active || frame.Retry != state.retry || frame.Setup == nil || !validTargetSetup(*frame.Setup) ||
+				(frame.Setup.Stage == runner.SetupStageOpen && (state.setupOpen || state.setupRecheck)) || (frame.Setup.Stage == runner.SetupStageRecheck && state.setupRecheck) {
 				return invalid("missing, foreign, repeated or malformed target setup classification")
 			}
-			state.setup, state.setupRecovered = true, frame.Setup.Recovery != nil && frame.Setup.Recovery.Restored
+			if frame.Setup.Stage == runner.SetupStageOpen {
+				state.setupOpen = true
+			} else {
+				state.setupRecheck = true
+			}
+			if frame.Setup.Recovery == nil || !frame.Setup.Recovery.Restored {
+				state.setupUnrecovered = true
+			}
 			frame.Setup.TestID = frame.TestID
 			validation.TargetSetup = append(validation.TargetSetup, *frame.Setup)
 		case "target_diagnostic":
@@ -255,7 +265,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("target test passed without a successful target assertion")
 				case frame.Status == "passed" && strings.HasPrefix(identity.Target, "android:") && !state.runtime:
 					return invalid("Android test passed without runtime identity")
-				case frame.Status == "passed" && state.setup && !state.setupRecovered:
+				case frame.Status == "passed" && state.setupUnrecovered:
 					return invalid("target test passed after an unrecovered setup classification")
 				case frame.Status == "passed" && state.diagnostic:
 					return invalid("target test passed with a failure diagnostic")

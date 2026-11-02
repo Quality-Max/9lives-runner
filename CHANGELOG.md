@@ -63,8 +63,9 @@ SDK versions.
   opt-in `recovery: {back: N}` presses Back up to N times until the baseline
   returns and is recorded either way; it never clears data, force-stops or
   changes settings (#212). The classification crosses the engine stream as
-  one `target_setup` frame per attempt (closed enums, no content) and lands
-  in the receipt as `targetSetup`; `9l run` and `9l result` print it under
+  a `target_setup` frame (closed enums, no content; at most one made before
+  the test ran and one from a recheck per attempt) and lands in the receipt
+  as `targetSetup`; `9l run` and `9l result` print it under
   the job, and a `--failure-details` failure carries class `setup`. A test
   with an unrecovered classification cannot pass; a recovered one runs from
   the restored baseline with the record kept. The shared target fixture

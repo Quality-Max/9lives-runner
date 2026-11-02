@@ -46,11 +46,13 @@ The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `toHaveText(exactText, timeoutMs?)`,
 `toHaveState('enabled' | 'checked', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
 (absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle
-in device coordinates) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
+in device coordinates; the origin may be negative for a control scrolled
+partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
 (one bounded gesture inside that control, by a fraction of its size, 0.5 by
 default). The app also exposes `back()`, `tapAt({x, y})` (one touch down/up
 at integer device coordinates: physical pixels on Android, CSS pixels in the
-web viewport) and `viewport()`, which are portable, and the Android-only
+web viewport; a point at or beyond the viewport the driver reports is refused
+before dispatch) and `viewport()`, which are portable, and the Android-only
 `toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()` and
 `activate()`. A driver without an operation fails it with the stable reason
 `unsupported_operation`; it never substitutes another action. Queries such
@@ -73,9 +75,11 @@ read after a successful open and returns the record of a declared recovery
 that restored the baseline, so the receipt shows the test ran from it; and
 `recheck(context)` is called after a completed assertion failure while the
 driver is still open, returning a `stage: 'recheck'` record when the device
-became unavailable meanwhile, or nothing. A recheck only reads state and its
-own errors are ignored. The test still fails; the record is attached as
-`9l.target-setup` and reaches Go as one `target_setup` frame per attempt.
+became unavailable meanwhile, or nothing. A recheck only reads state, runs
+under its own five-second bound, and its errors or a late result are
+ignored. The test still fails; the record is attached as `9l.target-setup`
+and reaches Go as a `target_setup` frame: at most one made before the test
+ran and one from a recheck per attempt.
 
 The web lifecycle provides `open(page, context)` and `reset(page, context)`;
 ordinary Playwright owns the page. `native(target)` synchronously constructs a
@@ -141,9 +145,10 @@ hidden assertion only.
 
 A `target_setup` frame carries the classification, reason, stage and, for a
 declared recovery, its method, press count and whether it restored the
-baseline; nothing else. Go accepts one per attempt from a native target,
-rejects a reason outside its classification, and rejects a passed test whose
-record was not recovered. The receipt lists them as `targetSetup`, bound to
+baseline; nothing else. Go accepts one per stage per attempt from a native
+target (a recovered baseline before the test and a recheck after a failed
+assertion can both be present), rejects a reason outside its classification,
+and rejects a passed test with any record that was not recovered. The receipt lists them as `targetSetup`, bound to
 the test; `9l run` and `9l result` print each under the job, and with
 `--failure-details` the failure's class is `setup`. The record says the
 result is inconclusive setup evidence; it does not say the application

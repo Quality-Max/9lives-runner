@@ -185,9 +185,15 @@ defaults to one. An extra window, foreign focus or an open keyboard stops
 the test as `setup dirty` (`extra-window`, `foreign-focus`, `ime-showing`):
 state a previous test left behind, not an application failure. With
 `recovery: {back: N}` the driver presses Back up to N times, half a second
-apart, until the baseline returns, and records the method, the press count
-and whether it restored the baseline; a restored baseline lets the test run
-and keeps the record in the receipt, an unrestored one fails the test.
+apart, until the baseline is observed again, and records the method, the
+press count and whether it restored the baseline. Restored means the
+declared window count, the app's focus and a hidden keyboard were all read
+back; a reading the driver cannot interpret after Back is not a restored
+baseline. A restored baseline lets the test run and keeps the record in the
+receipt; an unrestored one fails the test. A reading the driver cannot
+interpret before any Back press classifies nothing and the test proceeds. A
+phone whose state cannot be read at a recheck (disconnected, adb gone) is
+reported as `unknown`.
 Recovery never clears data, force-stops or changes settings, and nothing
 beyond those counts and enums is retained. Both checks apply to attached
 devices only; an owned emulator starts fresh for each test. The markers are

@@ -68,3 +68,10 @@ test('an outside touch dismisses the modal', async ({app}) => {
   await app.tapAt({x: 390, y: 790});
   await app.getByTestId('status').toBeHidden(300);
 });
+
+// A touch at or beyond the viewport edge is rejected before dispatch.
+test('a touch outside the viewport is refused', async ({app}) => {
+  await app.open();
+  const viewport = await app.viewport();
+  await app.tapAt({x: viewport.width, y: 0});
+});

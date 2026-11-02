@@ -19,8 +19,8 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     // before any operation, a leaked window recovered by a declared Back, and
     // a phone that locked while an assertion was polling.
     open: async () => { if (mode === 'locked') throw new TargetSetupError({classification: 'blocked', reason: 'device-locked', stage: 'open'}); },
-    setup: () => mode === 'dirty-recovered' ? {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}} as TargetSetupRecord : undefined,
-    recheck: async (_context, failed) => mode === 'lock-recheck' ? {classification: 'blocked', reason: 'device-locked', stage: 'recheck'}
+    setup: () => mode === 'dirty-recovered' || mode === 'recovered-then-lock' ? {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}} as TargetSetupRecord : undefined,
+    recheck: async (_context, failed) => mode === 'lock-recheck' || mode === 'recovered-then-lock' ? {classification: 'blocked', reason: 'device-locked', stage: 'recheck'}
       : mode === 'observer' && failed.operation === 'assert-hidden' ? {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'} : undefined,
     // Opt-in diagnostics as a device driver would record them: the dialog's
     // window was gone after the outside tap, while the snapshot still listed it.
@@ -45,7 +45,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
           if (mode === 'late') { effect('started'); await delay(150, undefined, {signal: context.signal}); }
           context.signal.throwIfAborted();
           if (closed) throw new Error('closed');
-          effect('mutation'); status = mode === 'defect' || mode === 'lock-recheck' ? 'Sent $50' : `Sent $${amount}`;
+          effect('mutation'); status = mode === 'defect' || mode === 'lock-recheck' || mode === 'recovered-then-lock' ? 'Sent $50' : `Sent $${amount}`;
         },
         fill: async value => { if (id !== 'amount') throw new Error('unsupported'); amount = value; keyboard = true; },
         visible: async () => id === 'receipt' || id === 'status' ? !!status : true,

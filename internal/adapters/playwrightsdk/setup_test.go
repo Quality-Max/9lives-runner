@@ -190,3 +190,33 @@ func TestTargetDiagnosticIsBoundedMetadataOnAFailedTest(t *testing.T) {
 		t.Fatal("web target accepted a native diagnostic")
 	}
 }
+
+func TestSetupRecordsPerStage(t *testing.T) {
+	identity := owner
+	identity.Target = "android-fake:finance"
+	recovered := map[string]any{"classification": "dirty", "reason": "extra-window", "stage": "open", "recovery": map[string]any{"method": "back", "presses": 1, "restored": true}}
+	rechecked := map[string]any{"classification": "blocked", "reason": "device-locked", "stage": "recheck"}
+	with := func(first, second map[string]any) []map[string]any {
+		f := setupFrames("android-fake:finance", first)
+		s := map[string]any{"type": "target_setup", "testId": testKey, "retry": 0, "targetId": TargetID("android-fake:finance"), "setup": second}
+		return append(f[:4], append([]map[string]any{s}, f[4:]...)...)
+	}
+	v, err := New().ValidateAttempt(stream(with(recovered, rechecked)), identity)
+	if err != nil || len(v.TargetSetup) != 2 || v.TargetSetup[0].Stage != runner.SetupStageOpen || v.TargetSetup[1].Stage != runner.SetupStageRecheck {
+		t.Fatalf("recovered baseline then lock not kept: %+v %v", v, err)
+	}
+	for name, frames := range map[string][]map[string]any{
+		"two rechecks":       with(rechecked, rechecked),
+		"two open records":   with(recovered, recovered),
+		"open after recheck": with(rechecked, recovered),
+	} {
+		if _, err := New().ValidateAttempt(stream(frames), identity); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	passing := with(recovered, rechecked)
+	passing[5]["status"], passing[6]["status"], passing[7]["outcome"], passing[8]["status"] = "passed", "passed", "expected", "passed"
+	if _, err := New().ValidateAttempt(stream(passing), identity); err == nil {
+		t.Fatal("a recheck record cannot accompany a passed test")
+	}
+}
