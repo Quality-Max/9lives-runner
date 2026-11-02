@@ -20,7 +20,7 @@ runner and its contract versions before decoding anything else:
   "implementation": "go-runner",
   "cliVersion": "0.5.1",
   "contracts": {
-    "plan": 1, "runResult": 1, "runStatus": 1, "receipt": 1,
+    "plan": 1, "runResult": 2, "runStatus": 2, "receipt": 2,
     "progressEvent": 1, "assess": 3, "assessSuite": 1,
     "executionReceipt": "execution-receipt/1.0", "engine": "9l.engine/1"
   },
@@ -118,6 +118,12 @@ its schema and listed under `contracts` in `9l version --format json`.
   Removing or renaming a field, changing its type, adding a value to a closed
   `enum`, or changing a field's meaning increments the version.
 - Consumers should ignore unknown fields and reject versions they do not know.
+
+Receipt, run result and run status are version 2 from 0.6.0-beta.2: the
+experimental Android runtime record gained required fields (the targeted
+display, posture and installed build identity), so a version 1 validator
+would reject them. A run result or status embeds receipts, so all three move
+together. Plan, progress event and version stay at 1.
 
 The portable `execution-receipt-1.0.json` beside each receipt follows the
 platform's `execution-receipt/1.0` schema, and `9l.engine/1` is the SDK bridge

@@ -142,7 +142,7 @@ async function main() {
   const passing = invoke('testdata/sdk/tests/checkout.spec.ts');
   assert.equal(passing.code, 0);
   assert.equal(passing.summary.complete, true);
-  assert.equal(passing.summary.version, 1);
+  assert.equal(passing.summary.version, 2);
   assert.equal(passing.summary.outcome, 'passed');
   assert.equal(passing.summary.plannedJobs, 1);
   const receipt = passing.summary.receipts[0];

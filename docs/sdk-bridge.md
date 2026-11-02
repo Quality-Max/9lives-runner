@@ -196,7 +196,7 @@ cover malformed, duplicate, foreign, late and incomplete evidence. Live provider
 verified replay and independent behavioral verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
-`9l.target/1`, a target identity digest, a declared test list, typed
+`9l.target/2`, a target identity digest, a declared test list, typed
 deterministic operation outcomes and, from a native driver, at most one
 `target_setup` classification per attempt (`blocked`, `dirty`, `mismatch` or
 `unknown`, a closed reason, the stage and a recorded recovery), kept in the

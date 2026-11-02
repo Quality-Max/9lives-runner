@@ -17,7 +17,7 @@ import (
 )
 
 const Version = "9l.engine/1"
-const TargetVersion = "9l.target/1"
+const TargetVersion = "9l.target/2"
 const maxFrameBytes = 16 * 1024
 const maxEvents = 10000
 const maxProtocolBytes = 4 << 20
@@ -393,7 +393,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		return invalid("missing terminal outcome")
 	}
 	if targeted {
-		validation.Description += "; 9l.target/1; required target tests; worker-reported target assertion count only"
+		validation.Description += "; 9l.target/2; required target tests; worker-reported target assertion count only"
 	}
 	return validation, nil
 }
@@ -424,7 +424,7 @@ func outcome(state *testState) string {
 	return "expected"
 }
 
-// The typed operations of the shared target fixture (9l.target/1). Queries
+// The typed operations of the shared target fixture (9l.target/2). Queries
 // such as bounds and viewport are actions: executed, never assertions.
 var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest"}
 var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}

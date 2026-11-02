@@ -6,7 +6,7 @@ export const protocolVersion = '9l.engine/1';
 export const maxFrameBytes = 16 * 1024;
 export const maxEvents = 10000;
 export const capabilities = ['steps', 'artifact-metadata', 'terminal-outcomes', 'declared-outcomes'] as const;
-export const targetVersion = '9l.target/1';
+export const targetVersion = '9l.target/2';
 // Typed target steps carry this module's own location. The reporter counts only
 // those, so a user step titled "9l target ..." stays an ordinary step. Code in the
 // worker can still forge one deliberately; the worker remains trusted.
