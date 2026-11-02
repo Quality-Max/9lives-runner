@@ -59,3 +59,10 @@ test('keyboard and process lifecycle are native only', async ({app}) => {
   // @9l-outcome draft-survives-restart
   await app.getByTestId('status').toHaveText('draft 7');
 });
+
+// A touch at or beyond the viewport edge is rejected before dispatch.
+test('a touch outside the viewport is refused', async ({app}) => {
+  await app.open();
+  const viewport = await app.viewport();
+  await app.tapAt({x: viewport.width, y: 0});
+});

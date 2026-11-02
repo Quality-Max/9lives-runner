@@ -270,9 +270,14 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     bounds: async c => rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)),
   });
   const pixel = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+  const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
+  // Only finite numbers are rounded: a null or boolean field is a malformed
+  // response, never a zero. Origins may be negative for a partly scrolled-out control.
   const rect = (value: any): TargetRect => {
-    const r = {x: Math.round(value?.x), y: Math.round(value?.y), width: Math.round(value?.width), height: Math.round(value?.height)};
-    if (![r.x, r.y, r.width, r.height].every(pixel)) throw failure('invalid_property');
+    const fields = [value?.x, value?.y, value?.width, value?.height];
+    if (!fields.every(field => typeof field === 'number' && Number.isFinite(field))) throw failure('invalid_property');
+    const r = {x: Math.round(value.x), y: Math.round(value.y), width: Math.round(value.width), height: Math.round(value.height)};
+    if (!offset(r.x) || !offset(r.y) || !pixel(r.width) || !pixel(r.height)) throw failure('invalid_property');
     return r;
   };
   const keyboardShown = async (c: TargetContext) => {

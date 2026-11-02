@@ -320,7 +320,7 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-ops-'));
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
   const requests = [];
-  let ime = 'mInputShown=false', backs = 0, hideOnBack = true;
+  let ime = 'mInputShown=false', backs = 0, hideOnBack = true, rectValue = {x: 12.4, y: 160, width: 1080, height: 600};
   const serial = `test-${randomUUID()}`;
   let driver;
   try {
@@ -359,7 +359,7 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
       else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
       else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
       else if (url.endsWith('/window/rect')) value = {x: 0, y: 0, width: 1080, height: 2340};
-      else if (url.endsWith('/rect')) value = {x: 12.4, y: 160, width: 1080, height: 600};
+      else if (url.endsWith('/rect')) value = rectValue;
       else if (url.endsWith('/back')) { backs++; if (hideOnBack) ime = 'mInputShown=false'; }
       else if (url.endsWith('/execute/sync')) value = true;
       return new Response(JSON.stringify({value}), {status: 200});
@@ -388,6 +388,14 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
     await handle.scroll('down', 0.5, context());
     assert.deepEqual(requests.at(-1), {path: '/execute/sync', method: 'POST', body: {script: 'mobile: scrollGesture', args: [{elementId: 'ref-0', direction: 'down', percent: 0.5}]}});
     assert.deepEqual(await handle.bounds(context()), {x: 12, y: 160, width: 1080, height: 600});
+    // A malformed rectangle is never coerced to zeros; a scrolled-out origin is geometry.
+    for (const bad of [{x: null, y: null, width: null, height: null}, {x: '12', y: 160, width: 1080, height: 600}, {x: true, y: 0, width: 1, height: 1}, {x: 0, y: 0, width: -1, height: 1}, null]) {
+      rectValue = bad;
+      await assert.rejects(handle.bounds(context()), /invalid_property/);
+    }
+    rectValue = {x: -40, y: -200.4, width: 300, height: 80};
+    assert.deepEqual(await handle.bounds(context()), {x: -40, y: -200, width: 300, height: 80});
+    rectValue = {x: 12.4, y: 160, width: 1080, height: 600};
     assert.deepEqual(await driver.viewport(context()), {width: 1080, height: 2340});
     await driver.tapAt({x: 900, y: 1200}, context());
     const actions = requests.at(-1);

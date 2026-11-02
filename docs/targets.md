@@ -46,11 +46,13 @@ The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `toHaveText(exactText, timeoutMs?)`,
 `toHaveState('enabled' | 'checked', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
 (absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle
-in device coordinates) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
+in device coordinates; the origin may be negative for a control scrolled
+partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
 (one bounded gesture inside that control, by a fraction of its size, 0.5 by
 default). The app also exposes `back()`, `tapAt({x, y})` (one touch down/up
 at integer device coordinates: physical pixels on Android, CSS pixels in the
-web viewport) and `viewport()`, which are portable, and the Android-only
+web viewport; a point at or beyond the viewport the driver reports is refused
+before dispatch) and `viewport()`, which are portable, and the Android-only
 `toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()` and
 `activate()`. A driver without an operation fails it with the stable reason
 `unsupported_operation`; it never substitutes another action. Queries such

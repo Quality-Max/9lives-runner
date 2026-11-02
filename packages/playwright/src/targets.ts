@@ -277,10 +277,16 @@ export class TargetApp {
     return this.assertLoop('assert-keyboard', async context => await this.optional('keyboardShown')(context) === visible, timeoutMs);
   }
   /** One touch down/up at device coordinates, for example outside a pane.
-   * Coordinates are integers inside the viewport; nothing is retried. */
+   * Coordinates are integers inside the viewport, checked against the
+   * driver's viewport when it reports one; nothing is retried. */
   tapAt(point: TargetPoint, options: TargetOperationOptions = {}) {
     return this.perform('tap-at', async context => {
       if (!validPoint(point)) throw stopped('invalid_point');
+      if (typeof this.driver.viewport === 'function') {
+        const size = await this.driver.viewport(context);
+        if (!validSize(size)) throw stopped('invalid_property');
+        if (point.x >= size.width || point.y >= size.height) throw stopped('invalid_point');
+      }
       await this.optional('tapAt')({x: point.x, y: point.y}, context);
     }, options.timeoutMs);
   }
@@ -357,9 +363,12 @@ export class TargetApp {
 }
 
 const coordinate = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+// A rectangle origin may be negative: a control scrolled partly above or
+// left of the viewport still has geometry. Tap coordinates and sizes do not.
+const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
 const validPoint = (value: unknown): value is TargetPoint => !!value && typeof value === 'object' && coordinate((value as TargetPoint).x) && coordinate((value as TargetPoint).y);
 const validSize = (value: unknown): value is TargetSize => !!value && typeof value === 'object' && coordinate((value as TargetSize).width) && coordinate((value as TargetSize).height) && (value as TargetSize).width > 0 && (value as TargetSize).height > 0;
-const validRect = (value: unknown): value is TargetRect => validPoint(value) && coordinate((value as TargetRect).width) && coordinate((value as TargetRect).height);
+const validRect = (value: unknown): value is TargetRect => !!value && typeof value === 'object' && offset((value as TargetRect).x) && offset((value as TargetRect).y) && coordinate((value as TargetRect).width) && coordinate((value as TargetRect).height);
 
 const remaining = (context: TargetContext) => { context.signal.throwIfAborted(); return Math.max(1, context.deadlineMs - Date.now()); };
 
@@ -400,10 +409,10 @@ export function webTargetDriver(page: Page, appId: string, lifecycle: {
     back: async context => { await page.goBack({timeout: remaining(context)}); },
     tapAt: async (point, context) => { remaining(context); await page.mouse.click(point.x, point.y); },
     viewport: async context => {
+      // viewport: null disables emulation; the page still has a real size.
       remaining(context);
-      const size = page.viewportSize();
-      if (!size) throw new Error('viewport unavailable');
-      return size;
+      const size = page.viewportSize() ?? await page.evaluate(() => ({width: window.innerWidth, height: window.innerHeight}));
+      return {width: Math.round(size.width), height: Math.round(size.height)};
     },
     observeTestId: async (id, context) => {
       remaining(context);

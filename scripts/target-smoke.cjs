@@ -144,6 +144,12 @@ for (const receipt of portable.summary.receipts) {
 const lifecycle = invoke('lifecycle', {targets: ['android-fake:finance'], grep: 'native only', file: operations});
 assert.equal(lifecycle.code, 0, 'lifecycle: keyboard and restart pass on the native target');
 assert.equal(lifecycle.summary.receipts[0].targetAssertions, 4);
+const unemulated = invoke('unemulated', {targets: ['web:unemulated'], grep: 'portable', file: operations});
+assert.equal(unemulated.code, 0, 'viewport: null still reports a real viewport');
+const edge = invoke('edge', {targets: ['web:finance', 'android-fake:finance'], grep: 'outside the viewport', file: operations, extra: ['--failure-details']});
+assert.notEqual(edge.code, 0);
+for (const receipt of edge.summary.receipts) assert(receipt.failures[0].message.includes('9lives target stopped: invalid_point'), `${receipt.target}: edge touch refused before dispatch`);
+assert(!edge.mutations.includes('mutation'));
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');
