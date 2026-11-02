@@ -7,7 +7,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
 import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation} from './targets';
-import {activeDisplay, deviceStatePattern, displayPattern, imePattern, packagePattern, parseDeviceState, parseDisplays, parseIme, parseLogicalDisplays, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
+import {activeDisplay, deviceStatePattern, emulatorVersion, displayPattern, imePattern, packagePattern, parseDeviceState, parseDisplays, parseIme, parseLogicalDisplays, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
 import {androidVersions, type AndroidRuntime} from './android-runtime';
@@ -675,9 +675,10 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             } else if (dirty(reading)) throw new TargetSetupError({classification: 'dirty', reason: reading, stage: 'open'});
             identity = {device: 'physical', deviceHash: createHash('sha256').update(serial).digest('hex')};
           } else {
-            // macOS prints the version line on stdout, Linux on stderr.
-            const emulatorVersion = await command(emulatorPath, ['-version'], c, env, 'both');
-            const version = /Android emulator version ([0-9.]+)/.exec(emulatorVersion)?.[1];
+            // Read within 10 s from both streams, else from the package revision.
+            const bounded = {...c, deadlineMs: Math.min(c.deadlineMs, Date.now() + 10_000)};
+            const version = await emulatorVersion(() => command(emulatorPath, ['-version'], bounded, env, 'both'),
+              () => readFile(join(sdk, 'emulator', 'source.properties'), 'utf8'), () => check(c));
             if (!version) throw failure('unknown_emulator_version');
             identity = {emulator: version};
           }
