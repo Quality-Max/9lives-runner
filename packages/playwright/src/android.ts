@@ -7,7 +7,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
 import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation} from './targets';
-import {activeDisplay, deviceStatePattern, displayPattern, imePattern, parseDeviceState, parseDisplays, parseIme, parsePosture, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
+import {activeDisplay, deviceStatePattern, displayPattern, imePattern, parseDeviceState, parseDisplays, parseIme, parseLogicalDisplays, parsePosture, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
 import {androidVersions, type AndroidRuntime} from './android-runtime';
@@ -211,9 +211,16 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   let setupRecord: TargetSetupRecord | undefined;
   // The display the session targets. Screenshots name it explicitly, so a
   // multi-display device never answers with its first display by default.
+  // The recorded size and density are the display's current logical layout
+  // (rotation and density overrides applied) when the dump reports one, and
+  // its physical metrics otherwise. Read before any session can launch the
+  // app, so a mismatch changes nothing.
   let display: DisplayInfo | undefined, posture: Posture = 'unknown';
   const readDisplays = async (c: TargetContext) => {
-    display = activeDisplay(parseDisplays(await adbRun(shell(`dumpsys display 2>/dev/null | grep -E "${displayPattern}" | head -c 16384`), c)));
+    const dump = await adbRun(shell(`dumpsys display 2>/dev/null | grep -E "${displayPattern}" | head -c 32768`), c);
+    display = activeDisplay(parseDisplays(dump));
+    const logical = display && parseLogicalDisplays(dump).get(display.id);
+    if (display && logical) display = {...display, ...logical};
     posture = parsePosture(await adbRun(shell(`dumpsys device_state 2>&1 | grep -E "${posturePattern}" | head -c 2048`), c));
     if (requires?.posture !== undefined && posture !== requires.posture) throw new TargetSetupError({classification: 'mismatch', reason: 'posture', stage: 'open'});
     if (requires?.minWidthDp !== undefined && (!display || Math.floor(display.width * 160 / display.density) < requires.minWidthDp)) throw new TargetSetupError({classification: 'mismatch', reason: 'display-width', stage: 'open'});
@@ -438,6 +445,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             stage = 'device_state';
             const state = await readDeviceState(c);
             if (state === 'locked' || state === 'screen-off') throw new TargetSetupError({classification: 'blocked', reason: state === 'locked' ? 'device-locked' : 'screen-off', stage: 'open'});
+            stage = 'displays';
+            await readDisplays(c);
             stage = 'device_attach';
             if (await adbRun(['shell', 'sh', '-c', "'pidof io.appium.uiautomator2.server io.appium.uiautomator2.server.test || true'"], c)) throw failure('device_automation_in_use');
             for (const key of ['hidden_api_policy_pre_p_apps', 'hidden_api_policy_p_apps', 'hidden_api_policy']) {
@@ -481,6 +490,8 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
               } catch (error) { check(c); if (error instanceof Error && error.message.endsWith('foreign_emulator')) throw error; }
               await delay(250, undefined, {signal: c.signal});
             }
+            stage = 'displays';
+            await readDisplays(c);
             stage = 'apk_install';
             await adbRun(['install', '--no-streaming', '-r', installedAPK], c);
           }
@@ -522,7 +533,6 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           if (typeof value.sessionId !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(value.sessionId) || returnedUDID !== serial) throw failure('foreign_session');
           session = value.sessionId;
           stage = 'runtime_identity';
-          await readDisplays(c);
           let identity: {emulator: string} | {device: 'physical'; deviceHash: string};
           if (physical) {
             await installedBuild(c);

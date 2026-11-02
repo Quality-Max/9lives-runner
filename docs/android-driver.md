@@ -230,12 +230,18 @@ powered display; two powered displays or none readable record `unknown`.
 `app.screenDigest()` captures that display by id with `screencap -d` and
 returns only the SHA-256 of the PNG, computed in memory, for settling checks
 such as comparing two captures; the image is never written, attached or
-returned. `requires: {posture, minWidthDp}` declares what a layout-dependent
-spec needs: another posture, or an active display narrower than the minimum
-(width in pixels times 160 over density), stops the test as `setup mismatch`
-(`posture`, `display-width`) before any application operation. Posture names
-come from the device's state names (`OPENED`, `HALF_OPENED`, `CLOSED`);
-others are `unknown` and a device without the service is `flat`. No foldable
+returned. The recorded size and density are the display's current logical layout from
+its `DisplayInfo` (the app size follows rotation, the density follows
+overrides), falling back to the physical metrics when the dump has none.
+`requires: {posture, minWidthDp}` declares what a layout-dependent spec
+needs: another posture, or an active display whose logical width in dp
+(width times 160 over density) is below the minimum, stops the test as
+`setup mismatch` (`posture`, `display-width`). The check runs after
+attachment or boot and before the Appium session that would launch the app,
+so a mismatch changes nothing on the device. Posture names are matched
+exactly against the device's state names (`OPENED`, `HALF_OPENED`,
+`CLOSED`); any other name is `unknown` and a device without the service is
+`flat`. No foldable
 was available for qualification.
 
 The phone is leased exclusively by a host-local lock. Existing UiAutomator2

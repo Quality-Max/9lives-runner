@@ -550,6 +550,7 @@ test('attached phone records its active display and posture, checks declared req
   const device = {displays: [inner, cover].join('\n'), posture: "  Committed state: DeviceState{identifier=2, name='OPENED'}"};
   const png = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.from('synthetic image bytes')]);
   const screencaps = [];
+  let sessions = 0;
   const serial = `test-${randomUUID()}`;
   const opened = [];
   try {
@@ -587,13 +588,14 @@ test('attached phone records its active display and posture, checks declared req
       const url = String(input);
       let value = null;
       if (url.endsWith('/status')) value = {ready: true};
-      else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
+      else if (url.endsWith('/session')) { sessions++; value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}}; }
       return new Response(JSON.stringify({value}), {status: 200});
     };
     const {androidTargetDriver, TargetSetupError} = require('../dist/android');
     const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
     const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
     const open = async (options, expectation) => {
+      sessions = 0;
       const driver = androidTargetDriver({...base, ...options});
       opened.push(driver);
       let error;
@@ -613,6 +615,17 @@ test('attached phone records its active display and posture, checks declared req
     // 1812 px at 374 dpi is 775 dp: a wider requirement is a mismatch, not an app failure.
     await open({requires: {minWidthDp: 800}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
     await open({requires: {posture: 'closed'}}, {classification: 'mismatch', reason: 'posture', stage: 'open'});
+    // Rotated to landscape with a density override: the logical layout, not
+    // the physical metrics, decides the width requirement and is recorded.
+    const landscape = '    mOverrideDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0", real 2176 x 1812, rotation 1, state ON, uniqueId "local:4619827259835644672", app 2176 x 1812, density 400 (400.0 x 400.0) dpi}';
+    device.displays = [inner, cover, landscape].join('\n');
+    driver = await open({requires: {minWidthDp: 800}});
+    assert.deepEqual([driver.runtime().displayWidth, driver.runtime().displayHeight, driver.runtime().density], ['2176', '1812', '400']);
+    await driver.close();
+    assert.equal(sessions, 1);
+    // A mismatch is found before the session that would auto-launch the app.
+    await open({requires: {posture: 'closed'}}, {classification: 'mismatch', reason: 'posture', stage: 'open'});
+    assert.equal(sessions, 0, 'no session, so no app launch, on a mismatch');
     // Folded: the cover display is the powered one.
     device.displays = [inner.replace('state ON', 'state OFF'), cover.replace('state OFF', 'state ON')].join('\n');
     device.posture = "  Committed state: DeviceState{identifier=0, name='CLOSED'}";
