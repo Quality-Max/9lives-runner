@@ -57,16 +57,14 @@ jobs:
           sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$sdkmanager" --licenses > /dev/null
           "$sdkmanager" "platform-tools" "emulator" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64" > /dev/null
-          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$NINELIVES_ANDROID_AVD" -k "system-images;android-35;google_apis;x86_64" -d pixel_6
-          "$ANDROID_HOME/emulator/emulator" -list-avds
-      - name: Check the emulator under the driver's environment
+          # The driver starts the emulator with a minimal environment, which
+          # finds AVDs only in the default $HOME/.android/avd.
+          mkdir -p "$HOME/.android/avd"
+          echo no | ANDROID_AVD_HOME="$HOME/.android/avd" "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n "$NINELIVES_ANDROID_AVD" -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+          env -i PATH="$PATH" HOME="$HOME" ANDROID_HOME="$ANDROID_HOME" "$ANDROID_HOME/emulator/emulator" -list-avds | grep -qx "$NINELIVES_ANDROID_AVD"
+      - name: Check hardware acceleration
         run: |
-          env | grep -E '^(ANDROID|JAVA_HOME)' | sed -E 's/=.*/=<set>/' || true
-          ls -l /dev/kvm || true
-          "$ANDROID_HOME/emulator/emulator" -accel-check || true
-          # The driver passes only PATH, HOME, TMPDIR, JAVA_HOME and the SDK root.
-          env -i PATH="$PATH" HOME="$HOME" JAVA_HOME="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" ANDROID_SDK_ROOT="$ANDROID_HOME" \
-            timeout 45 "$ANDROID_HOME/emulator/emulator" -avd "$NINELIVES_ANDROID_AVD" -read-only -no-snapshot -no-audio -no-window -gpu swiftshader_indirect 2>&1 | head -40 || true
+          "$ANDROID_HOME/emulator/emulator" -accel-check
       - run: npm ci
       - run: npm ci --prefix tools/android --ignore-scripts
       - name: Qualify the Android target on a real emulator
