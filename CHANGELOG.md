@@ -8,6 +8,26 @@ SDK versions.
 
 ### Android (experimental)
 
+- Opt-in, metadata-only failure diagnostics for native gestures (#211).
+  With `diagnostics: {gestures: true}` the Android driver reads the app's
+  window count and focus before each gesture (tap, scroll, back, touch) and
+  again when an operation fails, and attaches one record per failed test:
+  operation, its stop reason, elapsed time, the requested coordinates of a
+  touch, the viewport and the window counts before and after. It crosses the
+  engine stream as one `target_diagnostic` frame, lands in the receipt as
+  `targetDiagnostics` and is printed under the job. No screenshot,
+  hierarchy, text, log or device identifier is captured, nothing is retried,
+  and the record claims no cause. With it, a `toBeHidden()` that fails while
+  the window manager shows the app lost a window since the last gesture is
+  classified `setup observer` (`window-gone-element-displayed`): the
+  accessibility snapshot disagreeing with the window manager, as the field
+  investigation established, rather than an application or gesture failure.
+  The classification is a heuristic, made only for a hidden assertion that
+  directly follows the gesture, only with the opt-in, and the diagnostic
+  keeps the counts; screenshot capture is not offered. Exercised by the
+  offline target smoke through the fake driver; the window readers are
+  unit-tested against dumpsys excerpts and remain unqualified on a device.
+
 - The shared target fixture gains the operations an attached-app suite
   needed beyond tap and fill, so projects no longer have to bridge into the
   runner-owned Appium session themselves (#209). Portable on web and

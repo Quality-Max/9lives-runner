@@ -511,6 +511,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.TargetAssertions = validation.TargetAssertions
 				receipt.AndroidRuntimes = validation.AndroidRuntimes
 				receipt.TargetSetup = validation.TargetSetup
+				receipt.TargetDiagnostics = validation.TargetDiagnostics
 				receipt.AssertionCoverage = validation.AssertionCoverage
 				receipt.ReportedAssertions = validation.ReportedAssertions
 				receipt.PassedWithoutAssertions = validation.PassedWithoutAssertions

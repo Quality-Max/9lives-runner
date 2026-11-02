@@ -3,7 +3,7 @@ import {closeSync, openSync, writeSync} from 'node:fs';
 import type {Reporter, FullConfig, Suite, TestCase, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validAndroidRuntime, androidRuntimeType} from './android-runtime';
-import {validTargetSetup, targetSetupType} from './target-setup';
+import {validTargetSetup, targetSetupType, validTargetDiagnostic, targetDiagnosticType} from './target-setup';
 
 function insideAssertion(step: TestStep) {
   for (let ancestor = step.parent; ancestor; ancestor = ancestor.parent) {
@@ -82,8 +82,16 @@ export default class EngineReporter implements Reporter {
     // before the test ran (a recovered baseline) and one from a recheck.
     const setups = result.attachments.filter(attachment => attachment.name === '9l.target-setup');
     const stages = setups.map(attachment => { try { return JSON.parse(attachment.body?.toString('utf8') ?? '')?.stage; } catch { return undefined; } });
-    if (setups.length > 2 || (setups.length === 2 && !(stages[0] === 'open' && stages[1] === 'recheck'))) { this.emit('engine_error'); return; }
+    if (result.attachments.filter(attachment => attachment.name === '9l.target-diagnostic').length > 1 || setups.length > 2 || (setups.length === 2 && !(stages[0] === 'open' && stages[1] === 'recheck'))) { this.emit('engine_error'); return; }
     for (const attachment of result.attachments) {
+      if (attachment.name === '9l.target-diagnostic') {
+        if (!this.target || this.target.kind === 'web' || attachment.contentType !== targetDiagnosticType || !attachment.body || attachment.body.length > 1024) { this.emit('engine_error'); return; }
+        let diagnostic: unknown;
+        try { diagnostic = JSON.parse(attachment.body.toString('utf8')); } catch { this.emit('engine_error'); return; }
+        if (!validTargetDiagnostic(diagnostic)) { this.emit('engine_error'); return; }
+        this.emit('target_diagnostic', {testId: this.testId(test), retry: result.retry, diagnostic});
+        continue;
+      }
       if (attachment.name === '9l.target-setup') {
         if (!this.target || this.target.kind === 'web' || attachment.contentType !== targetSetupType || !attachment.body || attachment.body.length > 512) { this.emit('engine_error'); return; }
         let setup: unknown;

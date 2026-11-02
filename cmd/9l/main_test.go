@@ -441,3 +441,23 @@ func TestPrintResultExplainsTargetSetupClassifications(t *testing.T) {
 		t.Fatalf("unexpected unknown summary: %s", got)
 	}
 }
+
+func TestPrintResultExplainsObserverClassificationAndDiagnostics(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/picker.spec.ts", ExecutedTests: 1, FailureCount: 1,
+		TargetSetup:       []runner.TargetSetup{{TestID: "a", Classification: runner.SetupObserver, Reason: "window-gone-element-displayed", Stage: runner.SetupStageRecheck}},
+		TargetDiagnostics: []runner.TargetDiagnostic{{TestID: "a", Operation: "assert-hidden", Reason: "assertion_failed", ElapsedMS: 10012, X: 390, Y: 790, Point: true, ViewportWidth: 1080, ViewportHeight: 2340, WindowsBefore: 2, WindowsAfter: 1, FocusBefore: "app", FocusAfter: "app"}},
+	}}})
+	for _, want := range []string{
+		"           setup observer: window-gone-element-displayed (rechecked after a failed assertion); the accessibility snapshot disagreed with the window manager, an observer staleness rather than an application or gesture failure\n",
+		"           diagnostic assert-hidden: assertion_failed after 10012 ms; requested point (390, 790) in a 1080x2340 viewport; app windows at the last mutation 2 (focus app), after the failure 1 (focus app)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in:\n%s", want, out.String())
+		}
+	}
+	if got := diagnosticSummary(runner.TargetDiagnostic{Operation: "tap-at", Reason: "deadline", ElapsedMS: 5000, WindowsBefore: -1, WindowsAfter: -1}); got != "diagnostic tap-at: deadline after 5000 ms; app windows at the last mutation not observed, after the failure not observed" {
+		t.Fatalf("unexpected minimal summary: %s", got)
+	}
+}

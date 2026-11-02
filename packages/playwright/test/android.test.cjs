@@ -187,7 +187,7 @@ test('attached phone classifies a locked device and leaked state as setup, never
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) { if (failReads) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = device.state; }
-      else if (script.includes('dumpsys window windows')) { if (failWindows) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = device.windows; }
+      else if (script.includes('dumpsys window windows')) { if (failWindows) { queueMicrotask(() => callback(new Error('device offline'))); return new EventEmitter(); } result = `${device.windows}\n9l-windows-end`; }
       else if (script.includes('dumpsys input_method')) result = device.ime;
       else if (script.includes('pm path io.appium.settings')) result = 'absent';
       else if (script.includes('echo present')) result = 'absent';
@@ -352,7 +352,7 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
-      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
       else if (script.includes('dumpsys input_method')) result = ime;
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
@@ -425,6 +425,143 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
     assert(!requests.some(r => r.path.includes('/appium/device/') || r.path.includes('reset')), 'no reset, clear or device endpoints');
   } finally {
     await driver?.close();
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});
+
+// Opt-in diagnostics read the app's windows before each gesture and after a
+// failure, and classify a hidden assertion the window manager contradicts.
+test('attached phone diagnostics are metadata only and classify observer staleness', async () => {
+  const cp = require('node:child_process');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {randomUUID} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-diag-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const activity = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
+  const dialog = '  Window #2 Window{7a8b9c u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:';
+  const focus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+  let windows = [activity, dialog, focus].join('\n'), windowReads = 0, truncated = false;
+  const serial = `test-${randomUUID()}`;
+  let driver, plain;
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      const command = args.slice(2);
+      const script = command[1] === 'sh' ? command[3] : '';
+      let result = '';
+      if (command[0] === 'get-state') result = 'device';
+      else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
+      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
+      else if (script.includes('dumpsys window windows')) { windowReads++; result = truncated ? windows : `${windows}\n9l-windows-end`; }
+      else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
+      else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
+      else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
+      else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
+      queueMicrotask(() => callback(null, result));
+      return new EventEmitter();
+    };
+    cp.spawn = () => {
+      const child = new EventEmitter(); child.pid = 123; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      return child;
+    };
+    global.fetch = async input => {
+      const url = String(input);
+      let value = null;
+      if (url.endsWith('/status')) value = {ready: true};
+      else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
+      else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
+      else if (url.endsWith('/window/rect')) value = {x: 0, y: 0, width: 1080, height: 2340};
+      else if (url.endsWith('/rect')) value = {x: 0, y: 0, width: 200, height: 80};
+      else if (url.endsWith('/displayed')) value = true;
+      else if (url.endsWith('/text')) value = '7';
+      return new Response(JSON.stringify({value}), {status: 200});
+    };
+    const {androidTargetDriver} = require('../dist/android');
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity', baseline: {windows: 2}};
+    assert.throws(() => androidTargetDriver({...base, diagnostics: {screenshots: true}}), /invalid_configuration/);
+    driver = androidTargetDriver({...base, diagnostics: {gestures: true}});
+    await driver.open(context());
+    const afterOpen = windowReads;
+    // The dialog is open (2 windows) when the outside touch is sent; the
+    // window manager then drops it while the snapshot still shows the element.
+    await driver.tapAt({x: 1000, y: 2300}, context());
+    assert.equal(windowReads, afterOpen + 1, 'one window read before the gesture');
+    windows = [activity, focus].join('\n');
+    assert.deepEqual(await driver.recheck(context(), {operation: 'assert-hidden'}), {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'});
+    assert.equal(await driver.recheck(context(), {operation: 'assert-visible'}), undefined, 'only a hidden assertion can be stale this way');
+    const record = await driver.diagnose({operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 10000}, context());
+    // The hidden assertion's record keeps the touch it follows.
+    assert.deepEqual(record, {operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 10000, x: 1000, y: 2300, point: true, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
+    const tap = await driver.diagnose({operation: 'tap-at', reason: 'deadline', elapsedMs: 5000, point: {x: 1000, y: 2300}}, context());
+    assert.deepEqual([tap.x, tap.y, tap.point], [1000, 2300, true]);
+    assert(!JSON.stringify(record).includes('MainActivity') && !JSON.stringify(record).includes('Window{'), 'no window titles or hierarchy');
+    // The dialog still open: a real failure, not observer staleness.
+    windows = [activity, dialog, focus].join('\n');
+    await driver.tapAt({x: 1000, y: 2300}, context());
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    // A dump cut at its byte bound is unobserved: windows pushed past the cap
+    // never look like a window that disappeared.
+    windows = [activity, focus].join('\n');
+    truncated = true;
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    assert.equal((await driver.diagnose({operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 1}, context())).windowsAfter, -1);
+    truncated = false;
+    // An unavailable dump after the gesture is unobserved, never zero windows.
+    windows = '';
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    assert.equal((await driver.diagnose({operation: 'assert-hidden', reason: 'assertion_failed', elapsedMs: 1}, context())).windowsAfter, -1);
+    // Another operation between the gesture and the hidden assertion disarms the heuristic.
+    windows = [activity, dialog, focus].join('\n');
+    await driver.tapAt({x: 1000, y: 2300}, context());
+    const [field] = await driver.observeTestId('amount', context());
+    await field.text(context());
+    windows = [activity, focus].join('\n');
+    assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    // Disarming keeps the pre-gesture observation as diagnostic metadata.
+    assert.deepEqual(await driver.diagnose({operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1}, context()),
+      {operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1, x: 1000, y: 2300, point: true, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
+    // So do keyboard, geometry and viewport reads.
+    for (const between of [c => driver.keyboardShown(c), c => field.bounds(c), c => driver.viewport(c)]) {
+      windows = [activity, dialog, focus].join('\n');
+      await driver.tapAt({x: 1000, y: 2300}, context());
+      await between(context());
+      windows = [activity, focus].join('\n');
+      assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    }
+    // A visibility read alone keeps the dismissal sequence armed.
+    windows = [activity, dialog, focus].join('\n');
+    await driver.tapAt({x: 1000, y: 2300}, context());
+    await field.visible(context());
+    windows = [activity, focus].join('\n');
+    assert.equal((await driver.recheck(context(), {operation: 'assert-hidden'}))?.classification, 'observer');
+    await driver.close();
+    assert.equal((await driver.diagnose({operation: 'tap', reason: 'deadline', elapsedMs: 1}, context())).windowsAfter, -1, 'a closed driver answers with what it knows');
+    // Without the opt-in, nothing is read or recorded.
+    windowReads = 0;
+    plain = androidTargetDriver(base);
+    await plain.open(context());
+    const reads = windowReads;
+    await plain.tapAt({x: 1, y: 1}, context());
+    assert.equal(windowReads, reads);
+    assert.equal(await plain.diagnose({operation: 'tap-at', reason: 'deadline', elapsedMs: 1}, context()), undefined);
+    windows = [activity, focus].join('\n');
+    assert.equal(await plain.recheck(context(), {operation: 'assert-hidden'}), undefined);
+  } finally {
+    await driver?.close(); await plain?.close();
     cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
     if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
     if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;

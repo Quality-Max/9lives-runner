@@ -1088,6 +1088,9 @@ func printResult(w io.Writer, result runner.RunSummary) {
 		for _, setup := range receipt.TargetSetup {
 			fmt.Fprintf(w, "           %s\n", setupSummary(setup))
 		}
+		for _, diagnostic := range receipt.TargetDiagnostics {
+			fmt.Fprintf(w, "           %s\n", diagnosticSummary(diagnostic))
+		}
 		if len(receipt.Failures) == runner.MaxReportedFailures && receipt.FailureCount > len(receipt.Failures) {
 			fmt.Fprintf(w, "           … %d more failed test(s) in the structured report\n", receipt.FailureCount-len(receipt.Failures))
 		}
@@ -1277,6 +1280,29 @@ func setupSummary(setup runner.TargetSetup) string {
 		return text + fmt.Sprintf("; %s recovery did not restore the baseline after %d press(es); inconclusive, not an application failure", setup.Recovery.Method, setup.Recovery.Presses)
 	case setup.Classification == runner.SetupUnknown:
 		return text + "; the device state could not be determined, so the failure is inconclusive"
+	case setup.Classification == runner.SetupObserver:
+		return text + "; the accessibility snapshot disagreed with the window manager, an observer staleness rather than an application or gesture failure"
 	}
 	return text + "; inconclusive, not an application failure"
+}
+
+// diagnosticSummary prints an opt-in failure diagnostic as metadata only.
+func diagnosticSummary(d runner.TargetDiagnostic) string {
+	text := fmt.Sprintf("diagnostic %s: %s after %d ms", d.Operation, d.Reason, d.ElapsedMS)
+	if d.Point {
+		text += fmt.Sprintf("; requested point (%d, %d)", d.X, d.Y)
+	}
+	if d.ViewportWidth != 0 {
+		text += fmt.Sprintf(" in a %dx%d viewport", d.ViewportWidth, d.ViewportHeight)
+	}
+	windows := func(count int, focus string) string {
+		if count < 0 {
+			return "not observed"
+		}
+		if focus == "" {
+			return fmt.Sprintf("%d", count)
+		}
+		return fmt.Sprintf("%d (focus %s)", count, focus)
+	}
+	return text + fmt.Sprintf("; app windows at the last mutation %s, after the failure %s", windows(d.WindowsBefore, d.FocusBefore), windows(d.WindowsAfter, d.FocusAfter))
 }

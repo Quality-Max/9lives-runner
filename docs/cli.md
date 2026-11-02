@@ -110,8 +110,10 @@
   state it could not read records `targetSetup` in the receipt; `9l run`
   and `9l result` print `setup blocked: device-locked (...)` lines under the
   job, and with `--failure-details` the failure's class is `setup`. Such a
-  failure is inconclusive, not an application defect. See
-  [Android](android-driver.md).
+  failure is inconclusive, not an application defect. With the driver's
+  opt-in diagnostics, a failed operation also records `targetDiagnostics`
+  (timing, requested point, viewport, window counts), printed as
+  `diagnostic <operation>: ...`. See [Android](android-driver.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`
