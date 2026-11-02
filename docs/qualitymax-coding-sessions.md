@@ -1,12 +1,11 @@
 # QualityMax coding sessions
 
-QualityMax runs coding agents (Claude Code or Codex) in cloud sandboxes for
-its mobile app and web. A session can connect two MCP servers: the hosted
-QualityMax server and a local `9l mcp`. After every turn QualityMax reads the
-9lives receipts back and reports them next to the QualityMax calls its server
-recorded for that session. This page describes what QualityMax expects from
-9lives. The platform side is `services/coding_agent/ninelives_tools.py` and
-`provenance.py` in the QualityMax backend.
+QualityMax can run coding agents (Claude Code or Codex) in hosted cloud
+sandboxes. Such a session can connect two MCP servers: the hosted QualityMax
+server and a local `9l mcp`. After every turn QualityMax reads the 9lives
+receipts back and reports them next to the QualityMax calls its server
+recorded for that session. This page describes what that integration expects
+from 9lives, so changes here keep it working.
 
 ## How QualityMax runs 9lives
 

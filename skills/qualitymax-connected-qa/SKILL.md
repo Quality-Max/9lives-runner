@@ -46,8 +46,7 @@ test fixture and side effects before execution.
 
 ## Inside a QualityMax coding session
 
-A QualityMax coding session (started from the QualityMax mobile app or web)
-can connect both servers in one sandbox: the hosted server (`qmax` in Claude
+A QualityMax-hosted coding session can connect both servers in one sandbox: the hosted server (`qmax` in Claude
 Code, `qualitymax` in Codex) and a pinned, offline `ninelives` server
 running `9l mcp` in the workspace. QualityMax reads the 9lives receipts back
 after every turn and reports them beside the calls its own server recorded

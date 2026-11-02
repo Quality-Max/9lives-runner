@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// QualityMax coding sessions read receipt.json back from the sandbox to build
-// their per-turn provenance ledger (qamax-rag-app
-// services/coding_agent/ninelives_tools.py). That reader accepts a receipt only
+// QualityMax-hosted coding sessions read receipt.json back from the sandbox to
+// build their per-turn provenance ledger (docs/qualitymax-coding-sessions.md).
+// That reader accepts a receipt only
 // at <receipt-dir>/<runId>/<jobId>/<attemptId>/receipt.json with matching
 // identity fields, and rejects anything it cannot type-check, so a rename here
 // would silently turn every hosted pass into a rejected receipt. This test pins
