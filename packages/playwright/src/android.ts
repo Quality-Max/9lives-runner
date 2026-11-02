@@ -188,7 +188,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // Explicit environment allowlist: no application/provider credentials reach
   // Appium, adb or the emulator. Go --pass-env remains necessary for test data.
   const env: NodeJS.ProcessEnv = {};
-  for (const key of ['PATH', 'HOME', 'TMPDIR', 'JAVA_HOME', 'SYSTEMROOT']) if (process.env[key]) env[key] = process.env[key];
+  // The AVD and user-config locations are paths, not credentials: without
+  // them an emulator whose AVDs live outside ~/.android/avd is not found.
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'JAVA_HOME', 'SYSTEMROOT', 'ANDROID_AVD_HOME', 'ANDROID_USER_HOME', 'ANDROID_EMULATOR_HOME']) if (process.env[key]) env[key] = process.env[key];
   env.ANDROID_HOME = sdk; env.ANDROID_SDK_ROOT = sdk;
   let emulator: ChildProcess | undefined, server: ChildProcess | undefined;
   let directory: string | undefined, serial = '', base = '', session = '';

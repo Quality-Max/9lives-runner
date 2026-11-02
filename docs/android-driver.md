@@ -40,7 +40,9 @@ This checkout currently requires Node 22.12+, Java, Android SDK platform 35,
 build-tools 35.0.0, platform-tools and an existing ARM64 or x86-64 API 35 AVD.
 The adapter does not download an image or change the AVD configuration. Set
 `ANDROID_HOME`, `JAVA_HOME` and `NINELIVES_ANDROID_AVD` to local paths/name as
-needed. The local defaults match this development Mac; they are not a portable
+needed. AVDs outside `~/.android/avd` are found through `ANDROID_AVD_HOME` (or
+`ANDROID_USER_HOME`/`ANDROID_EMULATOR_HOME`), which the driver forwards to the
+emulator; pass it to tests with `--pass-env ANDROID_AVD_HOME`. The local defaults match this development Mac; they are not a portable
 SDK discovery mechanism.
 
 ```sh
