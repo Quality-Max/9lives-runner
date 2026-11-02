@@ -48,7 +48,9 @@ export function parseDisplays(text: string): DisplayInfo[] {
     const size = /(?:^|[\s,])([0-9]{2,5}) x ([0-9]{2,5})(?:[\s,]|$)/.exec(body);
     const density = /density ([0-9]{2,4})(?:[\s,]|$)/.exec(body)?.[1];
     const state = /state (ON|OFF|DOZE|UNKNOWN|VR)(?:[\s,}]|$)/.exec(body)?.[1];
-    if (!id || !size || !density) continue;
+    // A device's cached `mInfo=DisplayDeviceInfo` repeats its top-level
+    // record; the first record per physical id stands.
+    if (!id || !size || !density || displays.some(display => display.id === id)) continue;
     displays.push({id, width: Number(size[1]), height: Number(size[2]), density: Number(density), on: state === 'ON'});
   }
   return displays;

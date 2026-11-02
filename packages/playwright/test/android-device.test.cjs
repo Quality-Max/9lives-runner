@@ -65,6 +65,10 @@ test('physical displays are read with id, size, density and power state; the act
   assert.equal(activeDisplay(parseDisplays(cover)).id, '4619827259835644673', 'a single display is the target whatever its state');
   assert.deepEqual(parseDisplays('DisplayDeviceInfo{"Overlay #1": uniqueId="overlay:1", 1080 x 1920, density 320, state ON}'), [], 'only local displays');
   assert.deepEqual(parseDisplays(''), []);
+  // A device's cached mInfo= record repeats its top-level one: one display, still choosable.
+  const repeated = parseDisplays([inner, cover, `      mInfo=${inner}`].join('\n'));
+  assert.equal(repeated.length, 2);
+  assert.equal(activeDisplay(repeated).id, '4619827259835644672');
 });
 
 test('fold posture comes from the committed device state only', () => {

@@ -229,8 +229,12 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   // its physical metrics otherwise. Read before any session can launch the
   // app, so a mismatch changes nothing.
   let display: DisplayInfo | undefined, posture: Posture = 'unknown';
+  // A dump cut at its byte bound may have lost a display, so it names none:
+  // only output ending in the completion marker is discovery data.
+  const displaysEnd = '9l-displays-end';
   const readDisplays = async (c: TargetContext) => {
-    const dump = await adbRun(shell(`dumpsys display 2>/dev/null | grep -E "${displayPattern}" | head -c 32768`), c);
+    const output = await adbRun(shell(`{ dumpsys display 2>/dev/null | grep -E "${displayPattern}"; echo ${displaysEnd}; } | head -c 32768`), c);
+    const dump = output.endsWith(displaysEnd) ? output.slice(0, -displaysEnd.length) : '';
     display = activeDisplay(parseDisplays(dump));
     const logical = display && parseLogicalDisplays(dump).get(display.id);
     if (display && logical) display = {...display, ...logical};
@@ -239,8 +243,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (requires?.minWidthDp !== undefined && (!display || Math.floor(display.width * 160 / display.density) < requires.minWidthDp)) throw new TargetSetupError({classification: 'mismatch', reason: 'display-width', stage: 'open'});
   };
   // The PNG stays in memory and leaves only as a digest.
+  // Closing the driver cancels a pending capture, as it does a request.
   const screenDigest = (c: TargetContext) => new Promise<string>((yes, no) => execFile(adb, ['-s', serial, 'exec-out', 'screencap', '-p', ...(display ? ['-d', display.id] : [])], {
-    signal: c.signal, timeout: timeout(c), maxBuffer: 64 * 1024 * 1024, env, encoding: 'buffer',
+    signal: AbortSignal.any([c.signal, controller.signal]), timeout: timeout(c), maxBuffer: 64 * 1024 * 1024, env, encoding: 'buffer',
   }, (error, stdout) => {
     if (error || !Buffer.isBuffer(stdout) || stdout.length < 8 || stdout.subarray(0, 8).toString('latin1') !== '\x89PNG\r\n\x1a\n') return no(failure('screenshot_failed'));
     yes(createHash('sha256').update(stdout).digest('hex'));

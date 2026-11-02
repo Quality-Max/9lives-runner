@@ -587,7 +587,7 @@ test('attached phone records its active display and posture, checks declared req
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
   const inner = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644672", 1812 x 2176, density 374, state ON}';
   const cover = 'DisplayDeviceInfo{"Built-in Screen": uniqueId="local:4619827259835644673", 904 x 2316, density 420, state OFF}';
-  const device = {displays: [inner, cover].join('\n'), posture: "  Committed state: DeviceState{identifier=2, name='OPENED'}"};
+  const device = {displays: [inner, cover].join('\n'), posture: "  Committed state: DeviceState{identifier=2, name='OPENED'}", truncated: false, holdCapture: false};
   const png = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.from('synthetic image bytes')]);
   const screencaps = [];
   let sessions = 0;
@@ -604,14 +604,20 @@ test('attached phone records its active display and posture, checks declared req
       const command = args.slice(2);
       const script = command[1] === 'sh' ? command[3] : '';
       let result = '';
-      if (command[0] === 'exec-out') { screencaps.push(command); queueMicrotask(() => callback(null, png)); return new EventEmitter(); }
+      if (command[0] === 'exec-out') {
+        screencaps.push(command);
+        // A held capture answers only when its signal aborts it.
+        if (device.holdCapture) options.signal.addEventListener('abort', () => callback(new Error('aborted')), {once: true});
+        else queueMicrotask(() => callback(null, png));
+        return new EventEmitter();
+      }
       if (command[0] === 'get-state') result = 'device';
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
-      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
       else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
-      else if (script.includes('dumpsys display')) result = device.displays;
+      else if (script.includes('dumpsys display')) result = device.truncated ? device.displays : `${device.displays}\n9l-displays-end`;
       else if (script.includes('dumpsys device_state')) result = device.posture;
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
@@ -682,6 +688,19 @@ test('attached phone records its active display and posture, checks declared req
     assert.deepEqual(screencaps.at(-1), ['exec-out', 'screencap', '-p']);
     await driver.close();
     await open({requires: {minWidthDp: 1}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    // A dump cut at its byte bound names no display, even when what survived
+    // holds a single wide one: the powered cover display may be what was cut.
+    device.displays = inner.replace('state ON', 'state OFF'); device.truncated = true;
+    await open({requires: {minWidthDp: 640}}, {classification: 'mismatch', reason: 'display-width', stage: 'open'});
+    driver = await open({});
+    assert.equal(driver.runtime().display, 'unknown');
+    // Closing the driver cancels a capture still in flight.
+    device.truncated = false; device.holdCapture = true;
+    const pending = driver.screenDigest(context());
+    pending.catch(() => {});
+    await driver.close();
+    await assert.rejects(Promise.race([pending, new Promise(resolve => setTimeout(resolve, 1000, 'still pending'))]), /screenshot_failed/);
+    device.holdCapture = false;
     for (const requires of [{}, {posture: 'OPENED'}, {minWidthDp: 0}, {minWidthDp: 1.5}, {width: 640}]) {
       assert.throws(() => androidTargetDriver({...base, requires}), /invalid_configuration/);
     }
