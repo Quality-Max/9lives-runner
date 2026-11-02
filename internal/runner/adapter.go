@@ -108,7 +108,12 @@ type Validation struct {
 	// signals that Playwright's own verdict hides; neither changes it.
 	RuntimeExpectedFailures int
 	SkippedAfterAssertions  int
-	Description             string
+	// FailedTests describes, from the structured evidence alone, up to
+	// MaxFailureSummaryTests of the FailureCount failed tests for the
+	// receipt's failure summary. Adapters without such evidence leave it
+	// nil and the summary uses the report's failures instead.
+	FailedTests []FailedTestSummary
+	Description string
 }
 
 // AttemptValidator binds structured worker evidence to the attempt that owns it.

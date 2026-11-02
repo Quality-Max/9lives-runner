@@ -87,6 +87,12 @@ findings and 2 when any input could not be assessed.
   inputs or fewer receipts than planned jobs is incomplete.
 - Results written by CLI 0.1.1 or earlier have no `version`; `9l result`
   fills in version 1 fields from the persisted plan and receipts.
+- Each receipt that did not pass carries `failureSummary`: a `stop` token
+  for why the attempt ended, the `failedTests` count and up to 20 metadata
+  entries (class, status, failed step, target operation and stop reason,
+  setup classification, hashed test ID). It never holds titles or error
+  text and is present without `--failure-details`; receipts written before
+  it have none. See [cli.md](cli.md).
 
 ## Schemas and versioning
 

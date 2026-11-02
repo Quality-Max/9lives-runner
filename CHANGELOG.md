@@ -6,6 +6,43 @@ SDK versions.
 
 ## Unreleased
 
+### Receipts
+
+- Every receipt that did not pass now keeps a bounded, metadata-only
+  `failureSummary`, with or without `--failure-details` (#213), so the
+  reason for an earlier failed attempt is not lost when the project's own
+  output is overwritten. `stop` names why the attempt ended
+  (`test_failed`, `goal_failed`, `deadline`, `canceled`,
+  `invalid_evidence`, `evidence_truncated`, `exit_without_failure`,
+  `provenance_changed`, `not_started` or `infrastructure`), `failedTests`
+  counts the failed tests in validated evidence, and `tests` describes up to
+  20 of them (`testsTruncated` when more failed): with `--sdk`, the engine's
+  SHA-256 test ID (the one `targetSetup` and `targetDiagnostics` use), the
+  failure `class`, the `status` of the last completed Playwright attempt,
+  the category of the failed `step` it is attributed to (the first failed
+  target operation, else assertion, else step), the target `operation` and
+  its stop `reason`, an unrecovered `setup` classification, and
+  `failedSteps` and `attempts` counts. The class comes from structured
+  facts only: a target stop reason `assertion_failed` or a failed `expect`
+  is `assertion`, `deadline` is `action-timeout`, a `setup_*` reason or an
+  unrecovered setup record is `setup`, a timed-out test is `timeout`. For
+  plain Playwright runs the entries keep only the class and status of the
+  report's failures. The summary never holds titles, locations, error
+  messages, stack frames, page or app text, URLs, selector values,
+  environment values or credentials; Go validates it as a closed record
+  and drops any entry outside it, keeping the count. `9l run` and
+  `9l result` print the entries under a failed job when no detailed
+  failures are listed. To carry the reason, a failed typed target step's
+  `step_end` frame gains an optional `reason` token (`[a-z_]{1,64}`, from
+  the fixture's own `9lives target stopped: <reason>`); no other error text
+  crosses the bridge. Go still accepts frames without it, but an older CLI
+  rejects a stream that carries it, so update the CLI and `@9l/playwright`
+  together. The receipt field is additive and ships with the receipt
+  version change of the next beta; the published schemas are regenerated.
+  The spec location of an SDK failure is not in the summary: the engine
+  stream carries no locations, and `--failure-details` still adds titles,
+  lines and errors.
+
 ### Provenance
 
 - Imported local helpers are part of agent provenance (#215). `9l
