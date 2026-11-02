@@ -34,7 +34,7 @@ assert.equal(creation.status,0);
 const provenance = path.join(work,'creation.json'); fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
 // Device identifiers stay in memory. Persist only preservation/cleanup facts.
 function emulatorSet() {
-  const sdk=process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools';
+  const sdk=require('../packages/playwright/dist/android-env').androidDefaults().sdkRoot;assert(sdk,'No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');
   const r=sync(path.join(sdk,'platform-tools/adb'),['devices']);assert.equal(r.status,0);
   return r.stdout.split('\n').map(line=>/^(emulator-[0-9]+)\s+device$/.exec(line)?.[1]).filter(Boolean).sort().join(',');
 }
@@ -55,7 +55,7 @@ for (const mode of modes) {
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
     '--grep',operationModes.includes(mode)?'native operations':'native transfer',
     '--timeout','4m','--deadline','5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
-    '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,JAVA_HOME'],
+    '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
     {env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
   fs.writeFileSync(path.join(work, `${mode}.json`),r.stdout,{mode:0o600});
   const run = JSON.parse(r.stdout), receipt=run.receipts[0];

@@ -114,6 +114,30 @@ SDK versions.
     would still finish in time;
   - `terminate()` failed on a slow emulator because the driver's 500 ms
     process-exit check expired; it now waits up to 5 s within the operation.
+- Android setup outside this repository. `9l doctor --android` checks Java
+  (17 or newer, from `JAVA_HOME` or `PATH`), the SDK root, `adb` (with its
+  version), the emulator, `build-tools/35.0.0` `aapt2` and `apksigner`, the
+  AVD names, the number of attached emulators and physical devices by state,
+  and the pinned Appium 3.8.0 and UiAutomator2 8.7.0 packages, each with a
+  fix command; a missing prerequisite exits 2 like any other. It runs only
+  `java -version`, `adb version` and `emulator -list-avds`, counts devices
+  through an adb server that is already running (it never starts one), and
+  prints no serials, and paths only with `--paths`. `androidTargetDriver`'s
+  `sdkRoot` and `toolsRoot` and `installInPlace`'s `sdkRoot` become optional:
+  omitted, they come from the new `androidDefaults()` in
+  `@9l/playwright/android`, which doctor runs too: `ANDROID_HOME`, then
+  `ANDROID_SDK_ROOT`, then the Homebrew command-line tools location
+  (`HOMEBREW_PREFIX`, `/opt/homebrew`, `/usr/local`) and the Android Studio
+  default, and for tooling `NINELIVES_ANDROID_TOOLS`, else
+  `~/.9l/android-tools`. Explicit options still win and nothing is
+  downloaded. The pinned tooling installs with `npm install --prefix
+  ~/.9l/android-tools --save-exact --ignore-scripts appium@3.8.0
+  appium-uiautomator2-driver@8.7.0`. A spec that imports
+  `@9l/playwright/android` gets a `spec/android` hint under `doctor --sdk`.
+  The qualification scripts use the same discovery instead of a fixed
+  `/usr/local` SDK path, and the fixture build requires `JAVA_HOME`. Doctor
+  is tested against fake SDK trees; the discovery has not been tried on
+  Linux or Windows hosts.
 
 - Installed-app identity (#217). The Android runtime receipt gains
   `versionCode`, `versionName` (from the device's package manager) and

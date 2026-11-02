@@ -34,16 +34,76 @@ References: [Callstack commands](https://oss.callstack.com/agent-device/docs/com
 [Callstack snapshots](https://oss.callstack.com/agent-device/docs/snapshots),
 [UiAutomator2 capabilities](https://appium.github.io/appium-uiautomator2-driver/latest/reference/capabilities/).
 
+## Set up a host
+
+The adapter needs Node 22.12+, Java 17+, the Android SDK's platform-tools and
+build-tools 35.0.0, and, for owned-emulator runs, the emulator and an existing
+ARM64 or x86-64 API 35 AVD. Appium 3.8.0 and UiAutomator2 8.7.0 are installed
+separately from `@9l/playwright`, which never depends on them. Neither the
+adapter nor doctor downloads an image, installs a package or changes an AVD.
+
+Install the pinned tooling once, into a directory of your choice:
+
+```sh
+npm install --prefix ~/.9l/android-tools --save-exact --ignore-scripts \
+  appium@3.8.0 appium-uiautomator2-driver@8.7.0
+```
+
+`~/.9l/android-tools` is the default location; for another one, set
+`NINELIVES_ANDROID_TOOLS` to it or pass `toolsRoot`. The driver rejects any
+other Appium or UiAutomator2 version at open. To use this repository's
+lockfile instead, run `npm ci --prefix tools/android --ignore-scripts` in a
+checkout and point `NINELIVES_ANDROID_TOOLS` at `tools/android`.
+
+Then check the host from the project directory:
+
+```sh
+9l doctor --android
+```
+
+Doctor reports, each with a fix command, Java (major release from `JAVA_HOME`,
+else `java` on `PATH`), the SDK root and how it was found, `adb` and its
+version, the emulator, `aapt2` and `apksigner` in `build-tools/35.0.0`, the
+AVD names `emulator -list-avds` prints, how many emulators and physical
+devices are attached and ready (and how many are unauthorized or offline),
+and the Appium and UiAutomator2 versions in the tooling directory. Java, the
+SDK, `adb`, build-tools and the pinned tooling are required: one missing
+makes the report not ready and doctor exits 2. A missing emulator or AVD is
+a warning, since attached devices need neither. Doctor runs only
+`java -version`, `adb version` and `emulator -list-avds`. It counts devices
+by asking an adb server that is already listening on loopback for its list,
+never starts one, and keeps serials in memory; they are never printed or
+stored. Paths appear only with `--paths`. It does not boot an emulator,
+start Appium or open a session; those stay unverified.
+
+When `sdkRoot` or `toolsRoot` is omitted, the driver and `installInPlace`
+use `androidDefaults()` from `@9l/playwright/android`, the discovery doctor
+reports: `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the first existing
+directory among the Homebrew command-line tools
+(`$HOMEBREW_PREFIX/share/android-commandlinetools`, then under `/opt/homebrew`,
+`/usr/local` and `/home/linuxbrew/.linuxbrew`; `brew` itself is not run) and
+Android Studio's default (`~/Library/Android/sdk` on macOS, `~/Android/Sdk`
+on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows). A variable that is set is
+used as given, so a wrong value is reported instead of silently replaced.
+Tooling comes from `NINELIVES_ANDROID_TOOLS`, else `~/.9l/android-tools`.
+Explicit options win. `9l run` passes only a fixed environment to tests, so
+forward the variables you rely on, such as
+`--pass-env ANDROID_HOME,JAVA_HOME,NINELIVES_ANDROID_TOOLS`; an SDK found
+through `ANDROID_SDK_ROOT` or a custom `HOMEBREW_PREFIX` needs that variable
+forwarded too. Locations under the home directory and the fixed prefixes need
+no variable. `android/sdk` in `9l doctor --android` says whether a test
+without `sdkRoot` would find the same root, and otherwise which variable to
+forward.
+
 ## Run the opt-in qualification
 
-This checkout currently requires Node 22.12+, Java, Android SDK platform 35,
-build-tools 35.0.0, platform-tools and an existing ARM64 or x86-64 API 35 AVD.
-The adapter does not download an image or change the AVD configuration. Set
-`ANDROID_HOME`, `JAVA_HOME` and `NINELIVES_ANDROID_AVD` to local paths/name as
-needed. AVDs outside `~/.android/avd` are found through `ANDROID_AVD_HOME` (or
+The qualification additionally needs SDK platform 35 to build its synthetic
+APK, and `JAVA_HOME` set to a JDK for that build. Set `NINELIVES_ANDROID_AVD`
+to the AVD name if it is not `QualityMax_API_35`. The scripts find the SDK
+with the same discovery as the driver.
+AVDs outside `~/.android/avd` are found through `ANDROID_AVD_HOME` (or
 `ANDROID_USER_HOME`/`ANDROID_EMULATOR_HOME`), which the driver forwards to the
-emulator; pass it to tests with `--pass-env ANDROID_AVD_HOME`. The local defaults match this development Mac; they are not a portable
-SDK discovery mechanism.
+emulator; pass it to tests with `--pass-env ANDROID_AVD_HOME`.
 
 ```sh
 npm ci
@@ -77,7 +137,7 @@ import {androidTargetDriver} from '@9l/playwright/android';
 const test = createTargetTest({
   native: target => androidTargetDriver({
     appId: target.appId,
-    sdkRoot, toolsRoot, avd,
+    avd, // sdkRoot and toolsRoot default to androidDefaults()
     apk, apkSHA256, appPackage, activity,
   }),
 });
@@ -184,7 +244,7 @@ For apps without resource IDs, provide finite aliases through `controls`:
 
 ```ts
 androidTargetDriver({
-  appId, sdkRoot, toolsRoot, deviceSerial, apkSHA256, appPackage, activity,
+  appId, deviceSerial, apkSHA256, appPackage, activity,
   controls: {
     overview: {accessibilityIdSuffix: ', Overview', className: 'android.view.View'},
     heading: {text: 'Overview', className: 'android.widget.TextView', selected: false},

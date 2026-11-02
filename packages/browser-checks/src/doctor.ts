@@ -186,7 +186,7 @@ function importCheck(name: string, code: string, bindings: Binding[], providers:
 // config that will select the spec. Everything is read as text; neither the
 // spec nor any config is executed, and messages name only basenames unless
 // the CLI asked for paths.
-export function specChecks(spec: string, paths = false): Diagnostic[] {
+export function specChecks(spec: string, paths = false, android = false): Diagnostic[] {
   const checks: Diagnostic[] = [];
   const name = path.basename(spec);
   const source = readBounded(spec, specLimit);
@@ -204,6 +204,11 @@ export function specChecks(spec: string, paths = false): Diagnostic[] {
     checks.push(fixtures.has('page') || fixtures.has('context')
       ? { name: 'spec/fixtures', status: 'ok', message: `${name} takes the page or context fixture in a test or hook callback.` }
       : { name: 'spec/fixtures', status: 'warning', message: `${name}: no destructured page or context parameter found in a test or hook callback; prove faults reach only fetch and XHR made through those fixtures.` });
+    // A spec that constructs the Android driver needs the Android host
+    // prerequisites too; doctor checks them only when asked.
+    if (!android && bindings.some(binding => binding.module === `${sdkModule}/android`)) {
+      checks.push({ name: 'spec/android', status: 'warning', message: `${name} imports @9l/playwright/android; the Android prerequisites were not checked.`, fix: '9l doctor --android' });
+    }
   }
   const { config } = proveProject(spec);
   if (!config) {
@@ -253,7 +258,10 @@ export function specChecks(spec: string, paths = false): Diagnostic[] {
   return checks;
 }
 
-export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: Engine; executable?: Executable; spec?: string; paths?: boolean }, root = process.cwd()) {
+// Android checks run first (they are asynchronous) and are passed in, so the
+// report and its readiness are assembled in one place.
+export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: Engine; executable?: Executable; spec?: string; paths?: boolean; android?: boolean }, root = process.cwd(),
+  android?: { checks: Diagnostic[]; unverified: string[] }) {
   const checks: Diagnostic[] = [];
   if (args.executable && typeof args.executable === 'object') checks.push(executableCheck(args.executable));
   const major = Number(process.versions.node.split('.')[0]);
@@ -340,10 +348,11 @@ export function diagnose(args: { cliVersion?: string; sdk?: boolean; engine?: En
       checks.push({ name: `${mode}/browser`, status: 'warning', message: 'Browser files could not be verified for this package version.', fix });
     }
   }
-  if (spec) checks.push(...specChecks(spec, args.paths === true));
+  if (android) checks.push(...android.checks);
+  if (spec) checks.push(...specChecks(spec, args.paths === true, android !== undefined));
   return { version: 1, cliVersion: args.cliVersion, platform: `${process.platform}/${process.arch}`,
     ready: !checks.some(check => check.status === 'missing' || check.name.endsWith('/browser')), checks,
     unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login',
-      ...(spec ? ['testDir and testMatch unless literal'] : [])],
+      ...(spec ? ['testDir and testMatch unless literal'] : []), ...(android?.unverified ?? [])],
     next: 'Start your app, then run: 9l scan http://localhost:<port> --allow-private-network. No account is required.' };
 }

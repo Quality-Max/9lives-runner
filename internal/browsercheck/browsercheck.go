@@ -72,6 +72,9 @@ type Options struct {
 	// and workspace-relative paths stay inside it.
 	Root    string
 	Timeout time.Duration
+	// Env names further variables the helper inherits, beyond helperEnv,
+	// for a check that reads them. Never name a credential here.
+	Env []string
 }
 
 // helperEnv names the only variables the helper inherits: enough to find
@@ -99,7 +102,7 @@ func Run(parent context.Context, request Request, options Options) (Response, er
 	command := exec.Command("node", filepath.Join(dir, "helper.js"))
 	command.Dir = options.Root
 	command.Env = []string{}
-	for _, name := range helperEnv {
+	for _, name := range append(append([]string{}, helperEnv...), options.Env...) {
 		if value, ok := os.LookupEnv(name); ok {
 			command.Env = append(command.Env, name+"="+value)
 		}

@@ -7,6 +7,7 @@ import { type InspectResult, renderInspectReport, renderIssues, renderReport, ty
 import { scanUrl, type ScanUrlArgs } from './scan-url';
 import type { Severity } from './common';
 import { diagnose } from './doctor';
+import { androidChecks } from './android';
 
 export const HELPER_PROTOCOL_VERSION = 1;
 
@@ -25,7 +26,10 @@ export async function handleRequest(request: HelperRequest): Promise<HelperRespo
     return { version: HELPER_PROTOCOL_VERSION, error: 'unsupported browser-check request version' };
   }
   try {
-    if (request.tool === 'doctor') return { version: HELPER_PROTOCOL_VERSION, result: diagnose(request.args) };
+    if (request.tool === 'doctor') {
+      const android = request.args?.android === true ? await androidChecks({ paths: request.args.paths === true }) : undefined;
+      return { version: HELPER_PROTOCOL_VERSION, result: diagnose(request.args, undefined, android) };
+    }
     if (request.tool === 'scan_url') {
       const result = (await scanUrl(request.args as ScanUrlArgs)) as ScanResult;
       if (request.format === 'issue') return { version: HELPER_PROTOCOL_VERSION, result, text: renderIssues(result, { minSeverity: request.minSeverity }) };

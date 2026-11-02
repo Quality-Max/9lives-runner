@@ -5,11 +5,12 @@ const path = require('node:path');
 const os = require('node:os');
 const {createHash} = require('node:crypto');
 const {spawnSync,execFile} = require('node:child_process');
-const {androidTargetDriver} = require('../packages/playwright/dist/android');
+const {androidDefaults, androidTargetDriver} = require('../packages/playwright/dist/android');
 const root = path.resolve(__dirname, '..');
 const work = path.join(root, '.context/android-qualification', `preservation-${Date.now()}`);
 const avd = process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35';
-const sdk = process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools';
+const sdk = androidDefaults().sdkRoot;
+assert(sdk, 'No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');
 const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 180000});
 function sync(file,args,options={}) {
   const r = spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:330000,maxBuffer:4<<20,...options});
@@ -44,7 +45,7 @@ function sync(file,args,options={}) {
     try { result = await new Promise(resolve => execFile(engine,['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/android.config.ts'),
       '--target','android:finance','--agent-provenance',provenance,'--timeout','4m','--deadline','5m',
       '--attempts','3','--receipt-dir',path.join(work,'receipts'),'--format','json',
-      '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,JAVA_HOME'],
+      '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
       {cwd:root,encoding:'utf8',timeout:330000,maxBuffer:4<<20,env:{...process.env,NINELIVES_ANDROID_CASE:'healthy',NINELIVES_ANDROID_PROBE:probe}},
       (error,stdout) => resolve({status:error?.code ?? 0,stdout})));
     } finally {clearInterval(keepAlive);}

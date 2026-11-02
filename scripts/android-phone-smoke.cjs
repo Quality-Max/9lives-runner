@@ -19,7 +19,9 @@ const caseNames = ['phone-healthy', 'phone-operations', 'phone-diagnostics', 'ph
 const selected = process.argv.slice(2);
 const unknown = selected.filter(name => !caseNames.includes(name));
 if (unknown.length) throw Error(`unknown cases: ${unknown.join(', ')}`);
-const sdk = process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools';
+// The same SDK discovery as the driver and `9l doctor --android` (needs `npm run build`).
+const sdk = require(path.join(root, 'packages/playwright/dist/android')).androidDefaults().sdkRoot;
+if (!sdk) throw Error('no Android SDK found; run 9l doctor --android');
 const adbPath = path.join(sdk, 'platform-tools/adb');
 const work = path.join(root, '.context', 'android-phone-qualification', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
@@ -122,7 +124,7 @@ const installed = () => shell('pm path dev.ninelives.fixture 2>/dev/null || true
       const probe = path.join(work, `${mode}-probe.json`);
       const r = sync(engine, ['run', spec, '--sdk', '--config', config, '--target', 'android:finance', '--agent-provenance', provenance,
         '--grep', grep, '--timeout', '4m', '--deadline', '5m', '--attempts', '3', '--receipt-dir', path.join(work, mode), '--format', 'json',
-        '--pass-env', 'NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_SERIAL,NINELIVES_ANDROID_SIGNER,ANDROID_HOME,JAVA_HOME'],
+        '--pass-env', 'NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_SERIAL,NINELIVES_ANDROID_SIGNER,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
       {env: {...process.env, NINELIVES_ANDROID_CASE: mode, NINELIVES_ANDROID_PROBE: probe, NINELIVES_ANDROID_SIGNER: fixtures['phone-a'].signer ?? ''}});
       fs.writeFileSync(path.join(work, `${mode}.json`), r.stdout, {mode: 0o600});
       const run = JSON.parse(r.stdout), receipt = run.receipts[0];

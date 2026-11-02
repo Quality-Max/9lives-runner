@@ -1,5 +1,5 @@
 import {createTargetTest, type TargetDriver} from '@9l/playwright';
-import {androidTargetDriver} from '@9l/playwright/android';
+import {androidDefaults, androidTargetDriver} from '@9l/playwright/android';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -15,7 +15,7 @@ const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/an
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
   appId: target.appId,
-  sdkRoot: process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools',
+  // sdkRoot is omitted: the driver discovers it as `9l doctor --android` does.
   toolsRoot: resolve(__dirname, mode === 'version' ? '../../../.context/android-bad-version' : '../../../tools/android'),
   ...(attachedSerial ? {deviceSerial: attachedSerial, apkSHA256: fixture.apkSHA256} : {
     avd: mode === 'unavailable' ? '9l_missing_avd' : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
@@ -46,7 +46,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   let stopReason = '', driverReason = '';
   let serial = '', started = false, clickDispatches = 0;
   const readTiming: Record<string, {count: number; errors: number; maxMs: number}> = {};
-  const sdk = process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools';
+  const sdk = androidDefaults().sdkRoot ?? '';
   const command = promisify(execFile);
   let probe: Promise<void> | undefined;
   globalThis.fetch = async (input, init) => {
@@ -188,7 +188,7 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     await app.close();
     let deviceStopped = false;
     if (serial) {
-      try { await promisify(execFile)(resolve(process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
       catch { deviceStopped = true; }
     }
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
