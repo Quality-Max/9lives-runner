@@ -426,7 +426,11 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
     assert.deepEqual([actions.body.actions[0].actions[0].x, actions.body.actions[0].actions[0].y], [900, 1200]);
     await assert.rejects(driver.tapAt({x: -1, y: 0}, context()), /invalid_point/);
     await driver.terminate(context());
-    assert.deepEqual(requests.at(-1).body, {script: 'mobile: terminateApp', args: [{appId: 'dev.ninelives.fixture'}]});
+    const terminate = requests.at(-1).body;
+    assert.equal(terminate.script, 'mobile: terminateApp');
+    assert.equal(terminate.args[0].appId, 'dev.ninelives.fixture');
+    // The exit check waits up to 5 s, within the operation's remaining time.
+    assert(terminate.args[0].timeout > 1000 && terminate.args[0].timeout <= 5000, `terminate timeout ${terminate.args[0].timeout}`);
     await driver.activate(context());
     assert.deepEqual(requests.at(-1).body, {script: 'mobile: activateApp', args: [{appId: 'dev.ninelives.fixture'}]});
     assert(!requests.some(r => r.path.includes('/appium/device/') || r.path.includes('reset')), 'no reset, clear or device endpoints');

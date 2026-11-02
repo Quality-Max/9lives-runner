@@ -41,6 +41,22 @@ test('app windows are counted by package and focus is classified', () => {
   assert.deepEqual(parseWindows(text.replace(/mCurrentFocus=.*/, 'mCurrentFocus=null'), 'com.example.app'), {windows: 2, focus: 'none'});
   assert.deepEqual(parseWindows('  Window #1 Window{4d5e6f u0 com.example.app/com.example.app.MainActivity}:', 'com.example.app'), {windows: 1, focus: 'unknown'});
   assert.deepEqual(parseWindows('', 'com.example.app'), {windows: 0, focus: 'unknown'});
+  // API 35 (emulator, 2026-11-02): `dumpsys window windows` has no focus line;
+  // the filtered `dumpsys window displays` that follows it carries one.
+  const api35 = [
+    '  Window #8 Window{5ff890f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:',
+    '  Window #9 Window{cf8af0f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:',
+    '  Window #10 Window{7601ca0 u0 com.android.systemui.wallpapers.ImageWallpaper}:',
+    '  mCurrentFocus=Window{5ff890f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}',
+  ].join('\n');
+  assert.deepEqual(parseWindows(api35, 'dev.ninelives.fixture'), {windows: 2, focus: 'app'});
+  // A folded phone (API 37, 2026-11-02): one focus line per display, the
+  // powered-off inner display first with none. The app's focus wins.
+  const folded = ['  Window #14 Window{b95f91 u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:', '  mCurrentFocus=null',
+    '  mCurrentFocus=Window{b95f91 u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}'].join('\n');
+  assert.deepEqual(parseWindows(folded, 'dev.ninelives.fixture'), {windows: 1, focus: 'app'});
+  assert.deepEqual(parseWindows(folded.replace(/u0 dev[^\n]*MainActivity\}$/m, 'u0 com.android.systemui/.Dialog}'), 'dev.ninelives.fixture'), {windows: 1, focus: 'foreign'});
+  assert.deepEqual(parseWindows('  mCurrentFocus=null\n  mCurrentFocus=null', 'dev.ninelives.fixture'), {windows: 0, focus: 'none'});
 });
 
 test('keyboard visibility reads mInputShown only', () => {

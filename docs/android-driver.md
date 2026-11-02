@@ -127,6 +127,12 @@ contract.
 
 This experimental M2 adapter has local qualification evidence on Android 15 /
 API 35 arm64-v8a with emulator 37.1.11.0, Appium 3.8.0 and UiAutomator2 8.7.0.
+On 2026-11-02 the smoke gained the native operations (viewport, bounds, a
+touch at a point, Back, a hidden assertion, scrolling, the keyboard read,
+terminate and activate), opt-in diagnostics with real window counts, and
+display-width and build-version requirements; the healthy case also checks the
+recorded display, posture, version and signer. The `Android` workflow runs the
+whole smoke on an API 35 x86_64 emulator on hosted Linux runners.
 The real runs cover healthy behavior, relevant wrong-text and wrong-state
 failures, missing/ambiguous IDs, unavailable/install/disconnect/digest/version
 failures, and cancellation/deadline during an app-confirmed click with an
@@ -285,3 +291,26 @@ assertions rejected an opt-in wrong-heading response control at `assert-text`.
 App-specific tests, selectors, configuration and execution evidence remain local
 outside source control. These checks do not establish independent verification
 or qualify arbitrary phones, keyboards, fold transitions or cancellation.
+
+### Qualifying an attached phone
+
+`node scripts/android-phone-smoke.cjs` (after `npm run build`) qualifies
+attached-device mode on one authorized phone selected with
+`NINELIVES_ANDROID_SERIAL`; the serial stays in the environment and receipts
+hold only its hash. It installs the synthetic fixture app with
+`installInPlace` (first installation, the same signer again, and a second
+build's foreign signer refused before any change), then runs the native spec
+attached: the transfer with a declared version and signer, native operations
+with the phone's own keyboard (a touch opens it, `hideKeyboard` closes it),
+opt-in diagnostics around a dialog, a dialog left open before the test with
+and without a declared Back recovery, posture and width requirements the
+phone does not meet, screen-off and, when waking shows a lock screen, a
+locked device. The fixture app is uninstalled at the end unless
+`NINELIVES_ANDROID_KEEP_FIXTURE=1`. The locked case leaves the phone locked.
+
+On 2026-11-02 a folded Samsung foldable on Android 17 / API 37 (cover display
+1248 x 1972 at 420 dpi, posture `closed`) qualified every case, as combined
+evidence from two runs of the same script: the setup classifications in one,
+and the transfer, operations, diagnostics (window counts 1 -> 2, focus `app`)
+and recovered baseline after the launch-intent and focus fixes in the next.
+One phone does not qualify arbitrary phones, fold transitions or cancellation.
