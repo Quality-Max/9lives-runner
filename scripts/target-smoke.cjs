@@ -123,9 +123,11 @@ assert.equal(recovered.code, 0, 'dirty-recovered: the test ran from the restored
 assert.deepEqual(recovered.summary.receipts[0].targetSetup.map(({testId, ...rest}) => rest), [{classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}}]);
 assert.equal(recovered.summary.receipts[0].targetAssertions, 3);
 const reasons = {ambiguous: 'ambiguous_test_id', missing: 'missing_test_id', version: 'unsupported_driver_contract', capabilities: 'unsupported_driver_contract'};
+const rejected = {};
 for (const mode of ['ambiguous', 'missing', 'version', 'capabilities', 'cancel', 'deadline', 'timeout', 'late', 'caught', 'forged']) {
   const grep = {caught: 'caught failures', forged: 'named like a target assertion'}[mode];
   const result = invoke(mode, {grep, extra: reasons[mode] ? ['--failure-details'] : []});
+  rejected[mode] = result;
   assert.notEqual(result.code, 0, mode);
   assert.notEqual(result.summary.outcome, 'passed', mode);
   assert(!result.mutations.includes('mutation'), `${mode}: no side effect`);
@@ -201,6 +203,53 @@ assert.equal(stalled.code, 1);
 assert.equal(stalled.summary.receipts[0].status, 'failed', 'stalled-diagnose: a worker-side failure, not the engine deadline');
 assert(stalled.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'stalled-diagnose: plain assertion failure');
 assert.equal(stalled.summary.receipts[0].targetDiagnostics, undefined);
+// Every attempt that did not pass keeps a bounded, metadata-only failure
+// summary in its receipt, with or without --failure-details, so different
+// causes can be told apart without a rerun. It carries no message text.
+const failureSummary = (run, label) => {
+  const receipt = run.summary.receipts[0];
+  const summary = receipt.failureSummary;
+  assert(summary, `${label}: failure summary retained`);
+  assert.deepEqual(JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8')).failureSummary, summary, `${label}: summary persisted in receipt.json`);
+  const text = JSON.stringify(summary);
+  for (const leaked of ['9lives target stopped', 'Sent $', 'Error', 'http', 'spec.ts', 'deterministic', 'receipt']) assert(!text.includes(leaked), `${label}: summary carries no ${leaked}`);
+  for (const test of summary.tests ?? []) assert.match(test.testId, /^[a-f0-9]{64}$/, `${label}: bound to the engine test digest`);
+  return summary;
+};
+const described = (run, label) => {
+  const summary = failureSummary(run, label);
+  assert.equal(summary.stop, 'test_failed', label);
+  assert.equal(summary.failedTests, 1, label);
+  assert.equal(summary.testsTruncated, undefined, label);
+  return summary.tests.map(({testId, failedSteps, attempts, ...rest}) => rest);
+};
+// Without --failure-details the receipt has no failures and no error text at all.
+for (const [run, label] of [[defect, 'defect'], [rejected.timeout, 'timeout']]) {
+  assert.equal(run.summary.receipts[0].failures, undefined, `${label}: no details without the opt-in`);
+  const persisted = fs.readFileSync(run.summary.receipts[0].receiptPath, 'utf8');
+  for (const leaked of ['9lives target stopped', 'Sent $', 'toHaveText']) assert(!persisted.includes(leaked), `${label}: receipt.json carries no ${leaked}`);
+}
+const distinct = {
+  defect: [described(defect, 'defect'), [{class: 'assertion', status: 'failed', step: 'assertion', operation: 'assert-text', reason: 'assertion_failed'}]],
+  timeout: [described(rejected.timeout, 'timeout'), [{class: 'action-timeout', status: 'failed', step: 'action', operation: 'tap', reason: 'deadline'}]],
+  locked: [described(locked, 'locked'), [{class: 'setup', status: 'failed', step: 'action', operation: 'open', reason: 'setup_blocked', setup: 'blocked'}]],
+  lockRecheck: [described(lockRecheck, 'lock-recheck'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-text', reason: 'assertion_failed', setup: 'blocked'}]],
+  ambiguous: [described(rejected.ambiguous, 'ambiguous'), [{class: 'other', status: 'failed', step: 'action', operation: 'fill', reason: 'ambiguous_test_id'}]],
+  observer: [described(observer, 'observer'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-hidden', reason: 'assertion_failed', setup: 'observer'}]],
+};
+for (const [label, [actual, expected]] of Object.entries(distinct)) assert.deepEqual(actual, expected, `${label}: failure summary`);
+assert.equal(new Set(Object.values(distinct).map(([actual]) => JSON.stringify(actual))).size, Object.keys(distinct).length, 'each cause has its own summary');
+assert.equal(locked.summary.receipts[0].failureSummary.tests[0].testId, locked.summary.receipts[0].targetSetup[0].testId, 'locked: summary and setup record name the same test');
+// The Go-owned deadline either stops the attempt (no validated tests) or the
+// worker's own deadline settles a failure first; both say so.
+const deadlineSummary = failureSummary(rejected.deadline, 'deadline');
+if (rejected.deadline.summary.receipts[0].status === 'timed_out') {
+  assert.deepEqual(deadlineSummary, {stop: 'deadline', failedTests: 0}, 'deadline: attempt stopped by the engine');
+} else {
+  assert.equal(deadlineSummary.tests[0].reason, 'deadline', 'deadline: worker-side deadline');
+}
+assert.deepEqual(failureSummary(rejected.caught, 'caught'), {stop: 'invalid_evidence', failedTests: 0}, 'caught: evidence that cannot validate describes no tests');
+for (const receipt of [...baseline.summary.receipts, ...recovered.summary.receipts]) assert.equal(receipt.failureSummary, undefined, 'a passed receipt has no failure summary');
 // A platform skip is complete only when pinned, like any other SDK skip.
 const skip = 'one deterministic scenario|skipped on the native target';
 const unpinned = invoke('skip-unpinned', {grep: skip});
@@ -221,5 +270,5 @@ assert.equal(listing.status, 0, listing.stderr);
 assert.equal(sync(process.execPath, [path.join(root, 'node_modules', '@playwright', 'test', 'cli.js'),
   'test', 'testdata/sdk/tests/nested/config.spec.ts', '--config', 'testdata/sdk/playwright.config.ts', '--reporter=line']).status, 0);
 fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify({version: 1, cases, ordinaryPlaywright: 'passed'}, null, 2));
-console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; pinned skip, re-rendered web control and plain listing passed; one attempt each.');
+console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; one attempt each.');
 console.log(`Bounded receipts: ${path.relative(root, work)}`);

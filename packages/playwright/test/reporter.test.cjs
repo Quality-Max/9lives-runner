@@ -168,3 +168,46 @@ test('a target diagnostic attachment becomes one bounded target_diagnostic frame
     assert.deepEqual(run(target, attachments).map(f => f.type), ['engine_error'], target);
   }
 });
+
+// A failed typed target step sends the fixture's stop reason token and nothing
+// else of its error; other errors, user steps and passed steps send none.
+test('a failed target operation carries only its stop reason token', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-reporter-'));
+  const events = path.join(dir, 'events.ndjson');
+  const saved = {...process.env};
+  Object.assign(process.env, {
+    NINELIVES_ENGINE_PROTOCOL: '9l.engine/1', NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001',
+    NINELIVES_ATTEMPT_ID: 'job-001-attempt-001', NINELIVES_ENGINE_EVENTS: events, NINELIVES_TARGET: 'web:finance',
+  });
+  try {
+    const Reporter = require('../dist/reporter.js').default;
+    const reporter = new Reporter();
+    const location = {file: fs.realpathSync(path.join(__dirname, '..', 'dist', 'targets.js')), line: 1, column: 1};
+    const typed = (title, error) => ({category: 'test.step', title, location, ...(error === undefined ? {} : {error: {message: error}})});
+    const testCase = {id: 'test-1'};
+    const result = {retry: 0};
+    reporter.onStepEnd(testCase, result, typed('9l target assert-text', 'Error: 9lives target stopped: assertion_failed'));
+    reporter.onStepEnd(testCase, result, typed('9l target tap', '9lives target stopped: deadline'));
+    reporter.onStepEnd(testCase, result, typed('9l target open', 'Error: 9lives target stopped: setup_blocked\n    at open (targets.js:1:1)'));
+    reporter.onStepEnd(testCase, result, typed('9l target fill', 'Error: 9lives target stopped: Card 4242 declined'));
+    reporter.onStepEnd(testCase, result, typed('9l target fill', 'Error: element "Send" is not visible at https://shop.invalid/?token=secret'));
+    reporter.onStepEnd(testCase, result, typed('9l target assert-visible'));
+    reporter.onStepEnd(testCase, result, {category: 'test.step', title: 'my step', error: {message: 'Error: 9lives target stopped: assertion_failed'}});
+    const frames = fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(frames.map(frame => [frame.operation, frame.status, frame.reason]), [
+      ['assert-text', 'failed', 'assertion_failed'],
+      ['tap', 'failed', 'deadline'],
+      ['open', 'failed', undefined],
+      ['fill', 'failed', undefined],
+      ['fill', 'failed', undefined],
+      ['assert-visible', 'passed', undefined],
+      [undefined, 'failed', undefined],
+    ]);
+    const raw = fs.readFileSync(events, 'utf8');
+    for (const leaked of ['Card', 'Send', 'https://', 'token', 'targets.js']) assert(!raw.includes(leaked), leaked);
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});

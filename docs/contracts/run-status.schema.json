@@ -201,6 +201,65 @@
       ],
       "type": "object"
     },
+    "FailedTestSummary": {
+      "properties": {
+        "attempts": {
+          "type": "integer"
+        },
+        "class": {
+          "type": "string"
+        },
+        "failedSteps": {
+          "type": "integer"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "setup": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "type": "object"
+    },
+    "FailureSummary": {
+      "properties": {
+        "failedTests": {
+          "type": "integer"
+        },
+        "stop": {
+          "type": "string"
+        },
+        "tests": {
+          "items": {
+            "$ref": "#/$defs/FailedTestSummary"
+          },
+          "type": "array"
+        },
+        "testsTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stop",
+        "failedTests"
+      ],
+      "type": "object"
+    },
     "GoalDecisionReceipt": {
       "properties": {
         "action": {
@@ -552,6 +611,9 @@
         },
         "failureCount": {
           "type": "integer"
+        },
+        "failureSummary": {
+          "$ref": "#/$defs/FailureSummary"
         },
         "failures": {
           "items": {

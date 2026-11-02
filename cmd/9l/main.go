@@ -1064,6 +1064,11 @@ func printResult(w io.Writer, result runner.RunSummary) {
 				clearable = clearable || !attachment.Retained
 			}
 		}
+		// Without per-test details (an engine run without --failure-details)
+		// the summary still says which tests failed and how.
+		if receipt.FailureSummary != nil && len(receipt.Failures) == 0 {
+			printFailureSummary(w, *receipt.FailureSummary)
+		}
 		printAnnotations(w, receipt.Annotations)
 		if receipt.FlakyTests > 0 {
 			fmt.Fprintf(w, "           %d test(s) passed only on a Playwright retry inside this attempt\n", receipt.FlakyTests)
@@ -1175,6 +1180,39 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 			label = "context"
 		}
 		fmt.Fprintf(w, "             %s: %s\n", receiptReason(label), receiptReason(displayPath(attachment.Path)))
+	}
+}
+
+// printFailureSummary shows each summarized failed test as its short engine
+// digest, class and attributed step; the summary has no titles or messages.
+func printFailureSummary(w io.Writer, summary runner.FailureSummary) {
+	for _, test := range summary.Tests {
+		line := "test"
+		if test.TestID != "" {
+			line += " " + test.TestID[:12]
+		}
+		line += " [" + test.Class + "]"
+		if test.Status == "timedOut" {
+			line += " timed out"
+		}
+		if test.Operation != "" {
+			line += " in " + test.Operation
+		} else if test.Step != "" {
+			line += " in a failed " + test.Step + " step"
+		}
+		if test.Reason != "" {
+			line += ": " + test.Reason
+		}
+		if test.Setup != "" {
+			line += " (setup " + test.Setup + ")"
+		}
+		fmt.Fprintf(w, "           ✗ %s\n", receiptReason(line))
+	}
+	if summary.TestsTruncated && len(summary.Tests) > 0 {
+		fmt.Fprintf(w, "           … %d more failed test(s) not listed\n", summary.FailedTests-len(summary.Tests))
+	}
+	if len(summary.Tests) > 0 {
+		fmt.Fprintln(w, "           --failure-details adds each failed test's title, line and error")
 	}
 }
 

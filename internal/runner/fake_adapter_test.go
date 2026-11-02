@@ -48,13 +48,17 @@ func TestFakeAdapterContractOutcomes(t *testing.T) {
 		name, mode string
 		want       ReceiptStatus
 		validated  bool
+		// stop and failed are the persisted failure summary's stop token
+		// and failed-test count; a passed receipt has no summary.
+		stop   string
+		failed int
 	}{
 		{name: "success", mode: "success", want: StatusPassed, validated: true},
-		{name: "test failure", mode: "test-failure", want: StatusFailed, validated: true},
-		{name: "infrastructure failure", mode: "infrastructure", want: StatusError},
-		{name: "nonzero without finding", mode: "infra-json", want: StatusError, validated: true},
-		{name: "malformed output", mode: "malformed", want: StatusError},
-		{name: "missing artifact", mode: "missing-artifact", want: StatusError},
+		{name: "test failure", mode: "test-failure", want: StatusFailed, validated: true, stop: StopTestFailed, failed: 1},
+		{name: "infrastructure failure", mode: "infrastructure", want: StatusError, stop: StopInvalidEvidence},
+		{name: "nonzero without finding", mode: "infra-json", want: StatusError, validated: true, stop: StopExitWithoutFailure},
+		{name: "malformed output", mode: "malformed", want: StatusError, stop: StopInvalidEvidence},
+		{name: "missing artifact", mode: "missing-artifact", want: StatusError, stop: StopInvalidEvidence},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -63,6 +67,14 @@ func TestFakeAdapterContractOutcomes(t *testing.T) {
 			summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, MaxAttempts: 1, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
 			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != test.want || summary.Receipts[0].Validated != test.validated {
 				t.Fatalf("unexpected result: %#v", summary)
+			}
+			// The summary is in the receipt on disk, not only in the result.
+			var persisted Receipt
+			if raw, err := os.ReadFile(summary.Receipts[0].ReceiptPath); err != nil || json.Unmarshal(raw, &persisted) != nil {
+				t.Fatalf("receipt unreadable: %v", err)
+			}
+			if got := persisted.FailureSummary; (got == nil) != (test.stop == "") || (got != nil && (got.Stop != test.stop || got.FailedTests != test.failed || got.Validate() != nil)) {
+				t.Fatalf("failure summary %+v, want stop %q with %d failed", got, test.stop, test.failed)
 			}
 			if test.mode == "success" {
 				canonical := filepath.Join(filepath.Dir(summary.Receipts[0].ReceiptPath), "execution-receipt-1.0.json")
@@ -103,6 +115,10 @@ func TestFakeAdapterTimeoutAndCancellation(t *testing.T) {
 			}
 			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != want || summary.Receipts[0].Termination == nil || summary.Receipts[0].Termination.Kind != test.kind {
 				t.Fatalf("unexpected termination: %#v", summary)
+			}
+			stop := map[string]string{"timeout": StopDeadline, "canceled": StopCanceled}[test.kind]
+			if got := summary.Receipts[0].FailureSummary; got == nil || got.Stop != stop || got.FailedTests != 0 || got.Tests != nil {
+				t.Fatalf("failure summary %+v, want stop %q", got, stop)
 			}
 		})
 	}
