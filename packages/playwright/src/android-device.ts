@@ -106,3 +106,19 @@ export function parsePackageVersion(text: string): PackageVersion {
 export function parseSigner(text: string): string | undefined {
   return /^Signer #1 certificate SHA-256 digest: ([a-f0-9]{64})[ \t]*$/m.exec(text)?.[1];
 }
+
+/** The emulator's version: `emulator -version` (macOS prints the line on
+ * stdout, Linux on stderr) or, when that command fails or prints none, the
+ * emulator package's `Pkg.Revision`. An interruption (cancellation, the
+ * deadline, a closed driver) propagates instead of falling back. */
+export function parseEmulatorVersion(output: string): string | undefined {
+  return /Android emulator version ([0-9]{1,3}(?:\.[0-9]{1,5}){0,3})/.exec(output)?.[1];
+}
+export function parsePackageRevision(properties: string): string | undefined {
+  return /^Pkg\.Revision=([0-9]{1,3}(?:\.[0-9]{1,5}){0,3})\s*$/m.exec(properties)?.[1];
+}
+export async function emulatorVersion(run: () => Promise<string>, properties: () => Promise<string>, interrupted: () => void): Promise<string | undefined> {
+  let version: string | undefined;
+  try { version = parseEmulatorVersion(await run()); } catch { interrupted(); }
+  return version ?? parsePackageRevision(await properties().catch(() => ''));
+}

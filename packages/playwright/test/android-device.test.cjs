@@ -128,3 +128,26 @@ test('the logical layout follows rotation and density overrides, per physical di
   const portrait = '    mOverrideDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0", FLAG_TRUSTED, real 1080 x 2400, largest app 2400 x 2400, smallest app 1080 x 1080, mode 1, rotation 0, state ON, type INTERNAL, uniqueId "local:4619827259835644672", app 1080 x 2265, density 420 (420.0 x 420.0) dpi, layerStack 0}';
   assert.deepEqual(parseLogicalDisplays(portrait).get('4619827259835644672'), {width: 1080, height: 2265, density: 420});
 });
+
+const {emulatorVersion, parseEmulatorVersion, parsePackageRevision} = require('../dist/android-device');
+
+test('the emulator version comes from -version on either stream, else the package revision', async () => {
+  const properties = 'Pkg.UserSrc=false\nPkg.Revision=37.2.13\nPkg.Path=emulator\n';
+  const ok = () => {};
+  // macOS prints it on stdout, Linux among INFO lines on stderr: the full version is kept.
+  assert.equal(await emulatorVersion(async () => 'Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)', async () => properties, ok), '37.2.13.0');
+  assert.equal(await emulatorVersion(async () => 'INFO         | Android emulator version 37.2.13.0 (build_id 16740729)', async () => properties, ok), '37.2.13.0');
+  // A nonzero exit, a timeout (both reject) or no version line falls back to the package revision.
+  assert.equal(await emulatorVersion(async () => { throw new Error('exit 1'); }, async () => properties, ok), '37.2.13');
+  assert.equal(await emulatorVersion(async () => '', async () => properties, ok), '37.2.13');
+  // Missing or malformed properties leave the version unknown, so open rejects.
+  assert.equal(await emulatorVersion(async () => '', async () => { throw new Error('ENOENT'); }, ok), undefined);
+  for (const bad of ['Pkg.Revision=', 'Pkg.Revision=latest', 'Pkg.Revision=37.2.13-rc1', 'Revision=37.2.13']) {
+    assert.equal(await emulatorVersion(async () => '', async () => bad, ok), undefined, bad);
+  }
+  // Cancellation, the deadline or a closed driver propagates instead of falling back.
+  const stop = () => { throw new Error('9lives Android: runtime_unavailable'); };
+  await assert.rejects(emulatorVersion(async () => { throw new Error('aborted'); }, async () => properties, stop), /runtime_unavailable/);
+  assert.equal(parseEmulatorVersion('Android emulator version 37.2.13.0.1.2'), '37.2.13.0');
+  assert.equal(parsePackageRevision(properties), '37.2.13');
+});
