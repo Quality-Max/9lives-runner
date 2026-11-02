@@ -1,7 +1,7 @@
 import {spawn, type ChildProcess, execFile} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile, stat} from 'node:fs/promises';
-import {join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -61,6 +61,15 @@ export type AndroidTargetOptions = {
 });
 
 const failure = (reason: string) => new Error(`9lives Android: ${reason}`);
+// One fixed script per call; every interpolated value is validated by the
+// caller's option checks. The device shell runs it; nothing else does.
+const shellArgs = (script: string) => ['shell', 'sh', '-c', `'${script}'`];
+/** The host-local lease that gives one owner exclusive use of a device.
+ * The driver and installInPlace both take it, so an installation cannot
+ * replace the app under a running test or interleave with another installer. */
+export function androidLeasePath(serial: string) {
+  return join(homedir(), '.9lives', 'android-leases', `9l-android-${createHash('sha256').update(serial).digest('hex')}.lock`);
+}
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf';
 const timeout = (c: TargetContext) => {
   c.signal.throwIfAborted();
@@ -191,7 +200,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   const mockStore = '/data/local/tmp/mock_apps.json';
   const mockBackup = `/data/local/tmp/9l-${owner}-mock-apps.json`;
   let mockStorePresent: boolean | undefined, mockPermission: string | undefined;
-  const shell = (script: string) => ['shell', 'sh', '-c', `'${script}'`];
+  const shell = shellArgs;
   // Device-state reads filter on the device and stay in memory. They never
   // request, store or bypass a credential, and never change lock settings.
   const readDeviceState = async (c: TargetContext) => parseDeviceState(await adbRun(shell(`(dumpsys window; dumpsys power) 2>/dev/null | grep -E "${deviceStatePattern}" | head -c 4096`), c));
@@ -490,11 +499,10 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
           if (physical) {
             stage = 'device_attach';
             serial = options.deviceSerial!;
-            const leaseRoot = join(homedir(), '.9lives', 'android-leases');
-            const lock = join(leaseRoot, `9l-android-${createHash('sha256').update(serial).digest('hex')}.lock`);
+            const lock = androidLeasePath(serial);
             // Never recover a stale lease automatically: a killed worker may have
             // left automation running. Manual inspection is required in that case.
-            await mkdir(leaseRoot, {recursive: true, mode: 0o700});
+            await mkdir(dirname(lock), {recursive: true, mode: 0o700});
             await mkdir(lock, {mode: 0o700}); lease = lock;
             await installedBuild(c);
             // Version and signer are checked before any device change or session.
@@ -750,21 +758,33 @@ export async function installInPlace(options: {sdkRoot: string; deviceSerial: st
   const signer = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', apk], c, env));
   if (!signer) throw failure('unreadable_signer');
   const run = (args: string[]) => command(adb, ['-s', options.deviceSerial, ...args], c, env);
-  if (await run(['get-state']) !== 'device' || await run(['shell', 'getprop', 'ro.kernel.qemu']) === '1') throw failure('not_physical_device');
-  const path = await run(['shell', 'pm', 'path', appPackage]);
-  if (path) {
-    if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
-    const scratch = await mkdtemp(join(process.env.TMPDIR ?? homedir(), '9l-install-'));
-    try {
-      const pulled = join(scratch, 'installed.apk');
-      await run(['pull', path.slice(8), pulled]);
-      const installed = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', pulled], c, env));
-      if (installed !== signer) throw failure('signer_mismatch');
-    } finally { await rm(scratch, {recursive: true, force: true}); }
+  // The same exclusive lease a test takes: never install under a running
+  // test or beside another installer. Only the lease this call created is released.
+  const lock = androidLeasePath(options.deviceSerial);
+  await mkdir(dirname(lock), {recursive: true, mode: 0o700});
+  try { await mkdir(lock, {mode: 0o700}); } catch { throw failure('device_in_use'); }
+  try {
+    if (await run(['get-state']) !== 'device' || await run(['shell', 'getprop', 'ro.kernel.qemu']) === '1') throw failure('not_physical_device');
+    // pm path exits nonzero for an absent package: a first installation, not a transport failure.
+    const path = await run(shellArgs(`pm path ${appPackage} 2>/dev/null || true`));
+    if (path) {
+      if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(path)) throw failure('unsupported_installed_build');
+      const scratch = await mkdtemp(join(process.env.TMPDIR ?? homedir(), '9l-install-'));
+      try {
+        const pulled = join(scratch, 'installed.apk');
+        await run(['pull', path.slice(8), pulled]);
+        const installed = parseSigner(await command(join(tools, 'apksigner'), ['verify', '--print-certs', pulled], c, env));
+        if (installed !== signer) throw failure('signer_mismatch');
+      } finally { await rm(scratch, {recursive: true, force: true}); }
+    }
+    await run(['install', '--no-streaming', '-r', apk]);
+    const installedPath = await run(['shell', 'pm', 'path', appPackage]);
+    if (!/^package:(\/data\/app\/[A-Za-z0-9_./=+~\-]+\/base\.apk)$/.test(installedPath)) throw failure('unsupported_installed_build');
+    const digest = (await run(['shell', 'sha256sum', installedPath.slice(8)])).split(/\s+/)[0];
+    if (digest !== apkSHA256) throw failure('installed_build_changed');
+    const version = parsePackageVersion(await run(shellArgs(`dumpsys package ${appPackage} 2>/dev/null | grep -E "${packagePattern}" | head -c 2048`)));
+    return {appPackage, apkSHA256, signer, ...version};
+  } finally {
+    await rm(lock, {recursive: true, force: true});
   }
-  await run(['install', '--no-streaming', '-r', apk]);
-  const digest = (await run(['shell', 'sha256sum', (await run(['shell', 'pm', 'path', appPackage])).slice(8)])).split(/\s+/)[0];
-  if (digest !== apkSHA256) throw failure('installed_build_changed');
-  const version = parsePackageVersion(await run(['shell', 'sh', '-c', `'dumpsys package ${appPackage} 2>/dev/null | grep -E "${packagePattern}" | head -c 2048'`]));
-  return {appPackage, apkSHA256, signer, ...version};
 }

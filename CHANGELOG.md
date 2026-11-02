@@ -22,8 +22,10 @@ SDK versions.
   scratch directory only when declared. `installInPlace({sdkRoot,
   deviceSerial, apk})` from `@9l/playwright/android` updates an app with
   `adb install -r` after checking the new APK's signer against the
-  installed one through `apksigner`; a different signer refuses before any
-  device change, and it never uninstalls or clears data. The runtime
+  installed one through `apksigner`, under the same exclusive device lease
+  a test takes; a different signer refuses before any device change, a
+  missing package is a first installation, and it never uninstalls or
+  clears data. The runtime
   schema is closed, so CLI and `@9l/playwright` must be updated together.
   Version and signer parsing are unit-tested against tool output; the
   install helper is tested against a fake adb and remains unqualified on

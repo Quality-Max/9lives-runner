@@ -673,7 +673,7 @@ test('attached phone verifies the installed build against declared identity and 
   const artifact = path.join(dir, 'build-28.apk');
   await fs.writeFile(artifact, 'synthetic artifact bytes');
   const artifactDigest = createHash('sha256').update('synthetic artifact bytes').digest('hex');
-  const device = {digest: artifactDigest, version: '    versionCode=28 minSdk=24 targetSdk=35\n    versionName=1.4.0', installedSigner: 'a1'.repeat(32)};
+  const device = {digest: artifactDigest, version: '    versionCode=28 minSdk=24 targetSdk=35\n    versionName=1.4.0', installedSigner: 'a1'.repeat(32), installed: true};
   const commands = [];
   let sessions = 0;
   const serial = `test-${randomUUID()}`;
@@ -700,7 +700,9 @@ test('attached phone verifies the installed build against declared identity and 
       if (command[0] === 'get-state') result = 'device';
       else if (command[0] === 'pull') { require('node:fs').writeFileSync(command[2], 'synthetic artifact bytes'); result = ''; }
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
-      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (command[1] === 'pm' && command[2] === 'path') { if (!device.installed) { queueMicrotask(() => callback(new Error('exit 1'))); return new EventEmitter(); } result = 'package:/data/app/test/base.apk'; }
+      else if (script.includes('pm path dev.ninelives.fixture')) result = device.installed ? 'package:/data/app/test/base.apk' : '';
+      else if (command[0] === 'install') { device.installed = true; result = 'Success'; }
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
       else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
       else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
@@ -723,7 +725,7 @@ test('attached phone verifies the installed build against declared identity and 
       else if (url.endsWith('/session')) { sessions++; value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}}; }
       return new Response(JSON.stringify({value}), {status: 200});
     };
-    const {androidTargetDriver, TargetSetupError, installInPlace} = require('../dist/android');
+    const {androidTargetDriver, TargetSetupError, installInPlace, androidLeasePath} = require('../dist/android');
     const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
     const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
     const open = async (options, expectation) => {
@@ -774,6 +776,22 @@ test('attached phone verifies the installed build against declared identity and 
     const install = commands.find(c => c.includes('install'));
     assert.deepEqual(install.slice(3), ['install', '--no-streaming', '-r', artifact]);
     assert(!commands.some(c => c.includes('uninstall') || c.includes('clear')));
+    assert.equal(await fs.access(androidLeasePath(serial)).then(() => true, () => false), false, 'the installer releases its lease');
+    // A first installation: no package yet, nothing to pull or compare, install proceeds.
+    device.installed = false;
+    commands.length = 0;
+    assert.deepEqual(await installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact}), {appPackage: 'dev.ninelives.fixture', apkSHA256: artifactDigest, signer: 'a1'.repeat(32), versionCode: '29', versionName: '1.4.0'});
+    assert(!commands.some(c => c[3] === 'pull'), 'first install pulls nothing');
+    assert(commands.some(c => c.includes('install')));
+    // The device lease a running test holds blocks the installer before any device command.
+    const held = androidTargetDriver({...base, apkSHA256: artifactDigest});
+    opened.push(held);
+    await held.open(context());
+    commands.length = 0;
+    await assert.rejects(installInPlace({sdkRoot: dir, deviceSerial: serial, apk: artifact}), /device_in_use/);
+    assert.equal(commands.filter(c => c[0] === 'adb').length, 0, 'no adb command while the device is leased');
+    await held.close();
+    assert.equal(await fs.access(androidLeasePath(serial)).then(() => true, () => false), false, 'the installer never removes a lease it did not create');
     await assert.rejects(installInPlace({sdkRoot: dir, deviceSerial: 'emulator-5554', apk: artifact}), /invalid_configuration/);
   } finally {
     for (const driver of opened) await driver.close().catch(() => {});

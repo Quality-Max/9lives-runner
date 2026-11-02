@@ -159,11 +159,14 @@ through the local `apksigner`. The runtime receipt records `versionCode`,
 `versionName` and `signer` (or `unknown`) beside the verified `apkSHA256`.
 
 To update the app in place from a project script, `installInPlace({sdkRoot,
-deviceSerial, apk})` reads the new APK's package and signer, compares the
-signer with the installed app's and refuses on a difference before any
-device change; otherwise it runs `adb install -r`, verifies the installed
-digest and returns the package, digest, signer and versions for the reviewed
-build metadata. It never uninstalls, clears data or runs inside a test.
+deviceSerial, apk})` takes the same exclusive device lease a test takes
+(`device_in_use` while a test or another installer holds it), reads the new
+APK's package and signer, compares the signer with the installed app's and
+refuses on a difference before any device change; a package not yet
+installed is a first installation. Otherwise it runs `adb install -r`,
+verifies the installed digest, releases only its own lease and returns the
+package, digest, signer and versions for the reviewed build metadata. It
+never uninstalls, clears data or runs inside a test.
 It installs the pinned automation helpers, preserves the installed app and its
 data, and rejects `app.reset()` before issuing a device command.
 
