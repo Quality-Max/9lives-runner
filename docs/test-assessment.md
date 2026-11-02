@@ -257,8 +257,14 @@ computed key, or a spread or value the analyzer cannot read); a factory from
 another module or a `let` binding is not recognized. Each use of a name is
 resolved to its innermost declaration in scope, so a control declared in a
 block does not leak out of it and a parameter that shadows `app` is not the
-app; a name that is ever written, or declared with `var` or as a function, is
-neither the app nor a control. Recognition is source evidence only: at run time a
+app; a name that is ever written (also by a `for…of`/`for…in` header), or
+declared with `var` or as a function, is neither the app nor a control, and a
+`const` in a `case` clause is scoped to the whole `switch`. Nothing in a
+function is credited once it assigns a property named like a target matcher or
+`getByTestId`, nothing is passed to a helper at or after a spread argument, and
+a target promise handed to `expect(...)` is that matcher's subject rather than
+an assertion. A target test binding that is used other than by calling it or
+reading a property (an alias, `test['use']`, an argument) is not trusted. Recognition is source evidence only: at run time a
 target assertion is reported by the worker (`targetAssertions`) and is never
 independently verified.
 

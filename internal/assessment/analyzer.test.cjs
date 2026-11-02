@@ -1167,3 +1167,31 @@ test('target provenance follows overrides, writes and lexical scope', () => {
 test('t', async ({app}) => { await sent((app)); await sent(app as TargetApp); await app.toHaveKeyboard((false) as boolean); });`),
   [['target:toHaveKeyboard@3:absence', 'target:toHaveKeyboard@3:absence', 'target:toHaveKeyboard@4:absence']]);
 });
+
+test('target provenance stays unknown when fixtures can be replaced out of sight', () => {
+  const head = `import {createTargetTest, expect} from '@9l/playwright';\nconst test = createTargetTest({});\n`;
+  const facts = body => analyze(head + body).tests;
+  const credited = body => facts(body).map(t => t.assertions.map(a => a.matcher));
+  const check = `test('t', async ({app}) => { await app.toHaveKeyboard(true); });`;
+  // The test binding escapes through an element access or an alias.
+  assert.deepEqual(credited(`test['use']({app: fake});\n${check}`), [[]]);
+  assert.deepEqual(credited(`const alias = test; alias.use({app: fake});\n${check}`), [[]]);
+  assert.deepEqual(credited(`register(test);\n${check}`), [[]]);
+  assert.deepEqual(credited(`test.describe('s', () => { test.beforeEach(async () => {}); ${check} });`), [['target:toHaveKeyboard']]);
+  // A shadowing app is neither credited nor exempt from the helper limit.
+  const shadow = facts(`import {verify} from './checks';\ntest('t', async ({app}) => { { const app = {verify}; await app.verify(); } });`);
+  assert.deepEqual(shadow[0].assertions, []);
+  assert.deepEqual(shadow[0].limits.map(l => l.code), ['unresolved-helper']);
+  // Loop headers write; a case declaration is scoped to the whole switch.
+  assert.deepEqual(credited(`test('t', async ({app}) => { for (app of [fake]) {} await app.toHaveKeyboard(true); });`), [[]]);
+  assert.deepEqual(credited(`test('t', async ({app}) => { switch (0) { case 0: const app = fake; case 1: await app.toHaveKeyboard(true); } });`), [[]]);
+  // Replacing a matcher on any object leaves the function's targets unknown.
+  assert.deepEqual(credited(`test('t', async ({app}) => { const control = app.getByTestId('x'); const alias = control; alias.toBeVisible = async () => {}; await control.toBeVisible(); });`), [[]]);
+  assert.deepEqual(credited(`test('t', async ({app}) => { other['toHaveKeyboard'] = noop; await app.toHaveKeyboard(true); });`), [[]]);
+  // After a spread argument, parameters receive unknown values.
+  assert.deepEqual(credited(`async function check(first, app, ...rest) { await app.toHaveKeyboard(true); }\ntest('t', async ({app}) => { await check(...[first, fake], app); });`), [[]]);
+  assert.deepEqual(credited(`async function check(first, app) { await app.toHaveKeyboard(true); }\ntest('t', async ({app}) => { await check(first, app); });`), [['target:toHaveKeyboard']]);
+  // A target promise handed to expect is that matcher's subject, not an assertion.
+  const rejected = facts(`test('t', async ({app}) => { await expect(app.getByTestId('r').toHaveText('wanted')).rejects.toThrow(); });`);
+  assert.deepEqual(rejected[0].assertions.map(a => [a.matcher, a.unawaited]), [['toThrow', false]]);
+});

@@ -163,13 +163,23 @@ function createAnalyzer(ts) {
         if (factory.app) targetTests.add(declaration.name.text);
       }
     }
-    // test.use(...) anywhere in the file, at file or suite scope, that may
-    // set `app` replaces the fixture for some of its tests: none is trusted.
-    (function overrides(node) {
-      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'use'
-        && ts.isIdentifier(node.expression.expression) && targetTests.has(node.expression.expression.text)
-        && (node.arguments.length !== 1 || mayDefineApp(node.arguments[0]))) targetTests.delete(node.expression.expression.text);
-      ts.forEachChild(node, overrides);
+    // A target test binding may only be called or have a property read from
+    // it. test.use(...) that may set `app` replaces the fixture for some of its
+    // tests, and any other use (an alias, an element access such as
+    // test['use'], an argument) lets it be overridden out of sight: in either
+    // case none of its tests is trusted.
+    (function references(node) {
+      if (ts.isIdentifier(node) && targetTests.has(node.text) && !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)
+        && !((ts.isPropertyAccessExpression(node.parent) || ts.isPropertyAssignment(node.parent)) && node.parent.name === node)
+        && !ts.isImportSpecifier(node.parent)) {
+        const parent = node.parent;
+        const called = ts.isCallExpression(parent) && parent.expression === node;
+        const read = ts.isPropertyAccessExpression(parent) && parent.expression === node;
+        const use = read && parent.name.text === 'use';
+        if ((!called && !read) || (use && !(ts.isCallExpression(parent.parent) && parent.parent.expression === parent
+          && parent.parent.arguments.length === 1 && !mayDefineApp(parent.parent.arguments[0])))) targetTests.delete(node.text);
+      }
+      ts.forEachChild(node, references);
     })(file);
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
@@ -439,7 +449,7 @@ function createAnalyzer(ts) {
                 if (!ts.isIdentifier(binding.name)) continue;
                 const fixture = (binding.propertyName || binding.name).text;
                 if (['page', 'request', 'context', 'browser'].includes(fixture)) fixtureRoots.add(binding.name.text);
-                if (target && fixture === 'app') { fixtureRoots.add(binding.name.text); targetApps.add(binding.name.text); }
+                if (target && fixture === 'app') targetApps.add(binding.name.text);
               }
             }
             // Whether the last recognized fact was a fixed wait, in execution order
@@ -671,6 +681,15 @@ function createAnalyzer(ts) {
               // name declared in this function (nested functions included) and
               // every name written anywhere in it.
               const declared = new Map(), written = new Set();
+              // Assigning a target matcher or getByTestId on any object may
+              // replace a control's or the app's method: then nothing here is trusted.
+              let patched = false;
+              const replaceable = new Set([...targetControlMatchers, ...targetAppMatchers, 'getByTestId']);
+              const patches = node => {
+                node = bare(node);
+                if (ts.isPropertyAccessExpression(node)) return replaceable.has(node.name.text);
+                return ts.isElementAccessExpression(node) && (!ts.isStringLiteralLike(node.argumentExpression) || replaceable.has(node.argumentExpression.text));
+              };
               const declareName = (name, node) => declared.set(name, [...(declared.get(name) || []), node]);
               const writes = node => {
                 if (ts.isIdentifier(node)) written.add(node.text);
@@ -680,7 +699,12 @@ function createAnalyzer(ts) {
                 if (ts.isVariableDeclaration(node) || ts.isParameter(node)) boundNames(node.name).forEach(name => declareName(name, node));
                 else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isFunctionExpression(node) || ts.isClassExpression(node))
                   && node.name && ts.isIdentifier(node.name)) declareName(node.name.text, node);
-                if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) writes(node.left);
+                if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+                  writes(node.left);
+                  if (patches(node.left)) patched = true;
+                }
+                // for (app of ...) and for (app in ...) assign without a declaration.
+                if ((ts.isForOfStatement(node) || ts.isForInStatement(node)) && !ts.isVariableDeclarationList(node.initializer)) writes(node.initializer);
                 if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
                   && [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)) writes(node.operand);
                 ts.forEachChild(node, walk);
@@ -691,7 +715,9 @@ function createAnalyzer(ts) {
                 if (ts.isParameter(declaration)) return declaration.parent;
                 if (!ts.isVariableDeclaration(declaration) || !ts.isVariableDeclarationList(declaration.parent)
                   || !(declaration.parent.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let))) return null;
-                return ts.isVariableStatement(declaration.parent.parent) ? declaration.parent.parent.parent : declaration.parent.parent;
+                const scope = ts.isVariableStatement(declaration.parent.parent) ? declaration.parent.parent.parent : declaration.parent.parent;
+                // A case clause shares the switch's scope with every other case.
+                return ts.isCaseClause(scope) || ts.isDefaultClause(scope) ? scope.parent : scope;
               };
               const depth = node => { let n = 0; for (; node; node = node.parent) n++; return n; };
               // The innermost declaration of a name in this function whose scope
@@ -707,6 +733,7 @@ function createAnalyzer(ts) {
               // keeps the kind its caller gave it; a const holds a control from
               // its declaration on. A name that is written is neither.
               const targetKind = node => {
+                if (patched) return undefined;
                 node = bare(node);
                 if (ts.isIdentifier(node)) {
                   const declaration = bindingOf(node);
@@ -813,11 +840,14 @@ function createAnalyzer(ts) {
                       // fixture value are fixture roots inside it.
                       order.expansions++;
                       const helperRoots = new Set(), helperTargets = new Map();
+                      // After a spread argument, which parameter receives which
+                      // argument is unknown, so nothing is passed on from there.
+                      const spread = child.arguments.findIndex(argument => ts.isSpreadElement(argument));
                       helper.fn.parameters.forEach((parameter, index) => {
-                        const argument = child.arguments[index];
+                        const argument = spread >= 0 && index >= spread ? undefined : child.arguments[index];
                         if (ts.isIdentifier(parameter.name) && argument && roots.has(root(argument))) helperRoots.add(parameter.name.text);
-                        const kind = argument && targetKind(argument);
-                        if (ts.isIdentifier(parameter.name) && kind) { helperRoots.add(parameter.name.text); helperTargets.set(parameter.name.text, kind); }
+                        const kind = argument && !parameter.dotDotDotToken && targetKind(argument);
+                        if (ts.isIdentifier(parameter.name) && kind) helperTargets.set(parameter.name.text, kind);
                       });
                       const settled = consumed(child);
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
@@ -842,7 +872,11 @@ function createAnalyzer(ts) {
                   // A target assertion polls the driver and rejects when the state
                   // is not reached. Hidden, and a keyboard expected not to show,
                   // are absence checks.
-                  const native = targetMatcher(child);
+                  // Passed to expect(...), the target promise is the subject of that
+                  // matcher (often .rejects), not an assertion of its own.
+                  const subject = unparen(child);
+                  const wrapped = ts.isCallExpression(subject.parent) && subject.parent.arguments[0] === subject && expects.has(root(subject.parent.expression));
+                  const native = wrapped ? null : targetMatcher(child);
                   if (native) {
                     let anchor = child;
                     while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
