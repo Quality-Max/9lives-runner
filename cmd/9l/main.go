@@ -1186,10 +1186,14 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 // printFailureSummary shows each summarized failed test as its short engine
 // digest, class and attributed step; the summary has no titles or messages.
 func printFailureSummary(w io.Writer, summary runner.FailureSummary) {
+	// Loaded results drop malformed summaries; never format one regardless.
+	if summary.Validate() != nil {
+		return
+	}
 	for _, test := range summary.Tests {
 		line := "test"
 		if test.TestID != "" {
-			line += " " + test.TestID[:12]
+			line += " " + test.TestID[:min(12, len(test.TestID))]
 		}
 		line += " [" + test.Class + "]"
 		if test.Status == "timedOut" {
