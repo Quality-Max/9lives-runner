@@ -470,6 +470,7 @@ test('attached phone diagnostics are metadata only and classify observer stalene
       else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
       else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
       else if (url.endsWith('/window/rect')) value = {x: 0, y: 0, width: 1080, height: 2340};
+      else if (url.endsWith('/rect')) value = {x: 0, y: 0, width: 200, height: 80};
       else if (url.endsWith('/displayed')) value = true;
       else if (url.endsWith('/text')) value = '7';
       return new Response(JSON.stringify({value}), {status: 200});
@@ -508,6 +509,23 @@ test('attached phone diagnostics are metadata only and classify observer stalene
     await field.text(context());
     windows = [activity, focus].join('\n');
     assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    // Disarming keeps the pre-gesture observation as diagnostic metadata.
+    assert.deepEqual(await driver.diagnose({operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1}, context()),
+      {operation: 'assert-text', reason: 'assertion_failed', elapsedMs: 1, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app', viewportWidth: 1080, viewportHeight: 2340});
+    // So do keyboard, geometry and viewport reads.
+    for (const between of [c => driver.keyboardShown(c), c => field.bounds(c), c => driver.viewport(c)]) {
+      windows = [activity, dialog, focus].join('\n');
+      await driver.tapAt({x: 1000, y: 2300}, context());
+      await between(context());
+      windows = [activity, focus].join('\n');
+      assert.equal(await driver.recheck(context(), {operation: 'assert-hidden'}), undefined);
+    }
+    // A visibility read alone keeps the dismissal sequence armed.
+    windows = [activity, dialog, focus].join('\n');
+    await driver.tapAt({x: 1000, y: 2300}, context());
+    await field.visible(context());
+    windows = [activity, focus].join('\n');
+    assert.equal((await driver.recheck(context(), {operation: 'assert-hidden'}))?.classification, 'observer');
     await driver.close();
     assert.equal((await driver.diagnose({operation: 'tap', reason: 'deadline', elapsedMs: 1}, context())).windowsAfter, -1, 'a closed driver answers with what it knows');
     // Without the opt-in, nothing is read or recorded.
