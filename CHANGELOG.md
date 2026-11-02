@@ -153,6 +153,24 @@ SDK versions.
   are unit-tested against dumpsys excerpts and remain unqualified on
   arbitrary phones.
 
+### Assessment
+
+- `9l assess` recognizes target tests (#210). A file-level
+  `const test = createTargetTest(...)` from `@9l/playwright`, under any import
+  alias and optionally followed by `.extend(...)`, declares tests. In them, a
+  `toBeVisible`, `toBeHidden`, `toHaveText` or `toHaveState` call on a control
+  from `app.getByTestId(...)` (directly, through a `const` or a same-file
+  helper), and `app.toHaveKeyboard(...)`, are credited as asynchronous
+  assertions named `target:<matcher>`, with the usual await, catch, outcome and
+  absence rules (`toBeHidden` and `toHaveKeyboard(false)` are absence checks).
+  The `app` fixture is the target app only when no `.extend(...)` or
+  `test.use(...)` can redefine it and it is never written; names resolve to
+  their innermost declaration in scope. A factory from another module, a `let`
+  binding or an unreadable extension stays unrecognized. Recognition is source evidence only: a target test's
+  runtime `targetAssertions` stay worker-reported and `verifiedAssertions`
+  stays 0. Policy is `assessment-source-v16`; the analyzer helper version is
+  13; report version 3 and suite version 1 are unchanged.
+
 ## 0.6.0-beta.1 — 2026-10-29
 
 Continues the 0.6.0-beta line on the beta channel: it includes everything

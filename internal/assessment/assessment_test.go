@@ -2,6 +2,7 @@ package assessment
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -661,7 +662,7 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		got = append(got, strings.Join(rules, ","))
 	}
 	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v15" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v16" {
 		t.Fatalf("caught findings %q under %s", got, report.Policy)
 	}
 	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
@@ -836,7 +837,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v15" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v16" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -871,7 +872,7 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v15" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v16" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }
@@ -947,7 +948,7 @@ func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
 	}
 	// A value typed into a field and a key press are not selectors.
 	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v15" {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v16" {
 		t.Fatalf("hazard findings %q under %s", got, report.Policy)
 	}
 	counts, total := CountFindings(report)
@@ -978,5 +979,37 @@ func TestTruncatedHazardsAreBoundedAndDisclosed(t *testing.T) {
 	report := Build(source, nil, Contract{}, f)
 	if !strings.Contains(strings.Join(report.Limits, "\n"), "More than 512") {
 		t.Fatalf("truncated hazards not disclosed: %v", report.Limits)
+	}
+}
+
+func TestAssessCreditsTargetAssertionsWithoutClaimingVerification(t *testing.T) {
+	requireNode(t)
+	source := []byte("import {createTargetTest} from '@9l/playwright';\n" +
+		"const test = createTargetTest({native: target => driver(target)});\n" +
+		"// @9l-requirement confirmation\n" +
+		"test('confirmed', async ({app}) => {\n" +
+		"  await app.getByTestId('send').tap();\n" +
+		"  // @9l-outcome confirmation\n" +
+		"  await app.getByTestId('receipt').toHaveText('Sent');\n" +
+		"  await app.getByTestId('modal').toBeHidden();\n" +
+		"});\n" +
+		"test('actions only', async ({app}) => { await app.getByTestId('send').tap(); });\n")
+	report, err := Assess(context.Background(), source, []byte(contractJSON), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tests) != 2 || report.Policy != "assessment-source-v16" || report.Execution != "not_run" {
+		t.Fatalf("target tests not assessed: %+v", report)
+	}
+	confirmed, actions := report.Tests[0], report.Tests[1]
+	if confirmed.Assertions.Count != 2 || strings.Join(confirmed.Assertions.Matchers, ",") != "target:toBeHidden,target:toHaveText" || len(confirmed.Findings) != 0 {
+		t.Fatalf("target assertions not credited: %+v", confirmed)
+	}
+	if actions.Assertions.Count != 0 || len(actions.Findings) != 1 || FindingRule(actions.Findings[0]) != "no-direct-assertion" {
+		t.Fatalf("an action-only target test received credit: %+v", actions)
+	}
+	// Source recognition is not runtime evidence: nothing here is verified.
+	if data, err := json.Marshal(report); err != nil || strings.Contains(string(data), "verified") {
+		t.Fatalf("a source report claims verification: %v", err)
 	}
 }

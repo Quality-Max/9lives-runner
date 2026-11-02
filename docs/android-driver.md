@@ -113,9 +113,10 @@ Receipts contain only the exact APK SHA-256, package, Android API/release/ABI,
 emulator/Appium/UiAutomator2 versions, the targeted display (its physical id or
 `unknown`, size, density and fold posture) and a hashed worker identity bound
 to the required test and attempt. They do not establish independent verification:
-`targetAssertions` counts worker-reported checks, `verifiedAssertions` stays 0
-and source assertion coverage remains unknown. Source assessment does not yet
-recognize `createTargetTest`. The independently sourced M2 outcome mapping is
+`targetAssertions` counts worker-reported checks and `verifiedAssertions` stays
+0. `9l assess` credits the target assertions it finds in the spec's source as
+`target:<matcher>`; that is recognition, not verification. The independently
+sourced M2 outcome mapping is
 in `testdata/android/requirements.json`; annotations are claims to review.
 
 Native Playwright output is forced into attempt-owned temporary storage and

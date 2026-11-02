@@ -28,6 +28,12 @@ a run, but mixed release pairs are unqualified. Align versions first when
 investigating a bridge failure. A successful handshake still needs complete,
 valid execution evidence before an attempt can pass.
 
+Workers predating the `declared-outcomes` capability are rejected, including
+target workers. Update the CLI and `@9l/playwright` together when the handshake
+reports unsupported capabilities or an unsupported target contract. Declared
+outcomes remain required; the engine does not fall back to evidence that
+cannot distinguish declared and runtime result modifiers.
+
 Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
 the protocol and capabilities in a `hello` frame. Go controls the worker through
