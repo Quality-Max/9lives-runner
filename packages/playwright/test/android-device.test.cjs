@@ -16,6 +16,17 @@ test('keyguard and wakefulness markers classify the device without guessing', ()
   assert.equal(parseDeviceState('mWakefulness=Awake'), 'unknown');
 });
 
+// The driver filters dumpsys on the device with deviceStatePattern; the
+// parser must see the standalone keyguard line that filter keeps.
+test('the on-device filter keeps every line the keyguard parser needs', () => {
+  const {deviceStatePattern} = require('../dist/android-device');
+  const filter = text => text.split('\n').filter(line => new RegExp(deviceStatePattern).test(line)).join('\n');
+  const locked = ['WINDOW MANAGER POLICY STATE (dumpsys window policy)', '    KeyguardServiceDelegate', '      showing=true', '      occluded=false', '    mAodShowing=false', 'POWER MANAGER (dumpsys power)', '  mWakefulness=Awake'].join('\n');
+  assert.equal(parseDeviceState(filter(locked)), 'locked');
+  assert.equal(parseDeviceState(filter(locked.replace('showing=true', 'showing=false'))), 'unlocked');
+  assert.equal(parseDeviceState(filter('    KeyguardServiceDelegate\n      aodShowing=true\n  mWakefulness=Awake')), 'unknown');
+});
+
 test('app windows are counted by package and focus is classified', () => {
   const text = [
     '  Window #0 Window{1a2b3c u0 NavigationBar0}:',
@@ -61,6 +72,8 @@ test('fold posture comes from the committed device state only', () => {
   assert.equal(parsePosture("  Committed state: DeviceState{identifier=1, name='HALF_OPENED'}"), 'half-opened');
   assert.equal(parsePosture('mCommittedState=DeviceState{identifier=0, name=CLOSED}'), 'closed');
   assert.equal(parsePosture("Committed state: DeviceState{identifier=4, name='REAR_DISPLAY'}"), 'unknown');
+  assert.equal(parsePosture("Committed state: DeviceState{identifier=3, name='UNFOLDED'}"), 'unknown', 'no substring matching');
+  assert.equal(parsePosture("Committed state: DeviceState{identifier=5, name='FOLDED'}"), 'unknown');
   assert.equal(parsePosture("Can't find service: device_state"), 'flat');
   assert.equal(parsePosture(''), 'unknown');
 });
@@ -73,4 +86,15 @@ test('package versions and the signer digest are read from tool output only', ()
   assert.deepEqual(parsePackageVersion(''), {versionCode: 'unknown', versionName: 'unknown'});
   assert.equal(parseSigner(`Signer #1 certificate DN: CN=9l Synthetic Fixture\nSigner #1 certificate SHA-256 digest: ${'f'.repeat(64)}\nSigner #1 certificate SHA-1 digest: ${'1'.repeat(40)}`), 'f'.repeat(64));
   assert.equal(parseSigner('DOES NOT VERIFY'), undefined);
+});
+
+const {parseLogicalDisplays} = require('../dist/android-device');
+
+test('the logical layout follows rotation and density overrides, per physical display', () => {
+  const base = '    mBaseDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0", FLAG_TRUSTED, real 1080 x 2400, largest app 1080 x 2400, smallest app 1080 x 2400, mode 1, rotation 0, state ON, type INTERNAL, uniqueId "local:4619827259835644672", app 1080 x 2400, density 420 (420.0 x 420.0) dpi, layerStack 0}';
+  const override = '    mOverrideDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0", FLAG_TRUSTED, real 2400 x 1080, largest app 2400 x 1080, smallest app 2400 x 1080, mode 1, rotation 1, state ON, type INTERNAL, uniqueId "local:4619827259835644672", app 2400 x 1080, density 440 (440.0 x 440.0) dpi, layerStack 0}';
+  assert.deepEqual([...parseLogicalDisplays(base).entries()], [['4619827259835644672', {width: 1080, height: 2400, density: 420}]]);
+  assert.deepEqual(parseLogicalDisplays([base, override].join('\n')).get('4619827259835644672'), {width: 2400, height: 1080, density: 440});
+  assert.deepEqual(parseLogicalDisplays([override, base].join('\n')).get('4619827259835644672'), {width: 2400, height: 1080, density: 440}, 'the override wins whatever the order');
+  assert.equal(parseLogicalDisplays('mBaseDisplayInfo=DisplayInfo{"Overlay", uniqueId "overlay:1", app 100 x 100, density 160}').size, 0);
 });

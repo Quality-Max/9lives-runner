@@ -114,9 +114,16 @@ test('a target setup attachment becomes one bounded target_setup frame', () => {
   assert.equal(frames[0].retry, 0);
   const recovered = {classification: 'dirty', reason: 'extra-window', stage: 'open', recovery: {method: 'back', presses: 2, restored: true}};
   assert.deepEqual(run('android:finance', [attachment(recovered)])[0].setup, recovered);
+  // A recovered baseline before the test and a lock found after a failed
+  // assertion are two records at distinct stages, in that order.
+  const rechecked = {classification: 'blocked', reason: 'device-locked', stage: 'recheck'};
+  assert.deepEqual(run('android:finance', [attachment(recovered), attachment(rechecked)]).map(f => f.type), ['target_setup', 'target_setup', 'test_end']);
   for (const [target, attachments] of [
     ['web:finance', [attachment(record)]],
     ['android-fake:finance', [attachment(record), attachment(record)]],
+    ['android-fake:finance', [attachment(rechecked), attachment(rechecked)]],
+    ['android-fake:finance', [attachment(rechecked), attachment(recovered)]],
+    ['android-fake:finance', [attachment(recovered), attachment(rechecked), attachment(rechecked)]],
     ['android-fake:finance', [attachment({...record, reason: 'PIN visible on screen'})]],
     ['android-fake:finance', [attachment({...record, note: 'content'})]],
     ['android-fake:finance', [{...attachment(record), contentType: 'application/json'}]],

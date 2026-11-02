@@ -144,7 +144,9 @@ export class TargetApp {
   /** Opt-in failure diagnostics: ask the driver once per test, while it is
    * still open, and attach only a validated record. Never changes the outcome. */
   private async diagnose(operation: string, reason: string, startedAt: number, point?: TargetPoint) {
-    if (this.diagnosed || !this.driver.diagnose || this.closing) return;
+    // A released driver (an Android deadline or cancellation) still answers
+    // with what it knows; the driver decides what it can read.
+    if (this.diagnosed || !this.driver.diagnose) return;
     this.diagnosed = true;
     let record: TargetDiagnostic | undefined;
     try {
@@ -195,6 +197,9 @@ export class TargetApp {
         // Keep the first reason (deadline, cancellation, a missing control...)
         // and the local cause. Neither crosses the engine bridge.
         if (!signal.aborted && Date.now() >= deadlineMs) expire();
+        // The operation is over: its timer must not fire while diagnostics
+        // or a recheck run, or it would release the driver under them.
+        clearTimeout(timer);
         if (signal.aborted) {
           // The driver may already be released (an Android deadline closes
           // it); the driver answers with what it still knows, or nothing.
@@ -269,11 +274,19 @@ export class TargetApp {
       // the readiness poll. A positive answer reclassifies the failure as
       // setup; the assertion step stays failed and the test still fails.
       if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
+      // The hook gets a bounded signal; a stalled hook cannot keep the
+      // assertion pending, and a result after the bound, cancellation or
+      // close is discarded so it never rewrites the recorded failure.
+      const bound = Math.min(this.options.deadlineMs, Date.now() + recheckMs);
+      const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
       let record: TargetSetupRecord | undefined;
       try {
-        record = await this.driver.recheck({signal: new AbortController().signal, deadlineMs: Math.min(this.options.deadlineMs, Date.now() + recheckMs)}, {operation});
+        record = await Promise.race([
+          this.driver.recheck({signal, deadlineMs: bound}, {operation}),
+          new Promise<undefined>(resolve => signal.addEventListener('abort', () => resolve(undefined), {once: true})),
+        ]);
       } catch { record = undefined; }
-      if (record === undefined) throw error;
+      if (record === undefined || signal.aborted || this.closing) throw error;
       if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
       this.reason = `setup_${record.classification}`;
       await attachSetup(record);
@@ -297,10 +310,16 @@ export class TargetApp {
     return this.assertLoop('assert-keyboard', async context => await this.optional('keyboardShown')(context) === visible, timeoutMs);
   }
   /** One touch down/up at device coordinates, for example outside a pane.
-   * Coordinates are integers inside the viewport; nothing is retried. */
+   * Coordinates are integers inside the viewport, checked against the
+   * driver's viewport when it reports one; nothing is retried. */
   tapAt(point: TargetPoint, options: TargetOperationOptions = {}) {
     return this.perform('tap-at', async context => {
       if (!validPoint(point)) throw stopped('invalid_point');
+      if (typeof this.driver.viewport === 'function') {
+        const size = await this.driver.viewport(context);
+        if (!validSize(size)) throw stopped('invalid_property');
+        if (point.x >= size.width || point.y >= size.height) throw stopped('invalid_point');
+      }
       await this.optional('tapAt')({x: point.x, y: point.y}, context);
     }, options.timeoutMs, maxOperationMs, () => 'deadline', validPoint(point) ? {x: point.x, y: point.y} : undefined);
   }
@@ -386,9 +405,12 @@ export class TargetApp {
 }
 
 const coordinate = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+// A rectangle origin may be negative: a control scrolled partly above or
+// left of the viewport still has geometry. Tap coordinates and sizes do not.
+const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
 const validPoint = (value: unknown): value is TargetPoint => !!value && typeof value === 'object' && coordinate((value as TargetPoint).x) && coordinate((value as TargetPoint).y);
 const validSize = (value: unknown): value is TargetSize => !!value && typeof value === 'object' && coordinate((value as TargetSize).width) && coordinate((value as TargetSize).height) && (value as TargetSize).width > 0 && (value as TargetSize).height > 0;
-const validRect = (value: unknown): value is TargetRect => validPoint(value) && coordinate((value as TargetRect).width) && coordinate((value as TargetRect).height);
+const validRect = (value: unknown): value is TargetRect => !!value && typeof value === 'object' && offset((value as TargetRect).x) && offset((value as TargetRect).y) && coordinate((value as TargetRect).width) && coordinate((value as TargetRect).height);
 
 const remaining = (context: TargetContext) => { context.signal.throwIfAborted(); return Math.max(1, context.deadlineMs - Date.now()); };
 
@@ -429,10 +451,10 @@ export function webTargetDriver(page: Page, appId: string, lifecycle: {
     back: async context => { await page.goBack({timeout: remaining(context)}); },
     tapAt: async (point, context) => { remaining(context); await page.mouse.click(point.x, point.y); },
     viewport: async context => {
+      // viewport: null disables emulation; the page still has a real size.
       remaining(context);
-      const size = page.viewportSize();
-      if (!size) throw new Error('viewport unavailable');
-      return size;
+      const size = page.viewportSize() ?? await page.evaluate(() => ({width: window.innerWidth, height: window.innerHeight}));
+      return {width: Math.round(size.width), height: Math.round(size.height)};
     },
     screenDigest: async context => createHash('sha256').update(await page.screenshot({timeout: remaining(context), animations: 'allow', caret: 'initial'})).digest('hex'),
     observeTestId: async (id, context) => {

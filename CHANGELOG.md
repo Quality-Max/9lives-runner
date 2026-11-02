@@ -61,8 +61,9 @@ SDK versions.
   classified `setup observer` (`window-gone-element-displayed`): the
   accessibility snapshot disagreeing with the window manager, as the field
   investigation established, rather than an application or gesture failure.
-  The classification is only made after a failed hidden assertion and only
-  with the opt-in; screenshot capture is not offered. Exercised by the
+  The classification is a heuristic, made only for a hidden assertion that
+  directly follows the gesture, only with the opt-in, and the diagnostic
+  keeps the counts; screenshot capture is not offered. Exercised by the
   offline target smoke through the fake driver; the window readers are
   unit-tested against dumpsys excerpts and remain unqualified on a device.
 
@@ -102,8 +103,9 @@ SDK versions.
   opt-in `recovery: {back: N}` presses Back up to N times until the baseline
   returns and is recorded either way; it never clears data, force-stops or
   changes settings (#212). The classification crosses the engine stream as
-  one `target_setup` frame per attempt (closed enums, no content) and lands
-  in the receipt as `targetSetup`; `9l run` and `9l result` print it under
+  a `target_setup` frame (closed enums, no content; at most one made before
+  the test ran and one from a recheck per attempt) and lands in the receipt
+  as `targetSetup`; `9l run` and `9l result` print it under
   the job, and a `--failure-details` failure carries class `setup`. A test
   with an unrecovered classification cannot pass; a recovered one runs from
   the restored baseline with the record kept. The shared target fixture
