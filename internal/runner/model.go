@@ -435,10 +435,10 @@ type ProgressEvent struct {
 // docs/contracts.md.
 const (
 	PlanVersion          = 1
-	ReceiptVersion       = 1
+	ReceiptVersion       = 2
 	ProgressEventVersion = 1
-	RunSummaryVersion    = 1
-	RunStatusVersion     = 1
+	RunSummaryVersion    = 2
+	RunStatusVersion     = 2
 )
 
 // RunOutcome is the normative classification of a run for hosts. Complete is

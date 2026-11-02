@@ -6,6 +6,18 @@ SDK versions.
 
 ## Unreleased
 
+### Contracts
+
+- Receipt, run result and run status are version 2, and the shared target
+  contract is `9l.target/2`. The experimental Android runtime record gained
+  required fields (the targeted display, posture and installed build
+  identity), which a version 1 validator would reject, and `9l.target/2` adds
+  the native operations and the `target_setup` and `target_diagnostic`
+  frames. A driver or SDK that declares `9l.target/1` is rejected with the
+  upgrade message: update the CLI and `@9l/playwright` together. Plan,
+  progress event and `9l version` stay at version 1; `9l.engine/1` is
+  unchanged. Version 2 receipts also carry this release's `failureSummary`
+  and provenance `dependencyChanges`.
 ### Receipts
 
 - Every receipt that did not pass now keeps a bounded, metadata-only

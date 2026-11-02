@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 
 function appWithText(read: (context: TargetContext) => Promise<string>, lifetime = 2000) {
   const driver: TargetDriver = {
-    kind: 'android-fake', appId: 'assertion', version: '9l.target/1', capabilities: targetCapabilities,
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => {},
     observeTestId: async () => [{
       tap: async () => {}, fill: async () => {}, visible: async () => true,
@@ -54,7 +54,7 @@ test('the outer deadline after a false observation keeps the outer deadline', as
 test('an Android operation deadline closes the driver even when abort settles its transport', async () => {
   let closed = 0;
   const driver: TargetDriver = {
-    kind: 'android', appId: 'assertion', version: '9l.target/1', capabilities: targetCapabilities,
+    kind: 'android', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => { closed++; },
     observeTestId: async () => [{
       tap: context => new Promise((_, reject) => {
@@ -74,7 +74,7 @@ for (const outcome of ['resolve', 'reject']) {
   test(`an Android transport that ${outcome}s past its deadline cannot beat the timer`, async () => {
     let closed = 0;
     const driver: TargetDriver = {
-      kind: 'android', appId: 'assertion', version: '9l.target/1', capabilities: targetCapabilities,
+      kind: 'android', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
       open: async () => {}, reset: async () => {}, close: async () => { closed++; },
       observeTestId: async () => [{
         tap: async context => {
