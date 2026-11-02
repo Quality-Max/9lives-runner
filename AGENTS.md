@@ -26,9 +26,10 @@ goals, and replay verified actions without depending on a platform account.
   isolation and verify the result before application. Cache/replay admission
   requires verified behavior and source/environment provenance; replay must
   recheck the expected outcome and invalidate stale entries.
-- Separate working features from planned capabilities. Independent
-  behavioral verification, verified replay and native mobile qualification are
-  subsequent milestones. Claim support only after real runtime qualification;
+- Separate working features from planned capabilities. Android execution is
+  experimental and qualified only on the emulators and phone documented in
+  `docs/android-driver.md`. Independent behavioral verification, verified
+  replay, iOS and broader device qualification are subsequent milestones. Claim support only after real runtime qualification;
   deterministic synthetic results are not production benchmark results.
 - Natural-language goals use finite observed controls and typed actions; reuse
   the existing Go provider transports. Keep parameters in browser workers and
