@@ -29,9 +29,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  emulator:
+  # Each case owns a cold emulator, so the cases run as four parallel groups.
+  # The groups must cover `scripts/android-smoke.cjs --list` exactly; the
+  # coverage job below fails otherwise.
+  coverage:
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    outputs:
+      groups: ${{ steps.groups.outputs.groups }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Define the emulator groups and check they cover every case once
+        id: groups
+        run: |
+          groups='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version","operations diagnostics width-mismatch version-mismatch"]'
+          node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" ").split(" ").sort().join("\n") + "\n")' "$groups" > groups.txt
+          node scripts/android-smoke.cjs --list | sort > cases.txt
+          diff -u cases.txt groups.txt
+          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+
+  emulator:
+    needs: coverage
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.coverage.outputs.groups) }}
+    name: emulator (${{ matrix.group }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     env:
       NINELIVES_ANDROID_AVD: QualityMax_API_35
     steps:
@@ -68,11 +92,13 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix tools/android --ignore-scripts
       - name: Qualify the Android target on a real emulator
-        run: npm run smoke:android
+        run: |
+          npm run build
+          node scripts/android-smoke.cjs ${{ matrix.group }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: android-qualification-${{ github.sha }}
+          name: android-qualification-${{ github.sha }}-${{ strategy.job-index }}
           path: .context/android-qualification/
           if-no-files-found: ignore
           include-hidden-files: true
