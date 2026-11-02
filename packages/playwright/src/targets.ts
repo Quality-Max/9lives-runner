@@ -257,7 +257,7 @@ export class TargetApp {
     try {
       return await this.perform(operation, async context => {
         const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
-        let last: unknown;
+        let last: unknown, slowest = 0;
         for (let poll = 0; poll < maxObservations; poll++) {
           context.signal.throwIfAborted();
           const started = Date.now();
@@ -269,11 +269,13 @@ export class TargetApp {
             if (error instanceof TargetStopped || context.signal.aborted) throw error;
             last = error;
           }
-          // Stop while the next observation, as slow as this one, would still
-          // finish in time. A last read that overran the bound would end the
-          // assertion by its deadline, which on Android releases the driver
-          // before diagnostics or the recheck can read the device.
-          if (Date.now() + interval + (Date.now() - started) >= context.deadlineMs) break;
+          // Stop while the next observation, half again as slow as the slowest
+          // so far, would still finish in time. A last read that overran the
+          // bound would end the assertion by its deadline, which on Android
+          // releases the driver before diagnostics or the recheck can read
+          // the device; native read times vary on a loaded host.
+          slowest = Math.max(slowest, Date.now() - started);
+          if (Date.now() + interval + slowest * 1.5 >= context.deadlineMs) break;
           await delay(interval, undefined, {signal: context.signal});
         }
         if (observedFalse) throw stopped('assertion_failed', last);

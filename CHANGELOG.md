@@ -83,6 +83,12 @@ SDK versions.
 
 ### Android (experimental)
 
+- A failing target assertion now stops polling while the next read, half
+  again as slow as the slowest so far, would still finish in time. Budgeting
+  on the last read alone let a slow read on a loaded CI emulator overrun the
+  bound, which releases the Android driver before diagnostics can read the
+  device.
+
 - The emulator's version is read from both output streams (Linux prints it on
   stderr) within 10 s, falling back to the emulator package's
   `Pkg.Revision`; on hosted Linux runners `open` failed at the runtime
