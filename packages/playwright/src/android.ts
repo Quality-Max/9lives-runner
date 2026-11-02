@@ -185,16 +185,18 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     return windows.windows === 0 && windows.focus === 'unknown' ? undefined : windows;
   };
   // With diagnostics, the window state before the last gesture; a read that
-  // fails leaves the gesture to proceed and the observation absent. Any
-  // operation other than a visibility read between the gesture and a hidden
-  // assertion disarms the observer heuristic: it describes a dismissal
-  // sequence (gesture, then the control should be gone), nothing else.
-  let lastGesture: WindowObservation | undefined;
+  // fails leaves the gesture to proceed and the observation absent. The
+  // observation stays as diagnostic metadata, but any operation other than a
+  // visibility read between the gesture and a hidden assertion disarms the
+  // observer heuristic: it describes a dismissal sequence (gesture, then the
+  // control should be gone), nothing else.
+  let lastGesture: WindowObservation | undefined, armed = false;
   const observeGesture = async (c: TargetContext) => {
     if (!diagnostics) return;
     try { lastGesture = await readWindows(c); } catch { lastGesture = undefined; }
+    armed = lastGesture !== undefined;
   };
-  const disarm = () => { lastGesture = undefined; };
+  const disarm = () => { armed = false; };
   // A baseline reading is clean only when every component was observed as
   // declared; a difference is a dirty reason; anything else is unknown and
   // can neither classify the state nor count as a restored baseline.
@@ -330,7 +332,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       await observeGesture(c);
       await endpoint('/execute/sync', c, 'POST', {script: 'mobile: scrollGesture', args: [{elementId: ref, direction, percent}]});
     },
-    bounds: async c => rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)),
+    bounds: async c => { disarm(); return rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)); },
   });
   const pixel = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
   const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
@@ -550,7 +552,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
                 await adbRun(['shell', 'input', 'keyevent', 'KEYCODE_BACK'], c);
                 presses++;
                 await delay(500, undefined, {signal: c.signal});
-                reading = await readBaseline(c);
+                // A failed read after Back is an unknown, unrestored baseline:
+                // the Back already sent stays on the record. Cancellation, the
+                // deadline and a closed driver still propagate.
+                try { reading = await readBaseline(c); } catch (error) {
+                  if (c.signal.aborted || Date.now() >= c.deadlineMs || closed) throw error;
+                  reading = 'unknown';
+                }
               }
               const recovery = {method: 'back' as const, presses, restored: reading === 'clean'};
               if (reading !== 'clean') throw new TargetSetupError({classification: 'dirty', reason, stage: 'open', recovery});
@@ -580,6 +588,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       return opening;
     },
     async reset(c) {
+      disarm();
       if (physical) throw failure('reset_unsupported_on_attached_device');
       check(c);
       if (!session) throw failure('session_unavailable');
@@ -590,7 +599,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     async observeTestId(id, c) { return (await matches(id, c)).slice(0, 2).map(() => handle(id)); },
     setup: () => setupRecord,
     async back(c) { await observeGesture(c); await endpoint('/back', c, 'POST', {}); },
-    keyboardShown,
+    async keyboardShown(c) { disarm(); return keyboardShown(c); },
     // Back dismisses a shown keyboard without touching the selected input
     // method; the result is read back rather than assumed.
     async hideKeyboard(c) {
@@ -612,6 +621,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     },
     async screenDigest(c) { check(c); return screenDigest(c); },
     async viewport(c): Promise<TargetSize> {
+      disarm();
       const r = rect(await endpoint('/window/rect', c));
       if (r.width === 0 || r.height === 0) throw failure('invalid_property');
       return {width: r.width, height: r.height};
@@ -644,7 +654,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       // assertion that fails right after a gesture while the app lost a
       // window is attributed to the snapshot, not proven. The diagnostic
       // keeps the counts either way.
-      if (diagnostics && failed.operation === 'assert-hidden' && lastGesture && lastGesture.windows > 0) {
+      if (diagnostics && armed && failed.operation === 'assert-hidden' && lastGesture && lastGesture.windows > 0) {
         const now = await readWindows(c);
         if (now && now.windows < lastGesture.windows) return {classification: 'observer', reason: 'window-gone-element-displayed', stage: 'recheck'};
       }
