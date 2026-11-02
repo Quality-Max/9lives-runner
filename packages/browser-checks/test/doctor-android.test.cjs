@@ -32,19 +32,20 @@ function fixture({ java = '21.0.5', avds = 'INFO    | Storing crashdata in: /pri
   return { root, sdk, jdk, tooling, env: { PATH: '/usr/bin:/bin', HOME: path.join(root, 'home'), ANDROID_HOME: sdk, JAVA_HOME: jdk, NINELIVES_ANDROID_TOOLS: tooling, ANDROID_ADB_SERVER_PORT: '5037' } };
 }
 
+const none = () => false;
 const byName = report => Object.fromEntries(report.checks.map(check => [check.name, check]));
 const attached = { running: true, devices: [{ emulator: true, state: 'device' }, { emulator: false, state: 'device' }, { emulator: false, state: 'device' }] };
 
 test('a complete fake SDK passes every Android check and names neither paths nor serials', { skip: !posix }, async () => {
   const f = fixture();
   try {
-    const report = await androidChecks({ env: f.env, platform: 'darwin', devices: async () => attached });
+    const report = await androidChecks({ env: f.env, platform: 'darwin', isDirectory: none, devices: async () => attached });
     const checks = byName(report);
     for (const name of ['android/java', 'android/sdk', 'android/adb', 'android/emulator', 'android/build-tools', 'android/avds', 'android/devices', 'android/appium', 'android/uiautomator2']) {
       assert.equal(checks[name]?.status, 'ok', `${name}: ${checks[name]?.message}`);
     }
     assert.match(checks['android/java'].message, /^Java 21\.0\.5 from JAVA_HOME; 9l run passes it to tests only with --pass-env JAVA_HOME\.$/);
-    assert.match(checks['android/sdk'].message, /from ANDROID_HOME; 9l run passes it to tests only with --pass-env ANDROID_HOME/);
+    assert.match(checks['android/sdk'].message, /^SDK root from ANDROID_HOME; 9l run passes ANDROID_HOME to tests only with --pass-env ANDROID_HOME, otherwise a driver without sdkRoot finds no SDK\.$/);
     assert.equal(checks['android/adb'].message, 'adb 36.0.0-fixture.');
     assert.equal(checks['android/avds'].message, '2 AVDs: Fixture_API_35, second.avd. The driver boots the one named by its avd option.');
     assert.equal(checks['android/devices'].message, '1 emulator and 2 physical devices attached and ready. Serials are not shown.');
@@ -99,6 +100,29 @@ test('no SDK, no AVD, unauthorized devices and the default tooling directory', {
     const sdkRoot = byName(await androidChecks({ env: { ...f.env, ANDROID_SDK_ROOT: path.join(f.root, 'other') }, devices: async () => ({ running: false }) }));
     assert.equal(sdkRoot['android/sdk'].status, 'warning');
     assert.equal(byName(await androidChecks({ env: { ...f.env, ANDROID_ADB_SERVER_PORT: 'x' }, devices: async () => assert.fail('no query') }))['android/devices'].status, 'warning');
+  } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
+});
+
+// A test worker gets HOME but no SDK variable unless it is forwarded, so
+// doctor says which variable a driver without sdkRoot would need.
+test('android/sdk says whether tests without sdkRoot find the same root, and which variable to forward', { skip: !posix }, async () => {
+  const f = fixture();
+  try {
+    const sdk = async (env, isDirectory) => byName(await androidChecks({ env, platform: 'linux', isDirectory, devices: async () => ({ running: false }) }))['android/sdk'];
+    const { ANDROID_HOME, ...bare } = f.env;
+    const brew = path.join(f.root, 'brew'), brewSdk = path.join(brew, 'share/android-commandlinetools');
+    fs.mkdirSync(brewSdk, { recursive: true });
+    const custom = await sdk({ ...bare, HOMEBREW_PREFIX: brew }, dir => dir === brewSdk);
+    assert.equal(custom.status, 'ok');
+    assert.equal(custom.message, 'SDK root from the Homebrew command-line tools location; 9l run passes HOMEBREW_PREFIX to tests only with --pass-env HOMEBREW_PREFIX, otherwise a driver without sdkRoot finds no SDK.');
+    const fixed = await sdk(bare, dir => dir === '/opt/homebrew/share/android-commandlinetools');
+    assert.match(fixed.message, /^SDK root from the Homebrew command-line tools location; tests find the same root when sdkRoot is omitted\.$/);
+    const studio = path.join(bare.HOME, 'Android/Sdk');
+    fs.mkdirSync(studio, { recursive: true });
+    const same = await sdk({ ...bare, ANDROID_HOME: studio }, dir => dir === studio);
+    assert.equal(same.message, 'SDK root from ANDROID_HOME; tests find the same root when sdkRoot is omitted.');
+    const other = await sdk({ ...bare, ANDROID_SDK_ROOT: f.sdk }, dir => dir === studio);
+    assert.equal(other.message, 'SDK root from ANDROID_SDK_ROOT; 9l run passes ANDROID_SDK_ROOT to tests only with --pass-env ANDROID_SDK_ROOT, otherwise a driver without sdkRoot finds another SDK.');
   } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
 });
 

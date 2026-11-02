@@ -87,8 +87,13 @@ on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows). A variable that is set is
 used as given, so a wrong value is reported instead of silently replaced.
 Tooling comes from `NINELIVES_ANDROID_TOOLS`, else `~/.9l/android-tools`.
 Explicit options win. `9l run` passes only a fixed environment to tests, so
-forward the variables you rely on: `--pass-env ANDROID_HOME,JAVA_HOME,NINELIVES_ANDROID_TOOLS`.
-Locations under the home directory and the fixed prefixes need no variable.
+forward the variables you rely on, such as
+`--pass-env ANDROID_HOME,JAVA_HOME,NINELIVES_ANDROID_TOOLS`; an SDK found
+through `ANDROID_SDK_ROOT` or a custom `HOMEBREW_PREFIX` needs that variable
+forwarded too. Locations under the home directory and the fixed prefixes need
+no variable. `android/sdk` in `9l doctor --android` says whether a test
+without `sdkRoot` would find the same root, and otherwise which variable to
+forward.
 
 ## Run the opt-in qualification
 

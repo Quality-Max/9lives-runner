@@ -138,7 +138,15 @@ async function androidChecks(options = {}) {
             checks.push({ name: 'android/java', status: 'ok', message: `Java ${release.version} from ${from}.` });
         }
     }
-    const found = (0, android_env_1.androidDefaults)({ env, home: options.home, platform });
+    const found = (0, android_env_1.androidDefaults)({ env, home: options.home, platform, isDirectory: options.isDirectory });
+    // What a test worker discovers when sdkRoot is omitted: `9l run` passes it
+    // HOME, USERPROFILE and LOCALAPPDATA (internal/runner inheritedEnvironment)
+    // but none of the SDK variables unless they are named with --pass-env.
+    const inherited = {};
+    for (const key of ['HOME', 'USERPROFILE', 'LOCALAPPDATA'])
+        if (env[key] !== undefined)
+            inherited[key] = env[key];
+    const inTests = (0, android_env_1.androidDefaults)({ env: inherited, home: options.home, platform, isDirectory: options.isDirectory }).sdkRoot;
     const sdk = found.sdkRoot;
     if (!sdk) {
         checks.push({ name: 'android/sdk', status: 'missing', message: 'No Android SDK: ANDROID_HOME and ANDROID_SDK_ROOT are unset and no common SDK location exists.',
@@ -150,9 +158,11 @@ async function androidChecks(options = {}) {
     }
     else {
         const origin = found.sdkSource === 'homebrew' ? 'the Homebrew command-line tools location' : found.sdkSource === 'android-studio' ? "Android Studio's default location" : found.sdkSource;
-        const passing = found.sdkSource === 'ANDROID_HOME' || found.sdkSource === 'ANDROID_SDK_ROOT'
-            ? `; 9l run passes it to tests only with --pass-env ${found.sdkSource}, otherwise the driver looks in the common locations`
-            : '; the driver finds the same root when sdkRoot is omitted';
+        // The variable a test needs to find this root: the one that supplied it,
+        // or HOMEBREW_PREFIX for a Homebrew location only that prefix names.
+        const needed = found.sdkSource === 'ANDROID_HOME' || found.sdkSource === 'ANDROID_SDK_ROOT' ? found.sdkSource : 'HOMEBREW_PREFIX';
+        const passing = inTests === sdk ? '; tests find the same root when sdkRoot is omitted'
+            : `; 9l run passes ${needed} to tests only with --pass-env ${needed}, otherwise a driver without sdkRoot ${inTests ? 'finds another SDK' : 'finds no SDK'}`;
         checks.push(found.sdkRootIgnored
             ? { name: 'android/sdk', status: 'warning', message: `SDK root from ANDROID_HOME${at(sdk)}; ANDROID_SDK_ROOT names another directory and is ignored.`, fix: 'unset ANDROID_SDK_ROOT or set it to the same directory as ANDROID_HOME' }
             : { name: 'android/sdk', status: 'ok', message: `SDK root from ${origin}${at(sdk)}${passing}.` });
