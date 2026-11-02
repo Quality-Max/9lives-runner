@@ -182,6 +182,6 @@ one-attempt behavior, plain `--list` discovery and ordinary Playwright
 compatibility. Bounded receipts
 are saved under `.context/target-contract/`. Creation provenance currently
 supports one job: single-target controls use it; the two-target baseline does
-not claim runtime provenance. Source assessment does not yet recognize
-`createTargetTest` declarations, so static assertion/requirement coverage is
-unknown for this fixture.
+not claim runtime provenance. `9l assess` recognizes `createTargetTest`
+declarations and credits target assertions as `target:<matcher>`; that is
+source evidence of what the spec asserts, not verification of what ran.
