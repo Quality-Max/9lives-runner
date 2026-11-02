@@ -17,8 +17,13 @@ The current SDK supports `n9l.step` and bounded `n9l.goal` with
 `9l run --sdk`, an explicit HTTP, agent CLI or offline scripted provider, and ordinary
 Playwright assertions. Named values stay in browser workers; credentials and
 attempt budgets stay in Go. Model completion never proves a test passed.
-Independent behavioral verification, verified replay, mobile execution and
-production benchmark qualification remain roadmap work. Do not describe proposed capabilities as shipped. Reuse the platform's
+Android execution is experimental and in the 0.6.0 beta releases: the shared
+target fixture drives an owned emulator or an attached phone through Appium
+and UiAutomator2, qualified only on the documented emulators and one phone
+(see docs/android-driver.md); `npm run smoke:android` and
+`scripts/android-phone-smoke.cjs` are its qualification. Independent
+behavioral verification, verified replay, iOS, broader device qualification
+and production benchmark qualification remain roadmap work. Do not describe proposed capabilities as shipped. Reuse the platform's
 grounding, generation, healing and mobile contracts rather than rebuilding them.
 
 Deliver changes with observable execution evidence. Incomplete or unverified
