@@ -87,4 +87,7 @@ test('the logical layout follows rotation and density overrides, per physical di
   assert.deepEqual(parseLogicalDisplays([base, override].join('\n')).get('4619827259835644672'), {width: 2400, height: 1080, density: 440});
   assert.deepEqual(parseLogicalDisplays([override, base].join('\n')).get('4619827259835644672'), {width: 2400, height: 1080, density: 440}, 'the override wins whatever the order');
   assert.equal(parseLogicalDisplays('mBaseDisplayInfo=DisplayInfo{"Overlay", uniqueId "overlay:1", app 100 x 100, density 160}').size, 0);
+  // The current app size, not the nominal largest/smallest range before it.
+  const portrait = '    mOverrideDisplayInfo=DisplayInfo{"Built-in Screen", displayId 0", FLAG_TRUSTED, real 1080 x 2400, largest app 2400 x 2400, smallest app 1080 x 1080, mode 1, rotation 0, state ON, type INTERNAL, uniqueId "local:4619827259835644672", app 1080 x 2265, density 420 (420.0 x 420.0) dpi, layerStack 0}';
+  assert.deepEqual(parseLogicalDisplays(portrait).get('4619827259835644672'), {width: 1080, height: 2265, density: 420});
 });

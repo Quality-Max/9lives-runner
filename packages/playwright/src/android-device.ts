@@ -66,8 +66,10 @@ export function parseLogicalDisplays(text: string): Map<string, LogicalDisplay> 
   const logical = new Map<string, LogicalDisplay>();
   for (const [, kind, body] of text.matchAll(/(mBaseDisplayInfo|mOverrideDisplayInfo)=DisplayInfo\{([^\n]*)/g)) {
     const id = /uniqueId "local:([0-9]{1,24})"/.exec(body)?.[1];
-    const app = /(?:^|[\s,])app ([0-9]{2,5}) x ([0-9]{2,5})(?:[\s,]|$)/.exec(body);
-    const density = /density ([0-9]{2,4})(?:[\s,(]|$)/.exec(body)?.[1];
+    // Whole comma-delimited fields only: `largest app` and `smallest app`
+    // carry the nominal range, not the current size.
+    const app = /(?:^|, )app ([0-9]{2,5}) x ([0-9]{2,5})(?:,|$)/.exec(body);
+    const density = /(?:^|, )density ([0-9]{2,4})(?:[\s,(]|$)/.exec(body)?.[1];
     if (!id || !app || !density || (kind === 'mBaseDisplayInfo' && logical.has(id))) continue;
     logical.set(id, {width: Number(app[1]), height: Number(app[2]), density: Number(density)});
   }
