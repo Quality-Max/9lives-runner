@@ -4,7 +4,16 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.0-beta.2 — 2026-11-02
+
+Continues the 0.6.0-beta line on the beta channel: it includes everything in
+0.6.0-beta.1 plus the changes below. Stable installs stay on 0.5.5. The
+Android target is still experimental, but it is now qualified on real
+devices: every emulator case passes on macOS (API 35 arm64) and in a new
+hosted-Linux CI workflow (API 35 x86_64), and attached-device mode passes on
+an Android 17 foldable. Receipt, run result and run status are version 2 and
+the target contract is `9l.target/2`: update the CLI and `@9l/playwright`
+together.
 
 ### Contracts
 
