@@ -181,11 +181,16 @@
   report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
   `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
-  commit and test source for later assessment/execution checks. A `matched`
-  assessment has `scope: "spec"`: it compared the selected spec's bytes, its
-  path, the branch, commit and workspace root. Helpers, page objects and the
-  module under test are not compared, so `matched` does not mean unchanged
-  dependencies; the text output says so.
+  commit and test source for later assessment/execution checks. Snapshot
+  version 2 also digests the spec's transitive relative imports (helpers,
+  page objects, JSON fixtures) and the nearest lockfile; a `matched`
+  assessment then has `scope: "spec-and-local-imports"`, and a mismatch
+  names each changed file in `dependencyChanges`. Package and path-alias
+  imports and installed packages are not compared. An import that cannot be
+  resolved, leaves the repository or is non-literal, or a graph over the
+  bounds, fails capture so provenance stays unknown. Version 1 snapshots
+  compare only the spec (`scope: "spec"`); see
+  [agent provenance](test-assessment.md#agent-creation-and-execution-provenance).
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
   proposals remain unverified and require approval.
 - `9l heal`: execute a failing Playwright spec, verify a selector-only

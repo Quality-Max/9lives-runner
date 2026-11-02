@@ -120,7 +120,7 @@ Usage:
   9l doctor [--sdk] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
   9l update [--check | --yes]  # check Latest; ask before replacing the runner
-  # assess/run accept --agent-provenance <snapshot.json> for branch/source checks
+  # assess/run accept --agent-provenance <snapshot.json> for branch, source and local-import checks
 
 The Go runner currently executes Playwright specs from existing projects.
 It never reports an incomplete run green. run exits 0 passed, 1 failed,
@@ -211,7 +211,11 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			return 2
 		}
 		actual, err := runner.CaptureAgentProvenance(ctx, fs.Arg(0), expected.Agent)
-		if err != nil {
+		if graph := (runner.ImportGraphError{}); errors.As(err, &graph) {
+			// Our own bounded message naming repo-relative paths; raw Git
+			// errors are never emitted.
+			fmt.Fprintf(errOut, "9l: warning: requested agent provenance could not be captured (%s); provenance remains unknown\n", graph.Error())
+		} else if err != nil {
 			fmt.Fprintln(errOut, "9l: warning: requested agent provenance could not be captured; provenance remains unknown")
 		} else {
 			if actual.Source != report.SourceSHA256 {
@@ -310,11 +314,17 @@ func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
 func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	fmt.Fprintln(out, "Advisory assessment; execution not run; analysis partial.")
 	fmt.Fprint(out, "Agent branch/source provenance: ", report.AgentProvenance.Status)
-	if report.AgentProvenance.Scope == "spec" {
-		// "matched" is easy to over-trust: name what was compared.
-		fmt.Fprint(out, " (the selected spec, its path, branch, commit and workspace root; imported modules are not compared)")
+	// "matched" is easy to over-trust: name what was compared.
+	switch report.AgentProvenance.Scope {
+	case runner.ProvenanceScopeSpec:
+		fmt.Fprint(out, " (the selected spec, its path, branch, commit and workspace root; imported modules are not compared; recapture the snapshot to compare them)")
+	case runner.ProvenanceScopeImports:
+		fmt.Fprint(out, " (the selected spec, its path, its relative imports, the nearest lockfile, branch, commit and workspace root; package and path-alias imports are not followed)")
 	}
 	fmt.Fprintln(out)
+	for _, change := range report.AgentProvenance.DependencyChanges {
+		fmt.Fprintf(out, "Agent provenance %s %s: %s\n", change.Kind, change.Change, strconv.Quote(change.Path))
+	}
 	writeAssessmentTests(out, report, limits)
 	for _, limit := range report.Limits {
 		fmt.Fprintln(out, "Limit:", limit)

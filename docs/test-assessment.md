@@ -453,8 +453,12 @@ Consumers must also accept the `informational` classification, the
 `debugging-leftover`, `fragile-selector` and `caught-assertion` rules, the
 `unknown-matcher`, `loop` and `possibly-soft` limit codes, an absent `requirementsSHA256`, an
 optional test `title`, an optional finding `site`, the test `assertions`
-summary and the suite summary's `noTests` count before upgrading. Requirement contract and agent provenance snapshot
-versions remain 1. Reports omit source, requirement prose and raw diagnostic
+summary and the suite summary's `noTests` count before upgrading. The requirement
+contract version remains 1. Agent provenance snapshots are version 2, which
+adds the local import graph; version 1 snapshots are still accepted, and the
+report's `agentProvenance` may carry the optional `dependencies` and
+`dependencyChanges` fields (see
+[agent provenance](#agent-creation-and-execution-provenance)). Reports omit source, requirement prose and raw diagnostic
 payloads, and omit titles unless `--titles` is given.
 
 ## Maintaining the bundled parser
@@ -494,16 +498,57 @@ the selected spec:
 .context/9l run path/to/checkout.spec.ts --agent-provenance .context/checkout-creation.json --timeout 30s --deadline 60s --attempts 1 --format json
 ```
 
-Use `claude` or another declared agent ID as appropriate. Snapshot version 1
+Use `claude` or another declared agent ID as appropriate. The snapshot
 contains declared agent, branch, HEAD, selected source digest, relative-path
 digest and workspace-root digest. No Git remote URLs, configuration contents or
 credentials are collected. An attached branch and one exact spec are required. Identifiers
 and branch names use a bounded ASCII allowlist; unsupported names and detached
 HEAD fail capture.
 
+Snapshot version 2 also covers the spec's local import graph. Capture scans
+the spec and every local module it reaches, without executing them, for
+`import … from`, `export … from`, side-effect `import '…'`, and
+`import('…')` or `require('…')` with one literal argument. Relative and
+absolute specifiers are resolved as the Playwright loader does: the exact
+file, then `.js`→`.jsx`/`.ts`/`.tsx`, `.jsx`→`.tsx`, `.cjs`→`.cts`,
+`.mjs`→`.mts`, an extensionless name with `.js`, `.ts`, `.jsx`, `.tsx`,
+`.cjs`, `.mjs`, `.cts` or `.mts`, then a directory's `index` file. Script and
+TypeScript modules are followed transitively; other files, such as JSON
+fixtures, are digested but not parsed. The lockfiles (`package-lock.json`,
+`npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`,
+`bun.lockb`) in the nearest directory between the spec and the repository
+root are digested too. Each entry in `dependencies` is a repo-relative `path`,
+a `kind` (`import` or `lockfile`) and a `sha256` of its bytes; contents are
+never stored. `dependenciesSHA256` digests the sorted list, and an empty list
+is omitted.
+
+Package, built-in and path-alias imports (`@playwright/test`, `node:fs`,
+`@/helpers`, `#internal`) are not followed, and files under `node_modules`
+are not read: installed packages are left to the lockfile. Capture fails,
+so provenance stays unknown rather than matching, when a local import cannot
+be resolved, resolves outside the repository (including through a symlink),
+is a `file:` URL or uses escape sequences, when `import()` or `require()` has
+a non-literal argument, or when the graph exceeds 256 local modules, 1 MiB per
+module, 8 MiB together or 64 MiB per lockfile. `9l provenance` then exits 2
+with the reason, `assess` warns with it, and `run` refuses execution with it
+in the error receipt. The scan is lexical rather than a full parse. It skips
+comments, strings, templates and regular expressions, but unusual syntax, such
+as a regular expression directly after `)` or `}` or a quote in JSX text, can
+be misread and hide an import later on the same line. Files
+read at runtime, such as `readFileSync` fixtures, and modules that a
+TypeScript `paths` alias names are not covered.
+
+A version 2 comparison has `scope: "spec-and-local-imports"` and a
+`dependencies` status. When it is `mismatch`, `dependencyChanges` names each
+`modified`, `added` or `removed` path, and the text output prints one line per
+change. Version 1 snapshots are still accepted and compared with
+`scope: "spec"`: imported modules are not compared, and the text output says
+so. Capture a new snapshot to cover them.
+
 Assessment compares the supplied snapshot with the current checkout; mismatches
 remain advisory and unavailable capture remains unknown, with a generic warning
-on stderr when capture was explicitly requested. Raw Git errors are not emitted.
+on stderr when capture was explicitly requested (it names the reason when the
+import graph could not be captured). Raw Git errors are not emitted.
 It also rejects a source change between reading input and capturing provenance.
 Execution checks
 before launching the worker and again after completion. A mismatch or unavailable
@@ -513,7 +558,7 @@ unchanged; absent provenance means unknown.
 
 This is boundary snapshot verification, not authenticated authorship or a
 continuous worktree lock. It cannot detect a transient branch/source switch
-that is reversed, hash the whole dirty application, verify a remote deployment
+that is reversed, hash the whole dirty application or installed packages, verify a remote deployment
 or prove the named agent wrote the spec. Separate worktrees and a recorded
 application build are needed for stronger isolation. Do not replace a mismatched
 record just to obtain green; explain a deliberate revision and retain its old

@@ -391,12 +391,17 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		receipt.AgentProvenance = &unknown
 		actual, err := CaptureAgentProvenance(ctx, job.Spec, opts.AgentProvenance.Agent)
 		if err != nil {
-			return infrastructureError("agent branch/source provenance unavailable; execution refused")
+			reason := "agent branch/source provenance unavailable; execution refused"
+			if graph := (ImportGraphError{}); errors.As(err, &graph) {
+				// Our own bounded message: repo-relative paths, never raw Git output.
+				reason = "agent branch/source provenance unavailable (" + graph.Error() + "); execution refused"
+			}
+			return infrastructureError(reason)
 		}
 		checked := CompareAgentProvenance(*opts.AgentProvenance, actual)
 		receipt.AgentProvenance = &checked
 		if checked.Status != "matched" {
-			return infrastructureError("agent creation branch, commit, repository or source differs; execution refused")
+			return infrastructureError("agent creation branch, commit, repository, source or local imports differ; execution refused")
 		}
 	}
 	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_JOB_ID": job.ID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
@@ -555,6 +560,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			receipt.AgentProvenance.Status = checked.Status
 			receipt.AgentProvenance.Branch, receipt.AgentProvenance.Commit = checked.Branch, checked.Commit
 			receipt.AgentProvenance.Source, receipt.AgentProvenance.Repository = checked.Source, checked.Repository
+			receipt.AgentProvenance.Dependencies, receipt.AgentProvenance.DependencyChanges = checked.Dependencies, checked.DependencyChanges
 		}
 		if receipt.AgentProvenance.Status != "matched" {
 			receipt.Validated = false
