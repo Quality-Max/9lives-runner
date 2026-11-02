@@ -22,10 +22,12 @@ export type WindowState = {windows: number; focus: 'app' | 'foreign' | 'none' | 
 export function parseWindows(text: string, appPackage: string): WindowState {
   const escaped = appPackage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const windows = [...text.matchAll(new RegExp(`Window #[0-9]+ Window\\{[0-9a-f]+ u[0-9]+ ${escaped}(?:[/ }:]|$)`, 'gm'))].length;
-  const focus = /mCurrentFocus=(null|Window\{[0-9a-f]+ u[0-9]+ ([^ /}]+)[^}]*\})/.exec(text);
-  if (!focus) return {windows, focus: 'unknown'};
-  if (focus[1] === 'null') return {windows, focus: 'none'};
-  return {windows, focus: focus[2] === appPackage ? 'app' : 'foreign'};
+  // One focus line per display: the app's focus on any display wins over
+  // another display's, and a focused window over a display with none.
+  const focus = [...text.matchAll(/mCurrentFocus=(null|Window\{[0-9a-f]+ u[0-9]+ ([^ /}]+)[^}]*\})/g)];
+  if (!focus.length) return {windows, focus: 'unknown'};
+  if (focus.some(line => line[2] === appPackage)) return {windows, focus: 'app'};
+  return {windows, focus: focus.some(line => line[1] !== 'null') ? 'foreign' : 'none'};
 }
 
 /** Software keyboard visibility from `dumpsys input_method`. */

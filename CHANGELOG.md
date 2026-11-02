@@ -83,6 +83,27 @@ SDK versions.
 
 ### Android (experimental)
 
+- Real-device qualification. `npm run smoke:android` gains native operations,
+  opt-in diagnostics and display-width/build-version mismatch cases, and the
+  healthy case checks the recorded display, posture, version and signer; a new
+  `Android` workflow runs it on an API 35 emulator on hosted Linux runners.
+  `scripts/android-phone-smoke.cjs` qualifies attached-device mode on an
+  authorized phone. Running both on an API 35 emulator and an API 37 foldable
+  found and fixed:
+  - the driver's own `am start -n` stacked a second instance of a
+    standard-launch activity on the one the session started, so every
+    attached-device test failed as `dirty` `extra-window`; the app is now
+    brought forward with the launcher intent;
+  - API 35 and later print the focused window only in `dumpsys window
+    displays`, one line per display, with a powered-off display's `null`
+    first; focus is read there, and the app's focus on any display wins;
+  - a failing assertion whose last native read overran its bound ended by its
+    deadline, which on Android releases the driver before diagnostics or the
+    recheck; polling now stops while the next read, as slow as the last,
+    would still finish in time;
+  - `terminate()` failed on a slow emulator because the driver's 500 ms
+    process-exit check expired; it now waits up to 5 s within the operation.
+
 - Installed-app identity (#217). The Android runtime receipt gains
   `versionCode`, `versionName` (from the device's package manager) and
   `signer` (the SHA-256 of the first signing certificate, read with the

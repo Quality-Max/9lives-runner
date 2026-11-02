@@ -7,16 +7,29 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {resolve} from 'node:path';
 
 const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
-const fixtureMode = mode === 'cancel' ? 'blocked' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail'].includes(mode) ? mode : 'healthy';
+// Attached-device mode (scripts/android-phone-smoke.cjs): the fixture app was
+// installed with installInPlace; the serial stays in the environment.
+const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
   appId: target.appId,
   sdkRoot: process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools',
   toolsRoot: resolve(__dirname, mode === 'version' ? '../../../.context/android-bad-version' : '../../../tools/android'),
-  avd: mode === 'unavailable' ? '9l_missing_avd' : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
-  apk: fixture.apk, apkSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.apkSHA256,
+  ...(attachedSerial ? {deviceSerial: attachedSerial, apkSHA256: fixture.apkSHA256} : {
+    avd: mode === 'unavailable' ? '9l_missing_avd' : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
+    apk: fixture.apk, apkSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.apkSHA256,
+  }),
   appPackage: fixture.appPackage, activity: fixture.activity,
+  // Opt-in diagnostics and declared requirements for their qualification cases.
+  ...(mode === 'diagnostics' || mode === 'phone-diagnostics' ? {diagnostics: {gestures: true}} : {}),
+  ...(mode === 'phone-healthy' ? {expected: {versionCode: '7', versionName: '1.4.0', signerSHA256: process.env.NINELIVES_ANDROID_SIGNER}} : {}),
+  ...(mode === 'phone-dirty-recovered' ? {recovery: {back: 2}} : {}),
+  ...(mode === 'phone-posture' ? {requires: {posture: 'opened'}} : {}),
+  ...(mode === 'phone-width' ? {requires: {minWidthDp: 600}} : {}),
+  ...(mode === 'width-mismatch' ? {requires: {minWidthDp: 10000}} : {}),
+  ...(mode === 'version-mismatch' ? {expected: {versionCode: '999'}} : {}),
 })}).extend({
   page: async () => { throw new Error('native requested a browser page'); },
   context: async () => { throw new Error('native requested a browser context'); },
@@ -82,7 +95,8 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   try {
   await app.open({timeoutMs: 180000});
   if (mode === 'disconnect') await native.close();
-  await app.reset({timeoutMs: 30000});
+  // An attached phone keeps its app data; the fields are refilled below.
+  if (!attachedSerial) await app.reset({timeoutMs: 30000});
   await app.getByTestId('recipient').fill('Ada', {timeoutMs: 20000});
   await app.getByTestId('amount').fill('5', {timeoutMs: 20000});
   // Strict mutations must reject missing/ambiguous controls before dispatch.
@@ -118,5 +132,64 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     // Only bounded synthetic probe facts; no serial/handles or device output.
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
       JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming}));
+  }
+});
+
+// Native operations on the owned emulator: geometry, a touch at a point that
+// opens a dialog window, Back, a hidden assertion, scrolling, the keyboard
+// read and the app lifecycle. With diagnostics, a hidden assertion against
+// the open dialog fails and records the real window counts.
+test('native operations: touch, back, scroll, keyboard and lifecycle', async ({app}) => {
+  const originalFetch = globalThis.fetch;
+  let stopReason = '', driverReason = '', serial = '';
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    return originalFetch(input, init);
+  };
+  try {
+    await app.open({timeoutMs: 180000});
+    if (!attachedSerial) await app.reset({timeoutMs: 30000});
+    const viewport = await app.viewport();
+    const open = await app.getByTestId('open').bounds();
+    if (!(viewport.width > 0 && viewport.height > 0 && open.width > 0 && open.height > 0)) throw new Error('unexpected geometry');
+    await app.tapAt({x: open.x + Math.floor(open.width / 2), y: open.y + Math.floor(open.height / 2)});
+    await app.getByTestId('dialog').toBeVisible();
+    if (mode === 'diagnostics' || mode === 'phone-diagnostics') await app.getByTestId('dialog').toBeHidden(3000);
+    await app.back();
+    await app.getByTestId('dialog').toBeHidden();
+    await app.getByTestId('list').scroll('down', {percent: 0.5});
+    await app.getByTestId('status').toHaveText('scrolled');
+    if (attachedSerial) {
+      // A phone keeps its own input method: touching the field shows it
+      // (fill sets the text without opening it), hiding closes it.
+      await app.getByTestId('amount').fill('7');
+      await app.getByTestId('amount').tap();
+      await app.toHaveKeyboard(true);
+      await app.hideKeyboard();
+      await app.toHaveKeyboard(false);
+    } else {
+      await app.toHaveKeyboard(false);
+      await app.hideKeyboard();
+    }
+    await app.terminate();
+    await app.getByTestId('send').toBeHidden();
+    await app.activate();
+    await app.getByTestId('send').toBeVisible();
+  } catch (error) {
+    const e = error as {reason?: unknown; cause?: {message?: unknown}};
+    if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
+    const cause = e.cause?.message;
+    if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+    let deviceStopped = false;
+    if (serial) {
+      try { await promisify(execFile)(resolve(process.env.ANDROID_HOME ?? '/usr/local/share/android-commandlinetools', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      catch { deviceStopped = true; }
+    }
+    if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming: {}}));
   }
 });
