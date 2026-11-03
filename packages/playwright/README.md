@@ -102,7 +102,16 @@ see [Android setup and qualification limits](https://github.com/Quality-Max/9liv
 
    ```ts
    // playwright.config.ts
-   projects: [{name: 'android:app'}]
+   import {defineConfig} from '@playwright/test';
+
+   export default defineConfig({
+     // A cold emulator boot fits in open()'s 180-second bound, which needs
+     // a test timeout above Playwright's 30-second default.
+     timeout: 240_000,
+     // 9l owns attempts: a Playwright retry is refused.
+     retries: 0,
+     projects: [{name: 'android:app'}],
+   });
    ```
 
 4. Run through the engine, forwarding the variables the driver relies on.
