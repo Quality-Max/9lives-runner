@@ -162,7 +162,8 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     const open = await app.getByTestId('open').bounds();
     if (!(viewport.width > 0 && viewport.height > 0 && open.width > 0 && open.height > 0)) throw new Error('unexpected geometry');
     await app.tapAt({x: open.x + Math.floor(open.width / 2), y: open.y + Math.floor(open.height / 2)});
-    await app.getByTestId('dialog').toBeVisible();
+    // A hosted emulator can take seconds to draw the dialog after the touch.
+    await app.getByTestId('dialog').toBeVisible(15000);
     if (mode === 'diagnostics' || mode === 'phone-diagnostics') await app.getByTestId('dialog').toBeHidden(3000);
     await app.back();
     await app.getByTestId('dialog').toBeHidden();

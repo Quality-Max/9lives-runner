@@ -966,7 +966,7 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
       else if (url.endsWith('/elements')) {
         finds.push(body);
         value = answer(body.value.endsWith('[@content-invalid="true"]') ? flagged : found).map(ref => ({'element-6066-11e4-a52e-4f735466cecf': ref}));
-      }
+      } else if (url.endsWith('/displayed')) value = true;
       return new Response(JSON.stringify({value}), {status: 200});
     };
     const {androidTargetDriver} = require('../dist/android');
@@ -1049,6 +1049,15 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
     assert.equal(finds.length, 1, 'no state read without a resolved control');
     found = ['ref-0', 'ref-1'];
     await assert.rejects(email.invalid(context()), /ambiguous_resource_id/);
+    // A control that vanished between its lookup and its visibility read is
+    // not visible; one that became ambiguous still fails.
+    found = ['ref-0'];
+    const [shown] = await driver.observeTestId('email', context());
+    assert.equal(await shown.visible(context()), true);
+    found = [];
+    assert.equal(await shown.visible(context()), false);
+    found = ['ref-0', 'ref-1'];
+    await assert.rejects(shown.visible(context()), /ambiguous_resource_id/);
     await driver.close();
     assert.equal(driver.deviceSerial(), undefined, 'no serial after close');
   } finally {

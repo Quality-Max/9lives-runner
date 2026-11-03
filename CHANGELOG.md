@@ -41,10 +41,17 @@ SDK versions.
 
 ### Target contract
 
+- The shared target contract is `9l.target/3`: it adds the `query-visible`
+  and `foreground` operations, the `foreground` and `device-serial` driver
+  capabilities and the `operation_timeout` reason. A CLI or SDK on
+  `9l.target/2` is rejected at the handshake with the upgrade message, so
+  update the CLI and `@9l/playwright` together.
 - `getByTestId(id).isVisible({timeoutMs}?)` answers whether a control is
   shown without ending the session, for a screen that may or may not appear
   (#239). One observation by default, a bounded poll with `timeoutMs`; absent
-  is `false`, ambiguity still fails. `app.foreground()` reads whether the
+  is `false`. It answers only from completed reads: ambiguity and any failed
+  read end it, and a poll cut short by Go's worker deadline stops as
+  `deadline` instead of answering `false`. `app.foreground()` reads whether the
   app, another package's window (a system dialog, permission prompt or
   Settings) or nothing has input focus, without relaxing package scoping.
   Both are recorded as executed actions (`query-visible`, `foreground`),

@@ -447,8 +447,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       await endpoint(`/element/${ref}/clear`, c, 'POST', {});
       await endpoint(`/element/${ref}/value`, c, 'POST', {text: value});
     },
+    // A control that vanished since it was observed is not visible; two
+    // matches are still ambiguous.
     visible: async c => {
-      const value = await endpoint(`/element/${await resolveOne(id, c)}/displayed`, c);
+      const found = await matches(id, c);
+      if (found.length > 1) throw failure('ambiguous_resource_id');
+      if (found.length === 0) return false;
+      const value = await endpoint(`/element/${found[0]}/displayed`, c);
       if (typeof value !== 'boolean') throw failure('invalid_property'); return value;
     },
     text: async c => {

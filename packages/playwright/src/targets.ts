@@ -7,7 +7,8 @@ import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticTyp
 export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
-  'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest'] as const;
+  'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
+  'foreground', 'device-serial'] as const;
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
 export type TargetPoint = {x: number; y: number};
@@ -269,8 +270,10 @@ export class TargetApp {
       if (!validTargetSetup(recovered) || !recovered.recovery?.restored) throw stopped('invalid_setup_record');
       await attachSetup(recovered);
     }
-  }, options.timeoutMs ?? (this.driver.kind === 'android' ? androidMaxMs : undefined)); }
-  reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs ?? this.lifecycleMs); }
+  }, options.timeoutMs === undefined && this.driver.kind === 'android' ? androidMaxMs : options.timeoutMs); }
+  // Defaults apply only to an omitted timeout; any other non-integer,
+  // including null, stops as invalid_timeout.
+  reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
   private get lifecycleMs() { return this.driver.kind === 'android' ? androidLifecycleMs : defaultOperationMs; }
 
   /** Poll a check until it holds or the next read could overrun the bound.
@@ -278,7 +281,7 @@ export class TargetApp {
    * last failed read, if any); failed reads alone throw their own error, and
    * a bound reached before any completed read is a deadline. Ambiguity,
    * invalid input and cancellation are never transient. */
-  private async poll(context: TargetContext, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs: number, observations = maxObservations, falseSeen = () => {}): Promise<{held: boolean; last?: unknown}> {
+  private async poll(context: TargetContext, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs: number, observations = maxObservations, falseSeen = () => {}, strict = false): Promise<{held: boolean; last?: unknown}> {
     const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
     let last: unknown, slowest = 0, observedFalse = false;
     for (let poll = 0; poll < observations; poll++) {
@@ -288,7 +291,9 @@ export class TargetApp {
         if (await attempt(context)) return {held: true};
         observedFalse = true; falseSeen();
       } catch (error) {
-        if (error instanceof TargetStopped || context.signal.aborted) throw error;
+        // A query answers only from reads that completed: any failed read
+        // (a lost transport, a driver-level ambiguity) ends it.
+        if (strict || error instanceof TargetStopped || context.signal.aborted) throw error;
         last = error;
       }
       // Stop while the next observation, half again as slow as the slowest
@@ -390,9 +395,9 @@ export class TargetApp {
     }, options.timeoutMs);
   }
   /** Stop the configured app without clearing its data. Android only. */
-  terminate(options: TargetOperationOptions = {}) { return this.perform('terminate', context => this.optional('terminate')(context), options.timeoutMs ?? this.lifecycleMs); }
+  terminate(options: TargetOperationOptions = {}) { return this.perform('terminate', context => this.optional('terminate')(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
   /** Bring the configured app back to the foreground. Android only. */
-  activate(options: TargetOperationOptions = {}) { return this.perform('activate', context => this.optional('activate')(context), options.timeoutMs ?? this.lifecycleMs); }
+  activate(options: TargetOperationOptions = {}) { return this.perform('activate', context => this.optional('activate')(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
 
   /** Which window has input focus: the app's, another package's (a system
    * dialog, permission prompt or Settings) or none. Read-only; package
@@ -468,11 +473,18 @@ export class TargetApp {
        * complete still fail. Recorded as an executed action, never an
        * assertion, so it cannot stand in for one. */
       isVisible: (options: TargetOperationOptions = {}) => {
-        const bound = options.timeoutMs ?? defaultOperationMs;
-        return this.perform('query-visible', async context => (await this.poll(context, async context => {
-          const handle = await observe(context);
-          return handle ? visibility(handle, context) : false;
-        }, bound, options.timeoutMs === undefined ? 1 : maxObservations)).held, bound);
+        const polling = options.timeoutMs !== undefined;
+        const bound = polling ? options.timeoutMs as number : defaultOperationMs;
+        return this.perform('query-visible', async context => {
+          const result = await this.poll(context, async context => {
+            const handle = await observe(context);
+            return handle ? visibility(handle, context) : false;
+          }, bound, polling ? maxObservations : 1, () => {}, true);
+          // A poll that Go's worker deadline cut short has not answered:
+          // the requested wait never ran to its end.
+          if (!result.held && polling && context.deadlineMs >= this.options.deadlineMs) throw stopped('deadline');
+          return result.held;
+        }, bound);
       },
       toBeVisible: (timeoutMs?: number) => assertion('assert-visible', async (handle, context) => await visibility(handle, context), timeoutMs),
       /** Passes when the control is absent or not displayed. */

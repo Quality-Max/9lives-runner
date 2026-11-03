@@ -14,7 +14,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     if (process.env.NINELIVES_TARGET_EFFECTS) appendFileSync(process.env.NINELIVES_TARGET_EFFECTS, event + '\n');
   };
   return {
-    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/2' : '9l.target/2',
+    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/3' : '9l.target/3',
     capabilities: mode === 'capabilities' ? [] : targetCapabilities,
     // Setup classifications a real device driver would make: a locked phone
     // before any operation, a leaked window recovered by a declared Back, and

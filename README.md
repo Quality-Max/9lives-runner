@@ -334,7 +334,7 @@ same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
 versions, but is not a qualified pairing; align both versions before diagnosing
 a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
-An experimental [shared target contract](docs/targets.md) (`9l.target/2`)
+An experimental [shared target contract](docs/targets.md) (`9l.target/3`)
 dispatches one deterministic scenario to web and to native targets with the
 same `app` fixture. The experimental [Android target](docs/android-driver.md)
 drives an owned local emulator, or an installed app on an explicitly selected
