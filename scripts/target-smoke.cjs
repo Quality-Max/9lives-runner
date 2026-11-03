@@ -173,6 +173,23 @@ assert.equal(validation.summary.receipts[0].targetAssertions, 3);
 const noInvalid = invoke('validation-native', {targets: ['android-fake:finance'], grep: 'validation state', file: operations, extra: ['--failure-details']});
 assert.notEqual(noInvalid.code, 0);
 assert(noInvalid.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_state'), 'validation: a handle without the invalid read is unsupported, never another state');
+// Queries: a control that is absent or not yet shown answers false without
+// ending the session, and the test's later steps still run. They are
+// executed actions, never assertions; ambiguity still fails.
+const queries = invoke('queries', {targets: ['web:finance', 'android-fake:finance'], grep: 'queries', file: operations});
+assert.equal(queries.code, 0, 'queries: a false visibility answer keeps the session');
+for (const receipt of queries.summary.receipts) {
+  const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse).filter(f => f.operation);
+  const native = receipt.target.startsWith('android-fake:');
+  assert.deepEqual(frames.map(f => `${f.operation}:${f.category}:${f.status}`), ['open:action:passed', 'query-visible:action:passed', 'query-visible:action:passed', 'bounds:action:passed', 'tap-at:action:passed', 'query-visible:action:passed',
+    ...(native ? ['foreground:action:passed'] : []), 'assert-text:assertion:passed'], receipt.target);
+  assert.equal(receipt.targetAssertions, 1, `${receipt.target}: queries are not assertions`);
+}
+const ambiguousQuery = invoke('ambiguous-query', {targets: ['android-fake:finance'], grep: 'queries', file: operations, extra: ['--failure-details']});
+assert.notEqual(ambiguousQuery.code, 0);
+assert(ambiguousQuery.summary.receipts[0].failures[0].message.includes('9lives target stopped: ambiguous_test_id'), 'ambiguous-query: a query never picks a match');
+const foreign = invoke('foreign', {targets: ['android-fake:finance'], grep: 'foreground window is read', file: operations});
+assert.equal(foreign.code, 0, 'foreign: a system window in front is read, and the serial is unsupported on the fake');
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');
@@ -237,7 +254,8 @@ for (const [run, label] of [[defect, 'defect'], [rejected.timeout, 'timeout']]) 
 }
 const distinct = {
   defect: [described(defect, 'defect'), [{class: 'assertion', status: 'failed', step: 'assertion', operation: 'assert-text', reason: 'assertion_failed'}]],
-  timeout: [described(rejected.timeout, 'timeout'), [{class: 'action-timeout', status: 'failed', step: 'action', operation: 'tap', reason: 'deadline'}]],
+  // The call's own 100 ms bound is operation_timeout; deadline names only the attempt's.
+  timeout: [described(rejected.timeout, 'timeout'), [{class: 'action-timeout', status: 'failed', step: 'action', operation: 'tap', reason: 'operation_timeout'}]],
   locked: [described(locked, 'locked'), [{class: 'setup', status: 'failed', step: 'action', operation: 'open', reason: 'setup_blocked', setup: 'blocked'}]],
   lockRecheck: [described(lockRecheck, 'lock-recheck'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-text', reason: 'assertion_failed', setup: 'blocked'}]],
   ambiguous: [described(rejected.ambiguous, 'ambiguous'), [{class: 'other', status: 'failed', step: 'action', operation: 'fill', reason: 'ambiguous_test_id'}]],

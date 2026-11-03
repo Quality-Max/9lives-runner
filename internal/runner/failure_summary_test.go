@@ -16,8 +16,10 @@ func TestEngineFailureClassUsesStructuredFactsOnly(t *testing.T) {
 		{"failed", "assertion", "", "", FailureAssertion},
 		{"failed", "assertion", "assertion_failed", "", FailureAssertion},
 		{"failed", "action", "deadline", "", FailureActionTimeout},
-		{"failed", "assertion", "deadline", "", FailureActionTimeout}, // no completed check before the bound
-		{"failed", "assertion", "operation_failed", "", FailureOther}, // failed reads are not a mismatch
+		{"failed", "assertion", "deadline", "", FailureActionTimeout},          // no completed check before the bound
+		{"failed", "action", "operation_timeout", "", FailureActionTimeout},    // the call's own bound, not the attempt's
+		{"failed", "assertion", "operation_timeout", "", FailureActionTimeout}, // no completed check before the call's bound
+		{"failed", "assertion", "operation_failed", "", FailureOther},          // failed reads are not a mismatch
 		{"failed", "action", "setup_blocked", "", FailureSetup},
 		{"failed", "assertion", "assertion_failed", SetupBlocked, FailureSetup}, // a recheck reclassified it
 		{"timedOut", "assertion", "", "", FailureTimeout},

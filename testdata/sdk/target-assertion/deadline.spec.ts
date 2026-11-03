@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 
 function appWithText(read: (context: TargetContext) => Promise<string>, lifetime = 2000) {
   const driver: TargetDriver = {
-    kind: 'android-fake', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/3', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => {},
     observeTestId: async () => [{
       tap: async () => {}, fill: async () => {}, visible: async () => true,
@@ -27,9 +27,10 @@ test('a completed false observation rejects the assertion at its polling bound',
   } finally { await app.close(); }
 });
 
+// The assertion's own bound names itself; deadline is reserved for the attempt's.
 test('a deadline before any completed observation stays inconclusive', async () => {
   const app = appWithText(blocked);
-  try { await expect(app.getByTestId('receipt').toHaveText('wanted', 100)).rejects.toThrow('deadline'); }
+  try { await expect(app.getByTestId('receipt').toHaveText('wanted', 100)).rejects.toThrow('operation_timeout'); }
   finally { await app.close(); }
 });
 
@@ -65,7 +66,7 @@ test('a failing assertion with uneven read times ends before its bound and keeps
     return 'wrong';
   };
   const driver: TargetDriver = {
-    kind: 'android', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
+    kind: 'android', appId: 'assertion', version: '9l.target/3', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => { closed++; },
     observeTestId: async () => [{tap: async () => {}, fill: async () => {}, visible: async () => true, state: async () => true, text: read}],
   };
@@ -81,7 +82,7 @@ test('a failing assertion with uneven read times ends before its bound and keeps
 test('an Android operation deadline closes the driver even when abort settles its transport', async () => {
   let closed = 0;
   const driver: TargetDriver = {
-    kind: 'android', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
+    kind: 'android', appId: 'assertion', version: '9l.target/3', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => { closed++; },
     observeTestId: async () => [{
       tap: context => new Promise((_, reject) => {
@@ -92,7 +93,7 @@ test('an Android operation deadline closes the driver even when abort settles it
   };
   const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
   try {
-    await expect(app.getByTestId('send').tap({timeoutMs: 50})).rejects.toThrow('deadline');
+    await expect(app.getByTestId('send').tap({timeoutMs: 50})).rejects.toThrow('operation_timeout');
     expect(closed).toBe(1);
   } finally { await app.close(); }
 });
@@ -101,7 +102,7 @@ for (const outcome of ['resolve', 'reject']) {
   test(`an Android transport that ${outcome}s past its deadline cannot beat the timer`, async () => {
     let closed = 0;
     const driver: TargetDriver = {
-      kind: 'android', appId: 'assertion', version: '9l.target/2', capabilities: targetCapabilities,
+      kind: 'android', appId: 'assertion', version: '9l.target/3', capabilities: targetCapabilities,
       open: async () => {}, reset: async () => {}, close: async () => { closed++; },
       observeTestId: async () => [{
         tap: async context => {
@@ -115,8 +116,54 @@ for (const outcome of ['resolve', 'reject']) {
     };
     const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
     try {
-      await expect(app.getByTestId('send').tap({timeoutMs: 30})).rejects.toThrow('deadline');
+      await expect(app.getByTestId('send').tap({timeoutMs: 30})).rejects.toThrow('operation_timeout');
       expect(closed).toBe(1);
     } finally { await app.close(); }
   });
 }
+
+// Queries answer only when their wait ran to its end, from reads that completed.
+function appWithVisibility(read: (context: TargetContext) => Promise<boolean>, lifetime = 2000) {
+  const driver: TargetDriver = {
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/3', capabilities: targetCapabilities,
+    open: async () => {}, reset: async () => {}, close: async () => {},
+    observeTestId: async () => [{tap: async () => {}, fill: async () => {}, visible: read, state: async () => true, text: async () => ''}],
+  };
+  return new TargetApp(driver, driver, {deadlineMs: Date.now() + lifetime});
+}
+
+test('a query that Go\'s deadline cut short does not answer false', async () => {
+  const app = appWithVisibility(async () => false, 400);
+  try { await expect(app.getByTestId('banner').isVisible({timeoutMs: 5000})).rejects.toThrow('9lives target stopped: deadline'); }
+  finally { await app.close(); }
+});
+
+test('a single query observation answers false even near the deadline', async () => {
+  const app = appWithVisibility(async () => false, 400);
+  try { expect(await app.getByTestId('banner').isVisible()).toBe(false); }
+  finally { await app.close(); }
+});
+
+test('a polled query whose own bound ends answers false and keeps the session', async () => {
+  const app = appWithVisibility(async () => false);
+  try {
+    expect(await app.getByTestId('banner').isVisible({timeoutMs: 200})).toBe(false);
+    expect(await app.getByTestId('banner').isVisible()).toBe(false);
+  } finally { await app.close(); }
+});
+
+test('a failed read after a false observation ends the query', async () => {
+  let reads = 0;
+  const app = appWithVisibility(async () => { if (++reads === 1) return false; throw new Error('transport down'); });
+  try { await expect(app.getByTestId('banner').isVisible({timeoutMs: 500})).rejects.toThrow('9lives target stopped: operation_failed'); }
+  finally { await app.close(); }
+});
+
+test('a null timeout is invalid, not the default', async () => {
+  for (const call of [(app: TargetApp) => app.getByTestId('banner').isVisible({timeoutMs: null as unknown as number}),
+    (app: TargetApp) => app.reset({timeoutMs: null as unknown as number})]) {
+    const app = appWithVisibility(async () => true);
+    try { await expect(call(app)).rejects.toThrow('9lives target stopped: invalid_timeout'); }
+    finally { await app.close(); }
+  }
+});

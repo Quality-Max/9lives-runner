@@ -312,8 +312,8 @@ the spec or prove its assertions protect the requirement. See the
 
 The experimental Android target (Appium with UiAutomator2) is available in the
 `0.6.0-beta` releases. Use the matching beta CLI and SDK; see
-[beta installation](docs/releases.md#beta-releases) and
-[Android setup and qualification limits](docs/android-driver.md).
+[beta installation](docs/releases.md#beta-releases) and the
+[Android quickstart, setup and qualification limits](docs/android-driver.md).
 The stable pairing below remains the default installation.
 
 | Component | Qualified | Boundary |
@@ -334,7 +334,7 @@ same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
 versions, but is not a qualified pairing; align both versions before diagnosing
 a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
-An experimental [shared target contract](docs/targets.md) (`9l.target/2`)
+An experimental [shared target contract](docs/targets.md) (`9l.target/3`)
 dispatches one deterministic scenario to web and to native targets with the
 same `app` fixture. The experimental [Android target](docs/android-driver.md)
 drives an owned local emulator, or an installed app on an explicitly selected

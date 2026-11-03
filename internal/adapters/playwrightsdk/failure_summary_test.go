@@ -32,11 +32,12 @@ func webTarget() runner.AttemptIdentity {
 
 func TestFailedTestSummaryCarriesTheTargetStopReason(t *testing.T) {
 	for reason, class := range map[string]string{
-		"assertion_failed": runner.FailureAssertion,
-		"deadline":         runner.FailureActionTimeout,
-		"operation_failed": runner.FailureOther,
-		"setup_blocked":    runner.FailureSetup,
-		"":                 runner.FailureAssertion, // an older SDK sends no reason
+		"assertion_failed":  runner.FailureAssertion,
+		"deadline":          runner.FailureActionTimeout,
+		"operation_timeout": runner.FailureActionTimeout,
+		"operation_failed":  runner.FailureOther,
+		"setup_blocked":     runner.FailureSetup,
+		"":                  runner.FailureAssertion, // an older SDK sends no reason
 	} {
 		v, err := New().ValidateAttempt(stream(failedTargetFrames(reason)), webTarget())
 		if err != nil || v.FailureCount != 1 || len(v.FailedTests) != 1 {

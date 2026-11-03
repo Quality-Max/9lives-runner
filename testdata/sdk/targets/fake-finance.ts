@@ -14,7 +14,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     if (process.env.NINELIVES_TARGET_EFFECTS) appendFileSync(process.env.NINELIVES_TARGET_EFFECTS, event + '\n');
   };
   return {
-    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/2' : '9l.target/2',
+    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/3' : '9l.target/3',
     capabilities: mode === 'capabilities' ? [] : targetCapabilities,
     // Setup classifications a real device driver would make: a locked phone
     // before any operation, a leaked window recovered by a declared Back, and
@@ -44,10 +44,12 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
       status = inside ? 'tapped' : mode === 'observer' || mode === 'ignored-touch' || mode === 'stalled-diagnose' ? status : '';
     },
     viewport: async () => ({width: 400, height: 800}),
+    // A system window (a permission prompt) is in front in the foreign case.
+    foreground: async () => mode === 'foreign' ? 'foreign' : 'app',
     terminate: async () => { running = false; status = ''; },
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },
     observeTestId: async (id: string) => {
-      if (mode === 'ambiguous') return [null, null] as unknown as TargetHandle[];
+      if (mode === 'ambiguous' || (mode === 'ambiguous-query' && id === 'button')) return [null, null] as unknown as TargetHandle[];
       if (mode === 'malformed-handle') return [undefined] as unknown as TargetHandle[];
       if (mode === 'missing' || !running || !['amount', 'send', 'receipt', 'status', 'list', 'button', 'email'].includes(id)) return [];
       return [{

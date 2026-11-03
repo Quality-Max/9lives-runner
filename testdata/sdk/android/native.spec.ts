@@ -156,15 +156,20 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
   };
   try {
     await app.open({timeoutMs: 180000});
-    if (!attachedSerial) await app.reset({timeoutMs: 30000});
+    // Android lifecycle operations default to a minute.
+    if (!attachedSerial) await app.reset();
     const viewport = await app.viewport();
     const open = await app.getByTestId('open').bounds();
     if (!(viewport.width > 0 && viewport.height > 0 && open.width > 0 && open.height > 0)) throw new Error('unexpected geometry');
     await app.tapAt({x: open.x + Math.floor(open.width / 2), y: open.y + Math.floor(open.height / 2)});
-    await app.getByTestId('dialog').toBeVisible();
+    // A hosted emulator can take seconds to draw the dialog after the touch.
+    await app.getByTestId('dialog').toBeVisible(15000);
     if (mode === 'diagnostics' || mode === 'phone-diagnostics') await app.getByTestId('dialog').toBeHidden(3000);
     await app.back();
     await app.getByTestId('dialog').toBeHidden();
+    // A query for a control that is gone answers false and the test goes on.
+    if (await app.getByTestId('dialog').isVisible()) throw new Error('dismissed dialog still visible');
+    if (await app.foreground() !== 'app') throw new Error('app not in front');
     await app.getByTestId('list').scroll('down', {percent: 0.5});
     await app.getByTestId('status').toHaveText('scrolled');
     if (attachedSerial) {
@@ -179,12 +184,24 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
       await app.toHaveKeyboard(false);
       await app.hideKeyboard();
     }
+    if (!attachedSerial) {
+      // The spec's own adb, on the serial the driver booted, puts a system
+      // window (Settings) in front; the driver reads it without acting on it.
+      const device = app.deviceSerial();
+      if (device !== serial) throw new Error('deviceSerial differs from the session device');
+      await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', device, 'shell', 'am', 'start', '-W', '-a', 'android.settings.SETTINGS'], {timeout: 30000, maxBuffer: 64 * 1024});
+      if (await app.foreground() !== 'foreign') throw new Error('Settings not in front');
+      await app.activate();
+      if (!await app.getByTestId('send').isVisible({timeoutMs: 30000})) throw new Error('app not back');
+      if (await app.foreground() !== 'app') throw new Error('app not in front after activate');
+    }
     await app.terminate();
     await app.getByTestId('send').toBeHidden();
     await app.activate();
     // activateApp returns before a cold relaunch has drawn the app; a slow
-    // CI emulator can take longer than the default assertion bound.
-    await app.getByTestId('send').toBeVisible(30000);
+    // CI emulator can take longer than the default assertion bound. Android
+    // assertions accept up to 180 seconds.
+    await app.getByTestId('send').toBeVisible(90000);
   } catch (error) {
     const e = error as {reason?: unknown; cause?: {message?: unknown}};
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;

@@ -1,4 +1,81 @@
-# Local Android driver decision (QUA-2204)
+# Android target (experimental)
+
+The experimental Android target ships in the `0.6.0-beta` releases. This
+page starts with a quickstart, then records the driver decision, host setup,
+the qualification evidence and the attached-device mode.
+
+## Quickstart
+
+The target drives an owned emulator or an attached phone through Appium
+3.8.0 and UiAutomator2 8.7.0, with the same `app` fixture a web target
+uses. It is qualified on API 35 emulators and one Android 17 phone;
+[Set up a host](#set-up-a-host) has the details and
+[Run the opt-in qualification](#run-the-opt-in-qualification) the limits.
+
+1. Install the matching beta CLI and `@9l/playwright` together (see
+   [beta releases](releases.md#beta-releases)), and the pinned automation
+   tooling once, outside your project:
+
+   ```sh
+   npm install --prefix ~/.9l/android-tools --save-exact --ignore-scripts \
+     appium@3.8.0 appium-uiautomator2-driver@8.7.0
+   ```
+
+   For another location, set `NINELIVES_ANDROID_TOOLS`.
+
+2. Check the host. Doctor reports Java, the SDK, build-tools, AVDs, devices
+   and the pinned tooling, each with a fix:
+
+   ```sh
+   9l doctor --android
+   ```
+
+3. Construct the driver in the shared target fixture and name the Playwright
+   project `android:<alias>`:
+
+   ```ts
+   import {createTargetTest} from '@9l/playwright';
+   import {androidTargetDriver} from '@9l/playwright/android';
+
+   export const test = createTargetTest({
+     native: target => androidTargetDriver({
+       appId: target.appId, avd: 'Pixel_API_35',
+       apk: 'build/app.apk', apkSHA256: '<digest>',
+       appPackage: 'com.example.app', activity: '.MainActivity',
+     }),
+   });
+   ```
+
+   ```ts
+   // playwright.config.ts
+   import {defineConfig} from '@playwright/test';
+
+   export default defineConfig({
+     // A cold emulator boot fits in open()'s 180-second bound, which needs
+     // a test timeout above Playwright's 30-second default.
+     timeout: 240_000,
+     // 9l owns attempts: a Playwright retry is refused.
+     retries: 0,
+     projects: [{name: 'android:app'}],
+   });
+   ```
+
+4. Run through the engine, forwarding the variables the driver relies on.
+   `9l run` passes only a fixed environment to tests:
+
+   ```sh
+   9l run tests/login.spec.ts --sdk --target android:app \
+     --pass-env ANDROID_HOME,JAVA_HOME,NINELIVES_ANDROID_TOOLS
+   ```
+
+   Forward `ANDROID_SDK_ROOT`, `ANDROID_AVD_HOME` or `HOMEBREW_PREFIX` too if
+   your SDK or AVDs are found through them. `9l doctor --android` says which.
+
+The driver holds the device's only UI-automation connection while a session
+is open, so a spec-side `adb shell uiautomator dump` returns nothing. Use the
+fixture's operations instead, and `app.deviceSerial()` for other adb commands.
+
+## Driver decision (QUA-2204)
 
 The M2 adapter wraps Appium 3.8.0 and UiAutomator2 8.7.0 (both Apache-2.0).
 Installation is separate from the ordinary Playwright SDK. Deterministic native
@@ -168,8 +245,13 @@ Back only while it is shown and reads the result back, so the selected input
 method is never changed and no keyboard capability is set on a phone. An
 unreadable keyboard state fails the operation rather than guessing. Nothing
 is retried.
-Open is bounded at 180 seconds; the ordinary operation/assertion bounds still
-apply. The adapter never attaches to an existing emulator. Its private console
+Open is bounded at 180 seconds; `reset`, `terminate` and `activate`
+default to 60 seconds, and every operation and assertion accepts up to 180
+seconds. `foreground()` reads the focused window's package from the same
+filtered `dumpsys window` lines as the baseline (an unreadable dump fails as
+`unavailable_state`), and `deviceSerial()` returns the owned emulator's
+`emulator-<port>` serial, or the configured phone serial, while the session
+is open. The adapter never attaches to an existing emulator. Its private console
 handshake identifies its own emulator child, and a private HTTP base path
 identifies its Appium server. Reset clears only the configured app on that owned
 emulator. Close aborts transports and stops its emulator/server. Go also stops

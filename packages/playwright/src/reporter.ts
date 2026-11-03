@@ -13,10 +13,11 @@ function insideAssertion(step: TestStep) {
 }
 
 // A typed target step fails only with "9lives target stopped: <reason>", where
-// the reason is the fixture's own token. Only a token of that exact form crosses
-// the bridge; any other error text, or none, sends no reason.
+// the reason is the fixture's own token, optionally followed by the one fixed
+// detail the fixture writes (the accepted range of an invalid timeout). Only
+// the token crosses the bridge; any other error text, or none, sends no reason.
 function targetStopReason(error: TestError | undefined) {
-  return /^(?:Error: )?9lives target stopped: ([a-z_]{1,64})$/.exec(error?.message ?? '')?.[1];
+  return /^(?:Error: )?9lives target stopped: ([a-z_]{1,64})(?: \(accepted 1-[0-9]{1,7} ms\))?$/.exec(error?.message ?? '')?.[1];
 }
 
 // Worker logs, error messages, step titles, URLs and attachment bodies never enter

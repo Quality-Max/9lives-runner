@@ -30,7 +30,7 @@ function createAnalyzer(ts) {
     'toEqual', 'toHaveLength', 'toHaveProperty', 'toMatch', 'toMatchObject',
     'toStrictEqual', 'toThrow', 'toThrowError', 'toMatchSnapshot',
   ]);
-  // @9l/playwright target assertions (9l.target/2): on a control from
+  // @9l/playwright target assertions (9l.target/3): on a control from
   // app.getByTestId(...), and the app-level keyboard check. Each polls the
   // driver and rejects when the state is not reached, so it is asynchronous.
   const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState']);

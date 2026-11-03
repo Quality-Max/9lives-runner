@@ -190,6 +190,10 @@ test('a failed target operation carries only its stop reason token', () => {
     reporter.onStepEnd(testCase, result, typed('9l target tap', '9lives target stopped: deadline'));
     reporter.onStepEnd(testCase, result, typed('9l target open', 'Error: 9lives target stopped: setup_blocked\n    at open (targets.js:1:1)'));
     reporter.onStepEnd(testCase, result, typed('9l target fill', 'Error: 9lives target stopped: Card 4242 declined'));
+    // The fixed range detail is recognized; only the token crosses, and any
+    // other parenthetical is not a reason.
+    reporter.onStepEnd(testCase, result, typed('9l target assert-visible', 'Error: 9lives target stopped: invalid_timeout (accepted 1-180000 ms)'));
+    reporter.onStepEnd(testCase, result, typed('9l target tap', 'Error: 9lives target stopped: invalid_timeout (accepted 1-60000 ms, card 4242)'));
     reporter.onStepEnd(testCase, result, typed('9l target fill', 'Error: element "Send" is not visible at https://shop.invalid/?token=secret'));
     reporter.onStepEnd(testCase, result, typed('9l target assert-visible'));
     reporter.onStepEnd(testCase, result, {category: 'test.step', title: 'my step', error: {message: 'Error: 9lives target stopped: assertion_failed'}});
@@ -199,12 +203,14 @@ test('a failed target operation carries only its stop reason token', () => {
       ['tap', 'failed', 'deadline'],
       ['open', 'failed', undefined],
       ['fill', 'failed', undefined],
+      ['assert-visible', 'failed', 'invalid_timeout'],
+      ['tap', 'failed', undefined],
       ['fill', 'failed', undefined],
       ['assert-visible', 'passed', undefined],
       [undefined, 'failed', undefined],
     ]);
     const raw = fs.readFileSync(events, 'utf8');
-    for (const leaked of ['Card', 'Send', 'https://', 'token', 'targets.js']) assert(!raw.includes(leaked), leaked);
+    for (const leaked of ['Card', 'card', 'Send', 'https://', 'token', 'targets.js', 'accepted']) assert(!raw.includes(leaked), leaked);
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);

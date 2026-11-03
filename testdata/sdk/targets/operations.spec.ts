@@ -106,3 +106,30 @@ test('a field reports its validation state', async ({app}) => {
   await app.getByTestId('email').toHaveState('invalid', false);
   await app.getByTestId('flagged').toHaveState('invalid', true);
 });
+
+// Queries answer without ending the session: a status that is not shown yet
+// is false, the control that is shown is true, and a poll waits for one that
+// appears. The test continues and its assertion protects the outcome.
+test('queries keep the session open', async ({app}) => {
+  await app.open();
+  if (await app.getByTestId('status').isVisible()) throw new Error('status shown before the tap');
+  if (!await app.getByTestId('button').isVisible({timeoutMs: 2000})) throw new Error('button not visible');
+  const button = await app.getByTestId('button').bounds();
+  await app.tapAt({x: button.x + 10, y: button.y + 10});
+  if (!await app.getByTestId('status').isVisible({timeoutMs: 2000})) throw new Error('status not shown after the tap');
+  if (!web && await app.foreground() !== 'app') throw new Error('the app is not in front');
+  // @9l-outcome tapped-after-optional-screen
+  await app.getByTestId('status').toHaveText('tapped');
+});
+
+// A spec can tell that a system window is in front without acting on it.
+test('the foreground window is read, not acted on', async ({app}) => {
+  await app.open();
+  if (await app.foreground() !== 'foreign') throw new Error('expected a system window in front');
+  // The fake has no device serial: a stable reason, not a guess.
+  let reason = '';
+  try { app.deviceSerial(); } catch (error) { reason = (error as {reason?: string}).reason ?? ''; }
+  if (reason !== 'unsupported_operation') throw new Error(`deviceSerial: ${reason}`);
+  // @9l-outcome system-window-detected
+  await app.getByTestId('button').toBeVisible();
+});

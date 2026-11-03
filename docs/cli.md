@@ -167,11 +167,12 @@
   Playwright attempt, the category of the failed `step` the failure is
   attributed to (the first failed target operation, else the first failed
   assertion, else the first failed step), the target `operation` and its stop
-  `reason` (such as `assertion_failed`, `deadline`, `operation_failed`,
-  `setup_blocked`), an unrecovered `setup` classification, and the
+  `reason` (such as `assertion_failed`, `operation_timeout`, `deadline`,
+  `operation_failed`, `setup_blocked`), an unrecovered `setup` classification, and the
   `failedSteps` and Playwright `attempts` of the test. The class is derived
   from those facts alone: a stop reason `assertion_failed` or a failed
-  `expect` is `assertion`, `deadline` is `action-timeout`, a `setup_*`
+  `expect` is `assertion`, `operation_timeout` (the operation's own bound)
+  and `deadline` (the worker deadline) are `action-timeout`, a `setup_*`
   reason or unrecovered setup record is `setup`, a timed-out test is
   `timeout`, and any other stop reason is `other`. Without `--sdk` an entry
   keeps only the class and status of the report's failure. The summary holds

@@ -921,6 +921,8 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
   const {randomUUID} = require('node:crypto');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-semantics-'));
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const appFocus = '  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}';
+  let focusLine = appFocus;
   const finds = [];
   // Each find answers with element IDs: a control query from `found`
   // (consumed in order when it is a list of answers), a flag query from `flagged`.
@@ -943,7 +945,7 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
       else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
       else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
       else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
-      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
+      else if (script.includes('dumpsys window windows')) result = `  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n${focusLine}\n9l-windows-end`;
       else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
       else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
       else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
@@ -964,7 +966,7 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
       else if (url.endsWith('/elements')) {
         finds.push(body);
         value = answer(body.value.endsWith('[@content-invalid="true"]') ? flagged : found).map(ref => ({'element-6066-11e4-a52e-4f735466cecf': ref}));
-      }
+      } else if (url.endsWith('/displayed')) value = true;
       return new Response(JSON.stringify({value}), {status: 200});
     };
     const {androidTargetDriver} = require('../dist/android');
@@ -985,7 +987,18 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
       inbox: {accessibilityIdSuffix: 'Tab 2 of 4 (new)?', selected: true},
       'sign-in.title': {text: 'Sign in'},
     }});
+    assert.equal(driver.deviceSerial(), undefined, 'no serial before the session opens');
     await driver.open(context());
+    // The focused window's package, read-only; an unreadable dump is no state.
+    assert.equal(await driver.foreground(context()), 'app');
+    focusLine = '  mCurrentFocus=Window{9a8b7c u0 com.android.settings/com.android.settings.Settings}';
+    assert.equal(await driver.foreground(context()), 'foreign');
+    focusLine = '  mCurrentFocus=null';
+    assert.equal(await driver.foreground(context()), 'none');
+    focusLine = '';
+    await assert.rejects(driver.foreground(context()), /unavailable_state/);
+    focusLine = appFocus;
+    assert.equal(driver.deviceSerial(), serial);
     const query = async id => { finds.length = 0; await driver.observeTestId(id, context()); return finds[0]; };
     // A test ID matches the prefixed or the bare resource-id, literally.
     assert.deepEqual(await query('login-button'), {using: '-android uiautomator',
@@ -1036,6 +1049,17 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
     assert.equal(finds.length, 1, 'no state read without a resolved control');
     found = ['ref-0', 'ref-1'];
     await assert.rejects(email.invalid(context()), /ambiguous_resource_id/);
+    // A control that vanished between its lookup and its visibility read is
+    // not visible; one that became ambiguous still fails.
+    found = ['ref-0'];
+    const [shown] = await driver.observeTestId('email', context());
+    assert.equal(await shown.visible(context()), true);
+    found = [];
+    assert.equal(await shown.visible(context()), false);
+    found = ['ref-0', 'ref-1'];
+    await assert.rejects(shown.visible(context()), /ambiguous_resource_id/);
+    await driver.close();
+    assert.equal(driver.deviceSerial(), undefined, 'no serial after close');
   } finally {
     await driver?.close();
     cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
