@@ -4,6 +4,29 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Android (experimental)
+
+- `getByTestId` reaches the controls a Flutter app reports (#238). A test ID
+  matches the app's prefixed resource name or the same name reported bare,
+  as `Semantics(identifier:)` produces, in one package-scoped query, and IDs
+  may contain `.` and `-`. Before, only `<package>:id/<id>` was queried, so no
+  Flutter identifier was reachable.
+- Two control aliases: `hint` addresses a field that has only an input hint,
+  and `accessibilityIdContains` addresses part of a merged multi-line label.
+- `accessibilityIdSuffix` now matches a suffix containing regex
+  metacharacters such as `(`, `.` or `?`. The selector parser passes
+  backslashes through unescaped, so the escaped suffix never matched. Alias
+  text and description values may no longer contain a backslash (they never
+  matched either).
+- `toHaveState('invalid', boolean)` reads the accessibility error a field
+  reports (`content-invalid`), on Android and on the web (`aria-invalid` or a
+  failed constraint validation). A custom driver whose handles have no
+  `invalid()` fails it as `unsupported_state`.
+- The emulator smoke gained a Flutter-shaped fixture (`semantics`) and a
+  control that never reports the field error (`semantics-defect`).
+
 ## 0.6.0-beta.2 — 2026-11-02
 
 Continues the 0.6.0-beta line on the beta channel: it includes everything in

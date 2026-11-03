@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const mode = process.argv[2] ?? 'healthy';
-if (!['healthy', 'defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail'].includes(mode)) throw Error('invalid fixture mode');
+if (!['healthy', 'defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect'].includes(mode)) throw Error('invalid fixture mode');
 const {androidBuildTools, androidDefaults} = require('../packages/playwright/dist/android-env');
 const sdk = androidDefaults().sdkRoot;
 if (!sdk) throw Error('No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');

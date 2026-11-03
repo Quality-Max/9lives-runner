@@ -49,7 +49,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     observeTestId: async (id: string) => {
       if (mode === 'ambiguous') return [null, null] as unknown as TargetHandle[];
       if (mode === 'malformed-handle') return [undefined] as unknown as TargetHandle[];
-      if (mode === 'missing' || !running || !['amount', 'send', 'receipt', 'status', 'list', 'button'].includes(id)) return [];
+      if (mode === 'missing' || !running || !['amount', 'send', 'receipt', 'status', 'list', 'button', 'email'].includes(id)) return [];
       return [{
         tap: async (context: TargetContext) => {
           if (id !== 'send') throw new Error('unsupported');

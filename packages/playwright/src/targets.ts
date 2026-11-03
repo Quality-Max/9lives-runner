@@ -15,7 +15,9 @@ export type TargetRect = TargetPoint & {width: number; height: number};
 export type TargetSize = {width: number; height: number};
 export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android'; appId: string};
 export type TargetContext = {signal: AbortSignal; deadlineMs: number};
-export type TargetState = 'enabled' | 'checked';
+/** `invalid`: the control reports a validation error (Android's
+ * content-invalid; on the web aria-invalid or failed constraint validation). */
+export type TargetState = 'enabled' | 'checked' | 'invalid';
 /** Per-call bound, capped by Go's worker deadline. */
 export type TargetOperationOptions = {timeoutMs?: number};
 
@@ -27,7 +29,10 @@ export interface TargetHandle {
   fill(value: string, context: TargetContext): Promise<void>;
   visible(context: TargetContext): Promise<boolean>;
   text(context: TargetContext): Promise<string>;
-  state(name: TargetState, context: TargetContext): Promise<boolean>;
+  state(name: 'enabled' | 'checked', context: TargetContext): Promise<boolean>;
+  /** Whether the control reports a validation error. A handle without it
+   * fails `toHaveState('invalid', …)` as unsupported_state. */
+  invalid?(context: TargetContext): Promise<boolean>;
   /** One bounded scroll gesture inside this element; percent of its size. */
   scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
   bounds?(context: TargetContext): Promise<TargetRect>;
@@ -416,8 +421,14 @@ export class TargetApp {
         }, timeoutMs);
       },
       toHaveState: (name: TargetState, value: boolean, timeoutMs?: number) => {
-        if (!['enabled', 'checked'].includes(name) || typeof value !== 'boolean') return assertion('assert-state', async () => { throw stopped('unsupported_state'); }, timeoutMs);
-        return assertion('assert-state', async (handle, context) => await handle.state(name, context) === value, timeoutMs);
+        if (!['enabled', 'checked', 'invalid'].includes(name) || typeof value !== 'boolean') return assertion('assert-state', async () => { throw stopped('unsupported_state'); }, timeoutMs);
+        return assertion('assert-state', async (handle, context) => {
+          if (name !== 'invalid') return await handle.state(name, context) === value;
+          if (typeof handle.invalid !== 'function') throw stopped('unsupported_state');
+          const invalid: unknown = await handle.invalid(context);
+          if (typeof invalid !== 'boolean') throw stopped('invalid_property');
+          return invalid === value;
+        }, timeoutMs);
       },
     };
   }
@@ -449,6 +460,10 @@ function locatorHandle(locator: Locator): TargetHandle {
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),
+    invalid: async context => locator.evaluate(element => {
+      const aria = element.getAttribute('aria-invalid');
+      return (aria !== null && aria !== '' && aria !== 'false') || element.matches(':invalid');
+    }, undefined, {timeout: remaining(context)}),
     scroll: async (direction, percent, context) => {
       remaining(context);
       await locator.evaluate((element, {direction, percent}) => {

@@ -10,7 +10,7 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // Attached-device mode (scripts/android-phone-smoke.cjs): the fixture app was
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail'].includes(mode) ? mode : 'healthy';
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -30,6 +30,14 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   ...(mode === 'phone-width' ? {requires: {minWidthDp: 600}} : {}),
   ...(mode === 'width-mismatch' ? {requires: {minWidthDp: 10000}} : {}),
   ...(mode === 'version-mismatch' ? {expected: {versionCode: '999'}} : {}),
+  // The accessibility shapes a Flutter app reports: a hint-only field and
+  // parts of a merged multi-line label (one with regex metacharacters).
+  ...(mode.startsWith('semantics') ? {controls: {
+    email: {hint: 'Email address', className: 'android.widget.EditText'},
+    unread: {accessibilityIdContains: '3 unread'},
+    inboxTab: {accessibilityIdSuffix: 'Tab 2 of 4 (new)'},
+    otherTab: {accessibilityIdSuffix: 'Tab 3 of 4 (new)'},
+  }} : {}),
 })}).extend({
   page: async () => { throw new Error('native requested a browser page'); },
   context: async () => { throw new Error('native requested a browser context'); },
@@ -177,6 +185,54 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     // activateApp returns before a cold relaunch has drawn the app; a slow
     // CI emulator can take longer than the default assertion bound.
     await app.getByTestId('send').toBeVisible(30000);
+  } catch (error) {
+    const e = error as {reason?: unknown; cause?: {message?: unknown}};
+    if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
+    const cause = e.cause?.message;
+    if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+    let deviceStopped = false;
+    if (serial) {
+      try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      catch { deviceStopped = true; }
+    }
+    if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming: {}}));
+  }
+});
+
+// Flutter-shaped semantics on the owned emulator: bare identifiers (with
+// `.` and `-`), a hint-only field, parts of a merged multi-line label and a
+// field error reported as content-invalid. semantics-defect never reports
+// the error, so the invalid-state assertion must reject it.
+test('native semantics: bare ids, hints, merged labels and validation state', async ({app}) => {
+  let stopReason = '', driverReason = '', serial = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    return originalFetch(input, init);
+  };
+  try {
+    await app.open({timeoutMs: 180000});
+    await app.reset({timeoutMs: 30000});
+    await app.getByTestId('unread').toBeVisible();
+    await app.getByTestId('inboxTab').toBeVisible();
+    await app.getByTestId('otherTab').toBeHidden();
+    await app.getByTestId('email').toHaveState('invalid', false);
+    await app.getByTestId('email').fill('ada', {timeoutMs: 20000});
+    await app.getByTestId('validate').tap();
+    await app.getByTestId('login.status').toHaveText('Invalid');
+    // @9l-outcome invalid-field-reported
+    await app.getByTestId('email').toHaveState('invalid', true);
+    await app.getByTestId('email').fill('ada@example.test', {timeoutMs: 20000});
+    await app.getByTestId('validate').tap();
+    await app.getByTestId('email').toHaveState('invalid', false);
+    await app.getByTestId('login-button').tap();
+    // @9l-outcome bare-id-sign-in
+    await app.getByTestId('login.status').toHaveText('Signed in as ada@example.test');
   } catch (error) {
     const e = error as {reason?: unknown; cause?: {message?: unknown}};
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;

@@ -167,6 +167,12 @@ for (const mode of ['malformed-visibility', 'malformed-handle']) {
   assert.notEqual(malformed.code, 0, `${mode}: cannot pass toBeHidden`);
   assert(malformed.summary.receipts[0].failures[0].message.includes('9lives target stopped: invalid_property'), `${mode}: stable reason`);
 }
+const validation = invoke('validation', {targets: ['web:finance'], grep: 'validation state', file: operations});
+assert.equal(validation.code, 0, 'validation: the web reads constraint validation and aria-invalid');
+assert.equal(validation.summary.receipts[0].targetAssertions, 3);
+const noInvalid = invoke('validation-native', {targets: ['android-fake:finance'], grep: 'validation state', file: operations, extra: ['--failure-details']});
+assert.notEqual(noInvalid.code, 0);
+assert(noInvalid.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_state'), 'validation: a handle without the invalid read is unsupported, never another state');
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');

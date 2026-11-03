@@ -5,7 +5,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
-  'operations','diagnostics','width-mismatch','version-mismatch'];
+  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
 // case is refused before anything is built or booted.
 if (process.argv[2] === '--list') { console.log(allModes.join('\n')); process.exit(0); }
@@ -21,7 +21,7 @@ function sync(command, args, options = {}) {
   assert.ifError(r.error); return r;
 }
 assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
-for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail']) {
+for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect']) {
   assert.equal(sync(process.execPath, ['scripts/build-android-fixture.cjs',mode]).status,0, `build ${mode}`);
 }
 const bad = path.join(root,'.context/android-bad-version/node_modules');
@@ -53,7 +53,7 @@ for (const mode of modes) {
   const beforeDevices=emulatorSet();
   const probe = path.join(work, `${mode}-probe.json`);
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
-    '--grep',operationModes.includes(mode)?'native operations':'native transfer',
+    '--grep',operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':'native transfer',
     '--timeout','4m','--deadline','5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
     '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
     {env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
@@ -76,6 +76,9 @@ for (const mode of modes) {
     assert.match(rt.signer,/^[a-f0-9]{64}$/,'healthy: signer digest');
     assert.equal(receipt.targetSetup,undefined);assert.equal(receipt.targetDiagnostics,undefined);
     facts.runtime={display:rt.display,displayWidth:rt.displayWidth,displayHeight:rt.displayHeight,density:rt.density,posture:rt.posture,versionCode:rt.versionCode,versionName:rt.versionName};
+  } else if (mode==='semantics') {
+    assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='operations') {
     assert.equal(r.status,0,'operations: native operations pass');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,6);assert.equal(receipt.verifiedAssertions,0);
@@ -123,6 +126,13 @@ for (const mode of modes) {
     // mismatch found from real dumpsys output before any test step.
     assert.deepEqual(receipt.targetSetup.map(({testId,...rest})=>rest),[{classification:'mismatch',reason:mode==='width-mismatch'?'display-width':'build-version',stage:'open'}],`${mode}: setup mismatch`);
     assert.equal(facts.stopReason,'setup_mismatch');
+  }
+  if (mode==='semantics-defect') {
+    // The invalid-state read is not vacuous: an app that never reports the
+    // field error fails exactly that assertion, after a completed tap.
+    assert(frames.some(f=>f.operation==='assert-state'&&f.status==='failed'),'semantics-defect: invalid state rejected');
+    assert(frames.some(f=>f.operation==='tap'&&f.status==='passed'),'semantics-defect: bare-id tap ran');
+    assert.equal(facts.stopReason,'assertion_failed');
   }
   if (mode==='missing'||mode==='ambiguous') {
     assert.equal(facts.clickDispatches,0);assert.equal(facts.stopReason,mode==='missing'?'missing_test_id':'ambiguous_test_id');

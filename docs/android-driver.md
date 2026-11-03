@@ -150,6 +150,11 @@ This driver requires Go's private attempt scratch directory and cannot run from
 an ordinary standalone Playwright invocation.
 
 The app uses Android resource IDs through the shared `getByTestId` interface.
+A test ID matches the app's prefixed resource name (`<package>:id/<id>`) or
+the same name reported without a prefix, as Flutter reports
+`Semantics(identifier:)`, in one package-scoped query; a control reported
+both ways is ambiguous. IDs contain 1–128 ASCII letters, digits, `_`, `.`
+or `-`, starting with a letter, digit or `_`.
 Beyond tap, fill and the visibility, text and state checks, the driver maps
 each added operation to one supported command with fixed arguments: `back`
 to the WebDriver back endpoint (the Back key), `scroll` to UiAutomator2's
@@ -194,7 +199,14 @@ On 2026-11-02 the smoke gained the native operations (viewport, bounds, a
 touch at a point, Back, a hidden assertion, scrolling, the keyboard read,
 terminate and activate), opt-in diagnostics with real window counts, and
 display-width and build-version requirements; the healthy case also checks the
-recorded display, posture, version and signer. The `Android` workflow runs the
+recorded display, posture, version and signer. On 2026-11-03 it gained
+Flutter-shaped controls on a synthetic native fixture that reports what
+Flutter's accessibility bridge reports (bare identifiers, a hint-only field,
+a merged multi-line label with regex metacharacters, `content-invalid`):
+`semantics` passes eight assertions through bare IDs, the hint and
+merged-label aliases and the invalid state, and `semantics-defect`, whose
+app never reports the field error, fails at exactly that assertion. No
+Flutter build was run. The `Android` workflow runs the
 whole smoke on an API 35 x86_64 emulator on hosted Linux runners.
 The real runs cover healthy behavior, relevant wrong-text and wrong-state
 failures, missing/ambiguous IDs, unavailable/install/disconnect/digest/version
@@ -248,14 +260,32 @@ androidTargetDriver({
   controls: {
     overview: {accessibilityIdSuffix: ', Overview', className: 'android.view.View'},
     heading: {text: 'Overview', className: 'android.widget.TextView', selected: false},
+    unread: {accessibilityIdContains: '3 unread'},
+    email: {hint: 'Email address', className: 'android.widget.EditText'},
   },
 });
 ```
 
-Aliases accept exact text, exact accessibility descriptions or a literal
-description suffix, with optional native class and selected-state filters.
-They remain package-scoped and must resolve uniquely before each operation.
-They do not perform semantic screen analysis.
+Each alias names one matcher: exact text (`text`), an exact accessibility
+description (`accessibilityId`), a literal description suffix
+(`accessibilityIdSuffix`) or substring (`accessibilityIdContains`), or an
+exact input hint (`hint`), with optional native class and selected-state
+filters. A merged multi-line label, such as Flutter's, is one description
+whose lines are joined by line breaks: the suffix and substring matchers
+reach part of it across those breaks, and the exact matchers need the whole
+label. Values are literals, never patterns; the text and description values
+may not contain a backslash. A hint alias, typically a Flutter text field
+with no label, is found with one generated package-scoped XPath, since
+UiSelector has no hint matcher. Aliases remain package-scoped and must
+resolve uniquely before each operation. They do not perform semantic screen
+analysis.
+
+`toHaveState('invalid', boolean)` reads the node's `content-invalid` flag,
+the accessibility error a validation failure reports (Flutter's field
+errors, `TextView.setError`). UiAutomator2 8.7.0 exposes the flag in its
+hierarchy but not as an element attribute, so the driver first resolves the
+control uniquely and then checks whether the same package-scoped criteria
+match a node flagged invalid. The error text itself is not read.
 
 Before any application operation the driver reads the keyguard and
 wakefulness markers of `dumpsys window` and `dumpsys power`, filtered on the
