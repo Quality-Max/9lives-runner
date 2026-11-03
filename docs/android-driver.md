@@ -283,9 +283,14 @@ analysis.
 `toHaveState('invalid', boolean)` reads the node's `content-invalid` flag,
 the accessibility error a validation failure reports (Flutter's field
 errors, `TextView.setError`). UiAutomator2 8.7.0 exposes the flag in its
-hierarchy but not as an element attribute, so the driver first resolves the
-control uniquely and then checks whether the same package-scoped criteria
-match a node flagged invalid. The error text itself is not read.
+hierarchy but not as an element attribute, and no single request returns
+both a control and its flag. The driver brackets the read: the control
+resolves to one element, the same package-scoped criteria are matched
+against nodes flagged invalid, and the control resolves again. The state
+counts only when both resolutions return the same element (element IDs are
+stable per node) and any flagged node is that element; a control that
+vanished, was replaced or became ambiguous in between is a failed read that
+the assertion polls past, never a state. The error text itself is not read.
 
 Before any application operation the driver reads the keyguard and
 wakefulness markers of `dumpsys window` and `dumpsys power`, filtered on the

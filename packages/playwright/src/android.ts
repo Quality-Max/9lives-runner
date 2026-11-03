@@ -463,13 +463,19 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       return value === true || value === 'true';
     },
     // The node's content-invalid flag: an input reporting a validation
-    // error. The control must resolve uniquely first; the flag is then read
-    // as whether the same package-scoped criteria match an invalid node.
+    // error. UiAutomator2 reads it only through its hierarchy, so the flag
+    // is the set of nodes the same criteria match with it set, and no single
+    // request returns both the control and its flag. The read is bracketed:
+    // the control resolves to one element before and after it, the same
+    // element both times (element IDs are stable per node), and a flagged
+    // result is that element. A control that vanished, was replaced or
+    // became ambiguous in between is a failed read, never a state.
     invalid: async c => {
       disarm();
-      await resolveOne(id, c);
+      const before = await resolveOne(id, c);
       const flagged = elements(await endpoint('/elements', c, 'POST', {using: 'xpath', value: `${xpathOf(id)}[@content-invalid="true"]`}));
-      if (flagged.length > 1) throw failure('ambiguous_resource_id');
+      const after = await resolveOne(id, c);
+      if (after !== before || flagged.some(ref => ref !== before)) throw failure('stale_element_reference');
       return flagged.length === 1;
     },
     // One supported UiAutomator2 gesture inside the resolved element; the

@@ -922,7 +922,10 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-phone-semantics-'));
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
   const finds = [];
-  let found = 1, flagged = 0;
+  // Each find answers with element IDs: a control query from `found`
+  // (consumed in order when it is a list of answers), a flag query from `flagged`.
+  let found = ['ref-0'], flagged = [];
+  const answer = value => Array.isArray(value[0]) ? (value.length > 1 ? value.shift() : value[0]) : value;
   const serial = `test-${randomUUID()}`;
   let driver;
   try {
@@ -960,8 +963,7 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
       else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
       else if (url.endsWith('/elements')) {
         finds.push(body);
-        const count = body.value.endsWith('[@content-invalid="true"]') ? flagged : found;
-        value = Array.from({length: count}, (_, i) => ({'element-6066-11e4-a52e-4f735466cecf': `ref-${i}`}));
+        value = answer(body.value.endsWith('[@content-invalid="true"]') ? flagged : found).map(ref => ({'element-6066-11e4-a52e-4f735466cecf': ref}));
       }
       return new Response(JSON.stringify({value}), {status: 200});
     };
@@ -998,14 +1000,14 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
     assert.equal((await query('unread')).value, 'new UiSelector().packageName("dev.ninelives.fixture").descriptionContains("3 \\"unread\\"")');
     assert.equal((await query('inbox')).value, 'new UiSelector().packageName("dev.ninelives.fixture").descriptionMatches("(?s).*\\QTab 2 of 4 (new)?\\E").selected(true)');
     assert.equal((await query('sign-in.title')).value, 'new UiSelector().packageName("dev.ninelives.fixture").text("Sign in")');
-    // invalid: the control resolves uniquely, then the same criteria are
-    // checked for a node flagged content-invalid.
+    // invalid: the control resolves to one element, the same criteria are
+    // checked for a node flagged content-invalid, and the control resolves
+    // to that same element again.
     const [email] = await driver.observeTestId('email', context());
     finds.length = 0;
     assert.equal(await email.invalid(context()), false);
-    assert.equal(finds.length, 2);
-    assert.equal(finds[1].value, `${finds[0].value}[@content-invalid="true"]`);
-    flagged = 1;
+    assert.deepEqual(finds.map(f => f.value), [finds[0].value, `${finds[0].value}[@content-invalid="true"]`, finds[0].value]);
+    flagged = ['ref-0'];
     assert.equal(await email.invalid(context()), true);
     const [inbox] = await driver.observeTestId('inbox', context());
     finds.length = 0;
@@ -1015,13 +1017,24 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
     finds.length = 0;
     await bare.invalid(context());
     assert.equal(finds[1].value, '//*[@package="dev.ninelives.fixture"][@resource-id="login-button" or @resource-id="dev.ninelives.fixture:id/login-button"][@content-invalid="true"]');
-    flagged = 2;
-    await assert.rejects(email.invalid(context()), /ambiguous_resource_id/);
-    found = 0;
+    // Between the requests the control vanished, became ambiguous or was
+    // replaced, or another matching node is the flagged one: no state is
+    // reported, in either direction.
+    for (const [label, sequence, flags, reason] of [
+      ['vanished', [['ref-0'], []], [], /missing_resource_id/],
+      ['newly ambiguous', [['ref-0'], ['ref-0', 'ref-1']], ['ref-0'], /ambiguous_resource_id/],
+      ['replaced by another node', [['ref-0'], ['ref-7']], [], /stale_element_reference/],
+      ['another node flagged', [['ref-0'], ['ref-0']], ['ref-1'], /stale_element_reference/],
+      ['two nodes flagged', [['ref-0'], ['ref-0']], ['ref-0', 'ref-1'], /stale_element_reference/],
+    ]) {
+      found = sequence.slice(); flagged = flags;
+      await assert.rejects(email.invalid(context()), reason, label);
+    }
+    found = []; flagged = ['ref-0'];
     finds.length = 0;
     await assert.rejects(email.invalid(context()), /missing_resource_id/);
     assert.equal(finds.length, 1, 'no state read without a resolved control');
-    found = 2;
+    found = ['ref-0', 'ref-1'];
     await assert.rejects(email.invalid(context()), /ambiguous_resource_id/);
   } finally {
     await driver?.close();

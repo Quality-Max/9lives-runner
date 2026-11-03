@@ -22,8 +22,11 @@ SDK versions.
   matched either).
 - `toHaveState('invalid', boolean)` reads the accessibility error a field
   reports (`content-invalid`), on Android and on the web (`aria-invalid` or a
-  failed constraint validation). A custom driver whose handles have no
-  `invalid()` fails it as `unsupported_state`.
+  failed constraint validation). On Android the flag is read between two
+  resolutions of the control, which must be the same single element, so a
+  control that disappears or becomes ambiguous meanwhile never passes. A
+  custom driver whose handles have no `invalid()` fails it as
+  `unsupported_state`.
 - The emulator smoke gained a Flutter-shaped fixture (`semantics`) and a
   control that never reports the field error (`semantics-defect`).
 
