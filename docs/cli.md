@@ -314,6 +314,15 @@ Windows ZIPs start with CLI v0.2.0. Owned process-tree
 cancellation uses Unix process groups or Windows kill-on-close Job Objects;
 native CI exercises real Chromium timeout and cancellation cleanup.
 
+`--timeout` (each job) and `--deadline` (the whole run) count time the host
+is awake: they run on the monotonic clock, which does not advance while a
+macOS or Linux host sleeps. A receipt's `startedAt`, `finishedAt` and
+`durationMs` are wall-clock, so a run that spanned host sleep reports a
+`durationMs` longer than its deadline without either bound being exceeded.
+`pmset -g log` (macOS) or the system journal (Linux) shows whether the host
+slept during a run. Keep long local runs, such as the emulator smoke, on a
+host that stays awake.
+
 The runner classifies interruption and persists terminal receipts. Automatic
 restart, durable leases and crash recovery remain planned.
 
