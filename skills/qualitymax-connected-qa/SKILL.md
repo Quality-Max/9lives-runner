@@ -44,6 +44,24 @@ connection or project setting is not permission for new data-changing actions.
 For signup, messaging, purchase or deletion journeys, establish the authorized
 test fixture and side effects before execution.
 
+## Inside a QualityMax coding session
+
+A QualityMax-hosted coding session can connect both servers in one sandbox: the hosted server (`qmax` in Claude
+Code, `qualitymax` in Codex) and a pinned, offline `ninelives` server
+running `9l mcp` in the workspace. QualityMax reads the 9lives receipts back
+after every turn and reports them beside the calls its own server recorded
+for the session. Work with that, not around it:
+
+- Right after creating or deliberately revising a spec, record its creation
+  snapshot with the session's `9l provenance <spec> --agent <id>` and run it
+  with `--agent-provenance`, so the receipt can say whether the branch,
+  commit and source still match.
+- Leave `.9lives/receipts` in place. Do not move, edit or delete receipts;
+  QualityMax rejects any receipt whose contents do not match its location.
+- A local receipt is supplementary. For a managed test, verify the exact
+  revision in the cloud and report the execution ID; the session reports a
+  local pass and a cloud verification separately and never merges them.
+
 ## Investigate, discover and repair
 
 Classify from evidence: application defect, test defect, environment/setup

@@ -14,6 +14,7 @@
 | [CLI contract](contracts.md) | You are integrating `9l` into another tool through its JSON output and exit codes |
 | [Agent setup](agent-setup.md) | You want the optional QA skill workflow |
 | [MCP server](mcp.md) | You want an agent to run, heal, assess and confirm specs through MCP tools |
+| [QualityMax coding sessions](qualitymax-coding-sessions.md) | You want to know how QualityMax runs 9lives in hosted agent sessions and reads its receipts |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
 | [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |
 | [Confirm](confirm.md) | You want to know whether a reported finding's reproduction fails before a fix and passes after it (experimental) |
