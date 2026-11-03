@@ -1211,6 +1211,9 @@ func printFailureSummary(w io.Writer, summary runner.FailureSummary) {
 		}
 		if test.Operation != "" {
 			line += " in " + test.Operation
+			if test.Control != "" {
+				line += " on " + test.Control
+			}
 		} else if test.Step != "" {
 			line += " in a failed " + test.Step + " step"
 		}

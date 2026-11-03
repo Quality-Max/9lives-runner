@@ -97,6 +97,10 @@ const maxObservations = 200;
 // after this grace, the session closes its driver to cancel it.
 const settleMs = 250;
 const stepLocation = {file: targetStepFile, line: 1, column: 1};
+/** A test ID that names its control in the step title, and from there in
+ * receipts: an identifier, never free text. Other IDs (with spaces, `@` or
+ * other characters that could carry data) name no control. */
+export const controlPattern = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
 
 class TargetStopped extends Error {
   constructor(readonly reason: string, cause?: unknown, detail?: string) {
@@ -188,9 +192,11 @@ export class TargetApp {
    * call's own bound, deadline for the attempt's (Go's worker deadline). */
   private boundReason(deadlineMs: number) { return deadlineMs < this.options.deadlineMs ? 'operation_timeout' : 'deadline'; }
 
-  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs, maxTimeoutMs = this.maxMs, deadlineReason = () => 'operation_timeout', point?: TargetPoint): Promise<T> {
-    // The SDK location marks this as a typed target step for the reporter.
-    return base.step(`9l target ${operation}`, async () => {
+  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs, maxTimeoutMs = this.maxMs, deadlineReason = () => 'operation_timeout', point?: TargetPoint, control?: string): Promise<T> {
+    // The SDK location marks this as a typed target step for the reporter;
+    // an identifier-shaped test ID after the operation names its control.
+    const named = control !== undefined && controlPattern.test(control) ? ` ${control}` : '';
+    return base.step(`9l target ${operation}${named}`, async () => {
       if (this.controller.signal.aborted) throw stopped(this.reason);
       if (this.busy) { this.stop('concurrent_operation'); throw stopped(this.reason); }
       if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
@@ -316,13 +322,13 @@ export class TargetApp {
    * failure even if a later read stalls; a bound reached before any completed
    * check is a deadline; failed reads alone keep their own operation error.
    * After a completed failure, the driver may reclassify the device state. */
-  private async assertLoop(operation: string, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) {
+  private async assertLoop(operation: string, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs, control?: string) {
     let observedFalse = false;
     try {
       return await this.perform(operation, async context => {
         const result = await this.poll(context, attempt, timeoutMs, maxObservations, () => { observedFalse = true; });
         if (!result.held) throw stopped('assertion_failed', result.last);
-      }, timeoutMs, this.maxMs, () => observedFalse ? 'assertion_failed' : 'operation_timeout');
+      }, timeoutMs, this.maxMs, () => observedFalse ? 'assertion_failed' : 'operation_timeout', undefined, control);
     } catch (error) {
       // A completed mismatch on a device the driver can still read: ask it
       // whether the device became unavailable (locked, screen off) during
@@ -440,19 +446,22 @@ export class TargetApp {
     };
     // A missing control is a completed false observation, except for a
     // hidden assertion, where absence is exactly what it asserts.
+    // Every operation on this control names it.
+    const step = <T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs?: number) =>
+      this.perform(operation, body, timeoutMs, undefined, undefined, undefined, id);
     const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs?: number, absent = false) =>
       this.assertLoop(operation, async context => {
         const handle = await observe(context);
         return handle ? check(handle, context) : absent;
-      }, timeoutMs);
+      }, timeoutMs, id);
     return {
-      tap: (options: TargetOperationOptions = {}) => this.perform('tap', async context => (await required(context)).tap(context), options.timeoutMs),
-      fill: (value: string, options: TargetOperationOptions = {}) => this.perform('fill', async context => {
+      tap: (options: TargetOperationOptions = {}) => step('tap', async context => (await required(context)).tap(context), options.timeoutMs),
+      fill: (value: string, options: TargetOperationOptions = {}) => step('fill', async context => {
         if (!boundedText(value, 4096)) throw stopped('invalid_value');
         await (await required(context)).fill(value, context);
       }, options.timeoutMs),
       /** One bounded scroll gesture inside this control, by a fraction of its size. */
-      scroll: (direction: ScrollDirection, options: TargetOperationOptions & {percent?: number} = {}) => this.perform('scroll', async context => {
+      scroll: (direction: ScrollDirection, options: TargetOperationOptions & {percent?: number} = {}) => step('scroll', async context => {
         const percent = options.percent ?? 0.5;
         if (!['up', 'down', 'left', 'right'].includes(direction) || typeof percent !== 'number' || !(percent > 0 && percent <= 1)) throw stopped('invalid_value');
         const handle = await required(context);
@@ -460,7 +469,7 @@ export class TargetApp {
         await handle.scroll(direction, percent, context);
       }, options.timeoutMs),
       /** The control's rectangle in device coordinates. */
-      bounds: (options: TargetOperationOptions = {}) => this.perform('bounds', async context => {
+      bounds: (options: TargetOperationOptions = {}) => step('bounds', async context => {
         const handle = await required(context);
         if (typeof handle.bounds !== 'function') throw stopped('unsupported_operation');
         const rect = await handle.bounds(context);
@@ -475,7 +484,7 @@ export class TargetApp {
       isVisible: (options: TargetOperationOptions = {}) => {
         const polling = options.timeoutMs !== undefined;
         const bound = polling ? options.timeoutMs as number : defaultOperationMs;
-        return this.perform('query-visible', async context => {
+        return step('query-visible', async context => {
           const result = await this.poll(context, async context => {
             const handle = await observe(context);
             return handle ? visibility(handle, context) : false;

@@ -359,7 +359,12 @@ type FailedTestSummary struct {
 	// operation_failed or setup_blocked.
 	Step      string `json:"step,omitempty"`
 	Operation string `json:"operation,omitempty"`
-	Reason    string `json:"reason,omitempty"`
+	// Control is the test ID the operation addressed, when it was an
+	// identifier (letters, digits, `_`, `.`, `-`; at most 64): the control
+	// that was missing, ambiguous or failed its check. App-level operations
+	// and other test IDs name none.
+	Control string `json:"control,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 	// Setup is the driver's setup classification of the test (blocked,
 	// dirty, mismatch, observer or unknown) when one was not recovered.
 	Setup string `json:"setup,omitempty"`

@@ -17,6 +17,8 @@ var (
 	// failureOperation is a typed target operation name, such as tap-at.
 	failureOperation = regexp.MustCompile(`^[a-z][a-z-]{0,63}$`)
 	failureTestID    = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	// failureControl is an identifier-shaped test ID.
+	failureControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 	failureStops = []string{StopTestFailed, StopGoalFailed, StopDeadline, StopCanceled, StopInvalidEvidence, StopEvidenceTruncated,
 		StopExitWithoutFailure, StopProvenanceChanged, StopNotStarted, StopInfrastructure}
@@ -84,6 +86,7 @@ func (test FailedTestSummary) Validate() error {
 		(test.Step == "" || slices.Contains(failureSteps, test.Step)) &&
 		(test.Operation == "" || (failureOperation.MatchString(test.Operation) && (test.Step == "assertion" || test.Step == "action"))) &&
 		(test.Reason == "" || (failureReason.MatchString(test.Reason) && test.Operation != "")) &&
+		(test.Control == "" || (failureControl.MatchString(test.Control) && test.Operation != "")) &&
 		(test.Setup == "" || slices.Contains(failureSetups, test.Setup)) &&
 		test.FailedSteps >= 0 && test.FailedSteps <= MaxFailureSummaryCount &&
 		test.Attempts >= 0 && test.Attempts <= MaxFailureSummaryCount

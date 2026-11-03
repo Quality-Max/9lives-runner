@@ -140,7 +140,7 @@ func TestFailureSummaryDropsMalformedEntriesButKeepsTheCount(t *testing.T) {
 }
 
 func TestFailureSummaryValidationIsClosed(t *testing.T) {
-	valid := FailedTestSummary{TestID: digest, Class: FailureSetup, Status: "failed", Step: "assertion", Operation: "assert-text", Reason: "setup_blocked", Setup: SetupBlocked, FailedSteps: 1, Attempts: 1}
+	valid := FailedTestSummary{TestID: digest, Class: FailureSetup, Status: "failed", Step: "assertion", Operation: "assert-text", Control: "receipt", Reason: "setup_blocked", Setup: SetupBlocked, FailedSteps: 1, Attempts: 1}
 	if err := valid.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +157,10 @@ func TestFailureSummaryValidationIsClosed(t *testing.T) {
 		"reason with text":      func(t *FailedTestSummary) { t.Reason = "element 'Send' not visible" },
 		"reason too long":       func(t *FailedTestSummary) { t.Reason = strings.Repeat("a", MaxFailureTokenBytes+1) },
 		"reason alone":          func(t *FailedTestSummary) { t.Operation = "" },
+		"control with text":     func(t *FailedTestSummary) { t.Control = "Pay 4242 now" },
+		"control as an email":   func(t *FailedTestSummary) { t.Control = "ada@example.test" },
+		"control too long":      func(t *FailedTestSummary) { t.Control = strings.Repeat("a", 65) },
+		"control alone":         func(t *FailedTestSummary) { t.Operation, t.Reason = "", "" },
 		"unknown setup":         func(t *FailedTestSummary) { t.Setup = "device-locked" },
 		"negative steps":        func(t *FailedTestSummary) { t.FailedSteps = -1 },
 		"huge attempts":         func(t *FailedTestSummary) { t.Attempts = MaxFailureSummaryCount + 1 },
