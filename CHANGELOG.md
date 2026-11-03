@@ -30,6 +30,15 @@ SDK versions.
 - The emulator smoke gained a Flutter-shaped fixture (`semantics`) and a
   control that never reports the field error (`semantics-defect`).
 
+### Documentation
+
+- An Android quickstart in the npm package README and at the top of
+  `docs/android-driver.md`: the pinned tooling install, `9l doctor
+  --android`, the fixture, the `android:<alias>` project, the run command
+  and the `--pass-env` list (#245). It also notes that the driver holds the
+  device's only UI-automation connection, so a spec-side
+  `uiautomator dump` returns nothing.
+
 ### Target contract
 
 - `getByTestId(id).isVisible({timeoutMs}?)` answers whether a control is

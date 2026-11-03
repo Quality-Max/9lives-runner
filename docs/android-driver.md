@@ -1,4 +1,72 @@
-# Local Android driver decision (QUA-2204)
+# Android target (experimental)
+
+The experimental Android target ships in the `0.6.0-beta` releases. This
+page starts with a quickstart, then records the driver decision, host setup,
+the qualification evidence and the attached-device mode.
+
+## Quickstart
+
+The target drives an owned emulator or an attached phone through Appium
+3.8.0 and UiAutomator2 8.7.0, with the same `app` fixture a web target
+uses. It is qualified on API 35 emulators and one Android 17 phone;
+[Set up a host](#set-up-a-host) has the details and
+[Run the opt-in qualification](#run-the-opt-in-qualification) the limits.
+
+1. Install the matching beta CLI and `@9l/playwright` together (see
+   [beta releases](releases.md#beta-releases)), and the pinned automation
+   tooling once, outside your project:
+
+   ```sh
+   npm install --prefix ~/.9l/android-tools --save-exact --ignore-scripts \
+     appium@3.8.0 appium-uiautomator2-driver@8.7.0
+   ```
+
+   For another location, set `NINELIVES_ANDROID_TOOLS`.
+
+2. Check the host. Doctor reports Java, the SDK, build-tools, AVDs, devices
+   and the pinned tooling, each with a fix:
+
+   ```sh
+   9l doctor --android
+   ```
+
+3. Construct the driver in the shared target fixture and name the Playwright
+   project `android:<alias>`:
+
+   ```ts
+   import {createTargetTest} from '@9l/playwright';
+   import {androidTargetDriver} from '@9l/playwright/android';
+
+   export const test = createTargetTest({
+     native: target => androidTargetDriver({
+       appId: target.appId, avd: 'Pixel_API_35',
+       apk: 'build/app.apk', apkSHA256: '<digest>',
+       appPackage: 'com.example.app', activity: '.MainActivity',
+     }),
+   });
+   ```
+
+   ```ts
+   // playwright.config.ts
+   projects: [{name: 'android:app'}]
+   ```
+
+4. Run through the engine, forwarding the variables the driver relies on.
+   `9l run` passes only a fixed environment to tests:
+
+   ```sh
+   9l run tests/login.spec.ts --sdk --target android:app \
+     --pass-env ANDROID_HOME,JAVA_HOME,NINELIVES_ANDROID_TOOLS
+   ```
+
+   Forward `ANDROID_SDK_ROOT`, `ANDROID_AVD_HOME` or `HOMEBREW_PREFIX` too if
+   your SDK or AVDs are found through them. `9l doctor --android` says which.
+
+The driver holds the device's only UI-automation connection while a session
+is open, so a spec-side `adb shell uiautomator dump` returns nothing. Use the
+fixture's operations instead, and `app.deviceSerial()` for other adb commands.
+
+## Driver decision (QUA-2204)
 
 The M2 adapter wraps Appium 3.8.0 and UiAutomator2 8.7.0 (both Apache-2.0).
 Installation is separate from the ordinary Playwright SDK. Deterministic native
