@@ -826,6 +826,19 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       }
     },
     async activate(c) { disarm(); await appCommand('mobile: activateApp', c); },
+    // The focused window's package, from the same filtered window dump the
+    // baseline reads: the app's, another package's (system UI, a permission
+    // controller, Settings) or none. An unreadable dump is not a state.
+    async foreground(c) {
+      disarm();
+      check(c);
+      const windows = await readWindows(c);
+      if (!windows || windows.focus === 'unknown') throw failure('unavailable_state');
+      return windows.focus;
+    },
+    // Owned emulator: the serial its console handshake established; attached
+    // phone: the serial the spec configured. Only while the session is open.
+    deviceSerial: () => session && !closed ? serial : undefined,
     // After a completed assertion failure: did the phone become unavailable?
     // Read-only; an owned emulator cannot lock itself. With diagnostics, a
     // hidden assertion that failed although the app lost a window since the

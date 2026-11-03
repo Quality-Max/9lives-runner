@@ -44,10 +44,12 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
       status = inside ? 'tapped' : mode === 'observer' || mode === 'ignored-touch' || mode === 'stalled-diagnose' ? status : '';
     },
     viewport: async () => ({width: 400, height: 800}),
+    // A system window (a permission prompt) is in front in the foreign case.
+    foreground: async () => mode === 'foreign' ? 'foreign' : 'app',
     terminate: async () => { running = false; status = ''; },
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },
     observeTestId: async (id: string) => {
-      if (mode === 'ambiguous') return [null, null] as unknown as TargetHandle[];
+      if (mode === 'ambiguous' || (mode === 'ambiguous-query' && id === 'button')) return [null, null] as unknown as TargetHandle[];
       if (mode === 'malformed-handle') return [undefined] as unknown as TargetHandle[];
       if (mode === 'missing' || !running || !['amount', 'send', 'receipt', 'status', 'list', 'button', 'email'].includes(id)) return [];
       return [{

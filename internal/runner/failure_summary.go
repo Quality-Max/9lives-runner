@@ -42,9 +42,9 @@ func EngineFailureClass(status, step, reason, setup string) string {
 		return FailureTimeout
 	case reason == "assertion_failed":
 		return FailureAssertion
-	case reason == "deadline":
-		// The operation's own bound, or the attempt's, ran out before it
-		// established anything.
+	case reason == "deadline" || reason == "operation_timeout":
+		// The attempt's bound (deadline) or the operation's own
+		// (operation_timeout) ran out before it established anything.
 		return FailureActionTimeout
 	case reason != "":
 		// Another stop reason, such as operation_failed or invalid_point:

@@ -30,6 +30,28 @@ SDK versions.
 - The emulator smoke gained a Flutter-shaped fixture (`semantics`) and a
   control that never reports the field error (`semantics-defect`).
 
+### Target contract
+
+- `getByTestId(id).isVisible({timeoutMs}?)` answers whether a control is
+  shown without ending the session, for a screen that may or may not appear
+  (#239). One observation by default, a bounded poll with `timeoutMs`; absent
+  is `false`, ambiguity still fails. `app.foreground()` reads whether the
+  app, another package's window (a system dialog, permission prompt or
+  Settings) or nothing has input focus, without relaxing package scoping.
+  Both are recorded as executed actions (`query-visible`, `foreground`),
+  never as assertions.
+- `app.deviceSerial()` returns the serial of the device the session targets,
+  for adb commands a spec issues itself (#241). It is not recorded and never
+  enters a receipt.
+- A bound that runs out names itself (#242): the call's own `timeoutMs` is
+  now `operation_timeout`, and `deadline` means only Go's worker deadline.
+  Both classify as `action-timeout`. Consumers that matched `deadline` for a
+  per-call timeout should also accept `operation_timeout`. `invalid_timeout`
+  errors name the accepted range locally.
+- Android bounds are sized for emulators (#242): `reset`, `terminate` and
+  `activate` default to 60 seconds, and Android operations and assertions
+  accept up to 180 seconds (the web keeps 60).
+
 ## 0.6.0-beta.2 — 2026-11-02
 
 Continues the 0.6.0-beta line on the beta channel: it includes everything in

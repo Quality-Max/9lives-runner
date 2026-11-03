@@ -27,9 +27,10 @@ test('a completed false observation rejects the assertion at its polling bound',
   } finally { await app.close(); }
 });
 
+// The assertion's own bound names itself; deadline is reserved for the attempt's.
 test('a deadline before any completed observation stays inconclusive', async () => {
   const app = appWithText(blocked);
-  try { await expect(app.getByTestId('receipt').toHaveText('wanted', 100)).rejects.toThrow('deadline'); }
+  try { await expect(app.getByTestId('receipt').toHaveText('wanted', 100)).rejects.toThrow('operation_timeout'); }
   finally { await app.close(); }
 });
 
@@ -92,7 +93,7 @@ test('an Android operation deadline closes the driver even when abort settles it
   };
   const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
   try {
-    await expect(app.getByTestId('send').tap({timeoutMs: 50})).rejects.toThrow('deadline');
+    await expect(app.getByTestId('send').tap({timeoutMs: 50})).rejects.toThrow('operation_timeout');
     expect(closed).toBe(1);
   } finally { await app.close(); }
 });
@@ -115,7 +116,7 @@ for (const outcome of ['resolve', 'reject']) {
     };
     const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
     try {
-      await expect(app.getByTestId('send').tap({timeoutMs: 30})).rejects.toThrow('deadline');
+      await expect(app.getByTestId('send').tap({timeoutMs: 30})).rejects.toThrow('operation_timeout');
       expect(closed).toBe(1);
     } finally { await app.close(); }
   });

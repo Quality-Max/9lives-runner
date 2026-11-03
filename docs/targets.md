@@ -59,8 +59,23 @@ web viewport; a point at or beyond the viewport the driver reports is refused
 before dispatch), `viewport()` and `screenDigest()` (the SHA-256 of a screenshot
 of the target display, computed in memory; the image is never retained),
 which are portable, and the Android-only
-`toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()` and
-`activate()`. A driver without an operation fails it with the stable reason
+`toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()`,
+`activate()`, `foreground({timeoutMs}?)` and `deviceSerial()`.
+Observed controls also expose `isVisible({timeoutMs}?)`, a query for a
+screen that may or may not appear (an onboarding sheet, a permission
+prompt): without `timeoutMs` it makes one observation, and with it it polls
+until the control is shown or the bound would be overrun. It answers `true`
+or `false` without ending the session; an absent control is `false`, while
+ambiguity, invalid input and reads that never complete still fail.
+`foreground()` reads which window has input focus: `app`, `foreign` (another
+package's window, such as a system dialog, permission prompt or Settings) or
+`none`; package scoping of every action is unchanged. Both are recorded as
+executed actions (`query-visible`, `foreground`), never as assertions, so a
+conditional spec still needs an assertion to protect its outcome.
+`deviceSerial()` returns the serial of the device the open session targets,
+for adb commands a spec issues itself; it is not a device operation, is not
+recorded and never enters a receipt, and those commands are outside the
+driver's cleanup and evidence. A driver without an operation fails it with the stable reason
 `unsupported_operation`; it never substitutes another action. Queries such
 as `bounds` and `viewport` are recorded as executed actions, not assertions.
 Specs load without 9l, so `playwright test --list` and editors can discover
@@ -103,18 +118,25 @@ XPath, coordinates and role lookup have no API in this contract. Unsupported
 states, driver versions and capabilities fail the test.
 
 An operation receives an abort signal and absolute deadline. Operations and
-assertions default to 5 seconds and accept up to 60 seconds, always capped
-by Go's worker deadline. Android open defaults to 180 seconds and accepts up to
-180 seconds. Assertions make at most 200 observations. At their own polling
-bound, a completed mismatch reports `assertion_failed`, even if a later read
-stalls. A bound reached before any completed check reports `deadline`;
-cancellation and Go's outer deadline retain their own reason. If every completed
+assertions default to 5 seconds and accept up to 60 seconds on the web and
+up to 180 seconds on Android, always capped by Go's worker deadline. Android
+`open` defaults to 180 seconds, and Android `reset`, `terminate` and
+`activate` default to 60 seconds, since an emulator relaunches or clears an
+app in tens of seconds. A timeout outside the accepted range stops the
+session as `invalid_timeout`, and the local error names the range.
+Assertions make at most 200 observations. At their own polling bound, a
+completed mismatch reports `assertion_failed`, even if a later read stalls.
+A bound that runs out before anything is established names itself: the
+call's own `timeoutMs` (or its default) is `operation_timeout`, and Go's
+worker deadline is `deadline`. Cancellation keeps its own reason. If every completed
 read fails, its operation error is preserved rather than claiming a false
 business comparison. There is one operation in flight per app.
 
 Any failure permanently stops the session; catching the error cannot make the
 receipt pass. Errors name the reason (`missing_test_id`, `ambiguous_test_id`,
-`assertion_failed`, `deadline`, `canceled`...) and keep the local cause. When
+`assertion_failed`, `operation_timeout`, `deadline`, `canceled`...) and keep
+the local cause. The exception is a query: `isVisible()` answers false
+without stopping the session. When
 an operation fails by itself, the driver stays open until fixture teardown, so
 Playwright can still capture failure screenshots, traces and error context.
 An operation is aborted and fails at its deadline, so a late result never
@@ -166,8 +188,8 @@ behaved correctly.
 
 Typed target steps record only the operation enum, category and outcome, and
 for a failed operation the stop reason token it failed with (`[a-z_]{1,64}`,
-such as `assertion_failed`, `deadline`, `operation_failed` or
-`setup_blocked`), read only from the fixture's own `9lives target stopped:`
+such as `assertion_failed`, `operation_timeout`, `deadline`,
+`operation_failed` or `setup_blocked`), read only from the fixture's own `9lives target stopped:`
 error. The receipt's `failureSummary` keeps them per failed test, with the
 test's setup classification, so an assertion failure, an operation that could
 not run, a deadline and a locked device stay distinguishable without

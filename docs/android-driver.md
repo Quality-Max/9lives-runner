@@ -168,8 +168,13 @@ Back only while it is shown and reads the result back, so the selected input
 method is never changed and no keyboard capability is set on a phone. An
 unreadable keyboard state fails the operation rather than guessing. Nothing
 is retried.
-Open is bounded at 180 seconds; the ordinary operation/assertion bounds still
-apply. The adapter never attaches to an existing emulator. Its private console
+Open is bounded at 180 seconds; `reset`, `terminate` and `activate`
+default to 60 seconds, and every operation and assertion accepts up to 180
+seconds. `foreground()` reads the focused window's package from the same
+filtered `dumpsys window` lines as the baseline (an unreadable dump fails as
+`unavailable_state`), and `deviceSerial()` returns the owned emulator's
+`emulator-<port>` serial, or the configured phone serial, while the session
+is open. The adapter never attaches to an existing emulator. Its private console
 handshake identifies its own emulator child, and a private HTTP base path
 identifies its Appium server. Reset clears only the configured app on that owned
 emulator. Close aborts transports and stops its emulator/server. Go also stops

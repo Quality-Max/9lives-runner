@@ -486,8 +486,9 @@ func outcome(state *testState) string {
 }
 
 // The typed operations of the shared target fixture (9l.target/2). Queries
-// such as bounds and viewport are actions: executed, never assertions.
-var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest"}
+// such as bounds, viewport, query-visible and foreground are actions:
+// executed, never assertions.
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground"}
 var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
 
 // Capabilities is the exact capability list a hello frame must carry. The

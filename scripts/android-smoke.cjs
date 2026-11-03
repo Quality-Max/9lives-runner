@@ -98,7 +98,8 @@ for (const mode of modes) {
   if (mode==='cancel'||mode==='blocked') {
     assert.equal(facts.started,true,`${mode}: app onClick must actually be in flight`);
     assert.equal(facts.clickDispatches,1);assert(frames.some(f=>f.operation==='tap'&&f.status==='failed'));
-    assert.equal(facts.stopReason,mode==='cancel'?'canceled':'deadline');
+    // The tap's own 5 s bound names itself; deadline is reserved for the attempt's.
+    assert.equal(facts.stopReason,mode==='cancel'?'canceled':'operation_timeout');
   }
   if (mode==='digest') {
     // A wrong fixture digest is a build mismatch classified before install, not a driver fault.
@@ -107,7 +108,9 @@ for (const mode of modes) {
   }
   if (mode==='operations') {
     const ops=new Set(frames.filter(f=>f.operation).map(f=>f.operation));
-    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate']) assert(ops.has(op),`operations: ${op} ran`);
+    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate','query-visible','foreground']) assert(ops.has(op),`operations: ${op} ran`);
+    // Queries are executed actions, never assertions.
+    assert(frames.filter(f=>f.operation==='query-visible'||f.operation==='foreground').every(f=>f.category==='action'&&f.status==='passed'),'operations: queries are passed actions');
   }
   if (mode==='diagnostics') {
     // The hidden assertion against the open dialog fails as an assertion,
