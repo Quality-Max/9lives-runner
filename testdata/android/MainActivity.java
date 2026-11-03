@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.os.Bundle;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -15,6 +16,7 @@ import android.widget.TextView;
 public class MainActivity extends Activity {
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
+    if (FixtureMode.VALUE.startsWith("semantics")) { semantics(); return; }
     LinearLayout layout = new LinearLayout(this);
     layout.setOrientation(LinearLayout.VERTICAL);
     layout.setPadding(32, 80, 32, 32);
@@ -92,6 +94,67 @@ public class MainActivity extends Activity {
       @Override public void onScrollChange(View view, int x, int y, int oldX, int oldY) { status.setText("scrolled"); }
     });
     layout.addView(list, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 600));
+    setContentView(layout);
+  }
+
+  /** A bare accessibility identifier, as Flutter's Semantics(identifier:)
+   * reports it: no package prefix and no Android resource. */
+  private static void identify(View view, final String id) {
+    view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+      @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(host, info);
+        info.setViewIdResourceName(id);
+      }
+    });
+  }
+
+  // The accessibility shapes a Flutter app produces: bare identifiers, a
+  // field with only a hint, a merged multi-line label and a field error
+  // reported as content-invalid. semantics-defect never reports the error,
+  // though its status line still says the input is invalid.
+  private boolean invalid = false;
+  private void semantics() {
+    LinearLayout layout = new LinearLayout(this);
+    layout.setOrientation(LinearLayout.VERTICAL);
+    layout.setPadding(32, 80, 32, 32);
+    final TextView status = new TextView(this);
+    identify(status, "login.status");
+    final EditText email = new EditText(this);
+    email.setHint("Email address");
+    email.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+      @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(host, info);
+        info.setContentInvalid(invalid);
+        info.setError(invalid ? "Enter an email address" : null);
+      }
+    });
+    layout.addView(email);
+    Button validate = new Button(this);
+    validate.setText("Validate");
+    identify(validate, "validate");
+    validate.setOnClickListener(new View.OnClickListener() {
+      @Override public void onClick(View view) {
+        boolean bad = !email.getText().toString().contains("@");
+        // The defect shows the same status but never reports the field error.
+        invalid = bad && !FixtureMode.VALUE.equals("semantics-defect");
+        if (!FixtureMode.VALUE.equals("semantics-defect")) email.setError(bad ? "Enter an email address" : null);
+        status.setText(bad ? "Invalid" : "Valid");
+      }
+    });
+    layout.addView(validate);
+    Button login = new Button(this);
+    login.setText("Sign in");
+    identify(login, "login-button");
+    login.setOnClickListener(new View.OnClickListener() {
+      @Override public void onClick(View view) { status.setText("Signed in as " + email.getText().toString()); }
+    });
+    layout.addView(login);
+    layout.addView(status);
+    TextView inbox = new TextView(this);
+    inbox.setText("Inbox");
+    inbox.setPadding(0, 32, 0, 32);
+    inbox.setContentDescription("Inbox\n3 unread\nTab 2 of 4 (new)");
+    layout.addView(inbox);
     setContentView(layout);
   }
 }

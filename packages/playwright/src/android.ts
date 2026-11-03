@@ -14,13 +14,31 @@ import {androidVersions, type AndroidRuntime} from './android-runtime';
 import {androidDefaults, androidToolPaths, androidToolingPaths} from './android-env';
 export {androidVersions, androidRuntimeType, validAndroidRuntime, type AndroidRuntime} from './android-runtime';
 export {androidDefaults, androidSdkCandidates, androidSdkVariables, androidToolPaths, androidToolingPaths, androidToolsInstall, androidBuildTools, type AndroidDefaults, type AndroidSource} from './android-env';
-/** Explicit aliases for apps without resource IDs. All matches remain strict
- * and scoped to the configured package; arbitrary XPath is not accepted. */
-export type AndroidControl = ({accessibilityId: string; text?: never; accessibilityIdSuffix?: never} |
-  {text: string; accessibilityId?: never; accessibilityIdSuffix?: never} |
-  {accessibilityIdSuffix: string; text?: never; accessibilityId?: never}) & {
+/** Explicit aliases for apps without resource IDs. Each names exactly one
+ * matcher: exact text, an exact accessibility description, a literal
+ * description suffix or substring (a merged multi-line label is one
+ * description, so either reaches part of it), or an exact input hint. All
+ * matches remain strict and scoped to the configured package; arbitrary
+ * XPath is not accepted. */
+type AndroidMatcher = 'text' | 'accessibilityId' | 'accessibilityIdSuffix' | 'accessibilityIdContains' | 'hint';
+export type AndroidControl = {[K in AndroidMatcher]: {[M in K]: string} & {[M in Exclude<AndroidMatcher, K>]?: never}}[AndroidMatcher] & {
   className?: string; selected?: boolean;
 };
+const matchers: readonly AndroidMatcher[] = ['text', 'accessibilityId', 'accessibilityIdSuffix', 'accessibilityIdContains', 'hint'];
+/** Test IDs: an app resource entry name, which Android reports as
+ * `<package>:id/<id>`, or an identifier a framework reports bare (Flutter's
+ * `Semantics(identifier:)`), which may also contain `.` and `-`. */
+const testIdPattern = /^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$/;
+// UiAutomator2's selector parser unescapes only \" inside a string
+// argument; every other backslash reaches the matcher as written. Text and
+// description aliases holding a backslash are refused, and IDs cannot hold
+// one, so the only backslashes in a selector are \Q and \E.
+const selectorString = (value: string) => `"${value.replaceAll('"', '\\"')}"`;
+const quoted = (value: string) => `\\Q${value}\\E`;
+// An XPath 1.0 string literal has no escapes: a value holding both quote
+// characters is assembled with concat().
+const xpathLiteral = (value: string) => !value.includes('"') ? `"${value}"` : !value.includes("'") ? `'${value}'`
+  : `concat(${value.split('"').map(part => `"${part}"`).join(`, '"', `)})`;
 export type AndroidTargetOptions = {
   appId: string;
   /** The Android SDK root. Defaults to androidDefaults(): ANDROID_HOME,
@@ -184,11 +202,11 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       (requires.posture !== undefined && !['opened', 'half-opened', 'closed', 'flat'].includes(requires.posture)) ||
       (requires.minWidthDp !== undefined && (!Number.isInteger(requires.minWidthDp) || requires.minWidthDp < 1 || requires.minWidthDp > 10000)))) throw failure('invalid_configuration');
   for (const [id, control] of Object.entries(controls)) {
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/.test(id) || !control ||
-        Object.keys(control).some(k => !['text', 'accessibilityId', 'accessibilityIdSuffix', 'className', 'selected'].includes(k)) ||
-        [control.text, control.accessibilityId, control.accessibilityIdSuffix].filter(v => v !== undefined).length !== 1 ||
-        typeof (control.text ?? control.accessibilityId ?? control.accessibilityIdSuffix) !== 'string' ||
-        !/^[^\x00-\x1f\x7f]{1,128}$/.test(control.text ?? control.accessibilityId ?? control.accessibilityIdSuffix!) ||
+    const declared = control ? matchers.filter(k => (control as Record<string, unknown>)[k] !== undefined) : [];
+    const literal = declared.length === 1 ? (control as Record<string, unknown>)[declared[0]] : undefined;
+    if (!testIdPattern.test(id) || !control ||
+        Object.keys(control).some(k => !(matchers as readonly string[]).includes(k) && k !== 'className' && k !== 'selected') ||
+        typeof literal !== 'string' || !/^[^\x00-\x1f\x7f]{1,128}$/.test(literal) || (declared[0] !== 'hint' && literal.includes('\\')) ||
         (control.className !== undefined && !/^android\.(view|widget)\.[A-Za-z]{1,64}$/.test(control.className)) ||
         (control.selected !== undefined && typeof control.selected !== 'boolean')) throw failure('invalid_controls');
   }
@@ -371,21 +389,50 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (!session) throw failure('session_unavailable');
     return request(`/session/${session}${path}`, c, method, body);
   };
-  const matches = async (id: string, c: TargetContext): Promise<string[]> => {
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/.test(id)) throw failure('invalid_resource_id');
+  // The control as one generated, package-scoped XPath. It finds hint
+  // aliases (UiSelector has no hint matcher) and reads content-invalid,
+  // which UiAutomator2 exposes in its hierarchy but not as an element attribute.
+  const xpathOf = (id: string) => {
     const control = Object.hasOwn(controls, id) ? controls[id] : undefined;
-    let selector = `new UiSelector().packageName(${JSON.stringify(options.appPackage)})`;
-    if (control) {
-      if (control.accessibilityIdSuffix !== undefined) {
-        const literal = control.accessibilityIdSuffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        selector += `.descriptionMatches(${JSON.stringify(`.*${literal}$`)})`;
-      } else selector += control.accessibilityId === undefined ? `.text(${JSON.stringify(control.text)})` : `.description(${JSON.stringify(control.accessibilityId)})`;
-      if (control.className) selector += `.className(${JSON.stringify(control.className)})`;
+    let path = `//*[@package=${xpathLiteral(options.appPackage)}]`;
+    if (!control) return `${path}[@resource-id=${xpathLiteral(id)} or @resource-id=${xpathLiteral(`${options.appPackage}:id/${id}`)}]`;
+    if (control.hint !== undefined) path += `[@hint=${xpathLiteral(control.hint)}]`;
+    else if (control.text !== undefined) path += `[@text=${xpathLiteral(control.text)}]`;
+    else if (control.accessibilityId !== undefined) path += `[@content-desc=${xpathLiteral(control.accessibilityId)}]`;
+    else if (control.accessibilityIdContains !== undefined) path += `[contains(@content-desc, ${xpathLiteral(control.accessibilityIdContains)})]`;
+    else {
+      const suffix = xpathLiteral(control.accessibilityIdSuffix!);
+      path += `[substring(@content-desc, string-length(@content-desc) - string-length(${suffix}) + 1) = ${suffix}]`;
+    }
+    if (control.className) path += `[@class=${xpathLiteral(control.className)}]`;
+    if (control.selected !== undefined) path += `[@selected="${control.selected}"]`;
+    return path;
+  };
+  // One fixed query per control. A test ID matches the app's prefixed
+  // resource name or the same name reported bare, both in one query, so a
+  // control reported both ways is ambiguous rather than a first match.
+  // UiSelector regexes match the whole value, across line breaks.
+  const query = (id: string) => {
+    const control = Object.hasOwn(controls, id) ? controls[id] : undefined;
+    if (control?.hint !== undefined) return {using: 'xpath', value: xpathOf(id)};
+    let selector = `new UiSelector().packageName(${selectorString(options.appPackage)})`;
+    if (!control) selector += `.resourceIdMatches(${selectorString(`(?:${quoted(`${options.appPackage}:id/`)})?${quoted(id)}`)})`;
+    else {
+      if (control.accessibilityIdSuffix !== undefined) selector += `.descriptionMatches(${selectorString(`(?s).*${quoted(control.accessibilityIdSuffix)}`)})`;
+      else if (control.accessibilityIdContains !== undefined) selector += `.descriptionContains(${selectorString(control.accessibilityIdContains)})`;
+      else selector += control.accessibilityId === undefined ? `.text(${selectorString(control.text!)})` : `.description(${selectorString(control.accessibilityId)})`;
+      if (control.className) selector += `.className(${selectorString(control.className)})`;
       if (control.selected !== undefined) selector += `.selected(${control.selected})`;
     }
-    const result = await endpoint('/elements', c, 'POST', control ? {using: '-android uiautomator', value: selector} : {using: 'id', value: `${options.appPackage}:id/${id}`});
+    return {using: '-android uiautomator', value: selector};
+  };
+  const elements = (result: unknown): string[] => {
     if (!Array.isArray(result) || result.length > 512 || result.some(value => typeof value?.[elementKey] !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value[elementKey]))) throw failure('invalid_elements');
     return result.map(value => value[elementKey]);
+  };
+  const matches = async (id: string, c: TargetContext): Promise<string[]> => {
+    if (!testIdPattern.test(id)) throw failure('invalid_resource_id');
+    return elements(await endpoint('/elements', c, 'POST', query(id)));
   };
   const resolveOne = async (id: string, c: TargetContext) => {
     const result = await matches(id, c);
@@ -414,6 +461,22 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       const value = await endpoint(`/element/${await resolveOne(id, c)}/attribute/${name}`, c);
       if (value !== 'true' && value !== 'false' && typeof value !== 'boolean') throw failure('unavailable_state');
       return value === true || value === 'true';
+    },
+    // The node's content-invalid flag: an input reporting a validation
+    // error. UiAutomator2 reads it only through its hierarchy, so the flag
+    // is the set of nodes the same criteria match with it set, and no single
+    // request returns both the control and its flag. The read is bracketed:
+    // the control resolves to one element before and after it, the same
+    // element both times (element IDs are stable per node), and a flagged
+    // result is that element. A control that vanished, was replaced or
+    // became ambiguous in between is a failed read, never a state.
+    invalid: async c => {
+      disarm();
+      const before = await resolveOne(id, c);
+      const flagged = elements(await endpoint('/elements', c, 'POST', {using: 'xpath', value: `${xpathOf(id)}[@content-invalid="true"]`}));
+      const after = await resolveOne(id, c);
+      if (after !== before || flagged.some(ref => ref !== before)) throw failure('stale_element_reference');
+      return flagged.length === 1;
     },
     // One supported UiAutomator2 gesture inside the resolved element; the
     // driver reports whether more content exists, which is not retained.

@@ -44,12 +44,16 @@ The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `getByTestId(id)`. Observed controls expose `tap({timeoutMs}?)`,
 `fill(value, {timeoutMs}?)`, `toBeVisible(timeoutMs?)`,
 `toHaveText(exactText, timeoutMs?)`,
-`toHaveState('enabled' | 'checked', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
+`toHaveState('enabled' | 'checked' | 'invalid', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
 (absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle
 in device coordinates; the origin may be negative for a control scrolled
 partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
 (one bounded gesture inside that control, by a fraction of its size, 0.5 by
-default). The app also exposes `back()`, `tapAt({x, y})` (one touch down/up
+default). `invalid` is a reported validation error: Android's
+`content-invalid`, and on the web an `aria-invalid` other than `false` or a
+failed constraint validation (`:invalid`). A driver reads it through the
+handle's optional `invalid()`; a handle without it fails the assertion as
+`unsupported_state` rather than answering another state. The app also exposes `back()`, `tapAt({x, y})` (one touch down/up
 at integer device coordinates: physical pixels on Android, CSS pixels in the
 web viewport; a point at or beyond the viewport the driver reports is refused
 before dispatch), `viewport()` and `screenDigest()` (the SHA-256 of a screenshot

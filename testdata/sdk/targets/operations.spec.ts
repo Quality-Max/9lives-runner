@@ -8,7 +8,9 @@ const test = createTargetTest({
     open: async page => {
       await page.setContent(`<button data-testid="button" style="position:absolute;left:40px;top:40px;width:200px;height:80px" onclick="document.querySelector('[data-testid=status]').textContent='tapped'">Tap</button>
         <div data-testid="list" style="position:absolute;left:0;top:160px;width:400px;height:600px;overflow:auto"><div style="height:3000px"></div></div>
-        <output data-testid="status" style="position:absolute;top:780px"></output>`);
+        <output data-testid="status" style="position:absolute;top:780px"></output>
+        <input data-testid="email" type="email" required style="position:absolute;left:260px;top:40px">
+        <div data-testid="flagged" aria-invalid="true" style="position:absolute;left:260px;top:80px">Flagged</div>`);
       await page.evaluate(() => {
         // A click anywhere but the button dismisses the "modal" the button opened.
         document.addEventListener('click', event => { if (!(event.target as Element).closest('[data-testid=button]')) document.querySelector('[data-testid=status]')!.textContent = ''; });
@@ -91,4 +93,16 @@ test('a touch outside the viewport is refused', async ({app}) => {
 test('a malformed visibility result is not hidden', async ({app}) => {
   await app.open();
   await app.getByTestId('status').toBeHidden();
+});
+
+// The invalid state: a failed constraint validation or aria-invalid on the
+// web. A driver whose handles cannot read it fails with a stable reason
+// rather than answering another state.
+test('a field reports its validation state', async ({app}) => {
+  await app.open();
+  await app.getByTestId('email').toHaveState('invalid', true);
+  await app.getByTestId('email').fill('ada@example.test');
+  // @9l-outcome field-valid-after-input
+  await app.getByTestId('email').toHaveState('invalid', false);
+  await app.getByTestId('flagged').toHaveState('invalid', true);
 });
