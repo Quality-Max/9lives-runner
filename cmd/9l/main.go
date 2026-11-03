@@ -42,6 +42,7 @@ func main() {
 func run(args []string, out, errOut io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		usage(out)
+		starHint(errOut)
 		return 0
 	}
 	if args[0] == "--version" || args[0] == "version" {
@@ -75,6 +76,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return scanCommand(args[1:], out, errOut)
 	case "inspect":
 		return inspectCommand(args[1:], out, errOut)
+	case "star":
+		return starCommand(args[1:], out, errOut)
 	default:
 		fmt.Fprintf(errOut, "9l: unknown command %q\n", args[0])
 		usage(errOut)
@@ -120,6 +123,7 @@ Usage:
   9l doctor [--sdk [spec]] [--android] [--paths] [--format text|json]  # read-only local prerequisite checks
   9l version [--format text|json]  # json: contract versions for host integrations
   9l update [--check | --yes]  # check Latest; ask before replacing the runner
+  9l star [--gh]  # open the GitHub repository; --gh stars it with your gh login
   # assess/run accept --agent-provenance <snapshot.json> for branch, source and local-import checks
 
 The Go runner currently executes Playwright specs from existing projects.

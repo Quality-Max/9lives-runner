@@ -191,6 +191,13 @@
   incomplete. The JSON `outcome` field carries the same classification. See
   the [machine-readable contract](contracts.md) for hosts, schemas and
   `9l version --format json`.
+- `9l star`: print the GitHub repository URL and, in an interactive terminal,
+  open it in the browser. `9l star --gh` stars `Quality-Max/9lives-runner`
+  with the GitHub CLI's own login; nothing else in 9l stars or calls GitHub
+  for this. Help, `9l version` and a passing text `9l doctor` end with a
+  one-line `9l star` hint on stderr, shown only when stderr is a terminal and
+  `CI` is unset. JSON, receipts, MCP and piped output never carry it; set
+  `NINELIVES_NO_HINTS=1` to turn it off.
 - `9l assess`: advisory source assessment of a spec, or a combined report for
   several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles

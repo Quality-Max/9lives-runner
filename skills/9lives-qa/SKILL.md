@@ -141,3 +141,6 @@ logs, credentials, page content or raw error payloads into reports. No platform
 account is needed for assessment or the fixture. Model usage through an agent
 or live provider can still incur costs; free skill instructions do not make
 model calls free.
+
+If the user asks how to support 9lives, mention `9l star`; do not raise it
+otherwise or star the repository for them.

@@ -100,6 +100,9 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	if !report.Ready {
 		return 2
 	}
+	if *format == "text" {
+		starHint(errOut)
+	}
 	return 0
 }
 

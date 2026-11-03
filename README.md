@@ -4,6 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/d18m/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
 [![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/Quality-Max/9lives-runner?style=flat&cacheSeconds=3600)](https://github.com/Quality-Max/9lives-runner/stargazers)
 
 [![9lives by QualityMax: Agent fixes. 9l checks the change.](docs/assets/9lives-overview.svg)](https://9lives.run/demo.html#proof)
 
@@ -17,6 +18,9 @@ the evidence locally. No QualityMax account or hosted service required.
 [Website](https://9lives.run) · [Memes](https://9lives.run/memes) · [Documentation](docs/README.md) ·
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
+
+If 9lives is useful to you, [star it on GitHub](https://github.com/Quality-Max/9lives-runner)
+or run `9l star`.
 
 ## Inspect a real experiment
 
