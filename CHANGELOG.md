@@ -12,8 +12,8 @@ SDK versions.
   the browser; `9l star --gh` stars `Quality-Max/9lives-runner` through the
   user's own `gh` login. 9l never stars on its own.
 - Help, `9l version` and a passing text `9l doctor` end with a one-line hint
-  to run `9l star`. It goes to stderr only when stderr is a terminal and `CI`
-  is unset, never into JSON, receipts, MCP responses or piped output. Set
+  to run `9l star`. It goes to stderr only when stdout and stderr are both
+  terminals and `CI` is unset, never into JSON, receipts, MCP responses or piped output. Set
   `NINELIVES_NO_HINTS=1` to turn it off. `9l version --format json` lists
   `star` among its commands.
 

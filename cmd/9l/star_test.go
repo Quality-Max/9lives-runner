@@ -57,7 +57,7 @@ func TestStarInTerminalOpensTheRepository(t *testing.T) {
 func TestStarWithGHStarsOnlyTheRunnerRepository(t *testing.T) {
 	fake := &fakeStar{}
 	code, out, _ := runStar(t, fake, false, "--gh")
-	if code != 0 || len(fake.gh) != 1 || fake.gh[0] != "repo star Quality-Max/9lives-runner" || !strings.Contains(out, "Starred") || len(fake.opened) != 0 {
+	if code != 0 || len(fake.gh) != 1 || fake.gh[0] != "api --method PUT --silent /user/starred/Quality-Max/9lives-runner" || !strings.Contains(out, "Starred") || len(fake.opened) != 0 {
 		t.Fatalf("code=%d out=%q gh=%v opened=%v", code, out, fake.gh, fake.opened)
 	}
 	fake = &fakeStar{ghErr: errors.New("gh is not on PATH")}
@@ -77,24 +77,27 @@ func TestStarRejectsArguments(t *testing.T) {
 
 func TestStarHintOnlyForPeopleAtATerminal(t *testing.T) {
 	for _, tc := range []struct {
-		terminal     bool
+		out, err     bool
 		ci, disabled string
 		want         bool
 	}{
-		{true, "", "", true},
-		{false, "", "", false},
-		{true, "true", "", false},
-		{true, "", "1", false},
-		{true, "", "0", true},
+		{true, true, "", "", true},
+		{false, false, "", "", false},
+		// `9l version | cat` or `>file`: stderr is still the terminal.
+		{false, true, "", "", false},
+		{true, false, "", "", false},
+		{true, true, "true", "", false},
+		{true, true, "", "1", false},
+		{true, true, "", "0", true},
 	} {
-		if got := starHintAllowed(tc.terminal, tc.ci, tc.disabled); got != tc.want {
-			t.Fatalf("terminal=%v ci=%q disabled=%q: got %v", tc.terminal, tc.ci, tc.disabled, got)
+		if got := starHintAllowed(tc.out, tc.err, tc.ci, tc.disabled); got != tc.want {
+			t.Fatalf("out=%v err=%v ci=%q disabled=%q: got %v", tc.out, tc.err, tc.ci, tc.disabled, got)
 		}
 	}
 }
 
-// Help, version and doctor write the hint to stderr only when stderr is a
-// terminal, so piped and captured output stays exactly as before.
+// Help, version and doctor write the hint to stderr only when stdout and
+// stderr are terminals, so piped and captured output stays exactly as before.
 func TestStarHintStaysOutOfCapturedOutput(t *testing.T) {
 	for _, args := range [][]string{{"--help"}, {"version"}, {"version", "--format", "json"}} {
 		var out, errOut bytes.Buffer

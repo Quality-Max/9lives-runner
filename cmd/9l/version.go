@@ -75,6 +75,6 @@ func versionCommand(args []string, out, errOut io.Writer) int {
 		return 0
 	}
 	fmt.Fprintf(out, "9l %s (Go runner)\n", version)
-	starHint(errOut)
+	starHint(out, errOut)
 	return 0
 }

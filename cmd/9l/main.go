@@ -42,7 +42,7 @@ func main() {
 func run(args []string, out, errOut io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		usage(out)
-		starHint(errOut)
+		starHint(out, errOut)
 		return 0
 	}
 	if args[0] == "--version" || args[0] == "version" {

@@ -52,7 +52,8 @@ func starContext(ctx context.Context, args []string, out, errOut io.Writer, opti
 		return exitUsage
 	}
 	if *gh {
-		if err := options.gh(ctx, "repo", "star", starRepository); err != nil {
+		// gh has no star subcommand; PUT /user/starred is the API operation.
+		if err := options.gh(ctx, "api", "--method", "PUT", "--silent", "/user/starred/"+starRepository); err != nil {
 			fmt.Fprintf(errOut, "9l: gh could not star %s (%v); star it at %s\n", starRepository, err, starURL)
 			return 1
 		}
@@ -97,16 +98,21 @@ func openBrowser(url string) error {
 }
 
 // starHint is a footer for people at a terminal. It goes to stderr only when
-// stderr is a terminal, outside CI and unless NINELIVES_NO_HINTS=1, so it
-// never reaches machine output, receipts, MCP responses or agent pipes.
-func starHint(errOut io.Writer) {
-	file, ok := errOut.(*os.File)
-	if !starHintAllowed(ok && updateTerminal(file), os.Getenv("CI"), os.Getenv("NINELIVES_NO_HINTS")) {
+// both the command's output and stderr are terminals, outside CI and unless
+// NINELIVES_NO_HINTS=1, so it never accompanies redirected output, receipts,
+// MCP responses or agent pipes.
+func starHint(out, errOut io.Writer) {
+	if !starHintAllowed(isTerminal(out), isTerminal(errOut), os.Getenv("CI"), os.Getenv("NINELIVES_NO_HINTS")) {
 		return
 	}
 	fmt.Fprintln(errOut, "\n★ Like 9l? Star it on GitHub: 9l star")
 }
 
-func starHintAllowed(terminal bool, ci, disabled string) bool {
-	return terminal && ci == "" && disabled != "1"
+func isTerminal(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	return ok && updateTerminal(file)
+}
+
+func starHintAllowed(outTerminal, errTerminal bool, ci, disabled string) bool {
+	return outTerminal && errTerminal && ci == "" && disabled != "1"
 }
