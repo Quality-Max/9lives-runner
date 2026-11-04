@@ -206,7 +206,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   const diagnostics = options.diagnostics?.gestures === true;
   const biometrics = options.biometrics;
   if (biometrics !== undefined && (physical || !biometrics || typeof biometrics !== 'object' || Object.keys(biometrics).some(k => k !== 'snapshot') ||
-      typeof biometrics.snapshot !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(biometrics.snapshot))) throw failure('invalid_configuration');
+      typeof biometrics.snapshot !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(biometrics.snapshot))) throw failure('invalid_configuration');
   const requires = options.requires;
   if (requires !== undefined && (Object.keys(requires).some(k => !['posture', 'minWidthDp'].includes(k)) || Object.keys(requires).length === 0 ||
       (requires.posture !== undefined && !['opened', 'half-opened', 'closed', 'flat'].includes(requires.posture)) ||
