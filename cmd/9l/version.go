@@ -39,7 +39,7 @@ type Contracts struct {
 	Engine           string `json:"engine"`
 }
 
-var commands = []string{"plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "confirm", "tier1", "heal-native", "heal", "mcp", "scan", "inspect", "doctor", "version", "update"}
+var commands = []string{"plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "confirm", "tier1", "heal-native", "heal", "mcp", "scan", "inspect", "doctor", "version", "update", "star"}
 
 func versionInfo() VersionInfo {
 	return VersionInfo{
@@ -75,5 +75,6 @@ func versionCommand(args []string, out, errOut io.Writer) int {
 		return 0
 	}
 	fmt.Fprintf(out, "9l %s (Go runner)\n", version)
+	starHint(out, errOut)
 	return 0
 }

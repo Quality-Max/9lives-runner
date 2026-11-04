@@ -152,6 +152,10 @@ use the public GitHub release marked Latest, without account credentials or
 project data. Offline automatic checks stay silent. CI, JSON runs, redirected
 streams, canceled/incomplete runs and MCP do not check or prompt.
 
+Help, `9l version` and a passing `9l doctor` in a terminal end with a
+one-line hint to star the repository with `9l star`. Set
+`NINELIVES_NO_HINTS=1` to hide it; CI and redirected output never show it.
+
 Set `NINELIVES_NO_UPDATE_CHECK=1` to disable automatic checks. The timestamp
 and an advisory lock live in the OS user-cache directory under
 `9lives-runner/update-check.json`. Explicit `9l update` bypasses this cache.

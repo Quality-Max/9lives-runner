@@ -107,7 +107,7 @@ func TestUnreachableBrowserTargetHasSharedRemediation(t *testing.T) {
 }
 
 func TestVersionAdvertisesSetupAndBrowserCommands(t *testing.T) {
-	for _, name := range []string{"doctor", "scan", "inspect"} {
+	for _, name := range []string{"doctor", "scan", "inspect", "star"} {
 		found := false
 		for _, command := range versionInfo().Commands {
 			found = found || command == name
