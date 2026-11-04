@@ -1087,7 +1087,9 @@ test('biometrics are declared on an owned emulator only and offer the sensor onl
 // The owned emulator boots the declared snapshot read-only, and a snapshot
 // that resumes locked or without an enrolled fingerprint stops the test as
 // a setup mismatch before the APK is installed or a session starts.
-test('owned emulator rejects a locked or unenrolled biometric snapshot before any install or session', async () => {
+// Owned emulators bind their console handshake to a Unix socket, which the
+// driver does not support on Windows hosts (Android on Windows is unqualified).
+test('owned emulator rejects a locked or unenrolled biometric snapshot before any install or session', {skip: process.platform === 'win32' && 'owned emulators use a Unix-socket console handshake; Windows hosts are unqualified'}, async () => {
   const cp = require('node:child_process');
   const net = require('node:net');
   const {EventEmitter} = require('node:events');
@@ -1113,7 +1115,7 @@ test('owned emulator rejects a locked or unenrolled biometric snapshot before an
       commands.push(args.join(' '));
       const script = args[2] === 'shell' && args[3] === 'sh' ? args[5] : '';
       let result = '';
-      if (file.endsWith('aapt2')) result = "package: name='dev.ninelives.fixture' versionCode='7'";
+      if (/aapt2(\.exe)?$/.test(file)) result = "package: name='dev.ninelives.fixture' versionCode='7'";
       else if (args.includes('sys.boot_completed')) result = '1';
       else if (script.includes('dumpsys window; dumpsys power')) result = device.state;
       else if (script.includes('dumpsys fingerprint')) result = device.fingerprint;
@@ -1121,7 +1123,7 @@ test('owned emulator rejects a locked or unenrolled biometric snapshot before an
       return new EventEmitter();
     };
     cp.spawn = (file, args) => {
-      spawned.push([path.basename(file), ...args]);
+      spawned.push([path.basename(file).replace(/\.exe$/, ''), ...args]);
       const child = new EventEmitter(); child.pid = 4321; child.exitCode = null; child.signalCode = null;
       child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
       // The emulator reports its console port to the private handshake socket.
