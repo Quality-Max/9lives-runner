@@ -4,7 +4,17 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.0-beta.3 — 2026-11-04
+
+Continues the 0.6.0-beta line on the beta channel: it includes everything in
+0.6.0-beta.2 plus the changes below. Stable installs stay on 0.5.5. It
+answers a field report from a Flutter app on the Android target: Flutter's
+controls are reachable, specs can handle optional screens and system
+windows, failures name the control, bounds are sized for emulators, and
+fingerprint sign-in works on an owned emulator. The target contract is
+`9l.target/3`: update the CLI and `@9l/playwright` together, since either
+on `9l.target/2` is rejected at the handshake. Receipt, run result and run
+status stay version 2.
 
 ### CLI
 
@@ -43,6 +53,9 @@ SDK versions.
 
 ### Documentation
 
+- `docs/cli.md` says that `--timeout` and `--deadline` count time the host is
+  awake, while receipt durations are wall-clock, so a run that spanned host
+  sleep can report a `durationMs` longer than its deadline (#246).
 - An Android quickstart in the npm package README and at the top of
   `docs/android-driver.md`: the pinned tooling install, `9l doctor
   --android`, the fixture, the `android:<alias>` project, the run command
@@ -52,6 +65,12 @@ SDK versions.
 
 ### Target contract
 
+- The shared target contract is `9l.target/3`: it adds the `query-visible`,
+  `foreground` and `fingerprint` operations, the `foreground`,
+  `device-serial` and `fingerprint` driver capabilities and the
+  `operation_timeout` reason. A CLI or SDK on
+  `9l.target/2` is rejected at the handshake with the upgrade message, so
+  update the CLI and `@9l/playwright` together.
 - Fingerprint sign-in on an owned emulator (#240). `androidTargetDriver`
   accepts `biometrics: {snapshot}` for an AVD that
   `scripts/prepare-biometric-avd.cjs` prepared (a random, never printed lock
@@ -61,21 +80,15 @@ SDK versions.
   as an action, not an assertion. A snapshot that resumes locked or
   unenrolled is `setup mismatch` (`biometrics-unavailable`). Attached phones
   are unchanged: no PIN, no sensor, `unsupported_operation`. The
-  `fingerprint` capability and operation join the unreleased `9l.target/3`.
+  `fingerprint` capability and operation are part of `9l.target/3`.
 
 - A failed target operation on a control names it (#243). The failure
   summary gains an optional `control`: the test ID the operation addressed,
   when that is an identifier (letters, digits, `_`, `.`, `-`, at most 64),
   and the text summary reads `in tap on login-button: missing_test_id`.
   Only failed steps carry it, so passing evidence still holds no test ID.
-  It travels in the unreleased `9l.target/3` stream; receipt, run result and
-  run status stay version 2 (an added optional field keeps the version).
-
-- The shared target contract is `9l.target/3`: it adds the `query-visible`
-  and `foreground` operations, the `foreground` and `device-serial` driver
-  capabilities and the `operation_timeout` reason. A CLI or SDK on
-  `9l.target/2` is rejected at the handshake with the upgrade message, so
-  update the CLI and `@9l/playwright` together.
+  It travels in the `9l.target/3` stream; receipt, run result and run status
+  stay version 2 (an added optional field keeps the version).
 - `getByTestId(id).isVisible({timeoutMs}?)` answers whether a control is
   shown without ending the session, for a screen that may or may not appear
   (#239). One observation by default, a bounded poll with `timeoutMs`; absent

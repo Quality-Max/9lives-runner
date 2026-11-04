@@ -345,8 +345,16 @@ drives an owned local emulator, or an installed app on an explicitly selected
 phone, through Appium and UiAutomator2. It supports:
 
 - **Native operations:** tap, fill, touch at a point, Back, scroll, bounds,
-  viewport, keyboard, terminate and activate, with visible, hidden, text and
-  state assertions.
+  viewport, keyboard, terminate and activate, with visible, hidden, text,
+  state and invalid-state assertions. Controls are reached by resource ID
+  (prefixed or bare, as Flutter reports them) or by text, description, hint
+  and label aliases.
+- **Queries that keep the session:** `isVisible()` for a screen that may or
+  may not appear, and `foreground()` to tell a system window from the app;
+  both are recorded as actions, never as assertions.
+- **Fingerprint sign-in (opt-in):** on an owned emulator booted from a
+  prepared snapshot, `fingerprint()` touches the virtual sensor; the driver
+  never sees a PIN, and phones have no such operation.
 - **Setup classification:** a locked device, a screen that is off, state a
   previous test left behind, or a posture, width or build that doesn't match
   is reported as a setup problem, not an application failure.
