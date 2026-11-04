@@ -148,6 +148,15 @@ jobs:
   npm:
     needs: [check-tag, qualification, github-release]
     runs-on: ubuntu-24.04
+    # One publication at a time across all tags, so the channel check in
+    # publish-sdk.cjs and the publish it guards cannot interleave with another
+    # tag's. Qualification and packaging still run in parallel. GitHub keeps
+    # one pending job per group: a third tag reaching this job while one
+    # publishes and one waits cancels the waiting one, which then needs a
+    # rerun of its failed jobs.
+    concurrency:
+      group: npm-publication
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write

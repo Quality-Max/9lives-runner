@@ -4,6 +4,21 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Release process
+
+- The `npm` release job refuses to publish a version older than the one its
+  channel (`latest` or `beta`) already holds, so an older tag published late
+  can no longer move npm's channels backwards. Unreadable or unsupported
+  registry metadata also stops publication, the refusal names its reason, and
+  a rerun of an identical, already published tarball still skips. The `npm`
+  jobs of all tags share one concurrency group, so the check and the
+  publication of two release runs cannot interleave; qualification and
+  packaging still run in parallel. GitHub keeps one pending job per group, so
+  a third tag queuing meanwhile cancels the waiting one, which then needs a
+  rerun of its failed jobs.
+
 ## 0.6.0-beta.3 — 2026-11-04
 
 Continues the 0.6.0-beta line on the beta channel: it includes everything in

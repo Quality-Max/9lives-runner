@@ -52,10 +52,14 @@ dist-tags and rejects
 publication if it would move its channel backwards. Registry lookup failures
 or unsupported channel versions fail closed. An older unpublished tag then
 requires a new release version; do not remove the guard to rerun it. This
-check alone does not prevent concurrent publishers from racing. Cross-tag
-serialization is required before relying on this check for concurrent release
-runs; the current workflow only serializes runs of the same tag. External
-publishers must coordinate separately.
+check is serialized with publication: the `npm` job of every tag shares one
+concurrency group (`npm-publication`), so two release runs cannot read the
+channels and publish interleaved, while their qualification and packaging
+still run in parallel. GitHub keeps one pending job per group: if a third
+tag's `npm` job queues while one publishes and another waits, the waiting job
+is cancelled and its run needs a rerun of its failed jobs. The refusal names
+its reason (`publication would roll back npm channel`). Publishers outside
+this workflow must coordinate separately.
 
 Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup

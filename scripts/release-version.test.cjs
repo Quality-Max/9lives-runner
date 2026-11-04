@@ -125,6 +125,8 @@ for (const [version, tags, allowed] of [
       write('subprocess.cjs', preload.replace("stdout: '{}'", `stdout: ${JSON.stringify(JSON.stringify(tags))}`));
       const result = execute('publish-sdk.cjs');
       assert.equal(result.status === 0, allowed, result.stderr);
+      // A refused rollback says why; an unreadable channel keeps the generic message.
+      if (!allowed && tags[Object.keys(tags)[0]] !== 'invalid') assert.match(result.stderr, /publication would roll back npm channel/);
       const calls = fs.readFileSync(path.join(copy, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
       assert.equal(calls.some(c => c.args[0] === 'publish'), allowed);
     });

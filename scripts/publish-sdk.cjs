@@ -45,7 +45,11 @@ try {
   }
   const result = spawnSync('npm', ['publish', tarball, '--access', 'public', '--tag', channel], {cwd: root, stdio: 'inherit', timeout: 120000});
   assert(!result.error && result.status === 0);
-} catch {
-  console.error('SDK publication failed or qualified artifact was rejected');
+} catch (error) {
+  // Only this script's own fixed reasons are named; anything else (a
+  // subprocess failure, an unexpected value) keeps the generic message.
+  const reasons = ['cannot read npm channels', 'invalid npm channels', 'publication would roll back npm channel', 'npm already has this version with different contents'];
+  const reason = error instanceof assert.AssertionError && reasons.includes(error.message) ? `: ${error.message}` : ' or qualified artifact was rejected';
+  console.error(`SDK publication failed${reason}`);
   process.exitCode = 1;
 }
