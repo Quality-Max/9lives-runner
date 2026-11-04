@@ -41,6 +41,14 @@ SDK versions.
 
 ### Target contract
 
+- A failed target operation on a control names it (#243). The failure
+  summary gains an optional `control`: the test ID the operation addressed,
+  when that is an identifier (letters, digits, `_`, `.`, `-`, at most 64),
+  and the text summary reads `in tap on login-button: missing_test_id`.
+  Only failed steps carry it, so passing evidence still holds no test ID.
+  It travels in the unreleased `9l.target/3` stream; receipt, run result and
+  run status stay version 2 (an added optional field keeps the version).
+
 - The shared target contract is `9l.target/3`: it adds the `query-visible`
   and `foreground` operations, the `foreground` and `device-serial` driver
   capabilities and the `operation_timeout` reason. A CLI or SDK on

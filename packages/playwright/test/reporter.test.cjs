@@ -197,6 +197,12 @@ test('a failed target operation carries only its stop reason token', () => {
     reporter.onStepEnd(testCase, result, typed('9l target fill', 'Error: element "Send" is not visible at https://shop.invalid/?token=secret'));
     reporter.onStepEnd(testCase, result, typed('9l target assert-visible'));
     reporter.onStepEnd(testCase, result, {category: 'test.step', title: 'my step', error: {message: 'Error: 9lives target stopped: assertion_failed'}});
+    // A failed control operation names its identifier-shaped test ID; a
+    // passed one does not, and a title that is not "<operation> <id>" names
+    // no control (the whole remainder stays the operation, which Go rejects).
+    reporter.onStepEnd(testCase, result, typed('9l target tap login-button.v2', 'Error: 9lives target stopped: missing_test_id'));
+    reporter.onStepEnd(testCase, result, typed('9l target assert-text receipt'));
+    reporter.onStepEnd(testCase, result, typed('9l target tap pay 4242', 'Error: 9lives target stopped: missing_test_id'));
     const frames = fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
     assert.deepEqual(frames.map(frame => [frame.operation, frame.status, frame.reason]), [
       ['assert-text', 'failed', 'assertion_failed'],
@@ -208,7 +214,11 @@ test('a failed target operation carries only its stop reason token', () => {
       ['fill', 'failed', undefined],
       ['assert-visible', 'passed', undefined],
       [undefined, 'failed', undefined],
+      ['tap', 'failed', 'missing_test_id'],
+      ['assert-text', 'passed', undefined],
+      ['tap pay 4242', 'failed', 'missing_test_id'],
     ]);
+    assert.deepEqual(frames.map(frame => frame.control), [undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'login-button.v2', undefined, undefined]);
     const raw = fs.readFileSync(events, 'utf8');
     for (const leaked of ['Card', 'card', 'Send', 'https://', 'token', 'targets.js', 'accepted']) assert(!raw.includes(leaked), leaked);
   } finally {

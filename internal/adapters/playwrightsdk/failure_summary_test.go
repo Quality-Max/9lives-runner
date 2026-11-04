@@ -195,3 +195,48 @@ func TestFailedTestSummaryIsBounded(t *testing.T) {
 		}
 	}
 }
+
+// A failed control operation may name the identifier-shaped test ID it
+// addressed, and the failure summary keeps it beside the operation.
+func TestFailedTestSummaryNamesTheFailedControl(t *testing.T) {
+	f := failedTargetFrames("assertion_failed")
+	f[3]["control"] = "login.status-2"
+	v, err := New().ValidateAttempt(stream(f), webTarget())
+	if err != nil || len(v.FailedTests) != 1 {
+		t.Fatalf("%+v %v", v, err)
+	}
+	if got := v.FailedTests[0]; got.Control != "login.status-2" || got.Operation != "assert-text" || got.Validate() != nil {
+		t.Fatalf("summary %+v", got)
+	}
+}
+
+func TestTargetControlIsAnIdentifierOnAFailedControlOperation(t *testing.T) {
+	cases := map[string]func([]map[string]any) []map[string]any{
+		"free text":    func(f []map[string]any) []map[string]any { f[3]["control"] = "Pay 4242 now"; return f },
+		"an email":     func(f []map[string]any) []map[string]any { f[3]["control"] = "ada@example.test"; return f },
+		"too long":     func(f []map[string]any) []map[string]any { f[3]["control"] = strings.Repeat("a", 65); return f },
+		"leading dash": func(f []map[string]any) []map[string]any { f[3]["control"] = "-send"; return f },
+		"empty":        func(f []map[string]any) []map[string]any { f[3]["control"] = ""; return f },
+		"not a string": func(f []map[string]any) []map[string]any { f[3]["control"] = 7; return f },
+		"on a passed step": func(f []map[string]any) []map[string]any {
+			f[3]["control"], f[3]["status"] = "send", "passed"
+			delete(f[3], "reason")
+			return f
+		},
+		"on an app-level operation": func(f []map[string]any) []map[string]any {
+			f[3]["control"], f[3]["operation"], f[3]["category"] = "send", "back", "action"
+			return f
+		},
+		"without an operation": func(f []map[string]any) []map[string]any {
+			f[3]["control"] = "send"
+			delete(f[3], "operation")
+			delete(f[3], "reason")
+			return f
+		},
+	}
+	for name, mutate := range cases {
+		if _, err := New().ValidateAttempt(stream(mutate(failedTargetFrames("assertion_failed"))), webTarget()); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

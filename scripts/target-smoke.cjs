@@ -234,7 +234,10 @@ const failureSummary = (run, label) => {
   const summary = receipt.failureSummary;
   assert(summary, `${label}: failure summary retained`);
   assert.deepEqual(JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8')).failureSummary, summary, `${label}: summary persisted in receipt.json`);
-  const text = JSON.stringify(summary);
+  // The one identifier a summary may name is the failed control's test ID;
+  // everything else stays free of text.
+  for (const test of summary.tests ?? []) if (test.control !== undefined) assert.match(test.control, /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/, `${label}: control is an identifier`);
+  const text = JSON.stringify({...summary, tests: summary.tests?.map(({control, ...test}) => test)});
   for (const leaked of ['9lives target stopped', 'Sent $', 'Error', 'http', 'spec.ts', 'deterministic', 'receipt']) assert(!text.includes(leaked), `${label}: summary carries no ${leaked}`);
   for (const test of summary.tests ?? []) assert.match(test.testId, /^[a-f0-9]{64}$/, `${label}: bound to the engine test digest`);
   return summary;
@@ -253,13 +256,13 @@ for (const [run, label] of [[defect, 'defect'], [rejected.timeout, 'timeout']]) 
   for (const leaked of ['9lives target stopped', 'Sent $', 'toHaveText']) assert(!persisted.includes(leaked), `${label}: receipt.json carries no ${leaked}`);
 }
 const distinct = {
-  defect: [described(defect, 'defect'), [{class: 'assertion', status: 'failed', step: 'assertion', operation: 'assert-text', reason: 'assertion_failed'}]],
+  defect: [described(defect, 'defect'), [{class: 'assertion', status: 'failed', step: 'assertion', operation: 'assert-text', control: 'receipt', reason: 'assertion_failed'}]],
   // The call's own 100 ms bound is operation_timeout; deadline names only the attempt's.
-  timeout: [described(rejected.timeout, 'timeout'), [{class: 'action-timeout', status: 'failed', step: 'action', operation: 'tap', reason: 'operation_timeout'}]],
+  timeout: [described(rejected.timeout, 'timeout'), [{class: 'action-timeout', status: 'failed', step: 'action', operation: 'tap', control: 'send', reason: 'operation_timeout'}]],
   locked: [described(locked, 'locked'), [{class: 'setup', status: 'failed', step: 'action', operation: 'open', reason: 'setup_blocked', setup: 'blocked'}]],
-  lockRecheck: [described(lockRecheck, 'lock-recheck'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-text', reason: 'assertion_failed', setup: 'blocked'}]],
-  ambiguous: [described(rejected.ambiguous, 'ambiguous'), [{class: 'other', status: 'failed', step: 'action', operation: 'fill', reason: 'ambiguous_test_id'}]],
-  observer: [described(observer, 'observer'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-hidden', reason: 'assertion_failed', setup: 'observer'}]],
+  lockRecheck: [described(lockRecheck, 'lock-recheck'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-text', control: 'receipt', reason: 'assertion_failed', setup: 'blocked'}]],
+  ambiguous: [described(rejected.ambiguous, 'ambiguous'), [{class: 'other', status: 'failed', step: 'action', operation: 'fill', control: 'amount', reason: 'ambiguous_test_id'}]],
+  observer: [described(observer, 'observer'), [{class: 'setup', status: 'failed', step: 'assertion', operation: 'assert-hidden', control: 'status', reason: 'assertion_failed', setup: 'observer'}]],
 };
 for (const [label, [actual, expected]] of Object.entries(distinct)) assert.deepEqual(actual, expected, `${label}: failure summary`);
 assert.equal(new Set(Object.values(distinct).map(([actual]) => JSON.stringify(actual))).size, Object.keys(distinct).length, 'each cause has its own summary');

@@ -166,7 +166,9 @@
   failure `class` (the classes above), the `status` of the last completed
   Playwright attempt, the category of the failed `step` the failure is
   attributed to (the first failed target operation, else the first failed
-  assertion, else the first failed step), the target `operation` and its stop
+  assertion, else the first failed step), the target `operation`, the
+  `control` it addressed (the failed control's test ID, when that is an
+  identifier: letters, digits, `_`, `.` and `-`, at most 64), its stop
   `reason` (such as `assertion_failed`, `operation_timeout`, `deadline`,
   `operation_failed`, `setup_blocked`), an unrecovered `setup` classification, and the
   `failedSteps` and Playwright `attempts` of the test. The class is derived

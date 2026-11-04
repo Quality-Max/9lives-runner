@@ -197,7 +197,12 @@ Typed target steps record only the operation enum, category and outcome, and
 for a failed operation the stop reason token it failed with (`[a-z_]{1,64}`,
 such as `assertion_failed`, `operation_timeout`, `deadline`,
 `operation_failed` or `setup_blocked`), read only from the fixture's own `9lives target stopped:`
-error. The receipt's `failureSummary` keeps them per failed test, with the
+error. A failed operation on a control also names the control: its test ID,
+only when that is an identifier (`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`), so
+a summary reads `tap on login-button: missing_test_id`. Passed steps, app
+operations and other test IDs name none, and a test ID is never page
+content, but it is spec-authored text a receipt keeps: don't put personal
+data in test IDs. The receipt's `failureSummary` keeps them per failed test, with the
 test's setup classification, so an assertion failure, an operation that could
 not run, a deadline and a locked device stay distinguishable without
 `--failure-details` or a rerun. The

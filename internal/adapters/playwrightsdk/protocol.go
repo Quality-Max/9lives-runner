@@ -50,6 +50,7 @@ type event struct {
 	TargetID      string                   `json:"targetId"`
 	TargetVersion string                   `json:"targetVersion"`
 	Operation     string                   `json:"operation"`
+	Control       string                   `json:"control"`
 	Reason        string                   `json:"reason"`
 	Runtime       *runner.AndroidRuntime   `json:"runtime"`
 	Setup         *runner.TargetSetup      `json:"setup"`
@@ -100,15 +101,15 @@ type testState struct {
 // failedStep is the step a test's failure is attributed to, with the number
 // of failed steps in the same attempt.
 type failedStep struct {
-	category, operation, reason string
-	count                       int
+	category, operation, control, reason string
+	count                                int
 }
 
 // attribute keeps the first failed target operation, else the first failed
 // assertion, else the first failed step. A typed target step ends after the
 // browser calls inside it, and a test.step after the expect inside it, so
 // the first failure alone would name the wrapper's child or the wrapper.
-func (step *failedStep) attribute(category, operation, reason string) {
+func (step *failedStep) attribute(category, operation, control, reason string) {
 	rank := func(category, operation string) int {
 		switch {
 		case operation != "":
@@ -120,7 +121,7 @@ func (step *failedStep) attribute(category, operation, reason string) {
 	}
 	step.count++
 	if step.count == 1 || rank(category, operation) > rank(step.category, step.operation) {
-		step.category, step.operation, step.reason = category, operation, reason
+		step.category, step.operation, step.control, step.reason = category, operation, control, reason
 	}
 }
 
@@ -270,12 +271,17 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if frame.Reason != "" && (frame.Operation == "" || frame.Status != "failed" || !stopReason.MatchString(frame.Reason)) {
 				return invalid("unsupported target stop reason")
 			}
+			// A control is the identifier-shaped test ID a failed control
+			// operation addressed; app-level operations and passed steps name none.
+			if frame.Control != "" && (frame.Status != "failed" || !oneOf(frame.Operation, targetControlOperations...) || !targetControl.MatchString(frame.Control)) {
+				return invalid("unsupported target control")
+			}
 			steps[frame.StepID] = true
 			if frame.Category == "assertion" && frame.Status == "passed" {
 				state.reportedAttempt++
 			}
 			if frame.Status == "failed" {
-				state.failedAttempt.attribute(frame.Category, frame.Operation, frame.Reason)
+				state.failedAttempt.attribute(frame.Category, frame.Operation, frame.Control, frame.Reason)
 			}
 			if frame.Operation != "" {
 				assertion := oneOf(frame.Operation, targetAssertions...)
@@ -454,7 +460,7 @@ func failedTest(id string, state *testState) runner.FailedTestSummary {
 	return runner.FailedTestSummary{
 		TestID: id, Status: state.finalStatus,
 		Class: runner.EngineFailureClass(state.finalStatus, step.category, step.reason, state.setupClass),
-		Step:  step.category, Operation: step.operation, Reason: step.reason, Setup: state.setupClass,
+		Step:  step.category, Operation: step.operation, Control: step.control, Reason: step.reason, Setup: state.setupClass,
 		FailedSteps: min(step.count, runner.MaxFailureSummaryCount), Attempts: len(state.statuses),
 	}
 }
@@ -490,6 +496,11 @@ func outcome(state *testState) string {
 // executed, never assertions.
 var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground"}
 var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
+
+// targetControlOperations address one control by test ID and may name it;
+// targetControl is the identifier shape a named control has.
+var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "assert-visible", "assert-hidden", "assert-text", "assert-state"}
+var targetControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // Capabilities is the exact capability list a hello frame must carry. The
 // SDK declares the same list in its package metadata so doctor can compare
@@ -566,6 +577,9 @@ func decodeEvent(raw []byte) (event, error) {
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
 		if frame.Operation != "" {
 			fields = append(fields, "operation")
+		}
+		if frame.Control != "" {
+			fields = append(fields, "control")
 		}
 		if frame.Reason != "" {
 			fields = append(fields, "reason")

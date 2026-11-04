@@ -218,6 +218,9 @@
         "class": {
           "type": "string"
         },
+        "control": {
+          "type": "string"
+        },
         "failedSteps": {
           "type": "integer"
         },

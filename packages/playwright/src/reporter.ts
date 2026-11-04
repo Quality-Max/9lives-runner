@@ -77,12 +77,19 @@ export default class EngineReporter implements Reporter {
     // inside it; its own step carries the final outcome.
     if (step.category === 'expect' && insideAssertion(step)) return;
     const categories: Record<string, string> = {'test.step': 'action', expect: 'assertion', 'pw:api': 'browser', fixture: 'fixture'};
-    const operation = this.target && step.category === 'test.step' && step.location?.file === targetStepFile && step.title.startsWith('9l target ') ? step.title.slice('9l target '.length) : undefined;
+    const typed = this.target && step.category === 'test.step' && step.location?.file === targetStepFile && step.title.startsWith('9l target ') ? step.title.slice('9l target '.length) : undefined;
+    // "<operation>" or "<operation> <control>": the control is the test ID
+    // the fixture named, an identifier only. Anything else keeps the whole
+    // remainder as the operation, which the engine rejects as unknown. Only a
+    // failed step names its control, so passing evidence carries no test ID.
+    const named = typed === undefined ? undefined : /^([a-z][a-z-]{0,63}) ([A-Za-z0-9_][A-Za-z0-9_.-]{0,63})$/.exec(typed);
+    const operation = named ? named[1] : typed, control = step.error ? named?.[2] : undefined;
     const reason = operation && step.error ? targetStopReason(step.error) : undefined;
     this.emit('step_end', {
       testId: this.testId(test), retry: result.retry, stepId: `step-${++this.stepSeq}`,
       category: operation ? operation.startsWith('assert-') ? 'assertion' : 'action' : step.category === 'test.step' && step.title === '9l goal' ? 'goal' : categories[step.category] ?? 'other', status: step.error ? 'failed' : 'passed',
       ...(operation ? {operation} : {}),
+      ...(control ? {control} : {}),
       ...(reason ? {reason} : {}),
     });
   }
