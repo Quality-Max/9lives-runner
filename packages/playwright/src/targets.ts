@@ -8,7 +8,7 @@ export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSe
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
-  'foreground', 'device-serial'] as const;
+  'foreground', 'device-serial', 'fingerprint'] as const;
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
 export type TargetPoint = {x: number; y: number};
@@ -63,6 +63,10 @@ export interface TargetDriver extends TargetIdentity {
   /** The serial of the device the open session targets, for spec-side adb
    * commands. Never written to receipts. Android only. */
   deviceSerial?(): string | undefined;
+  /** Touch and lift the virtual fingerprint sensor with an enrolled (or
+   * deliberately unenrolled) finger. Owned emulators with declared
+   * biometrics only. */
+  fingerprint?(finger: number, context: TargetContext): Promise<void>;
   /** SHA-256 of a screenshot of the target display, computed in memory. The
    * image itself is never returned, written or attached. */
   screenDigest?(context: TargetContext): Promise<string>;
@@ -355,7 +359,7 @@ export class TargetApp {
     }
   }
 
-  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground'>(name: K): NonNullable<TargetDriver[K]> {
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint'>(name: K): NonNullable<TargetDriver[K]> {
     const method = this.driver[name];
     if (typeof method !== 'function') throw stopped('unsupported_operation');
     return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
@@ -414,6 +418,18 @@ export class TargetApp {
       const value: unknown = await this.optional('foreground')(context);
       if (value !== 'app' && value !== 'foreign' && value !== 'none') throw stopped('invalid_property');
       return value as TargetForeground;
+    }, options.timeoutMs);
+  }
+
+  /** Touch the emulator's fingerprint sensor with finger 1-10, as a person
+   * would at a biometric prompt. Only an owned emulator whose driver
+   * declares biometrics has a sensor to touch; elsewhere this fails as
+   * unsupported_operation before touching the device. Recorded as an
+   * executed action: a biometric sign-in still needs an assertion. */
+  fingerprint(finger: number, options: TargetOperationOptions = {}) {
+    return this.perform('fingerprint', async context => {
+      if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw stopped('invalid_value');
+      await this.optional('fingerprint')(finger, context);
     }, options.timeoutMs);
   }
 

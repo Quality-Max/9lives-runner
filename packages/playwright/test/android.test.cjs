@@ -1068,3 +1068,98 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
     await fs.rm(dir, {recursive: true, force: true});
   }
 });
+
+// Biometrics are an owned-emulator opt-in: a phone never gets a sensor to
+// touch, and the snapshot name is checked before anything starts.
+test('biometrics are declared on an owned emulator only and offer the sensor only there', () => {
+  const {androidTargetDriver} = require('../dist/android');
+  const owned = {appId: 'bio', sdkRoot: '/tmp', toolsRoot: '/tmp', avd: '9l_biometric_API_35', apk: '/tmp/app.apk', apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+  const phone = {appId: 'bio', sdkRoot: '/tmp', toolsRoot: '/tmp', deviceSerial: 'R5CT1234', apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+  assert.equal(typeof androidTargetDriver({...owned, biometrics: {snapshot: '9l-biometric'}}).fingerprint, 'function');
+  assert.equal(androidTargetDriver(owned).fingerprint, undefined, 'no sensor without the opt-in');
+  assert.equal(androidTargetDriver(phone).fingerprint, undefined, 'no sensor on a phone');
+  for (const biometrics of [{snapshot: ''}, {snapshot: 'a b'}, {snapshot: '../x'}, {snapshot: '..'}, {snapshot: '.'}, {snapshot: '-x'}, {snapshot: 'x'.repeat(65)}, {snapshot: '9l', pin: '1111'}, {}, true, null]) {
+    assert.throws(() => androidTargetDriver({...owned, biometrics}), /invalid_configuration/, JSON.stringify(biometrics));
+  }
+  assert.throws(() => androidTargetDriver({...phone, biometrics: {snapshot: '9l-biometric'}}), /invalid_configuration/, 'a phone cannot declare biometrics');
+});
+
+// The owned emulator boots the declared snapshot read-only, and a snapshot
+// that resumes locked or without an enrolled fingerprint stops the test as
+// a setup mismatch before the APK is installed or a session starts.
+// Owned emulators bind their console handshake to a Unix socket, which the
+// driver does not support on Windows hosts (Android on Windows is unqualified).
+test('owned emulator rejects a locked or unenrolled biometric snapshot before any install or session', {skip: process.platform === 'win32' && 'owned emulators use a Unix-socket console handshake; Windows hosts are unqualified'}, async () => {
+  const cp = require('node:child_process');
+  const net = require('node:net');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {createHash} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-bio-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR};
+  const apk = path.join(dir, 'app.apk');
+  await fs.writeFile(apk, 'synthetic apk bytes');
+  const apkSHA256 = createHash('sha256').update('synthetic apk bytes').digest('hex');
+  let device = {state: 'showing=false\nmWakefulness=Awake', fingerprint: '{"prints":[{"id":0,"count":1}]}'};
+  const commands = [], spawned = [];
+  let sessions = 0;
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      commands.push(args.join(' '));
+      const script = args[2] === 'shell' && args[3] === 'sh' ? args[5] : '';
+      let result = '';
+      if (/aapt2(\.exe)?$/.test(file)) result = "package: name='dev.ninelives.fixture' versionCode='7'";
+      else if (args.includes('sys.boot_completed')) result = '1';
+      else if (script.includes('dumpsys window; dumpsys power')) result = device.state;
+      else if (script.includes('dumpsys fingerprint')) result = device.fingerprint;
+      queueMicrotask(() => callback(null, result, ''));
+      return new EventEmitter();
+    };
+    cp.spawn = (file, args) => {
+      spawned.push([path.basename(file).replace(/\.exe$/, ''), ...args]);
+      const child = new EventEmitter(); child.pid = 4321; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      // The emulator reports its console port to the private handshake socket.
+      const report = args.indexOf('-report-console');
+      if (report >= 0) setImmediate(() => { const socket = net.connect(args[report + 1].slice('unix:'.length), () => socket.end('5554')); });
+      return child;
+    };
+    global.fetch = async () => { sessions++; return new Response(JSON.stringify({value: {ready: true}}), {status: 200}); };
+    const {androidTargetDriver} = require('../dist/android');
+    const options = {appId: 'bio', sdkRoot: dir, toolsRoot: dir, avd: '9l_biometric_API_35', apk, apkSHA256, appPackage: 'dev.ninelives.fixture', activity: '.MainActivity', biometrics: {snapshot: '9l-biometric'}};
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    for (const [label, state] of [
+      ['locked', {state: 'showing=true\nmWakefulness=Awake', fingerprint: '{"prints":[{"id":0,"count":1}]}'}],
+      ['unenrolled', {state: 'showing=false\nmWakefulness=Awake', fingerprint: '{"prints":[{"id":0,"count":0}]}'}],
+      ['no fingerprint service', {state: 'showing=false\nmWakefulness=Awake', fingerprint: "Can't find service: fingerprint"}],
+    ]) {
+      device = state; commands.length = 0; spawned.length = 0; sessions = 0;
+      const driver = androidTargetDriver(options);
+      await assert.rejects(driver.open(context()), error => error.record?.classification === 'mismatch' && error.record?.reason === 'biometrics-unavailable', label);
+      await driver.close();
+      const emulator = spawned.find(args => args[0] === 'emulator');
+      assert(emulator && emulator.includes('-read-only') && emulator.join(' ').includes('-snapshot 9l-biometric -no-snapshot-save') && !emulator.includes('-no-snapshot'), `${label}: boots the snapshot read-only`);
+      assert(!commands.some(command => / install /.test(` ${command} `)), `${label}: nothing installed`);
+      assert(!spawned.some(args => args[0] !== 'emulator'), `${label}: no Appium server started`);
+      assert.equal(sessions, 0, `${label}: no session`);
+    }
+    // An unlocked, enrolled snapshot gets past the check to the install.
+    device = {state: 'showing=false\nmWakefulness=Awake', fingerprint: '{"prints":[{"id":0,"count":1}]}'};
+    commands.length = 0;
+    const driver = androidTargetDriver(options);
+    await driver.open({signal: new AbortController().signal, deadlineMs: Date.now() + 3000}).catch(() => {});
+    await driver.close();
+    assert(commands.some(command => command.includes(' install ')), 'a usable snapshot proceeds to the install');
+  } finally {
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});

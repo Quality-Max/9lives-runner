@@ -46,6 +46,8 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     viewport: async () => ({width: 400, height: 800}),
     // A system window (a permission prompt) is in front in the foreign case.
     foreground: async () => mode === 'foreign' ? 'foreign' : 'app',
+    // An emulator's virtual sensor: finger 1 is enrolled and signs in.
+    fingerprint: async finger => { status = finger === 1 ? 'authenticated' : status; },
     terminate: async () => { running = false; status = ''; },
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },
     observeTestId: async (id: string) => {

@@ -81,10 +81,17 @@ export type AndroidTargetOptions = {
   requires?: {posture?: 'opened' | 'half-opened' | 'closed' | 'flat'; minWidthDp?: number};
 } & ({
   avd: string; apk: string; headless?: boolean; deviceSerial?: never;
+  /** Owned emulator only: boot the named snapshot of a dedicated AVD that
+   * scripts/prepare-biometric-avd.cjs prepared (a lock screen and an
+   * enrolled fingerprint, saved unlocked), still read-only, and offer
+   * app.fingerprint(). The driver never sees, sets or enters a PIN; a
+   * snapshot that boots locked or without an enrolled fingerprint is a
+   * setup mismatch (biometrics-unavailable). */
+  biometrics?: {snapshot: string};
 } | {
   /** Experimental attachment: installed, single-base APK only. Never resets,
    * reinstalls or terminates the app. Installs the pinned automation helpers. */
-  deviceSerial: string; avd?: never; apk?: never; headless?: never;
+  deviceSerial: string; avd?: never; apk?: never; headless?: never; biometrics?: never;
 });
 
 const failure = (reason: string) => new Error(`9lives Android: ${reason}`);
@@ -197,6 +204,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       ((options.baseline !== undefined || options.recovery !== undefined) && !physical) ||
       (options.diagnostics !== undefined && (Object.keys(options.diagnostics).some(k => k !== 'gestures') || typeof options.diagnostics.gestures !== 'boolean'))) throw failure('invalid_configuration');
   const diagnostics = options.diagnostics?.gestures === true;
+  const biometrics = options.biometrics;
+  if (biometrics !== undefined && (physical || !biometrics || typeof biometrics !== 'object' || Object.keys(biometrics).some(k => k !== 'snapshot') ||
+      typeof biometrics.snapshot !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(biometrics.snapshot))) throw failure('invalid_configuration');
   const requires = options.requires;
   if (requires !== undefined && (Object.keys(requires).some(k => !['posture', 'minWidthDp'].includes(k)) || Object.keys(requires).length === 0 ||
       (requires.posture !== undefined && !['opened', 'half-opened', 'closed', 'flat'].includes(requires.posture)) ||
@@ -658,7 +668,9 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             const consoleSocket = join(directory, 'c');
             if (Buffer.byteLength(consoleSocket) > 103) throw failure('scratch_path_too_long');
             const port = await reportedConsole(consoleSocket, c, () => {
-              emulator = spawn(emulatorPath, ['-avd', options.avd!, '-read-only', '-no-snapshot', '-no-audio', '-report-console', `unix:${consoleSocket}`, ...(options.headless === false ? [] : ['-no-window']), '-gpu', 'swiftshader_indirect'], {env, stdio: 'ignore'});
+              // A declared biometric snapshot is loaded and never saved, so
+              // every test still starts from the same state.
+              emulator = spawn(emulatorPath, ['-avd', options.avd!, '-read-only', ...(biometrics ? ['-snapshot', biometrics.snapshot, '-no-snapshot-save'] : ['-no-snapshot']), '-no-audio', '-report-console', `unix:${consoleSocket}`, ...(options.headless === false ? [] : ['-no-window']), '-gpu', 'swiftshader_indirect'], {env, stdio: 'ignore'});
               emulator.on('error', () => {});
               return emulator;
             });
@@ -672,6 +684,15 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
                 }
               } catch (error) { check(c); if (error instanceof Error && error.message.endsWith('foreign_emulator')) throw error; }
               await delay(250, undefined, {signal: c.signal});
+            }
+            if (biometrics) {
+              // The snapshot must resume unlocked with a fingerprint enrolled;
+              // the driver has no PIN to unlock it with.
+              stage = 'biometrics';
+              let state: Awaited<ReturnType<typeof readDeviceState>>;
+              try { state = await readDeviceState(c); } catch (error) { if (interrupted(c)) throw error; state = 'unknown'; }
+              const enrolled = [...(await adbRun(shell('dumpsys fingerprint 2>/dev/null | head -c 4096'), c)).matchAll(/"count":([0-9]{1,4})/g)].reduce((sum, m) => sum + Number(m[1]), 0);
+              if (state !== 'unlocked' || enrolled < 1) throw new TargetSetupError({classification: 'mismatch', reason: 'biometrics-unavailable', stage: 'open'});
             }
             stage = 'displays';
             await readDisplays(c);
@@ -844,6 +865,32 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     // Owned emulator: the serial its console handshake established; attached
     // phone: the serial the spec configured. Only while the session is open.
     deviceSerial: () => session && !closed ? serial : undefined,
+    // The emulator's virtual sensor through its console: a touch, a short
+    // hold and a lift. Present only on an owned emulator with biometrics.
+    // The console exits 0 even when it refuses a command and prints `KO`.
+    ...(biometrics && !physical ? {fingerprint: async (finger: number, c: TargetContext) => {
+      disarm();
+      check(c);
+      if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw failure('invalid_value');
+      // A prompt drops a touch that arrives while it is still animating in,
+      // though the sensor service already reports the session: wait, within
+      // the bound, until two captures 250 ms apart are equal. The touch is
+      // made once; it is never repeated.
+      for (let previous = ''; ;) {
+        if (Date.now() + 1500 >= c.deadlineMs) throw failure('display_not_settled');
+        const current = await screenDigest(c);
+        if (current === previous) break;
+        previous = current;
+        await delay(250, undefined, {signal: c.signal});
+      }
+      const sensor = async (action: 'touch' | 'remove') => {
+        if (/(^|\n)KO\b/.test(await command(adb, ['-s', serial, 'emu', 'finger', action, String(finger)], c, env, 'both'))) throw failure('fingerprint_failed');
+      };
+      await sensor('touch');
+      // Held about as long as a person rests a finger on the sensor.
+      await delay(1000, undefined, {signal: c.signal});
+      await sensor('remove');
+    }} : {}),
     // After a completed assertion failure: did the phone become unavailable?
     // Read-only; an owned emulator cannot lock itself. With diagnostics, a
     // hidden assertion that failed although the app lost a window since the
