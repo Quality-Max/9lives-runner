@@ -129,6 +129,122 @@ For the CLI, download `v0.6.0-beta.3` with `gh release download` and follow the
 archive, checksum and provenance checks in [the installation guide](install.md#verify-build-provenance).
 The shell installer and `9l update` select stable releases only.
 
+## Release runbook
+
+The steps to cut a release, in order, for maintainers and coding agents. Each
+step says what must be true before the next. Replace `<version>` (such as
+`0.6.0-beta.4`), `<previous>` and `<sha>`. Stop and report at any step that
+does not hold; do not skip ahead.
+
+**1. Check the starting state.**
+
+```sh
+git fetch origin --tags
+gh release list --limit 5
+npm view @9l/playwright dist-tags
+git log --oneline v<previous>..origin/main
+```
+
+`v<version>` must not exist as a tag, a GitHub release or an npm version.
+Every change listed should be in the changelog's Unreleased section.
+
+**2. Prepare the release in one pull request**, branched from `origin/main`:
+
+- `var version` in `cmd/9l/main.go`, `version` in
+  `packages/playwright/package.json` and `@9l/playwright` in
+  `testdata/sdk/package.json` set to `<version>`, then
+  `npm install --package-lock-only --ignore-scripts`.
+- `CHANGELOG.md`: rename `## Unreleased` to `## <version> — YYYY-MM-DD` and
+  open it with a short summary that names any contract change and whether the
+  CLI and SDK must be updated together. Released sections stay as tagged.
+- For a beta, the install example under [Beta releases](#beta-releases).
+  Update the README compatibility table when a qualified pairing changes.
+- Run `npm test` (it fails when the declared versions differ),
+  `go test ./cmd/9l` and `go build -o /tmp/9l ./cmd/9l && /tmp/9l --version`.
+
+Merge it once its CI passes.
+
+**3. Wait for `main` to pass on the merge commit.**
+
+```sh
+gh run list --commit <sha> --json name,status,conclusion
+```
+
+Every run listed must be `completed` and `success`: at least `CI`, and
+`Android` when the change touched its paths.
+
+**4. Re-check the state, then tag and push.**
+
+```sh
+git fetch origin --tags
+git tag -s v<version> -m "9lives <version>" <sha>
+git tag -v v<version>
+git push origin v<version>
+```
+
+`git tag -v` must report a good signature for the `<sha>` you checked in
+step 3. The push starts `release.yml`.
+
+**5. Follow the release run.**
+
+```sh
+gh run list --workflow release.yml --limit 1
+gh run view <run-id> --json status,conclusion,jobs \
+  --jq '.status, .conclusion, (.jobs[] | "\(.name) \(.conclusion)")'
+```
+
+It succeeds when `check-tag`, `qualification`, all six `binaries`,
+`github-release` and `npm` succeed. `latest` runs for a stable release and is
+skipped for a beta.
+
+**When a job fails**, read its log (`gh run view <run-id> --job <job-id>
+--log-failed`) before acting:
+
+| Failure | Meaning | Action |
+| --- | --- | --- |
+| `check-tag` | The tag differs from a declared version or is not on `main` | Nothing was published. Do not move the tag; fix the declarations and release a new version |
+| A `qualification` or `binaries` job, in a test already tracked as a hosted-runner flake (#232) | Infrastructure | `gh run rerun <run-id> --failed`, then follow the same run again |
+| Any other `qualification` or `binaries` failure | A real defect | Stop. Nothing was published; fix it and release a new version |
+| `github-release` asset or attestation mismatch | Published bytes differ from what the run attested | Stop and investigate. Never rerun all jobs; that rebuilds the archives |
+| `npm`: `publication would roll back npm channel` | The channel already holds a newer version | Do not override it; release a newer version |
+| `npm`: `npm already has this version with different contents` | The version exists from other source | Stop; the version number is spent |
+
+A rerun of failed jobs reuses the run's archives, and the `npm` job skips a
+version npm already holds with identical bytes.
+
+**6. Verify the published release.** In a new, empty directory:
+
+```sh
+gh release view v<version> --json isPrerelease,isDraft,assets
+gh api repos/Quality-Max/9lives-runner/releases/latest --jq .tag_name
+npm view @9l/playwright dist-tags
+gh release download v<version> -R Quality-Max/9lives-runner
+shasum -a 256 -c SHA256SUMS
+for f in 9l-* SHA256SUMS; do
+  gh attestation verify "$f" -R Quality-Max/9lives-runner \
+    --signer-workflow Quality-Max/9lives-runner/.github/workflows/release.yml
+done
+tar -xzf 9l-darwin-arm64.tar.gz && ./9l-darwin-arm64/9l --version
+```
+
+Use the archive for the host's platform in the last line. Expect:
+
+- six archives and `SHA256SUMS`, all checksums `OK` and every attestation
+  verified;
+- a beta marked as a prerelease, with Latest and npm `latest` unchanged; a
+  stable release marked Latest, with npm `latest` at `<version>`;
+- npm's channel (`beta` or `latest`) at `<version>`;
+- the binary printing `9l <version> (Go runner)`.
+
+Then install the published SDK into a clean project
+(`npm install --save-dev @9l/playwright@<version> @playwright/test@1.64.1`)
+and run a checkout spec through the downloaded binary with
+`9l run <spec> --sdk --format json`. It must pass with a validated receipt,
+and a deliberately broken copy of the spec must fail.
+
+**7. Report** the tag and commit, the release run ID (with any rerun and its
+reason), and each step 6 check as passed, failed or not run.
+
 ## Qualify the SDK
 
 From a clean checkout:
