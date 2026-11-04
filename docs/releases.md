@@ -47,6 +47,20 @@ rerun the failed jobs of the same run: published GitHub assets are not
 overwritten, and the `npm` job skips when npm already holds the identical
 tarball (it fails if npm has that version with different contents).
 
+Before publishing a missing SDK version, the npm job reads the registry's
+dist-tags and rejects
+publication if it would move its channel backwards. Registry lookup failures
+or unsupported channel versions fail closed. An older unpublished tag then
+requires a new release version; do not remove the guard to rerun it. This
+check is serialized with publication: the `npm` job of every tag shares one
+concurrency group (`npm-publication`), so two release runs cannot read the
+channels and publish interleaved, while their qualification and packaging
+still run in parallel. GitHub keeps one pending job per group: if a third
+tag's `npm` job queues while one publishes and another waits, the waiting job
+is cancelled and its run needs a rerun of its failed jobs. The refusal names
+its reason (`publication would roll back npm channel`). Publishers outside
+this workflow must coordinate separately.
+
 Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup
 and fixture planning, and packages the executable with the root `LICENSE` and

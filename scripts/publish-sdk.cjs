@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {name, registryHas} = require('./sdk-registry.cjs');
-const {releaseVersion, releaseChannel} = require('./release-version.cjs');
+const {releaseVersion, releaseChannel, compareVersions} = require('./release-version.cjs');
 
 try {
   const root = path.resolve(__dirname, '..');
@@ -33,9 +33,23 @@ try {
     console.log(`${name}@${manifest.version} is already published with identical contents; nothing to do`);
     return;
   }
+  // Fail closed on registry errors or malformed metadata. Publishing an old
+  // missing version must never move an existing channel backwards.
+  const view = spawnSync('npm', ['view', name, 'dist-tags', '--json'], {cwd: root, encoding: 'utf8', timeout: 60000});
+  assert(!view.error && view.status === 0, 'cannot read npm channels');
+  const tags = JSON.parse(view.stdout);
+  assert(tags && typeof tags === 'object' && !Array.isArray(tags), 'invalid npm channels');
+  if (Object.hasOwn(tags, channel)) {
+    assert.equal(typeof tags[channel], 'string');
+    assert(compareVersions(manifest.version, tags[channel]) >= 0, 'publication would roll back npm channel');
+  }
   const result = spawnSync('npm', ['publish', tarball, '--access', 'public', '--tag', channel], {cwd: root, stdio: 'inherit', timeout: 120000});
   assert(!result.error && result.status === 0);
-} catch {
-  console.error('SDK publication failed or qualified artifact was rejected');
+} catch (error) {
+  // Only this script's own fixed reasons are named; anything else (a
+  // subprocess failure, an unexpected value) keeps the generic message.
+  const reasons = ['cannot read npm channels', 'invalid npm channels', 'publication would roll back npm channel', 'npm already has this version with different contents'];
+  const reason = error instanceof assert.AssertionError && reasons.includes(error.message) ? `: ${error.message}` : ' or qualified artifact was rejected';
+  console.error(`SDK publication failed${reason}`);
   process.exitCode = 1;
 }
