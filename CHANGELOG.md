@@ -18,6 +18,12 @@ SDK versions.
   packaging still run in parallel. GitHub keeps one pending job per group, so
   a third tag queuing meanwhile cancels the waiting one, which then needs a
   rerun of its failed jobs.
+- A [release runbook](docs/releases.md#release-runbook) gives the release
+  steps in order with their commands: the starting-state check, the
+  preparation pull request, waiting for `main`, the signed tag, following
+  the release run, what each job failure means and what to do, and the
+  post-release verification. `AGENTS.md` gains the rules agents follow for
+  releases.
 
 ## 0.6.0-beta.3 — 2026-11-04
 
