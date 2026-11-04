@@ -4,7 +4,15 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.0-beta.4 — 2026-11-04
+
+Continues the 0.6.0-beta line on the beta channel with no change to the CLI
+or `@9l/playwright` behavior: it includes everything in 0.6.0-beta.3 plus
+release-process changes. Its npm publication is the first under the channel
+rollback guard and the shared publication queue below. The target contract
+stays `9l.target/3`, so a 0.6.0-beta.3 CLI or SDK still passes the handshake
+with this release's, though only matching versions are a qualified pairing.
+Stable installs stay on 0.5.5.
 
 ### Release process
 

@@ -31,7 +31,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.6.0-beta.3"
+var version = "0.6.0-beta.4"
 
 func main() {
 	code := run(os.Args[1:], os.Stdout, os.Stderr)
