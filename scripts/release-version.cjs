@@ -11,6 +11,19 @@ function releaseChannel(version) {
   return version.includes('-') ? 'beta' : 'latest';
 }
 
+function compareVersions(left, right) {
+  releaseChannel(left);
+  releaseChannel(right);
+  const parts = version => version.split(/[-.]/).map(part => part === 'beta' ? part : BigInt(part));
+  const a = parts(left), b = parts(right);
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;
+  }
+  if (a.length === 3 || b.length === 3) return Math.sign(b.length - a.length);
+  const an = a[4] ?? -1n, bn = b[4] ?? -1n;
+  return an === bn ? 0 : an > bn ? 1 : -1;
+}
+
 function declaredVersions(root = path.resolve(__dirname, '..')) {
   const source = fs.readFileSync(path.join(root, 'cmd/9l/main.go'), 'utf8');
   const read = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
@@ -33,4 +46,4 @@ function releaseVersion(root) {
   return versions.cli;
 }
 
-module.exports = {semver, declaredVersions, releaseVersion, releaseChannel};
+module.exports = {semver, declaredVersions, releaseVersion, releaseChannel, compareVersions};

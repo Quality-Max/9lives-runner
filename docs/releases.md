@@ -47,6 +47,16 @@ rerun the failed jobs of the same run: published GitHub assets are not
 overwritten, and the `npm` job skips when npm already holds the identical
 tarball (it fails if npm has that version with different contents).
 
+Before publishing a missing SDK version, the npm job reads the registry's
+dist-tags and rejects
+publication if it would move its channel backwards. Registry lookup failures
+or unsupported channel versions fail closed. An older unpublished tag then
+requires a new release version; do not remove the guard to rerun it. This
+check alone does not prevent concurrent publishers from racing. Cross-tag
+serialization is required before relying on this check for concurrent release
+runs; the current workflow only serializes runs of the same tag. External
+publishers must coordinate separately.
+
 Each executable is built and exercised on its native macOS/Linux/Windows amd64/arm64
 runner. The build embeds the validated tag version, checks `--version`, startup
 and fixture planning, and packages the executable with the root `LICENSE` and

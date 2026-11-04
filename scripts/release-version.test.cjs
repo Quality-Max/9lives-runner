@@ -73,6 +73,7 @@ function releaseFixture(version, run) {
 require('node:child_process').spawnSync = (command, args) => {
   fs.appendFileSync(${JSON.stringify(path.join(copy, 'calls.jsonl'))}, JSON.stringify({command, args}) + '\\n');
   if (command === 'git') return {status: 0};
+  if (command === 'npm' && args[2] === 'dist-tags') return {status: 0, stdout: '{}'};
   if (command === 'npm' && args[0] === 'view') return {status: 1, stdout: ''};
   if (command === 'npm' && args[0] === 'publish') return {status: 0};
   throw new Error('unexpected subprocess');
@@ -109,3 +110,23 @@ test('a beta artifact with altered bytes is rejected before publication', () => 
     assert.equal(fs.existsSync(path.join(copy, 'calls.jsonl')), false);
   });
 });
+
+for (const [version, tags, allowed] of [
+  ['0.5.5', {latest: '0.5.6'}, false],
+  ['0.6.0-beta.2', {beta: '0.6.0-beta.10'}, false],
+  ['0.6.0-beta.10', {beta: '0.6.0-beta.2'}, true],
+  ['0.6.0-beta', {beta: '0.6.0-beta.0'}, false],
+  ['0.6.0', {latest: '0.6.0-beta.10'}, true],
+  ['0.5.5', {latest: 'invalid'}, false],
+]) {
+  test(`publication ${version} with channels ${JSON.stringify(tags)} is ${allowed ? 'allowed' : 'rejected'}`, () => {
+    releaseFixture(version, ({copy, write, execute}) => {
+      const preload = fs.readFileSync(path.join(copy, 'subprocess.cjs'), 'utf8');
+      write('subprocess.cjs', preload.replace("stdout: '{}'", `stdout: ${JSON.stringify(JSON.stringify(tags))}`));
+      const result = execute('publish-sdk.cjs');
+      assert.equal(result.status === 0, allowed, result.stderr);
+      const calls = fs.readFileSync(path.join(copy, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+      assert.equal(calls.some(c => c.args[0] === 'publish'), allowed);
+    });
+  });
+}
