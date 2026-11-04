@@ -17,6 +17,7 @@ public class MainActivity extends Activity {
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
     if (FixtureMode.VALUE.startsWith("semantics")) { semantics(); return; }
+    if (FixtureMode.VALUE.equals("biometric")) { biometric(); return; }
     LinearLayout layout = new LinearLayout(this);
     layout.setOrientation(LinearLayout.VERTICAL);
     layout.setPadding(32, 80, 32, 32);
@@ -155,6 +156,39 @@ public class MainActivity extends Activity {
     inbox.setPadding(0, 32, 0, 32);
     inbox.setContentDescription("Inbox\n3 unread\nTab 2 of 4 (new)");
     layout.addView(inbox);
+    setContentView(layout);
+  }
+
+  // Sign-in behind the system BiometricPrompt: the prompt is a system window
+  // in front of the app, and only an enrolled fingerprint authenticates.
+  private void biometric() {
+    LinearLayout layout = new LinearLayout(this);
+    layout.setOrientation(LinearLayout.VERTICAL);
+    layout.setPadding(32, 80, 32, 32);
+    final TextView status = new TextView(this);
+    status.setText("Signed out");
+    identify(status, "auth.status");
+    Button signIn = new Button(this);
+    signIn.setText("Sign in");
+    identify(signIn, "sign-in");
+    signIn.setOnClickListener(new View.OnClickListener() {
+      @Override public void onClick(View view) {
+        final java.util.concurrent.Executor main = getMainExecutor();
+        android.hardware.biometrics.BiometricPrompt prompt = new android.hardware.biometrics.BiometricPrompt.Builder(MainActivity.this)
+          .setTitle("Sign in to the synthetic app")
+          .setNegativeButton("Cancel", main, new android.content.DialogInterface.OnClickListener() {
+            @Override public void onClick(android.content.DialogInterface dialog, int which) { status.setText("Canceled"); }
+          })
+          .build();
+        prompt.authenticate(new android.os.CancellationSignal(), main, new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+          @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult result) { status.setText("Authenticated"); }
+          @Override public void onAuthenticationFailed() { status.setText("Not recognized"); }
+          @Override public void onAuthenticationError(int code, CharSequence message) { status.setText("Biometric error"); }
+        });
+      }
+    });
+    layout.addView(signIn);
+    layout.addView(status);
     setContentView(layout);
   }
 }

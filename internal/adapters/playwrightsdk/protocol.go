@@ -494,7 +494,7 @@ func outcome(state *testState) string {
 // The typed operations of the shared target fixture (9l.target/3). Queries
 // such as bounds, viewport, query-visible and foreground are actions:
 // executed, never assertions.
-var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground"}
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground", "fingerprint"}
 var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
 
 // targetControlOperations address one control by test ID and may name it;
@@ -681,7 +681,7 @@ func decodeEvent(raw []byte) (event, error) {
 var setupReasons = map[string][]string{
 	runner.SetupBlocked:  {"device-locked", "screen-off"},
 	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
-	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer"},
+	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable"},
 	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
 }

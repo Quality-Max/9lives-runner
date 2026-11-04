@@ -60,7 +60,10 @@ before dispatch), `viewport()` and `screenDigest()` (the SHA-256 of a screenshot
 of the target display, computed in memory; the image is never retained),
 which are portable, and the Android-only
 `toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()`,
-`activate()`, `foreground({timeoutMs}?)` and `deviceSerial()`.
+`activate()`, `foreground({timeoutMs}?)`, `deviceSerial()` and
+`fingerprint(finger, {timeoutMs}?)` (a touch of an owned emulator's virtual
+fingerprint sensor with finger 1-10, only where the driver declares
+biometrics; see [biometrics](android-driver.md#biometrics-on-an-owned-emulator)).
 Observed controls also expose `isVisible({timeoutMs}?)`, a query for a
 screen that may or may not appear (an onboarding sheet, a permission
 prompt): without `timeoutMs` it makes one observation, and with it it polls

@@ -8,8 +8,13 @@ const allModes = ['healthy','defect','state-defect','missing','ambiguous','cance
   'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
 // case is refused before anything is built or booted.
+// Biometric cases need a dedicated AVD prepared by
+// scripts/prepare-biometric-avd.cjs, named by NINELIVES_ANDROID_BIOMETRIC_AVD;
+// they run only when requested and are not in the default list.
+const biometricModes = ['biometric', 'biometric-unenrolled'];
 if (process.argv[2] === '--list') { console.log(allModes.join('\n')); process.exit(0); }
-const unknownModes = process.argv.slice(2).filter(mode => !allModes.includes(mode));
+const unknownModes = process.argv.slice(2).filter(mode => !allModes.includes(mode) && !biometricModes.includes(mode));
+if (process.argv.slice(2).some(mode => biometricModes.includes(mode)) && !process.env.NINELIVES_ANDROID_BIOMETRIC_AVD) throw Error('biometric cases need NINELIVES_ANDROID_BIOMETRIC_AVD: run scripts/prepare-biometric-avd.cjs first');
 if (unknownModes.length) throw Error(`unknown cases: ${unknownModes.join(', ')}`);
 const work = path.join(root, '.context', 'android-qualification', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
@@ -21,7 +26,7 @@ function sync(command, args, options = {}) {
   assert.ifError(r.error); return r;
 }
 assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
-for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect']) {
+for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect','biometric']) {
   assert.equal(sync(process.execPath, ['scripts/build-android-fixture.cjs',mode]).status,0, `build ${mode}`);
 }
 const bad = path.join(root,'.context/android-bad-version/node_modules');
@@ -49,13 +54,13 @@ const rejectionReasons = {
 };
 for (const mode of modes) {
   try {
-  assert(allModes.includes(mode));
+  assert(allModes.includes(mode) || biometricModes.includes(mode));
   const beforeDevices=emulatorSet();
   const probe = path.join(work, `${mode}-probe.json`);
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
-    '--grep',operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':'native transfer',
+    '--grep',operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':'native transfer',
     '--timeout','4m','--deadline','5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
-    '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
+    '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,NINELIVES_ANDROID_BIOMETRIC_AVD,NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
     {env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
   fs.writeFileSync(path.join(work, `${mode}.json`),r.stdout,{mode:0o600});
   const run = JSON.parse(r.stdout), receipt=run.receipts[0];
@@ -76,6 +81,9 @@ for (const mode of modes) {
     assert.match(rt.signer,/^[a-f0-9]{64}$/,'healthy: signer digest');
     assert.equal(receipt.targetSetup,undefined);assert.equal(receipt.targetDiagnostics,undefined);
     facts.runtime={display:rt.display,displayWidth:rt.displayWidth,displayHeight:rt.displayHeight,density:rt.density,posture:rt.posture,versionCode:rt.versionCode,versionName:rt.versionName};
+  } else if (mode==='biometric') {
+    assert.equal(r.status,0,'biometric: the enrolled finger signs in');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,1);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='semantics') {
     assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
@@ -129,6 +137,17 @@ for (const mode of modes) {
     // mismatch found from real dumpsys output before any test step.
     assert.deepEqual(receipt.targetSetup.map(({testId,...rest})=>rest),[{classification:'mismatch',reason:mode==='width-mismatch'?'display-width':'build-version',stage:'open'}],`${mode}: setup mismatch`);
     assert.equal(facts.stopReason,'setup_mismatch');
+  }
+  if (mode==='biometric'||mode==='biometric-unenrolled') {
+    // The touch is an executed action, never an assertion; the prompt was
+    // read as another package's window before it.
+    assert(frames.some(f=>f.operation==='fingerprint'&&f.category==='action'&&f.status==='passed'),`${mode}: fingerprint dispatched`);
+    assert(frames.some(f=>f.operation==='foreground'&&f.status==='passed'),`${mode}: foreground read`);
+  }
+  if (mode==='biometric-unenrolled') {
+    // An unenrolled finger does not authenticate: the sign-in assertion rejects it.
+    assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),'biometric-unenrolled: sign-in assertion rejected');
+    assert.equal(facts.stopReason,'assertion_failed');
   }
   if (mode==='semantics-defect') {
     // The invalid-state read is not vacuous: an app that never reports the

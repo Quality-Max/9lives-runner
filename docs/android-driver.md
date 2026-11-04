@@ -304,6 +304,56 @@ all-green matrix. The local index is `.context/android-qualification-summary.jso
 That emulator matrix does not qualify physical devices, iOS, semantic screen
 checks, verified replay or the combined finance demo.
 
+## Biometrics on an owned emulator
+
+Apps that sign in with a fingerprint can be tested on an owned emulator, and
+only there. The rule for phones below is unchanged: on an attached device
+the driver never requests, stores, sets or bypasses a PIN and has no
+fingerprint operation. On an owned emulator, which the driver boots
+read-only and discards when the test closes, the policy is:
+
+- **Opt-in.** The driver declares `biometrics: {snapshot}`; without it
+  nothing changes. Declaring it with `deviceSerial` is a configuration
+  error.
+- **No credential reaches the driver.** A dedicated AVD is prepared once by
+  `node scripts/prepare-biometric-avd.cjs --avd <dedicated AVD> --wipe
+  [--snapshot 9l-biometric]`, which erases that AVD, sets a random lock PIN
+  that is never printed or stored, enrolls fingerprint 1 through Settings
+  with the emulator's virtual sensor and saves the unlocked state as a named
+  snapshot. The driver boots that snapshot `-read-only -snapshot <name>
+  -no-snapshot-save`, so every test starts from the same state and the
+  driver never sees, sets or enters a PIN. Use an AVD only for this: its
+  data is erased and its PIN is unrecoverable by design. When the snapshot
+  stops loading (an emulator or image update), run the script again.
+- **Checked before the test.** After boot the driver reads the keyguard and
+  `dumpsys fingerprint`; a snapshot that resumes locked or without an
+  enrolled fingerprint stops the test as `setup mismatch`
+  (`biometrics-unavailable`) before any application operation.
+- **Recorded, not hidden.** `app.fingerprint(finger)` (1 to 10) waits,
+  within its bound, until two screen captures 250 ms apart are equal (a
+  prompt drops a touch that arrives while it is still animating in), then
+  touches the virtual sensor, holds it about a second and lifts it, through
+  the emulator console. It is made once and never repeated, and the console
+  refusing it (`KO`) fails the operation. It is recorded as an executed
+  `fingerprint` action, never as an assertion, so a biometric sign-in still
+  needs an assertion to pass. On a phone, on the web, or without the opt-in
+  it fails as `unsupported_operation` before touching anything.
+
+The system `BiometricPrompt` is another package's window, so
+`app.foreground()` reads `foreign` while it is in front and `app` after it
+closes. The opt-in `biometric` smoke case qualifies the enrolled finger
+signing in on an API 35 arm64 emulator, and `biometric-unenrolled` qualifies
+that finger 2, which is not enrolled, leaves the sign-in assertion failed:
+
+```sh
+node scripts/prepare-biometric-avd.cjs --avd 9l_biometric_API_35 --wipe
+NINELIVES_ANDROID_BIOMETRIC_AVD=9l_biometric_API_35 node scripts/android-smoke.cjs biometric biometric-unenrolled
+```
+
+Both cases are opt-in, outside the default matrix and the hosted CI
+workflow, because they need a prepared AVD. Face unlock, device credentials
+(PIN or pattern prompts) and biometric prompts on phones are not supported.
+
 ## Experimental installed-app attachment
 
 Pass `deviceSerial` instead of `avd` and `apk` to attach to an explicitly selected,

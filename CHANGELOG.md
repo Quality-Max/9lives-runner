@@ -41,6 +41,17 @@ SDK versions.
 
 ### Target contract
 
+- Fingerprint sign-in on an owned emulator (#240). `androidTargetDriver`
+  accepts `biometrics: {snapshot}` for an AVD that
+  `scripts/prepare-biometric-avd.cjs` prepared (a random, never printed lock
+  PIN, an enrolled fingerprint, saved unlocked as a snapshot); the driver
+  boots that snapshot read-only and never sees a PIN. `app.fingerprint(finger)`
+  touches the virtual sensor once, after the display settles, and is recorded
+  as an action, not an assertion. A snapshot that resumes locked or
+  unenrolled is `setup mismatch` (`biometrics-unavailable`). Attached phones
+  are unchanged: no PIN, no sensor, `unsupported_operation`. The
+  `fingerprint` capability and operation join the unreleased `9l.target/3`.
+
 - A failed target operation on a control names it (#243). The failure
   summary gains an optional `control`: the test ID the operation addressed,
   when that is an identifier (letters, digits, `_`, `.`, `-`, at most 64),

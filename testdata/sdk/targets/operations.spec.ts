@@ -133,3 +133,12 @@ test('the foreground window is read, not acted on', async ({app}) => {
   // @9l-outcome system-window-detected
   await app.getByTestId('button').toBeVisible();
 });
+
+// A fingerprint touches a native sensor; the web has none and refuses it
+// before anything runs. The sign-in is still established by an assertion.
+test('a fingerprint signs in on the native target only', async ({app}) => {
+  await app.open();
+  await app.fingerprint(1);
+  // @9l-outcome fingerprint-sign-in
+  await app.getByTestId('status').toHaveText('authenticated');
+});

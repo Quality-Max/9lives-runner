@@ -9,7 +9,7 @@ export const setupReasons: Record<SetupClassification, readonly string[]> = {
   blocked: ['device-locked', 'screen-off'],
   dirty: ['extra-window', 'foreign-focus', 'ime-showing'],
   /** The device is not in the posture or width the spec declared. */
-  mismatch: ['posture', 'display-width', 'build-digest', 'build-version', 'build-signer'],
+  mismatch: ['posture', 'display-width', 'build-digest', 'build-version', 'build-signer', 'biometrics-unavailable'],
   /** The accessibility snapshot still reported an element whose window the
    * window manager no longer lists: observer staleness, not the app. */
   observer: ['window-gone-element-displayed'],

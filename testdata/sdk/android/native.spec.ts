@@ -10,7 +10,8 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // Attached-device mode (scripts/android-phone-smoke.cjs): the fixture app was
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect'].includes(mode) ? mode : 'healthy';
+const biometric = mode.startsWith('biometric');
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -18,7 +19,9 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   // sdkRoot is omitted: the driver discovers it as `9l doctor --android` does.
   toolsRoot: resolve(__dirname, mode === 'version' ? '../../../.context/android-bad-version' : '../../../tools/android'),
   ...(attachedSerial ? {deviceSerial: attachedSerial, apkSHA256: fixture.apkSHA256} : {
-    avd: mode === 'unavailable' ? '9l_missing_avd' : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
+    avd: mode === 'unavailable' ? '9l_missing_avd' : biometric ? process.env.NINELIVES_ANDROID_BIOMETRIC_AVD! : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
+    // A dedicated AVD prepared by scripts/prepare-biometric-avd.cjs.
+    ...(biometric ? {biometrics: {snapshot: process.env.NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT ?? '9l-biometric'}} : {}),
     apk: fixture.apk, apkSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.apkSHA256,
   }),
   appPackage: fixture.appPackage, activity: fixture.activity,
@@ -250,6 +253,47 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
     await app.getByTestId('login-button').tap();
     // @9l-outcome bare-id-sign-in
     await app.getByTestId('login.status').toHaveText('Signed in as ada@example.test');
+  } catch (error) {
+    const e = error as {reason?: unknown; cause?: {message?: unknown}};
+    if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
+    const cause = e.cause?.message;
+    if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+    let deviceStopped = false;
+    if (serial) {
+      try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      catch { deviceStopped = true; }
+    }
+    if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming: {}}));
+  }
+});
+
+// A sign-in behind the system BiometricPrompt on a prepared emulator: the
+// prompt is a window of another package in front of the app, the enrolled
+// finger authenticates and the app is back in front. biometric-unenrolled
+// touches finger 2, which is not enrolled, and must fail the assertion.
+test('native biometrics: a fingerprint at the system prompt', async ({app}) => {
+  let stopReason = '', driverReason = '', serial = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    return originalFetch(input, init);
+  };
+  try {
+    await app.open({timeoutMs: 180000});
+    await app.reset();
+    await app.getByTestId('sign-in').tap();
+    let front = await app.foreground();
+    for (let i = 0; front !== 'foreign' && i < 20; i++) { await delay(500); front = await app.foreground(); }
+    if (front !== 'foreign') throw new Error('the biometric prompt is not in front');
+    await app.fingerprint(mode === 'biometric-unenrolled' ? 2 : 1);
+    // @9l-outcome biometric-sign-in
+    await app.getByTestId('auth.status').toHaveText('Authenticated', mode === 'biometric-unenrolled' ? 3000 : 15000);
+    if (await app.foreground() !== 'app') throw new Error('the app is not back in front');
   } catch (error) {
     const e = error as {reason?: unknown; cause?: {message?: unknown}};
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;

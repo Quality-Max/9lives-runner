@@ -1068,3 +1068,18 @@ test('attached phone builds strict package-scoped queries for bare ids, hints, m
     await fs.rm(dir, {recursive: true, force: true});
   }
 });
+
+// Biometrics are an owned-emulator opt-in: a phone never gets a sensor to
+// touch, and the snapshot name is checked before anything starts.
+test('biometrics are declared on an owned emulator only and offer the sensor only there', () => {
+  const {androidTargetDriver} = require('../dist/android');
+  const owned = {appId: 'bio', sdkRoot: '/tmp', toolsRoot: '/tmp', avd: '9l_biometric_API_35', apk: '/tmp/app.apk', apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+  const phone = {appId: 'bio', sdkRoot: '/tmp', toolsRoot: '/tmp', deviceSerial: 'R5CT1234', apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+  assert.equal(typeof androidTargetDriver({...owned, biometrics: {snapshot: '9l-biometric'}}).fingerprint, 'function');
+  assert.equal(androidTargetDriver(owned).fingerprint, undefined, 'no sensor without the opt-in');
+  assert.equal(androidTargetDriver(phone).fingerprint, undefined, 'no sensor on a phone');
+  for (const biometrics of [{snapshot: ''}, {snapshot: 'a b'}, {snapshot: '../x'}, {snapshot: 'x'.repeat(65)}, {snapshot: '9l', pin: '1111'}, {}, true, null]) {
+    assert.throws(() => androidTargetDriver({...owned, biometrics}), /invalid_configuration/, JSON.stringify(biometrics));
+  }
+  assert.throws(() => androidTargetDriver({...phone, biometrics: {snapshot: '9l-biometric'}}), /invalid_configuration/, 'a phone cannot declare biometrics');
+});
