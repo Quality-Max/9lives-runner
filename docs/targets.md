@@ -237,3 +237,8 @@ supports one job: single-target controls use it; the two-target baseline does
 not claim runtime provenance. `9l assess` recognizes `createTargetTest`
 declarations and credits target assertions as `target:<matcher>`; that is
 source evidence of what the spec asserts, not verification of what ran.
+
+The unreleased [iOS Simulator driver](ios-driver.md) uses this same target
+contract with `ios:<alias>`. Runtime qualification is pending; only its declared
+deterministic operations are implemented. Its `iosRuntimes` receipt metadata
+is worker-reported attribution and does not count as independent verification.

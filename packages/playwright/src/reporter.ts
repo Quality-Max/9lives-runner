@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {closeSync, openSync, writeSync} from 'node:fs';
 import type {Reporter, FullConfig, Suite, TestCase, TestError, TestResult, TestStep, FullResult} from '@playwright/test/reporter';
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
+import {validIOSRuntime, iosRuntimeType} from './ios-runtime';
 import {validAndroidRuntime, androidRuntimeType} from './android-runtime';
 import {validTargetSetup, targetSetupType, validTargetDiagnostic, targetDiagnosticType} from './target-setup';
 
@@ -115,6 +116,14 @@ export default class EngineReporter implements Reporter {
         try { setup = JSON.parse(attachment.body.toString('utf8')); } catch { this.emit('engine_error'); return; }
         if (!validTargetSetup(setup)) { this.emit('engine_error'); return; }
         this.emit('target_setup', {testId: this.testId(test), retry: result.retry, setup});
+        continue;
+      }
+      if (attachment.name === '9l.ios-runtime') {
+        if (this.target?.kind !== 'ios' || attachment.contentType !== iosRuntimeType || !attachment.body || attachment.body.length > 2048) { this.emit('engine_error'); return; }
+        let iosRuntime: unknown;
+        try { iosRuntime = JSON.parse(attachment.body.toString('utf8')); } catch { this.emit('engine_error'); return; }
+        if (!validIOSRuntime(iosRuntime)) { this.emit('engine_error'); return; }
+        this.emit('ios_runtime', {testId: this.testId(test), retry: result.retry, iosRuntime});
         continue;
       }
       if (attachment.name !== '9l.android-runtime') continue;

@@ -429,7 +429,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			return infrastructureError("engine evidence channel could not be created")
 		}
 		defer os.RemoveAll(directory)
-		if strings.HasPrefix(job.Target, "android:") {
+		if strings.HasPrefix(job.Target, "android:") || strings.HasPrefix(job.Target, "ios:") {
 			scratch := filepath.Join(directory, "native")
 			if err := os.Mkdir(scratch, 0o700); err != nil {
 				if service != nil {
@@ -518,6 +518,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.TargetAssertions = validation.TargetAssertions
 				receipt.AndroidRuntimes = validation.AndroidRuntimes
+				receipt.IOSRuntimes = validation.IOSRuntimes
 				receipt.TargetSetup = validation.TargetSetup
 				receipt.TargetDiagnostics = validation.TargetDiagnostics
 				receipt.AssertionCoverage = validation.AssertionCoverage

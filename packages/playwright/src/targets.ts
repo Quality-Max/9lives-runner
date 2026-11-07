@@ -2,6 +2,7 @@ import {test as base, type Locator, type Page, type TestInfo} from '@playwright/
 import {setTimeout as delay} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
+import {validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
 import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
 export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
@@ -14,7 +15,7 @@ export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 export type TargetPoint = {x: number; y: number};
 export type TargetRect = TargetPoint & {width: number; height: number};
 export type TargetSize = {width: number; height: number};
-export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android'; appId: string};
+export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android' | 'ios'; appId: string};
 export type TargetContext = {signal: AbortSignal; deadlineMs: number};
 /** `invalid`: the control reports a validation error (Android's
  * content-invalid; on the web aria-invalid or failed constraint validation). */
@@ -74,7 +75,7 @@ export interface TargetDriver extends TargetIdentity {
   terminate?(context: TargetContext): Promise<void>;
   activate?(context: TargetContext): Promise<void>;
   close(): Promise<void>;
-  runtime?(): AndroidRuntime | undefined;
+  runtime?(): AndroidRuntime | IOSRuntime | undefined;
   /** After a successful open: the setup record of a declared recovery that
    * restored the baseline, so the receipt shows the test ran from it. */
   setup?(): TargetSetupRecord | undefined;
@@ -91,11 +92,11 @@ export interface TargetDriver extends TargetIdentity {
 const defaultOperationMs = 5_000;
 const defaultAssertionMs = 5_000;
 const maxOperationMs = 60_000;
-// An emulator relaunches an app, clears its data or settles a cold start in
-// tens of seconds: Android lifecycle operations default to a minute, and
-// every Android operation and assertion accepts up to the open bound.
-const androidLifecycleMs = 60_000;
-const androidMaxMs = 180_000;
+// Native devices can take tens of seconds to relaunch, clear app data or
+// settle a cold start. Lifecycle operations default to a minute; native
+// operations and assertions accept up to the open bound.
+const nativeLifecycleMs = 60_000;
+const nativeMaxMs = 180_000;
 const maxObservations = 200;
 // An operation is aborted and rejected at its deadline. If it is still pending
 // after this grace, the session closes its driver to cancel it.
@@ -190,7 +191,7 @@ export class TargetApp {
     if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
   }
 
-  private get maxMs() { return this.driver.kind === 'android' ? androidMaxMs : maxOperationMs; }
+  private get maxMs() { return (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : maxOperationMs; }
 
   /** The stop reason for a bound that ran out: operation_timeout for the
    * call's own bound, deadline for the attempt's (Go's worker deadline). */
@@ -215,10 +216,10 @@ export class TargetApp {
       let settled = false;
       void work.then(() => { settled = true; }, () => { settled = true; });
       // Abort and reject at the deadline: a late result never succeeds. The
-      // Android close stops native work; web retains its artifact-preservation grace.
+      // native close stops native work; web retains its artifact-preservation grace.
       const expire = () => {
         this.stop(deadlineMs < this.options.deadlineMs ? deadlineReason() : 'deadline', false);
-        if (this.driver.kind === 'android') this.release();
+        if (this.driver.kind === 'android' || this.driver.kind === 'ios') this.release();
         else setTimeout(() => { if (!settled) this.release(); }, settleMs);
       };
       const timer = setTimeout(expire, Math.max(0, deadlineMs - Date.now()));
@@ -275,16 +276,21 @@ export class TargetApp {
       if (!validAndroidRuntime(runtime)) throw stopped('missing_android_runtime');
       await base.info().attach('9l.android-runtime', {body: Buffer.from(JSON.stringify(runtime)), contentType: androidRuntimeType});
     }
+    if (this.driver.kind === 'ios') {
+      const runtime = this.driver.runtime?.();
+      if (!validIOSRuntime(runtime)) throw stopped('missing_ios_runtime');
+      await base.info().attach('9l.ios-runtime', {body: Buffer.from(JSON.stringify(runtime)), contentType: iosRuntimeType});
+    }
     const recovered = this.driver.setup?.();
     if (recovered !== undefined) {
       if (!validTargetSetup(recovered) || !recovered.recovery?.restored) throw stopped('invalid_setup_record');
       await attachSetup(recovered);
     }
-  }, options.timeoutMs === undefined && this.driver.kind === 'android' ? androidMaxMs : options.timeoutMs); }
+  }, options.timeoutMs === undefined && (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : options.timeoutMs); }
   // Defaults apply only to an omitted timeout; any other non-integer,
   // including null, stops as invalid_timeout.
   reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
-  private get lifecycleMs() { return this.driver.kind === 'android' ? androidLifecycleMs : defaultOperationMs; }
+  private get lifecycleMs() { return (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeLifecycleMs : defaultOperationMs; }
 
   /** Poll a check until it holds or the next read could overrun the bound.
    * Held, or not held after at least one completed observation (with the
@@ -645,7 +651,7 @@ export function createTargetTest(options: TargetOptions) {
   return base.extend<TargetFixtures>({app: async ({}, use, info) => {
     const target = resolve();
     owned(target, info);
-    if ((target.kind !== 'android-fake' && target.kind !== 'android') || !options.native) throw stopped('unsupported_target');
+    if ((target.kind !== 'android-fake' && target.kind !== 'android' && target.kind !== 'ios') || !options.native) throw stopped('unsupported_target');
     await useApp(target, options.native(target), use);
   }});
 }

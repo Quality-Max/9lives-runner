@@ -77,6 +77,7 @@ type DiagnosticsChannel interface {
 
 type Validation struct {
 	AndroidRuntimes   []AndroidRuntime
+	IOSRuntimes       []IOSRuntime
 	TargetSetup       []TargetSetup
 	TargetDiagnostics []TargetDiagnostic
 	GoalFailed        bool

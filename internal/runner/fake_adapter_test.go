@@ -541,15 +541,19 @@ func (e *nativeScratchExecutor) Run(_ context.Context, job Job, _ int) ProcessOu
 	return ProcessOutput{Executed: true, ExitCode: 1, Err: errors.New("worker exited")}
 }
 func TestNativeScratchRemovedAfterWorkerFailure(t *testing.T) {
-	executor := &nativeScratchExecutor{t: t}
-	job := fakeJob("job-001", "success", 0)
-	job.Target = "android:finance"
-	plan := Plan{Version: 1, RunID: "run-native-scratch", Jobs: []Job{job}}
-	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Timeout: time.Second, ReceiptDir: t.TempDir(), Executor: executor, Adapters: []Adapter{channelAdapter{}}})
-	if len(summary.Receipts) != 1 || summary.Receipts[0].Status == StatusPassed {
-		t.Fatal("failed worker became passing")
-	}
-	if _, err := os.Stat(executor.scratch); !os.IsNotExist(err) {
-		t.Fatal("worker artifacts survived attempt cleanup")
+	for _, target := range []string{"android:finance", "ios:finance"} {
+		t.Run(target, func(t *testing.T) {
+			executor := &nativeScratchExecutor{t: t}
+			job := fakeJob("job-001", "success", 0)
+			job.Target = target
+			plan := Plan{Version: 1, RunID: "run-native-scratch", Jobs: []Job{job}}
+			summary, _ := Execute(context.Background(), plan, ExecuteOptions{Timeout: time.Second, ReceiptDir: t.TempDir(), Executor: executor, Adapters: []Adapter{channelAdapter{}}})
+			if len(summary.Receipts) != 1 || summary.Receipts[0].Status == StatusPassed {
+				t.Fatal("failed worker became passing")
+			}
+			if _, err := os.Stat(executor.scratch); !os.IsNotExist(err) {
+				t.Fatal("worker artifacts survived attempt cleanup")
+			}
+		})
 	}
 }
