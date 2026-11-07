@@ -10,7 +10,7 @@ completing does not verify that behavior.
 Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
-npm install --save-dev @9l/playwright@0.5.5 @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.6.0 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
@@ -59,15 +59,15 @@ and [SDK bridge](https://github.com/Quality-Max/9lives-runner/blob/main/docs/sdk
 Live provider accuracy, independent behavioral verification, verified replay,
 iOS and Android devices beyond those listed below are not qualified features.
 
-## Android (experimental, 0.6.0-beta releases)
+## Android (experimental)
 
 The Android target drives an owned emulator or an attached phone through
 Appium 3.8.0 and UiAutomator2 8.7.0, with the same `app` fixture a web
 target uses. It is qualified on API 35 emulators and one Android 17 phone;
 see [Android setup and qualification limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/android-driver.md).
 
-1. Install the matching beta CLI and `@9l/playwright` together (see
-   [beta releases](https://github.com/Quality-Max/9lives-runner/blob/main/docs/releases.md#beta-releases)),
+1. Install the matching 0.6.0 CLI and `@9l/playwright` together (see
+   [installation](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)),
    and the pinned automation tooling once, outside your project:
 
    ```sh
