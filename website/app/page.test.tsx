@@ -11,10 +11,10 @@ it('uses locally served official branding in both header and footer', () => {
   expect(links.every(link => link.getAttribute('href') === 'https://qualitymax.io')).toBe(true);
   expect(screen.getAllByRole('img', { name: 'QualityMax' }).every(img => img.getAttribute('src') === '/brand/logo-wordmark-white.svg')).toBe(true);
 });
-it('leads with the recorded experiment and links every chapter', () => {
+it('introduces the framework and keeps recorded evidence and limits accessible', () => {
   render(<Home />);
-  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Agent fixes.9l checks the change.');
-  expect(screen.getByRole('link', { name: /explore the real experiment/i }).getAttribute('href')).toBe('/demo.html#proof');
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Your agent writes code.Give it tests to trust.');
+  expect(screen.getByRole('link', { name: /inspect a real test run/i }).getAttribute('href')).toBe('/demo.html#proof');
   for (const chapter of ['locator', 'coverage', 'flow', 'live', 'proof']) {
     expect(screen.getAllByRole('link').some(link => link.getAttribute('href') === `/demo.html#${chapter}`)).toBe(true);
   }

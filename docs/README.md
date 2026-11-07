@@ -7,7 +7,8 @@
 | [Interactive demo](https://9lives.run/demo.html#proof) | You want to inspect recorded agent runs, before/after receipts, and caught faults |
 | [Release lab](../demo/release-lab/README.md) | You want to execute the eight-chapter local walkthrough |
 | [Install](install.md) | You need the npm SDK and Go CLI |
-| [Explainer](https://quality-max.github.io/9lives-runner/) ([source](explainer/README.md)) | You want the evidence-first overview, ordinary Playwright setup, and capability boundaries |
+| [Explainer](https://quality-max.github.io/9lives-runner/) ([source](explainer/README.md)) | You want the framework overview, local setup, cloud workflow, and capability boundaries |
+| [Android driver](android-driver.md) | You want experimental Appium/UiAutomator2 execution and its device qualification limits |
 | [Local checkout demo](../demo/README.md) | You want an executed result without an application server |
 | [Login goal example](login-goal-example.md) | You want an optional isolated SDK harness for bounded login-modal actions |
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |
