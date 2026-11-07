@@ -22,11 +22,12 @@ and changelog. `npm test` fails if those declarations differ. Merge it to
 
 ```sh
 git fetch origin
-git tag v0.5.5 origin/main
-git push origin v0.5.5
+git tag -s v0.6.0 -m "9lives 0.6.0" origin/main
+git tag -v v0.6.0
+git push origin v0.6.0
 ```
 
-The commands above release CLI and SDK 0.5.5; choose the matching version for
+The commands above release CLI and SDK 0.6.0; choose the matching version for
 a later release. Never move a published tag to different source. The tag
 starts one workflow, `release.yml`, which runs in this order:
 

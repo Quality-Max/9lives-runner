@@ -4,7 +4,21 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.0 — 2026-11-07
+
+The first stable release of the 0.6.0 line includes all changes from
+0.6.0-beta through 0.6.0-beta.4, plus the Android qualification below.
+Android remains experimental and opt-in, qualified only on the emulators
+and phone documented in [the Android guide](docs/android-driver.md).
+
+Update the CLI and `@9l/playwright` together to 0.6.0. Compared with 0.5.5,
+receipts, run results and run status use version 2, provenance snapshots use
+version 2, and the shared target contract is `9l.target/3`; older target
+contracts are rejected at the handshake. `9l.engine/1` is unchanged.
+This release adds metadata-only failure summaries, imported-helper
+provenance, Android native operations and Flutter control support, bounded
+readiness queries and optional emulator fingerprint sign-in. The beta
+entries below retain the detailed changes and qualification boundaries.
 
 ### Android qualification
 

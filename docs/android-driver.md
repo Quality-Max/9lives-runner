@@ -1,7 +1,7 @@
 # Android target (experimental)
 
-The experimental Android target ships in the `0.6.0-beta` releases. This
-page starts with a quickstart, then records the driver decision, host setup,
+The experimental Android target ships in 0.6.0. This page starts with a
+quickstart, then records the driver decision, host setup,
 the qualification evidence and the attached-device mode.
 
 ## Quickstart
@@ -12,8 +12,8 @@ uses. It is qualified on API 35 emulators and one Android 17 phone;
 [Set up a host](#set-up-a-host) has the details and
 [Run the opt-in qualification](#run-the-opt-in-qualification) the limits.
 
-1. Install the matching beta CLI and `@9l/playwright` together (see
-   [beta releases](releases.md#beta-releases)), and the pinned automation
+1. Install the matching 0.6.0 CLI and `@9l/playwright` together (see
+   [installation](install.md)), and the pinned automation
    tooling once, outside your project:
 
    ```sh
