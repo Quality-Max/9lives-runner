@@ -1,4 +1,4 @@
-# 9lives runner
+# 9lives by QualityMax
 
 [![npm version](https://img.shields.io/npm/v/@9l/playwright?cacheSeconds=3600)](https://www.npmjs.com/package/@9l/playwright)
 [![npm downloads](https://img.shields.io/npm/d18m/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
@@ -6,11 +6,20 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/Quality-Max/9lives-runner?style=flat&cacheSeconds=3600)](https://github.com/Quality-Max/9lives-runner/stargazers)
 
-[![9lives by QualityMax: Agent fixes. 9l checks the change.](docs/assets/9lives-overview.svg)](https://9lives.run/demo.html#proof)
+[![9lives by QualityMax: open-source testing framework for coding agents](docs/assets/9lives-overview.svg)](https://9lives.run)
 
-Your coding agent proposes a fix. **9lives runs the test, compares the results,
-and records what its assertions caught.** Keep your Playwright suite and inspect
-the evidence locally. No QualityMax account or hosted service required.
+**An open-source testing framework for coding agents, built by QualityMax.**
+Run your Playwright tests, connect your agent through MCP, and inspect the
+assertions and execution receipts behind each result. Extend the framework to
+Android with experimental Appium support. Start locally without an account or
+use 9lives in QualityMax Cloud.
+
+| Start with | What you get |
+| --- | --- |
+| **Your Playwright suite** | Native Go runner, existing project configuration, bounded execution and attributable receipts. The TypeScript SDK is optional. |
+| **Your coding agent** | MCP tools for execution, page inspection, test assessment, and supported locator repairs verified in isolation. |
+| **Android apps (experimental)** | Appium and UiAutomator2 actions and assertions, qualified on the documented API 35 emulators and one Android 17 phone. [Qualification and limits](docs/android-driver.md). |
+| **QualityMax Cloud** | Hosted coding-agent sessions and test workflows. Local passing results remain distinct from cloud-verified results. [Integration contract](docs/qualitymax-coding-sessions.md). |
 
 [Quickstart](docs/run-existing-project.md) ·
 [Runnable first example](demo/first-run/README.md) ·
@@ -21,45 +30,6 @@ the evidence locally. No QualityMax account or hosted service required.
 
 If 9lives is useful to you, [star it on GitHub](https://github.com/Quality-Max/9lives-runner)
 or run `9l star`.
-
-## Inspect a real experiment
-
-The demo leads with an application fix: **the same reviewed test fails before
-the patch and passes after it**. Experimental fix confirmation compares the two
-Git revisions. Three injected request faults then each cause an assertion failure.
-Inspect the patch, scroll the console, and download the evidence extracts.
-
-| Chapter | What you can inspect | Evidence type |
-| --- | --- | --- |
-| [A renamed button](https://9lives.run/demo.html#locator) | A broken locator and a verified repair with assertions preserved | Illustrated walkthrough |
-| [A missing check](https://9lives.run/demo.html#coverage) | A green test that misses a required outcome | Illustrated walkthrough |
-| [Behind the agent](https://9lives.run/demo.html#flow) | Observed controls, bounded actions, and execution receipts | Algorithm walkthrough |
-| [A real agent run](https://9lives.run/demo.html#live) | Saved provider decisions and browser execution logs | Recorded execution |
-| [Prove the fix](https://9lives.run/demo.html#proof) | Before/after receipts and three caught faults | Recorded execution |
-
-The last experiment records **seven Chromium executions on one synthetic profile
-app**, captured on 13 October 2026. Opening the demo does not execute tests or call
-an agent. It works in light and dark themes and as a [single offline HTML file](docs/explainer/demo.html).
-To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
-The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
-
-From CLI v0.4.8, run `9l doctor` from the application project before the
-first scan. It checks
-local prerequisites and gives repair commands without downloading browsers or
-loading project config. Use `9l doctor --sdk` for SDK runs. See the
-[setup diagnostics guide](docs/setup-diagnostics.md) for limits and first-run steps.
-
-## From a failure to a checked fix
-
-1. **Reproduce:** run a reviewed Playwright spec with an assertion that fails on the broken app.
-2. **Review:** inspect your agent's proposed application patch or locator repair; preserve the intended behavior.
-3. **Confirm:** experimental `9l confirm` / MCP `confirm_finding` runs the same reproduction on each Git revision in isolation.
-4. **Challenge:** experimental `9l prove` injects supported fetch/XHR faults and reruns the test.
-
-A passing receipt means the assertions passed and the execution report was
-validated. Confirmation shows that the test distinguishes the revisions. A
-caught fault means an assertion failed under that fault. **None establishes full
-requirement coverage.** See the [confirmation](docs/confirm.md) and [fault testing](docs/prove.md) contracts.
 
 ## Run your existing Playwright tests
 
@@ -75,6 +45,12 @@ export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
 Run from your project root and replace the path with an existing spec. Follow the
 [quickstart](docs/run-existing-project.md) for prerequisites, expected results and
 troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
+
+From CLI v0.4.8, run `9l doctor` from the application project before the
+first scan. It checks
+local prerequisites and gives repair commands without downloading browsers or
+loading project config. Use `9l doctor --sdk` for SDK runs. See the
+[setup diagnostics guide](docs/setup-diagnostics.md) for limits and first-run steps.
 
 From 0.5.4, the CLI includes `9l update` (ask and install),
 `9l update --check` (check only), and `9l update --yes` (explicit scripted
@@ -98,6 +74,48 @@ healing, page inspection, reproduction generation, and fix confirmation.
 [qmax-code](https://github.com/Quality-Max/qmax-code) is the separate QA terminal
 that can run standalone or connect to QualityMax.
 
+## Inspect a real experiment
+
+The demo leads with an application fix: **the same reviewed test fails before
+the patch and passes after it**. Experimental fix confirmation compares the two
+Git revisions. Three injected request faults then each cause an assertion failure.
+Inspect the patch, scroll the console, and download the evidence extracts.
+
+| Chapter | What you can inspect | Evidence type |
+| --- | --- | --- |
+| [A renamed button](https://9lives.run/demo.html#locator) | A broken locator and a verified repair with assertions preserved | Illustrated walkthrough |
+| [A missing check](https://9lives.run/demo.html#coverage) | A green test that misses a required outcome | Illustrated walkthrough |
+| [Behind the agent](https://9lives.run/demo.html#flow) | Observed controls, bounded actions, and execution receipts | Algorithm walkthrough |
+| [A real agent run](https://9lives.run/demo.html#live) | Saved provider decisions and browser execution logs | Recorded execution |
+| [Prove the fix](https://9lives.run/demo.html#proof) | Before/after receipts and three caught faults | Recorded execution |
+
+The last experiment records **seven Chromium executions on one synthetic profile
+app**, captured on 13 October 2026. Opening the demo does not execute tests or call
+an agent. It works in light and dark themes and as a [single offline HTML file](docs/explainer/demo.html).
+To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
+The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
+
+## From a failure to a checked fix
+
+1. **Reproduce:** run a reviewed Playwright spec with an assertion that fails on the broken app.
+2. **Review:** inspect your agent's proposed application patch or locator repair; preserve the intended behavior.
+3. **Confirm:** experimental `9l confirm` / MCP `confirm_finding` runs the same reproduction on each Git revision in isolation.
+4. **Challenge:** experimental `9l prove` injects supported fetch/XHR faults and reruns the test.
+
+A passing receipt means the assertions passed and the execution report was
+validated. Confirmation shows that the test distinguishes the revisions. A
+caught fault means an assertion failed under that fault. **None establishes full
+requirement coverage.** See the [confirmation](docs/confirm.md) and [fault testing](docs/prove.md) contracts.
+
+## Local first, with a cloud workflow
+
+Run 9lives on your machine or CI without a platform account. For hosted test
+management, execution, and team workflows, use [QualityMax Cloud](https://qualitymax.io).
+QualityMax coding-agent sessions run a qualified, pinned 9lives version and read
+its receipts alongside QualityMax-managed test results. A local pass and a
+cloud-verified result are reported separately. See the
+[integration contract](docs/qualitymax-coding-sessions.md) for version and evidence boundaries.
+
 ## What is available
 
 - **Local execution:** `plan`, `run`, `status`, `result`, and `cancel` bound execution and record attributable terminal receipts. Each failed test carries a class (assertion, timeout, action timeout, environment), receipts count flaky passes and, with the SDK, the assertion steps the worker reported. `run --wait-for` waits for the application first, so one that never comes up leaves the run incomplete instead of failing its tests.
@@ -105,7 +123,8 @@ that can run standalone or connect to QualityMax.
 - **Page observations:** `9l scan` runs nine check categories; `9l inspect` ranks controls and locators.
 - **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
 - **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
-- **Planned:** independent behavioral verification, verified replay, and native mobile qualification.
+- **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](docs/android-driver.md).
+- **Planned:** independent behavioral verification, verified replay, iOS, and broader Android device qualification.
 
 ## Add the optional SDK
 

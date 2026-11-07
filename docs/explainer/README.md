@@ -1,9 +1,10 @@
 # 9lives overview and demo
 
 The [GitHub Pages overview](https://quality-max.github.io/9lives-runner/) mirrors
-the evidence-first [9lives.run homepage](https://9lives.run): the recorded fix,
-five demo chapters, the reproduction/confirmation/fault-testing workflow, local
-installation, and explicit available/experimental/planned boundaries.
+the [9lives.run homepage](https://9lives.run): 9lives by QualityMax as an
+open-source testing framework, Playwright and MCP tools, experimental
+Android/Appium, and the optional cloud workflow.
+Recorded demos support the narrative, with explicit qualification boundaries.
 
 `index.html` is a framework-free export of the homepage. It uses local official
 QualityMax fonts, logos, tokens, and both themes. Inline scripts handle theme
@@ -44,5 +45,6 @@ Confirmation and fault testing are experimental. The fix chapter qualifies
 seven Chromium executions on one synthetic profile app. A passing test is not
 independent requirement coverage; a caught fault means an assertion failed.
 Goal completion is unverified. Independent behavioral verification, verified
-replay, and native mobile qualification remain planned. Keep those limits
+replay, iOS, and broader Android device qualification remain planned. Android
+execution is experimental on the documented emulators and phone. Keep those limits
 consistent with the README, demo, and `AGENTS.md`.
