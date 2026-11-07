@@ -15,6 +15,7 @@ on:
       - 'testdata/sdk/android/**'
       - 'testdata/sdk/android.config.ts'
       - 'scripts/android-smoke.cjs'
+      - 'scripts/android-isolation-evidence*.cjs'
       - 'scripts/build-android-fixture.cjs'
       - 'tools/android/**'
       - '.github/workflows/android.yml'
@@ -29,7 +30,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Each case owns a cold emulator, so the cases run as four parallel groups.
+  # Each test owns a cold emulator, so the cases run as parallel groups.
   # The groups must cover `scripts/android-smoke.cjs --list` exactly; the
   # coverage job below fails otherwise.
   coverage:
@@ -41,7 +42,7 @@ jobs:
       - name: Define the emulator groups and check they cover every case once
         id: groups
         run: |
-          groups='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version semantics semantics-defect","operations diagnostics width-mismatch version-mismatch"]'
+          groups='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version semantics semantics-defect semantics-delayed","operations diagnostics width-mismatch version-mismatch","isolation isolation-defect"]'
           node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" ").split(" ").sort().join("\n") + "\n")' "$groups" > groups.txt
           node scripts/android-smoke.cjs --list | sort > cases.txt
           diff -u cases.txt groups.txt

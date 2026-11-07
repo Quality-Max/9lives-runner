@@ -3,9 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
-  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect'];
+  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
 // case is refused before anything is built or booted.
 // Biometric cases need a dedicated AVD prepared by
@@ -19,14 +20,15 @@ if (unknownModes.length) throw Error(`unknown cases: ${unknownModes.join(', ')}`
 const work = path.join(root, '.context', 'android-qualification', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
 const engine = path.join(work, '9l');
-const spec = path.join(root, 'testdata/sdk/android/native.spec.ts');
+const nativeSpec = path.join(root, 'testdata/sdk/android/native.spec.ts');
+const isolationSpec = path.join(root, 'testdata/sdk/android/isolation.spec.ts');
 const config = path.join(root, 'testdata/sdk/android.config.ts');
 function sync(command, args, options = {}) {
   const r = spawnSync(command, args, {cwd: root, encoding: 'utf8', timeout: 330000, maxBuffer: 4 << 20, ...options});
   assert.ifError(r.error); return r;
 }
 assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
-for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect','biometric']) {
+for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect','semantics-delayed','isolation','biometric']) {
   assert.equal(sync(process.execPath, ['scripts/build-android-fixture.cjs',mode]).status,0, `build ${mode}`);
 }
 const bad = path.join(root,'.context/android-bad-version/node_modules');
@@ -34,9 +36,14 @@ for (const name of ['appium','appium-uiautomator2-driver']) {
   fs.mkdirSync(path.join(bad,name),{recursive:true});
   fs.writeFileSync(path.join(bad,name,'package.json'), JSON.stringify({version:'0.0.0'}));
 }
-const creation = sync(engine,['provenance',spec,'--agent','codex']);
-assert.equal(creation.status,0);
-const provenance = path.join(work,'creation.json'); fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
+const provenances = new Map();
+for (const spec of [nativeSpec, isolationSpec]) {
+  const creation = sync(engine,['provenance',spec,'--agent','codex']);
+  assert.equal(creation.status,0);
+  const provenance = path.join(work,`${path.basename(spec)}-creation.json`);
+  fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
+  provenances.set(spec, provenance);
+}
 // Device identifiers stay in memory. Persist only preservation/cleanup facts.
 function emulatorSet() {
   const sdk=require('../packages/playwright/dist/android-env').androidDefaults().sdkRoot;assert(sdk,'No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');
@@ -55,19 +62,38 @@ const rejectionReasons = {
 for (const mode of modes) {
   try {
   assert(allModes.includes(mode) || biometricModes.includes(mode));
+  const isolation = mode.startsWith('isolation');
+  const spec = isolation ? isolationSpec : nativeSpec;
+  const provenance = provenances.get(spec);
   const beforeDevices=emulatorSet();
   const probe = path.join(work, `${mode}-probe.json`);
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
-    '--grep',operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':'native transfer',
-    '--timeout','4m','--deadline','5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
+    '--grep',isolation?'native isolation':operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':'native transfer',
+    '--timeout',isolation?'8m':'4m','--deadline',isolation?'9m':'5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
     '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,NINELIVES_ANDROID_BIOMETRIC_AVD,NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
-    {env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
+    {timeout:isolation?600000:330000,env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
   fs.writeFileSync(path.join(work, `${mode}.json`),r.stdout,{mode:0o600});
   const run = JSON.parse(r.stdout), receipt=run.receipts[0];
   assert.equal(run.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: mutations must never retry`);
   assert.equal(receipt.agentProvenance.status,'matched',mode);
-  const facts=JSON.parse(fs.readFileSync(probe,'utf8'));
+  const facts=isolation ? {} : JSON.parse(fs.readFileSync(probe,'utf8'));
   facts.emulatorSetPreserved=emulatorSet()===beforeDevices;assert.equal(facts.emulatorSetPreserved,true,`${mode}: emulator set changed`);
+  const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';
+  assert(!['Sent $','Ada','hierarchy','Signed in','Signed out'].some(value=>raw.includes(value)), `${mode}: private content in protocol`);
+  const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
+  if (isolation) {
+    assert.notEqual(r.status,0,'isolation: intentional assertion failure must fail the job');
+    assert.equal(run.outcome,'failed');assert.equal(receipt.validated,true);
+    assert.equal(receipt.executedTests,2,'isolation: both required tests must execute');
+    assert.equal(receipt.androidRuntimes.length,2,'isolation: both tests must open an emulator');
+    assert.equal(new Set(receipt.androidRuntimes.map(rt=>rt.worker)).size,2,'isolation: separate owned runtimes');
+    const terminals=assertIsolationEvidence(frames,mode);
+    assert.equal(receipt.failureCount,mode==='isolation'?1:2);
+    const result={mode,qualified:true,outcome:run.outcome,validated:true,executedTests:2,terminalStatuses:terminals.map(f=>f.status),distinctWorkers:true,...facts};
+    results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
+    console.log(JSON.stringify(result));
+    continue;
+  }
   if (mode==='healthy') {
     assert.equal(r.status,0);assert.equal(run.outcome,'passed');assert.equal(run.complete,true);
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,5);assert.equal(receipt.verifiedAssertions,0);
@@ -84,7 +110,7 @@ for (const mode of modes) {
   } else if (mode==='biometric') {
     assert.equal(r.status,0,'biometric: the enrolled finger signs in');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,1);assert.equal(receipt.verifiedAssertions,0);
-  } else if (mode==='semantics') {
+  } else if (mode==='semantics'||mode==='semantics-delayed') {
     assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='operations') {
@@ -95,8 +121,6 @@ for (const mode of modes) {
     if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
   }
   if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
-  const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';
-  const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
   if (mode==='defect' || mode==='state-defect') {
     const op=mode==='defect'?'assert-text':'assert-state';
     assert(frames.some(f=>f.operation===op&&f.status==='failed'),`${mode}: relevant assertion must reject defect`);
@@ -159,7 +183,6 @@ for (const mode of modes) {
   if (mode==='missing'||mode==='ambiguous') {
     assert.equal(facts.clickDispatches,0);assert.equal(facts.stopReason,mode==='missing'?'missing_test_id':'ambiguous_test_id');
   }
-  assert(!raw.includes('Sent $')&&!raw.includes('Ada')&&!raw.includes('hierarchy'), `${mode}: private content in protocol`);
   const result={mode,outcome:run.outcome,status:receipt.status,validated:receipt.validated,targetAssertions:receipt.targetAssertions??0,...facts};
   results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
   console.log(JSON.stringify(result));

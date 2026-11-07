@@ -11,7 +11,7 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
 const biometric = mode.startsWith('biometric');
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect'].includes(mode) ? mode : 'healthy';
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -238,7 +238,10 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
   try {
     await app.open({timeoutMs: 180000});
     await app.reset({timeoutMs: 30000});
-    await app.getByTestId('unread').toBeVisible();
+    // reset's am start -W can return before asynchronous content is drawn.
+    // Use the same bounded cold-relaunch allowance as the operations case;
+    // subsequent assertions retain their ordinary bounds.
+    await app.getByTestId('unread').toBeVisible(90000);
     await app.getByTestId('inboxTab').toBeVisible();
     await app.getByTestId('otherTab').toBeHidden();
     await app.getByTestId('email').toHaveState('invalid', false);
