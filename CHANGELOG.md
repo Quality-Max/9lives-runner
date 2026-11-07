@@ -4,6 +4,20 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Android qualification
+
+- The semantics smoke gives its first assertion after reset a 90-second
+  cold-relaunch allowance. A delayed-render fixture checks that reset can
+  finish before asynchronous content appears; later assertions keep their
+  ordinary bounds.
+- A two-test session fixture checks cleanup after an intentionally failed
+  test, separate runtime workers, and private app-data clearing by reset.
+  A negative control disables reset and must fail the persisted-session
+  assertion. This does not qualify server-side session cleanup or resolve
+  the customer app's retained-login report.
+
 ## 0.6.0-beta.4 — 2026-11-04
 
 Continues the 0.6.0-beta line on the beta channel with no change to the CLI

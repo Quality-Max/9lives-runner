@@ -198,6 +198,17 @@ The default suite can take several minutes because each case owns a cold
 emulator; selected cases can be run with
 `node scripts/android-smoke.cjs healthy defect` after `npm run build`.
 
+`semantics-delayed` draws the synthetic semantics content eight seconds after
+launch. Its first visibility assertion uses the same 90-second cold-relaunch
+bound as the operations case; later assertions keep their ordinary bounds.
+`isolation` runs two required tests in one job: the first deliberately fails
+while signed in without logging out, and the second checks a fresh signed-out
+session, persistence across terminate/activate, and data clearing by reset.
+The harness requires separate runtime workers, exact failed/passed terminal
+outcomes and cleanup. `isolation-defect` disables reset in the fixture driver;
+the second test must fail its session assertion too. The deliberate failures
+make the inner jobs fail; only the harness's exact outcome checks qualify them.
+
 To check preservation of a preexisting emulator, run
 `node scripts/android-preservation.cjs` after building the healthy fixture.
 This opens a stand-in session, retains a synthetic field value, runs a second
@@ -257,6 +268,14 @@ identifies its Appium server. Reset clears only the configured app on that owned
 emulator. Close aborts transports and stops its emulator/server. Go also stops
 the worker process group on outer cancellation/deadline and removes temporary
 native output after the worker exits. The shared adb daemon is preserved.
+
+Reset force-stops the app, requires `pm clear` to report success and relaunches
+it. It clears private app data; it does not revoke server-side sessions or
+assign a new device identity to an AVD. Apps that restore authentication from
+a server or device identity need an app-owned account/session cleanup contract.
+A successful reset command also does not establish that asynchronously loaded
+content is ready: assert the first expected screen with a bounded readiness
+allowance before continuing.
 
 Receipts contain only the exact APK SHA-256, package, Android API/release/ABI,
 emulator/Appium/UiAutomator2 versions, the targeted display (its physical id or

@@ -16,6 +16,15 @@ import android.widget.TextView;
 public class MainActivity extends Activity {
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
+    if (FixtureMode.VALUE.equals("isolation")) { isolation(); return; }
+    if (FixtureMode.VALUE.equals("semantics-delayed")) {
+      // am start -W can finish before asynchronous app content is ready.
+      // Keep the main thread responsive so reads observe the missing controls.
+      new android.os.Handler(getMainLooper()).postDelayed(new Runnable() {
+        @Override public void run() { semantics(); }
+      }, 8000);
+      return;
+    }
     if (FixtureMode.VALUE.startsWith("semantics")) { semantics(); return; }
     if (FixtureMode.VALUE.equals("biometric")) { biometric(); return; }
     LinearLayout layout = new LinearLayout(this);
@@ -114,6 +123,28 @@ public class MainActivity extends Activity {
   // reported as content-invalid. semantics-defect never reports the error,
   // though its status line still says the input is invalid.
   private boolean invalid = false;
+  private void isolation() {
+    final android.content.SharedPreferences session = getSharedPreferences("session", MODE_PRIVATE);
+    LinearLayout layout = new LinearLayout(this);
+    layout.setOrientation(LinearLayout.VERTICAL);
+    layout.setPadding(32, 80, 32, 32);
+    final TextView status = new TextView(this);
+    identify(status, "session.status");
+    status.setText(session.getBoolean("signed-in", false) ? "Signed in" : "Signed out");
+    Button signIn = new Button(this);
+    identify(signIn, "sign-in");
+    signIn.setText("Sign in");
+    signIn.setOnClickListener(new View.OnClickListener() {
+      @Override public void onClick(View view) {
+        if (!session.edit().putBoolean("signed-in", true).commit()) throw new IllegalStateException("fixture session not saved");
+        status.setText("Signed in");
+      }
+    });
+    layout.addView(signIn);
+    layout.addView(status);
+    setContentView(layout);
+  }
+
   private void semantics() {
     LinearLayout layout = new LinearLayout(this);
     layout.setOrientation(LinearLayout.VERTICAL);
