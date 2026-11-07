@@ -15,7 +15,9 @@ SDK versions.
 - A two-test session fixture checks cleanup after an intentionally failed
   test, separate runtime workers, and private app-data clearing by reset.
   A negative control disables reset and must fail the persisted-session
-  assertion. This does not qualify server-side session cleanup or resolve
+  assertion after its successful prerequisites and final reset. Qualification
+  rejects earlier assertion failures and failed fixture teardown. This does
+  not qualify server-side session cleanup or resolve
   the customer app's retained-login report.
 
 ## 0.6.0-beta.4 — 2026-11-04

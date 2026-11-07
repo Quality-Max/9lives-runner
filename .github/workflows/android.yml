@@ -15,6 +15,7 @@ on:
       - 'testdata/sdk/android/**'
       - 'testdata/sdk/android.config.ts'
       - 'scripts/android-smoke.cjs'
+      - 'scripts/android-isolation-evidence*.cjs'
       - 'scripts/build-android-fixture.cjs'
       - 'tools/android/**'
       - '.github/workflows/android.yml'

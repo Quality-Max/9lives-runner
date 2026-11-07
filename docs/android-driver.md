@@ -204,9 +204,12 @@ bound as the operations case; later assertions keep their ordinary bounds.
 `isolation` runs two required tests in one job: the first deliberately fails
 while signed in without logging out, and the second checks a fresh signed-out
 session, persistence across terminate/activate, and data clearing by reset.
-The harness requires separate runtime workers, exact failed/passed terminal
-outcomes and cleanup. `isolation-defect` disables reset in the fixture driver;
-the second test must fail its session assertion too. The deliberate failures
+The harness requires separate runtime workers, the complete ordered target
+operation sequence per test, exact failed/passed terminal outcomes and passing
+fixture teardown. `isolation-defect` disables reset in the fixture driver;
+the second test must fail its final session assertion after successful
+persistence checks and the final reset. Earlier assertion failures or failed
+fixture/hook steps cannot qualify either case. The deliberate failures
 make the inner jobs fail; only the harness's exact outcome checks qualify them.
 
 To check preservation of a preexisting emulator, run

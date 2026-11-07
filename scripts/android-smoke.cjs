@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
   'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect'];
@@ -81,16 +82,12 @@ for (const mode of modes) {
   assert(!['Sent $','Ada','hierarchy','Signed in','Signed out'].some(value=>raw.includes(value)), `${mode}: private content in protocol`);
   const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
   if (isolation) {
-    const terminals=frames.filter(f=>f.type==='test_end');
     assert.notEqual(r.status,0,'isolation: intentional assertion failure must fail the job');
     assert.equal(run.outcome,'failed');assert.equal(receipt.validated,true);
     assert.equal(receipt.executedTests,2,'isolation: both required tests must execute');
     assert.equal(receipt.androidRuntimes.length,2,'isolation: both tests must open an emulator');
     assert.equal(new Set(receipt.androidRuntimes.map(rt=>rt.worker)).size,2,'isolation: separate owned runtimes');
-    assert.deepEqual(terminals.map(f=>f.status),['failed',mode==='isolation'?'passed':'failed'],'isolation: exact terminal outcomes');
-    const failures=frames.filter(f=>f.operation==='assert-text'&&f.status==='failed');
-    assert.equal(failures.length,mode==='isolation'?1:2,'isolation: only relevant assertions may fail');
-    assert(failures.every(f=>f.control==='session.status'&&f.reason==='assertion_failed'),'isolation: timeouts/setup failures are inconclusive');
+    const terminals=assertIsolationEvidence(frames,mode);
     assert.equal(receipt.failureCount,mode==='isolation'?1:2);
     const result={mode,qualified:true,outcome:run.outcome,validated:true,executedTests:2,terminalStatuses:terminals.map(f=>f.status),distinctWorkers:true,...facts};
     results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
