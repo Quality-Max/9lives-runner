@@ -16,7 +16,7 @@ test('iOS metadata is closed, pinned, content-free and runtime-bound', () => {
   for (const changes of [{os:'18.4'}, {screen:'private'}, {appium:'3.8.1'}, {xcuitest:'10.43.2'}, {viewportWidth:'0'}]) assert.equal(validIOSRuntime({...runtime,...changes}), false);
 });
 
-test('iOS tree digest binds names, contents and executable modes and refuses links', () => {
+test('iOS tree digest binds names and contents', () => {
   const {iosAppDigest} = require('../dist/ios');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-ios-digest-'));
   try {
@@ -26,7 +26,18 @@ test('iOS tree digest binds names, contents and executable modes and refuses lin
     fs.writeFileSync(path.join(dir,'app'),'two'); assert.notEqual(iosAppDigest(dir),original);
     fs.writeFileSync(path.join(dir,'app'),'one'); assert.equal(iosAppDigest(dir),original);
     fs.renameSync(path.join(dir,'app'),path.join(dir,'renamed')); assert.notEqual(iosAppDigest(dir),original);
-    fs.renameSync(path.join(dir,'renamed'),path.join(dir,'app'));
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
+// Windows chmod cannot set executable bits. Qualify the real Simulator app
+// filesystem contract on Unix, while keeping names/content coverage everywhere.
+test('iOS tree digest binds Unix executable modes and refuses links', {skip: process.platform === 'win32' ? 'requires Unix filesystem permissions' : false}, () => {
+  const {iosAppDigest} = require('../dist/ios');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-ios-mode-'));
+  try {
+    fs.writeFileSync(path.join(dir,'Info.plist'),'fixture');
+    fs.writeFileSync(path.join(dir,'app'),'one',{mode:0o644});
+    const original = iosAppDigest(dir);
     fs.chmodSync(path.join(dir,'app'),0o755); assert.notEqual(iosAppDigest(dir),original);
     fs.symlinkSync(path.join(dir,'app'),path.join(dir,'alias')); assert.throws(()=>iosAppDigest(dir),/unsupported_app_tree/);
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
