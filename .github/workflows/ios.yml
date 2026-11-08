@@ -22,8 +22,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   simulator:
-    # Standard public-repository macOS runner, no larger-runner billing.
-    runs-on: macos-15
+    # Standard Intel runner has 14 GB for cold Simulator/WDA startup. ARM's
+    # 7 GB runner exhausted the open bound; no larger-runner billing is used.
+    runs-on: macos-15-intel
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
