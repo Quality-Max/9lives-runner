@@ -1,0 +1,454 @@
+# 9lives
+
+> 9lives by QualityMax is an open-source (Apache-2.0) testing framework for coding agents. It runs your existing Playwright tests with attributable execution receipts, gives agents MCP tools to run, assess, heal and confirm tests, and adds experimental Android execution through Appium and UiAutomator2. It runs locally or in CI without an account.
+
+This file follows the proposed llms.txt convention and does not guarantee how any crawler or agent will use it.
+
+What a result means: a passing receipt means the test's assertions passed and its execution report was validated. It does not prove that the assertions cover the requirements. Missing, interrupted or invalid evidence never produces a pass. Goal completion and model output are never treated as a passing test.
+
+Status: Playwright execution is qualified with Chromium; other browser engines are unqualified. Healing, fault testing (`9l prove`) and fix confirmation (`9l confirm`) are experimental. Android is experimental and qualified only on the emulators and phone listed in the Android guide. iOS, independent behavioral verification and verified replay are planned, not shipped.
+
+Fetching the site root without `Accept: text/html` returns the installer script instead of the homepage. Documentation links below point to raw Markdown in the repository. Versions are not repeated here; the repository and its releases are authoritative.
+
+## Start here
+
+- [Repository README](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/README.md): What 9lives is, what is available, and what each result establishes.
+- [Quickstart: run one existing Playwright spec](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/run-existing-project.md): Install the CLI, plan and run a spec without the SDK, read the outcome, and troubleshoot.
+- [Documentation index](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/README.md): Every guide, with when to read it.
+- [Install](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/install.md): Native CLI, matching `@9l/playwright` SDK, Go builds, Windows ZIPs, checksums, attestations and updates.
+- [Setup diagnostics](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/setup-diagnostics.md): What `9l doctor` checks and what it cannot check.
+
+## Examples
+
+Commands, code and sample output below come from the repository's documentation, demos and tests. The one agent prompt is composed from the documented MCP tool contract. Replace placeholder paths such as `tests/checkout.spec.ts` with a spec from your own project.
+
+### Install and check the setup
+
+macOS or Linux:
+
+```sh
+curl -fsSL https://9lives.run/install.sh | sh
+export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
+9l --version
+9l doctor
+```
+
+The Python `9lives` package also installs a `9l` command. If both are installed, run the native binary by its absolute path. Windows uses the ZIP release described in the install guide.
+
+```sh
+9l doctor --sdk --format json              # tests import @9l/playwright
+9l doctor --sdk tests/checkout.spec.ts     # also check one spec for prove
+9l doctor --android                        # also check the optional Android target
+9l update --check                          # show the latest stable release; do not install
+```
+
+### Run an existing Playwright spec
+
+Run from the application's project root. No SDK, model key or account is needed.
+
+```sh
+9l plan tests/checkout.spec.ts --format json
+9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json
+9l run tests/checkout.spec.ts --config playwright.config.ts --project chromium --timeout 2m --attempts 1 --format json
+9l result <run-id>
+```
+
+`plan` lists jobs and budgets without running assertions. A passing run exits 0 and reports `outcome: "passed"` and `complete: true`. Receipts are saved under `.9lives/receipts/`.
+
+### Forward only the settings a test needs
+
+Test processes inherit a fixed minimal environment. Application settings and credentials reach a test only when named:
+
+```sh
+9l run tests/checkout.spec.ts --pass-env BASE_URL --timeout 2m --attempts 1 --format json
+9l run tests/ --pass-env BASE_URL,TEST_USER
+```
+
+Values are read from your environment and never written to the plan or receipts.
+
+### Select tests, wait for the app, and watch the browser
+
+```sh
+9l run tests/login.spec.ts:12                       # only the test at line 12
+9l run tests/ --grep @smoke                         # Playwright title filter
+9l run tests/ --wait-for http://localhost:3000 --wait-timeout 2m
+9l run tests/checkout.spec.ts --headed
+xvfb-run -a 9l run tests/checkout.spec.ts --headed  # Linux without a display
+```
+
+A `--wait-for` target that never becomes ready leaves the run incomplete (exit 3) instead of failing its tests. A selection that matches no test is also incomplete, never green.
+
+### Separate flaky passes from clean passes
+
+```sh
+9l run tests/ --retries 0 --attempts 2
+```
+
+`--attempts` is 9lives' own whole-job retry, with one receipt per attempt. The receipt's `flakyTests` lists tests that passed only on a Playwright retry, so a flaky pass is not read as a clean one.
+
+### Read exit codes and failure classes
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Every planned job passed |
+| 1 | Every job ran and a test failed |
+| 2 | Usage or setup error |
+| 3 | Incomplete run |
+
+Each failed test is classed from Playwright's structured status: `assertion`, `timeout`, `action-timeout`, `environment`, `unexpected-pass` or `other`. An `environment` failure, such as a refused connection, is not a broken test.
+
+### Write a test with explicit assertions and SDK steps
+
+The optional `@9l/playwright` SDK adds named steps. Install the SDK version that matches `9l --version`, then run with `--sdk`:
+
+```ts
+import {test, expect} from '@9l/playwright';
+
+test('checkout confirms an order', async ({page, n9l}) => {
+  await page.goto('http://localhost:3000/checkout');
+  await n9l.step('place the order', async () => {
+    await page.getByRole('button', {name: 'Place order'}).click();
+    await expect(page.getByRole('status')).toHaveText('Order confirmed');
+  });
+});
+```
+
+```sh
+9l run tests/checkout.spec.ts --sdk --format json
+```
+
+With `--sdk`, the receipt records `reportedAssertions` and `passedWithoutAssertions`, the tests that passed without reporting any assertion step. These are the worker's report, not verified coverage.
+
+### Map tests to requirements, then assess them
+
+Declare requirements separately from tests:
+
+```json
+{
+  "version": 1,
+  "requirements": [{
+    "id": "checkout-order",
+    "reference": "requirements/checkout",
+    "revision": "1",
+    "expectedOutcomes": [{"id": "order-count", "description": "Checkout creates exactly one order."}]
+  }]
+}
+```
+
+Annotate the test that protects each outcome:
+
+```ts
+import {test, expect} from '@playwright/test';
+
+// @9l-requirement checkout-order
+test('checkout creates an order', async ({page}) => {
+  await page.getByRole('button', {name: 'Place order'}).click();
+  // @9l-outcome order-count
+  expect(await ordersForThisCheckout()).toHaveLength(1);
+});
+```
+
+```sh
+9l assess tests/checkout.spec.ts --requirements requirements.json --format json
+9l assess tests/ --format json
+9l assess 'tests/**/*.spec.ts' tests/smoke.ts --requirements requirements.json
+```
+
+Assessment gives advice on waits, skips, assertions, requirement mappings and source provenance. Static findings do not establish executed assertion coverage.
+
+### Record who wrote a test before running it
+
+```sh
+9l provenance path/to/checkout.spec.ts --agent codex > .context/checkout-creation.json
+9l assess path/to/checkout.spec.ts --requirements requirements.json --agent-provenance .context/checkout-creation.json --format json
+9l run path/to/checkout.spec.ts --agent-provenance .context/checkout-creation.json --timeout 30s --deadline 60s --attempts 1 --format json
+```
+
+The snapshot digests the spec, its relative imports and the nearest lockfile, so a later change is reported. Declared provenance does not authenticate authorship.
+
+### A green test with a blind spot (experimental fault testing)
+
+From the release lab. This test passes, but it never checks the recommendation panel:
+
+```ts
+import {test, expect} from '@9l/playwright';
+import {useShop} from './fixtures';
+const shop = useShop(test);
+
+// @9l-requirement studio-checkout
+test('a green checkout can still miss a broken recommendation', async ({page, n9l}) => {
+  await page.goto(shop());
+  // @9l-outcome cart-items
+  await expect(page.getByRole('list', {name: 'Cart'}).getByRole('listitem')).toHaveCount(2);
+  await n9l.step('place the synthetic order', async () => {
+    await page.getByRole('button', {name: 'Place order', exact: true}).click();
+  });
+  // @9l-outcome order-count
+  await expect(page.getByRole('status', {name: 'Order'})).toHaveText('Order confirmed: 2 items');
+  // Deliberately no recommendation assertion: prove must expose this gap.
+});
+```
+
+`9l prove` reruns the test once per injected fault on each fetch/XHR request it made, and reports which faults an assertion caught:
+
+```sh
+export LAB_PORT=4173   # Choose an available port and keep it fixed for baseline and fault runs.
+9l prove tests/checkout.spec.ts --pass-env LAB_PORT
+9l prove tests/checkout.spec.ts --faults http-500 --pass-env LAB_PORT --format json
+9l prove tests/checkout.spec.ts --pass-env LAB_PORT --paths --format json   # local only: include request URLs
+```
+
+```text
+prove tests/checkout.spec.ts: 3 request(s) observed in 1 instrumented test attempt(s)
+  CAUGHT                     abort      req-1 GET
+  CAUGHT                     http-500   req-1 GET
+  CAUGHT                     empty-json req-1 GET
+  SURVIVED                   abort      req-2 GET
+  SURVIVED                   http-500   req-2 GET
+  SURVIVED                   empty-json req-2 GET
+  ...
+Summary: 9 fault(s): 6 caught, 3 survived, 0 inconclusive, 0 not run
+```
+
+Adding the missing assertion closes the gap. In the release lab, every fault is then caught:
+
+```ts
+  // @9l-outcome recommendation
+  await expect(page.getByRole('complementary', {name: 'Recommended'})).toContainText('Pencil set');
+```
+
+Default faults are `abort`, `http-500` and `empty-json`. `--faults` opts into `http-401`, `http-403`, `http-429`, `malformed-json`, `redirect-cross-origin` and `delay`. A caught fault means an assertion failed under that fault, not that the requirements are fully covered. Baseline and fault runs must share one origin, so keep `LAB_PORT` fixed and forwarded.
+
+### Confirm that a fix fixes the finding (experimental)
+
+Run the same reproduction on the revision a finding was reported against and on the fixing revision, each in its own Git worktree:
+
+```sh
+# The fix is uncommitted in the working tree; the finding was reported on HEAD.
+9l confirm tests/repro/order-count.spec.ts --unfixed HEAD
+
+# Both sides are commits.
+9l confirm tests/repro/order-count.spec.ts --unfixed main --fixed fix/order-count \
+  --finding-id QUA-14 --finding "Checkout confirms one item fewer than ordered"
+```
+
+```text
+confirm tests/repro/order-count.spec.ts
+  unfixed  3f9c2a1b7d40 (main)  run run-20261010T101500Z-1a2b3c4d5e6f: failed
+  fixed    8e01d4c5a9f2 (fix/order-count)  run run-20261010T101503Z-5e6f7a8b9c0d: passed
+  CONFIRMED       test 1f0c7e9a2b3d  unfixed assertion-failed, fixed passed
+Verdict: confirmed
+```
+
+Verdicts are `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or `inconclusive`. Only `confirmed` exits 0. Confirmation shows that this test distinguishes these two revisions, not that every possible fix is correct.
+
+### Heal a broken locator without weakening assertions (experimental)
+
+```sh
+9l heal tests/login.spec.ts --run-timeout 900 --pass-env BASE_URL
+9l heal tests/login.spec.ts --provider claude --yes
+9l heal tests/login.spec.ts --provider none --format text   # offline Tier 1 only
+```
+
+Healing runs the failing spec, verifies a selector-only candidate in an isolated copy, and saves it as `<spec>.healed` unless you approve applying it. An assertion failure returns `needs_human`: a possible real bug that healing does not mask. `--provider claude`, `codex` or `opencode` uses that CLI's own login.
+
+### Check a page and find stable locators
+
+```sh
+9l scan https://example.com --format markdown
+9l scan http://localhost:3000/ --allow-private-network --format json --out scan.json
+9l scan http://localhost:3000/ --allow-private-network --baseline scan.json --fail-on-new
+9l scan https://example.com --weight-budget total_bytes=500000,request_count=40
+9l inspect http://localhost:3000/login --allow-private-network
+9l inspect http://localhost:3000/account --allow-private-network \
+  --storage-state playwright/.auth/user.json --acknowledge-private-content
+```
+
+`scan` checks console errors and failed requests, broken links, accessibility, LCP and CLS, SEO, security headers, cookies and trackers, mixed content and page weight, with a 0–100 score. `inspect` ranks each control's locators (test id, role and label before text and position) and gives a page testability verdict. Both observe one cold page load on your machine; they are not field data or a full accessibility audit. Private and loopback addresses are refused unless `--allow-private-network` permits a loopback target.
+
+### Connect a coding agent through MCP
+
+```sh
+claude mcp add 9lives -- 9l mcp
+claude mcp add 9lives -- 9l mcp --pass-env BASE_URL,TEST_USER
+```
+
+Other MCP hosts use the same command. If another `9l` may come first on `PATH`, configure the absolute path:
+
+```json
+{
+  "mcpServers": {
+    "9lives": {"command": "/absolute/path/to/9l", "args": ["mcp"]}
+  }
+}
+```
+
+The server exposes these tools: `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`, `inspect_page` and `generate_playwright_repro`. Only `run_test` status `passed` means the spec passed with complete, validated evidence; `incomplete` is never a pass. `generate_playwright_repro` writes a spec and runs nothing; execute it with `run_test`. Paths must stay inside the directory the server started in.
+
+### A prompt for an agent that reproduces and confirms a bug
+
+This prompt is not from the documentation; it combines the documented tools in order.
+
+```text
+Use the 9lives MCP tools. Call generate_playwright_repro for the reported failure with sdk: true and an output_path inside the Playwright testDir. Review its assertion, then run_test and expect it to fail on the current code. After the fix, call confirm_finding with the reported revision as unfixed. Report the verdict and receipt paths, and say what was not checked.
+```
+
+### Add the 9lives QA skill to an agent
+
+Copy the repository's `skills/9lives-qa/` directory, not only `SKILL.md`, into `.claude/skills/9lives-qa/` for Claude Code or `.agents/skills/9lives-qa/` for Codex. For tests managed in QualityMax, give a session this instruction with QualityMax MCP already connected:
+
+```text
+Read https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/skills/qualitymax-connected-qa/SKILL.md and follow it for this QualityMax run: {run URL}.
+Improve the test while preserving its requirements. Keep execution in QualityMax's cloud and report the exact revision and run evidence.
+```
+
+### Bounded natural-language goals with explicit assertions
+
+```ts
+import {test, expect} from '@9l/playwright';
+
+test('application opens its login form', async ({page, n9l}) => {
+  await page.goto('/app');
+  await expect(page.getByRole('button', {name: 'Login', exact: true})).toBeVisible();
+  await n9l.goal('Click the Login button to open the login form. Stop when Welcome back is visible. Do not fill or submit the form.');
+  await expect(page.getByRole('heading', {name: 'Welcome back', exact: true})).toBeVisible();
+  await expect(page.getByLabel('Email', {exact: true})).toBeVisible();
+  await expect(page.getByLabel('Password', {exact: true})).toBeVisible();
+});
+```
+
+```sh
+# Deterministic, offline: a scripted goal provider
+9l run tests/login-modal.spec.ts --sdk --goal-script login-script.json --pass-env QA_BASE_URL --timeout 2m --format json
+# Live provider with explicit budgets
+9l run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
+```
+
+Goals act only on observed controls through typed actions, within the budgets you set. Goal completion is unverified; keep explicit assertions after every goal. The `anthropic` provider requires `ANTHROPIC_API_KEY` in the environment of `9l`; `openai` requires `OPENAI_API_KEY`. The `claude`, `codex` and `opencode` providers use the corresponding CLI's own login. Live providers may incur usage. Keep provider credentials out of `--pass-env`; forward only the application settings the test needs, such as `QA_BASE_URL`.
+
+### Android with Appium and UiAutomator2 (experimental)
+
+Install the pinned Appium tooling once, outside your project, as the Android guide describes. Then check the host:
+
+```sh
+9l doctor --android
+```
+
+Construct the driver in the shared target fixture:
+
+```ts
+import {createTargetTest} from '@9l/playwright';
+import {androidTargetDriver} from '@9l/playwright/android';
+
+export const test = createTargetTest({
+  native: target => androidTargetDriver({
+    appId: target.appId, avd: 'Pixel_API_35',
+    apk: 'build/app.apk', apkSHA256: '<digest>',
+    appPackage: 'com.example.app', activity: '.MainActivity',
+  }),
+});
+```
+
+```ts
+// playwright.config.ts
+import {defineConfig} from '@playwright/test';
+
+export default defineConfig({
+  // A cold emulator boot fits in open()'s 180-second bound, which needs
+  // a test timeout above Playwright's 30-second default.
+  timeout: 240_000,
+  // 9l owns attempts: a Playwright retry is refused.
+  retries: 0,
+  projects: [{name: 'android:app'}],
+});
+```
+
+A test drives the app through the `app` fixture with test IDs, then asserts the outcome. This mirrors the repository's Android qualification spec:
+
+```ts
+test('a transfer shows its receipt', async ({app}) => {
+  await app.open({timeoutMs: 180000});
+  await app.reset({timeoutMs: 30000});
+  await app.getByTestId('recipient').fill('Ada', {timeoutMs: 20000});
+  await app.getByTestId('amount').fill('5', {timeoutMs: 20000});
+  await app.getByTestId('send').toHaveState('enabled', true);
+  await app.getByTestId('send').tap();
+  await app.getByTestId('receipt').toHaveText('Sent $5 to Ada');
+  await app.getByTestId('confirmed').toHaveState('checked', true);
+  await app.close();
+});
+```
+
+```sh
+9l run tests/login.spec.ts --sdk --target android:app \
+  --pass-env ANDROID_HOME,JAVA_HOME,NINELIVES_ANDROID_TOOLS
+```
+
+Android is qualified only on the documented API 35 emulators and one Android 17 phone. Other devices, Android versions and iOS are unqualified. A device that is locked or left in a previous test's state is reported as a setup classification, not an application failure.
+
+### Runnable examples in the repository
+
+No QualityMax account, model key or external application is needed for these. They use synthetic data on localhost.
+
+```sh
+git clone https://github.com/Quality-Max/9lives-runner.git
+cd 9lives-runner
+npm ci
+npm exec playwright install chromium
+npm run demo:first-run   # a green checkout that misses a broken requirement, then the stronger test
+npm run demo:lab         # eight chapters: scan, assess, run, goals, healing, prove, confirm, MCP
+npm run demo:lab -- --headed
+npm run demo:shop -- 4173
+```
+
+Expected first-run summary:
+
+```text
+1/3 Ordinary Playwright: one executed test, validated passing receipt.
+2/3 missing recommendation check: healthy baseline passed; 2 faults caught, 1 survived.
+3/3 complete synthetic contract: healthy baseline passed; 3 faults caught, 0 survived.
+```
+
+These results describe one synthetic app in Chromium. They do not qualify other apps, browser engines, live providers, healing or replay.
+
+## Example sources
+
+- [First-run example](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/demo/first-run/README.md): A green checkout that misses a broken requirement, and the stronger test that catches it.
+- [Release lab](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/demo/release-lab/README.md): Eight executed chapters with an HTML report and receipts.
+- [Weaker checkout spec](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/demo/release-lab/tests/checkout.spec.ts): The test that omits the recommendation assertion.
+- [Stronger checkout spec](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/demo/release-lab/tests/checkout-complete.spec.ts): The same test with the missing assertion added.
+- [Ordinary Playwright spec](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/demo/release-lab/tests/ordinary.spec.ts): A plain `@playwright/test` spec that runs unchanged.
+- [Release-lab requirements contract](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/demo/release-lab/requirements.json): The synthetic requirements, kept separate from the tests.
+- [Login goal example](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/login-goal-example.md): A bounded goal with explicit assertions, scripted or live.
+- [Login goal spec](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/examples/playwright-login/tests/login-modal.spec.ts): The spec used by the login goal example.
+- [Shared target fixture](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/testdata/sdk/targets/shared.spec.ts): One scenario written once for web and native targets.
+- [Android qualification spec](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/testdata/sdk/android/native.spec.ts): The spec the Android qualification runs, including its fault cases.
+- [Interactive demo](https://9lives.run/demo.html): Recorded runs on one synthetic app, including a fix that fails before the patch and passes after it. Opening it does not run tests or call an agent.
+
+## Reference
+
+- [CLI reference](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/cli.md): Every command and flag, receipts, failure classes and exit codes.
+- [CLI contract](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/contracts.md): JSON output, schemas and exit codes for tools that integrate `9l`.
+- [MCP server](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/mcp.md): Tool arguments, results and boundaries for `9l mcp`.
+- [Coding agent setup](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/agent-setup.md): MCP, the 9lives QA skill, and QualityMax-connected projects.
+- [9lives QA skill](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/skills/9lives-qa/SKILL.md): Requirements, provenance, assessment and execution workflow for agents.
+- [Test assessment](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/test-assessment.md): Requirements contracts, outcome annotations and provenance.
+- [SDK bridge](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/sdk-bridge.md): How SDK evidence is validated, and its privacy boundaries.
+- [Targets](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/targets.md): The `app` fixture API shared by web and native targets.
+- [Android driver](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/android-driver.md): Host setup, qualification evidence and limits for the experimental Android target.
+- [Prove](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/prove.md): The experimental fault-testing contract.
+- [Confirm](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/confirm.md): The experimental fix-confirmation contract.
+- [Goals](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/goals.md): Bounded observed-control execution, providers and budgets.
+- [Native Tier 2 healing](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/native-tier2.md): Healing proposals, isolated verification and subscription providers.
+- [QualityMax coding sessions](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/qualitymax-coding-sessions.md): How QualityMax runs a pinned 9lives in hosted sessions and reads its receipts.
+
+## Optional
+
+- [Repository](https://github.com/Quality-Max/9lives-runner): Source, issues and pull requests.
+- [Releases](https://github.com/Quality-Max/9lives-runner/releases): Native CLI archives, checksums and provenance attestations.
+- [Changelog](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/CHANGELOG.md): Changes in each release.
+- [Architecture](https://raw.githubusercontent.com/Quality-Max/9lives-runner/main/docs/architecture.md): Package boundaries and design decisions.
+- [Framework overview](https://quality-max.github.io/9lives-runner/): The offline overview of local setup, cloud workflow and capability boundaries.
+- [QualityMax](https://qualitymax.io/): The hosted platform for test management, execution and team workflows. Local passing results remain distinct from cloud-verified results.
+- [QualityMax documentation index](https://docs.qualitymax.io/llms.txt): Public QualityMax platform documentation in Markdown.
+- [Sitemap](https://9lives.run/sitemap.xml): Indexable 9lives.run pages.
