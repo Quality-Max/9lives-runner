@@ -9,7 +9,8 @@ import {resolve, join} from 'node:path';
 const mode = process.env.NINELIVES_IOS_CASE ?? 'healthy';
 const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/ios-fixture/${variant}/build.json`), 'utf8'));
-const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: ''};
+const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '',
+  commands: [] as {operation: string; elapsedMs: number; outcome: 'pending' | 'passed' | 'failed'}[]};
 const persistProbe = () => {
   if (process.env.NINELIVES_IOS_PROBE) writeFileSync(process.env.NINELIVES_IOS_PROBE, JSON.stringify(facts));
 };
@@ -46,6 +47,23 @@ const test = createTargetTest({native: target => {
 test('iOS transfer checks the exact native receipt', async ({app}) => {
   const originalFetch = globalThis.fetch;
   const command = promisify(execFile);
+  const childProcess = require('node:child_process') as {execFile: typeof execFile};
+  const originalExecFile = childProcess.execFile;
+  // Record fixed command names, duration and outcome only. Never retain
+  // arguments, output or errors; those can contain app/provider data.
+  childProcess.execFile = ((file: string, args: string[], options: any, callback: (...result: any[]) => void) => {
+    const operation = file === '/usr/bin/xcrun' && args[0] === 'simctl' &&
+      ['list', 'create', 'boot', 'bootstatus', 'getenv', 'install', 'get_app_container', 'shutdown', 'delete'].includes(args[1]) ? args[1] : '';
+    if (!operation || facts.commands.length >= 64) return originalExecFile(file, args, options, callback);
+    const started = Date.now();
+    const entry = {operation, elapsedMs: 0, outcome: 'pending' as 'pending' | 'passed' | 'failed'};
+    facts.commands.push(entry);persistProbe();
+    return originalExecFile(file, args, options, (...result: any[]) => {
+      entry.elapsedMs = Math.min(300000, Math.max(0, Date.now() - started));
+      entry.outcome = result[0] ? 'failed' : 'passed';
+      persistProbe();callback(...result);
+    });
+  }) as typeof execFile;
   let udid = '';
   let probe: Promise<void> | undefined;
   globalThis.fetch = async (input, init) => {
@@ -106,6 +124,6 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
         const devices = JSON.parse(stdout).devices;
         facts.deviceStopped = !Object.values(devices).some(list => (list as {udid: string}[]).some(d => d.udid === udid));
       }
-    } finally { persistProbe(); }
+    } finally { childProcess.execFile = originalExecFile;persistProbe(); }
   }
 });

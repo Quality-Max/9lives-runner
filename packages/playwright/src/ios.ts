@@ -180,8 +180,14 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
         if (owned.length > 1 || (udid && owned.some(d => d.udid !== udid))) throw fail('ownership_mismatch');
         for (const device of owned) {
           if (typeof device.udid !== 'string' || !uuid.test(device.udid)) throw fail('ownership_mismatch');
-          if (device.state !== 'Shutdown') await simctl(['shutdown', device.udid], c);
-          await simctl(['delete', device.udid], c);
+          if (device.state !== 'Shutdown') {
+            // Boot cancellation can race the observed state. Reserve time for
+            // deletion even if shutdown fails or hangs; absence below decides
+            // whether cleanup succeeded, not the shutdown command's exit code.
+            const shutdown = {signal: AbortSignal.any([c.signal, AbortSignal.timeout(10_000)]), deadlineMs: Math.min(c.deadlineMs, Date.now() + 10_000)};
+            try { await simctl(['shutdown', device.udid], shutdown); } catch {}
+          }
+          try { await simctl(['delete', device.udid], c); } catch {}
         }
         const after = JSON.parse(await simctl(['list', 'devices', '-j'], c)).devices;
         if (!after || Object.values(after).some(list => Array.isArray(list) && list.some(d => d.name === owner || (udid && d.udid === udid)))) throw fail('cleanup_failed');

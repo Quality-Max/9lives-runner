@@ -51,7 +51,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
-  let owned, staged, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64';
+  let owned, staged, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false;
   const udid='12345678-1234-1234-1234-123456789abc';
   const c=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+10000});
   try {
@@ -70,7 +70,15 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       else if (args[1]==='list'&&args[2]==='runtimes') output=JSON.stringify({runtimes:[{identifier:runtime.runtime,isAvailable:true,version:'18.5'}]});
       else if (args[1]==='create') { owned={name:args[2],udid,deviceTypeIdentifier:runtime.deviceType,state:'Shutdown'};output=udid; }
       else if (args[1]==='list'&&args[2]==='devices') output=JSON.stringify({devices:{[runtime.runtime]:owned?[owned]:[]}});
-      else if (args[1]==='delete') {assert.equal(args[2],udid);owned=undefined;}
+      else if (args[1]==='shutdown' && shutdownFails) {
+        assert.equal(args[2],udid);assert.ok(opts.timeout<=10000);
+        queueMicrotask(()=>callback(Error('synthetic shutdown failure')));return new EventEmitter();
+      }
+      else if (args[1]==='delete') {
+        assert.equal(args[2],udid);
+        if(deleteFails) {queueMicrotask(()=>callback(Error('synthetic deletion failure')));return new EventEmitter();}
+        owned=undefined;
+      }
       else if (args[1]==='boot') owned.state='Booted';
       else if (args[1]==='getenv') {assert.deepEqual(args,['simctl','getenv',udid,'SIMULATOR_ARCHS']);output=architectures;}
       else if (args[1]==='spawn') throw Error('Simulator runtime has no uname executable');
@@ -128,6 +136,11 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     architectures='arm64';
     foreign=true;driver=iosTargetDriver(opts);
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_session');await driver.close();assert.equal(owned,undefined);
+    foreign=false;shutdownFails=true;driver=iosTargetDriver(opts);
+    await driver.open(c());await driver.close();assert.equal(owned,undefined);
+    deleteFails=true;driver=iosTargetDriver(opts);await driver.open(c());
+    await assert.rejects(driver.close(),/cleanup_failed/);assert.equal(owned.udid,udid);
+    assert.equal(fs.existsSync(path.dirname(staged)),false);
   } finally {
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;process.kill=original.kill;
     Object.defineProperty(process,'platform',original.platform);
