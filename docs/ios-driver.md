@@ -98,7 +98,8 @@ Computing it at test startup binds that run to the current local artifact.
   when the worker cannot finish teardown.
 
 The receipt's closed `iosRuntimes` metadata records bundle/build version, app
-digest, runtime and device type, OS/architecture, Xcode, pinned automation
+digest, runtime and device type, OS, preferred architecture advertised by the
+Simulator (ARM first when both slices are available), Xcode, pinned automation
 versions, viewport and a hashed worker identity, attributed to the test and
 attempt. Missing, stale, duplicate, malformed or cross-platform metadata cannot
 pass. These are worker-reported facts, not independent behavior verification.

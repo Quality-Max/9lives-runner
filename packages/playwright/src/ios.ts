@@ -235,7 +235,11 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           phase = 'bootstatus';
           await simctl(['bootstatus', udid, '-b'], c);
           phase = 'architecture';
-          const architecture = await simctl(['spawn', udid, 'uname', '-m'], c);
+          // Query only this fixed non-sensitive key. iOS 18 can advertise both
+          // slices; record the preferred supported architecture, ARM first.
+          const architectures = (await simctl(['getenv', udid, 'SIMULATOR_ARCHS'], c)).split(/\s+/);
+          if (architectures.some(arch => !['arm64', 'x86_64'].includes(arch))) throw fail('invalid_architecture');
+          const architecture = architectures.includes('arm64') ? 'arm64' : 'x86_64';
           phase = 'install';
           await install(c);
           const appiumPort = await freePort(), wdaPort = await freePort(), mjpegPort = await freePort();

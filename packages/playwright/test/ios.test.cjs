@@ -51,7 +51,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
-  let owned, staged, elements=1, hold=false, clicks=0, foreign=false;
+  let owned, staged, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64';
   const udid='12345678-1234-1234-1234-123456789abc';
   const c=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+10000});
   try {
@@ -72,7 +72,8 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       else if (args[1]==='list'&&args[2]==='devices') output=JSON.stringify({devices:{[runtime.runtime]:owned?[owned]:[]}});
       else if (args[1]==='delete') {assert.equal(args[2],udid);owned=undefined;}
       else if (args[1]==='boot') owned.state='Booted';
-      else if (args[1]==='spawn') output='arm64';
+      else if (args[1]==='getenv') {assert.deepEqual(args,['simctl','getenv',udid,'SIMULATOR_ARCHS']);output=architectures;}
+      else if (args[1]==='spawn') throw Error('Simulator runtime has no uname executable');
       else if (args[1]==='install') staged=args[3];
       else if (args[1]==='get_app_container') output=staged;
       queueMicrotask(()=>callback(null,output));
@@ -100,7 +101,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     const {iosTargetDriver,iosAppDigest}=require('../dist/ios');
     const opts={appId:'finance',app:source,appSHA256:iosAppDigest(source),bundleId:runtime.bundleId,runtime:runtime.runtime,deviceType:runtime.deviceType,toolsRoot:dir};
     let driver=iosTargetDriver(opts);
-    await driver.open(c());assert.equal(validIOSRuntime(driver.runtime()),true);
+    await driver.open(c());assert.equal(validIOSRuntime(driver.runtime()),true);assert.equal(driver.runtime().architecture,'arm64');
     await driver.reset(c());
     const [handle]=await driver.observeTestId('send',c());
     elements=2;await assert.rejects(handle.tap(c()),/ambiguous_control/);assert.equal(clicks,0);
@@ -115,6 +116,16 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     assert.equal(fs.existsSync(path.dirname(staged)),false);
     driver=iosTargetDriver({...opts,appSHA256:'0'.repeat(64)});
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-digest');await driver.close();
+    architectures='x86_64';driver=iosTargetDriver(opts);
+    await driver.open(c());assert.equal(driver.runtime().architecture,'x86_64');await driver.close();
+    for (architectures of ['', 'unknown', 'arm64 unknown']) {
+      const sessions=requests.filter(r=>r.pathname.endsWith('/session')).length;
+      driver=iosTargetDriver(opts);
+      await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_architecture');
+      await driver.close();assert.equal(owned,undefined);
+      assert.equal(requests.filter(r=>r.pathname.endsWith('/session')).length,sessions);
+    }
+    architectures='arm64';
     foreign=true;driver=iosTargetDriver(opts);
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_session');await driver.close();assert.equal(owned,undefined);
   } finally {
