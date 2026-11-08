@@ -28,7 +28,7 @@ const test = createTargetTest({native: target => iosTargetDriver({
 test('iOS transfer checks the exact native receipt', async ({app}) => {
   const originalFetch = globalThis.fetch;
   const command = promisify(execFile);
-  let udid = '', clickDispatches = 0, started = false, stopReason = '';
+  let udid = '', clickDispatches = 0, started = false, stopReason = '', setupPhase = '';
   let probe: Promise<void> | undefined;
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -76,6 +76,8 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
   } catch (error) {
     const reason = (error as {reason?: unknown}).reason;
     if (typeof reason === 'string' && /^[a-z_]{1,64}$/.test(reason)) stopReason = reason;
+    const message = (error as {cause?: {cause?: {message?: unknown}}}).cause?.cause?.message;
+    if (typeof message === 'string') setupPhase = /^9lives iOS: open_(tools|artifact|runtime|create|boot|bootstatus|architecture|install|server|session|metadata)$/.exec(message)?.[1] ?? '';
     throw error;
   } finally {
     globalThis.fetch = originalFetch;
@@ -88,6 +90,6 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
       deviceStopped = !Object.values(devices).some(list => (list as {udid: string}[]).some(d => d.udid === udid));
     }
     if (process.env.NINELIVES_IOS_PROBE) writeFileSync(process.env.NINELIVES_IOS_PROBE,
-      JSON.stringify({clickDispatches, started, deviceStopped, stopReason}));
+      JSON.stringify({clickDispatches, started, deviceStopped, stopReason, setupPhase}));
   }
 });

@@ -90,9 +90,12 @@ Computing it at test startup binds that run to the current local artifact.
   cannot match. **An identifier equal to its label is unsupported**, even if a
   real identifier is present. Give controls distinct identifiers and labels.
 - Native lifecycle operations have finite bounds (open up to 180 seconds;
-  reset defaults to 60 seconds). Abort stops the owned server process group and
+  reset defaults to 60 seconds). In-worker abort stops the owned server process group and
   shuts down/deletes the owned Simulator. Cleanup uses a separate 20-second
   bound. A cleanup failure fails the test; it cannot produce a passing receipt.
+  Runner cancellation, attempt timeout and abrupt worker termination still need
+  surviving Simulator cleanup and qualification. Do not rely on device cleanup
+  when the worker cannot finish teardown.
 
 The receipt's closed `iosRuntimes` metadata records bundle/build version, app
 digest, runtime and device type, OS/architecture, Xcode, pinned automation

@@ -196,6 +196,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       if (opening || closed) return Promise.reject(fail('already_open_or_closed'));
       const c = {...context, signal: AbortSignal.any([context.signal, controller.signal])};
       opening = (async () => {
+        let phase = 'tools';
         try {
           check(c);
           if (process.platform !== 'darwin') throw fail('requires_macos');
@@ -209,6 +210,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           await mkdir(join(directory, 'node_modules'));
           for (const name of ['appium', 'appium-xcuitest-driver']) await symlink(join(tools, 'node_modules', name), join(directory, 'node_modules', name), 'dir');
           await writeFile(join(directory, 'package.json'), JSON.stringify({private: true, dependencies: {appium: iosVersions.appium, 'appium-xcuitest-driver': iosVersions.xcuitest}}));
+          phase = 'artifact';
           app = join(directory, 'App.app'); await mkdir(app);
           const source = resolve(options.app);
           for (const file of appFiles(source, () => check(c))) {
@@ -219,19 +221,26 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           const plist = (key: string) => command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(app, 'Info.plist')], c, env);
           if (await plist('CFBundleIdentifier') !== options.bundleId || await plist('DTPlatformName') !== 'iphonesimulator') throw fail('app_platform_or_bundle_mismatch');
           const version = await plist('CFBundleShortVersionString'), build = await plist('CFBundleVersion');
+          phase = 'runtime';
           const xcode = /^Xcode ([0-9.]+)\n/.exec(await command('/usr/bin/xcodebuild', ['-version'], c, env))?.[1] ?? '';
           const runtimes = JSON.parse(await simctl(['list', 'runtimes', '-j'], c)).runtimes;
           const runtime = Array.isArray(runtimes) ? runtimes.filter(r => r.identifier === options.runtime && r.isAvailable === true) : [];
           if (runtime.length !== 1 || typeof runtime[0].version !== 'string') throw fail('runtime_unavailable');
           creationStarted = true;
+          phase = 'create';
           udid = await simctl(['create', owner, options.deviceType, options.runtime], c);
           if (!uuid.test(udid)) throw fail('invalid_device');
+          phase = 'boot';
           await simctl(['boot', udid], c);
+          phase = 'bootstatus';
           await simctl(['bootstatus', udid, '-b'], c);
+          phase = 'architecture';
           const architecture = await simctl(['spawn', udid, 'uname', '-m'], c);
+          phase = 'install';
           await install(c);
           const appiumPort = await freePort(), wdaPort = await freePort(), mjpegPort = await freePort();
           check(c);
+          phase = 'server';
           base = `http://127.0.0.1:${appiumPort}/${owner}`;
           server = spawn(process.execPath, [join(tools, 'node_modules/appium/index.js'), '--address', '127.0.0.1', '--port', String(appiumPort),
             '--base-path', `/${owner}`, '--use-drivers', 'xcuitest', '--log-level', 'error', '--log-no-colors'], {env, cwd: directory, stdio: 'ignore', detached: true});
@@ -241,6 +250,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
             try { if ((await request('/status', c))?.ready === true) break; } catch { /* readiness reads only */ }
             await delay(100, undefined, {signal: c.signal});
           }
+          phase = 'session';
           const value = await request('/session', c, 'POST', {capabilities: {alwaysMatch: {
             platformName: 'iOS', 'appium:automationName': 'XCUITest', 'appium:udid': udid, 'appium:bundleId': options.bundleId,
             'appium:noReset': true, 'appium:fullReset': false, 'appium:skipLogCapture': true, 'appium:showXcodeLog': false,
@@ -252,6 +262,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           if (!value || typeof value.sessionId !== 'string' || !/^[A-Za-z0-9-]{1,128}$/.test(value.sessionId) ||
               value.capabilities?.udid !== udid || String(value.capabilities?.platformName).toLowerCase() !== 'ios') throw fail('foreign_session');
           session = value.sessionId;
+          phase = 'metadata';
           await endpoint('/timeouts', c, 'POST', {implicit: 0});
           const viewport = await endpoint('/window/size', c);
           evidence = {bundleId: options.bundleId, appSHA256: options.appSHA256, version, build, runtime: options.runtime, deviceType: options.deviceType,
@@ -261,7 +272,9 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           check(c);
         } catch (error) {
           if (error instanceof TargetSetupError) throw error;
-          throw new TargetSetupError({classification: 'unknown', reason: 'device-state-unknown', stage: 'open'});
+          // Keep a fixed local phase for diagnosis, never a provider payload,
+          // command output, path or application content. The receipt stays closed.
+          throw new TargetSetupError({classification: 'unknown', reason: 'device-state-unknown', stage: 'open'}, fail(`open_${phase}`));
         }
       })();
       return opening;

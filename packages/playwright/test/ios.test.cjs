@@ -116,7 +116,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     driver=iosTargetDriver({...opts,appSHA256:'0'.repeat(64)});
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-digest');await driver.close();
     foreign=true;driver=iosTargetDriver(opts);
-    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown');await driver.close();assert.equal(owned,undefined);
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_session');await driver.close();assert.equal(owned,undefined);
   } finally {
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;process.kill=original.kill;
     Object.defineProperty(process,'platform',original.platform);

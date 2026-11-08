@@ -51,7 +51,7 @@ try {
     assert(!['Sent $','Pending','hierarchy','Documents/started'].some(value=>raw.includes(value)),`${mode}: content leaked`);
     const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
     if(mode==='healthy') {
-      assert.equal(run.status,0);assert.equal(data.outcome,'passed');assert.equal(data.complete,true);
+      assert.equal(run.status,0,`healthy run failed; setup phase: ${facts.setupPhase||'unknown'}`);assert.equal(data.outcome,'passed');assert.equal(data.complete,true);
       assert.equal(receipt.targetAssertions,3);assert.equal(receipt.verifiedAssertions,0);
       assert.equal(receipt.iosRuntimes.length,1);assert.equal(facts.clickDispatches,1);
       const rt=receipt.iosRuntimes[0];
