@@ -94,9 +94,12 @@ const defaultAssertionMs = 5_000;
 const maxOperationMs = 60_000;
 // Native devices can take tens of seconds to relaunch, clear app data or
 // settle a cold start. Lifecycle operations default to a minute; native
-// operations and assertions accept up to the open bound.
+// operations and assertions accept up to three minutes.
 const nativeLifecycleMs = 60_000;
 const nativeMaxMs = 180_000;
+// Cold hosted iOS provisioning can consume three minutes before Appium/WDA
+// starts. Only open gets this larger bound; the attempt deadline still wins.
+const iosOpenMs = 300_000;
 const maxObservations = 200;
 // An operation is aborted and rejected at its deadline. If it is still pending
 // after this grace, the session closes its driver to cancel it.
@@ -192,6 +195,7 @@ export class TargetApp {
   }
 
   private get maxMs() { return (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : maxOperationMs; }
+  private get openMaxMs() { return this.driver.kind === 'ios' ? iosOpenMs : this.maxMs; }
 
   /** The stop reason for a bound that ran out: operation_timeout for the
    * call's own bound, deadline for the attempt's (Go's worker deadline). */
@@ -286,7 +290,7 @@ export class TargetApp {
       if (!validTargetSetup(recovered) || !recovered.recovery?.restored) throw stopped('invalid_setup_record');
       await attachSetup(recovered);
     }
-  }, options.timeoutMs === undefined && (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : options.timeoutMs); }
+  }, options.timeoutMs === undefined && (this.driver.kind === 'android' || this.driver.kind === 'ios') ? this.openMaxMs : options.timeoutMs, this.openMaxMs); }
   // Defaults apply only to an omitted timeout; any other non-integer,
   // including null, stops as invalid_timeout.
   reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }

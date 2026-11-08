@@ -18,6 +18,59 @@ const blocked = async (context: TargetContext): Promise<string> => {
   return 'late';
 };
 
+// Cold hosted Simulators consumed 175 seconds before Appium startup. Opening
+// iOS gets five minutes, still capped by the caller's attempt deadline.
+for (const requested of [undefined, 300000]) {
+  test(`iOS open allows five minutes with timeout ${requested ?? 'default'}`, async () => {
+    const started = Date.now();
+    let observed = 0;
+    const driver: TargetDriver = {
+      kind: 'ios', appId: 'startup', version: '9l.target/3', capabilities: targetCapabilities,
+      open: async context => { observed = context.deadlineMs; throw new Error('probe'); },
+      reset: async () => {}, close: async () => {}, observeTestId: async () => [],
+    };
+    const app = new TargetApp(driver, driver, {deadlineMs: started + 400000});
+    try {
+      await expect(app.open({timeoutMs: requested})).rejects.toThrow('operation_failed');
+      expect(observed - started).toBeGreaterThanOrEqual(300000);
+      expect(observed).toBeLessThanOrEqual(Date.now() + 300000);
+    } finally { await app.close(); }
+  });
+}
+
+test('iOS startup remains capped by the attempt deadline', async () => {
+  const deadlineMs = Date.now() + 2000;
+  let observed = 0;
+  const driver: TargetDriver = {
+    kind: 'ios', appId: 'startup', version: '9l.target/3', capabilities: targetCapabilities,
+    open: async context => { observed = context.deadlineMs; throw new Error('probe'); },
+    reset: async () => {}, close: async () => {}, observeTestId: async () => [],
+  };
+  const app = new TargetApp(driver, driver, {deadlineMs});
+  try {
+    await expect(app.open()).rejects.toThrow('operation_failed');
+    expect(observed).toBe(deadlineMs);
+  } finally { await app.close(); }
+});
+
+for (const [kind, operation, timeoutMs] of [
+  ['ios', 'open', 300001], ['ios', 'reset', 180001], ['android', 'open', 180001],
+] as const) {
+  test(`${kind} ${operation} rejects timeout ${timeoutMs} before dispatch`, async () => {
+    let dispatches = 0;
+    const driver: TargetDriver = {
+      kind, appId: 'startup', version: '9l.target/3', capabilities: targetCapabilities,
+      open: async () => { dispatches++; }, reset: async () => { dispatches++; },
+      close: async () => {}, observeTestId: async () => [],
+    };
+    const app = new TargetApp(driver, driver, {deadlineMs: Date.now() + 400000});
+    try {
+      await expect(app[operation]({timeoutMs})).rejects.toThrow('invalid_timeout');
+      expect(dispatches).toBe(0);
+    } finally { await app.close(); }
+  });
+}
+
 test('a completed false observation rejects the assertion at its polling bound', async () => {
   let reads = 0;
   const app = appWithText(context => ++reads === 1 ? Promise.resolve('wrong') : blocked(context));

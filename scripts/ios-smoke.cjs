@@ -12,7 +12,7 @@ assert.equal(process.platform,'darwin','iOS smoke requires Xcode and iOS 18.5 Si
 const work=path.join(root,'.context/ios-qualification',`smoke-${Date.now()}`);
 fs.mkdirSync(work,{recursive:true});
 function command(file,args,options={}) {
-  const result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:330000,maxBuffer:4<<20,...options});
+  const result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:600000,maxBuffer:4<<20,...options});
   assert.ifError(result.error);return result;
 }
 const engine=path.join(work,'9l');
@@ -35,7 +35,7 @@ try {
   for(const mode of selected) {
     const before=deviceSet(),probe=path.join(work,`${mode}-probe.json`);
     const run=command(engine,['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
-      '--agent-provenance',provenance,'--timeout','4m','--deadline','5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
+      '--agent-provenance',provenance,'--timeout','8m','--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
       '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,DEVELOPER_DIR'],
       {env:{...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe}});
     // Only sanitized engine receipts/protocol and bounded probe facts persist.

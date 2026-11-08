@@ -89,7 +89,7 @@ Computing it at test startup binds that run to the current local artifact.
   attribute. The predicate also excludes matching labels, so a label-only decoy
   cannot match. **An identifier equal to its label is unsupported**, even if a
   real identifier is present. Give controls distinct identifiers and labels.
-- Native lifecycle operations have finite bounds (open up to 180 seconds;
+- Native lifecycle operations have finite bounds (open defaults to 300 seconds;
   reset defaults to 60 seconds). In-worker abort stops the owned server process group and
   shuts down/deletes the owned Simulator. Cleanup uses a separate 20-second
   bound. A cleanup failure fails the test; it cannot produce a passing receipt.

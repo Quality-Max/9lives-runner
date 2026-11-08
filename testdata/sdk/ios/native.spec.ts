@@ -98,7 +98,7 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
     return pending;
   };
   try {
-    await app.open({timeoutMs: 180000});
+    await app.open({timeoutMs: 300000});
     await app.reset();
     await app.getByTestId('amount').fill('5', {timeoutMs: 20000});
     // Missing IDs, duplicates and a label-only decoy must fail before a tap.
