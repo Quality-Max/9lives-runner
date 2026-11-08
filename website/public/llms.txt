@@ -192,9 +192,10 @@ test('a green checkout can still miss a broken recommendation', async ({page, n9
 `9l prove` reruns the test once per injected fault on each fetch/XHR request it made, and reports which faults an assertion caught:
 
 ```sh
-9l prove tests/checkout.spec.ts
+export LAB_PORT=4173   # Choose an available port and keep it fixed for baseline and fault runs.
+9l prove tests/checkout.spec.ts --pass-env LAB_PORT
 9l prove tests/checkout.spec.ts --faults http-500 --pass-env LAB_PORT --format json
-9l prove tests/checkout.spec.ts --paths --format json   # local only: include request URLs
+9l prove tests/checkout.spec.ts --pass-env LAB_PORT --paths --format json   # local only: include request URLs
 ```
 
 ```text
@@ -282,7 +283,7 @@ Other MCP hosts use the same command. If another `9l` may come first on `PATH`, 
 }
 ```
 
-The server exposes seven tools: `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`, `inspect_page` and `generate_playwright_repro`. Only `run_test` status `passed` means the spec passed with complete, validated evidence; `incomplete` is never a pass. `generate_playwright_repro` writes a spec and runs nothing; execute it with `run_test`. Paths must stay inside the directory the server started in.
+The server exposes these tools: `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`, `inspect_page` and `generate_playwright_repro`. Only `run_test` status `passed` means the spec passed with complete, validated evidence; `incomplete` is never a pass. `generate_playwright_repro` writes a spec and runs nothing; execute it with `run_test`. Paths must stay inside the directory the server started in.
 
 ### A prompt for an agent that reproduces and confirms a bug
 
@@ -323,7 +324,7 @@ test('application opens its login form', async ({page, n9l}) => {
 9l run tests/login-modal.spec.ts --sdk --goal-provider anthropic --goal-max-actions 3 --goal-max-decisions 12 --goal-timeout-ms 60000 --pass-env QA_BASE_URL --timeout 2m --format json
 ```
 
-Goals act only on observed controls through typed actions, within the budgets you set. Goal completion is unverified; keep explicit assertions after every goal. A live provider uses its own login and may incur usage.
+Goals act only on observed controls through typed actions, within the budgets you set. Goal completion is unverified; keep explicit assertions after every goal. The `anthropic` provider requires `ANTHROPIC_API_KEY` in the environment of `9l`; `openai` requires `OPENAI_API_KEY`. The `claude`, `codex` and `opencode` providers use the corresponding CLI's own login. Live providers may incur usage. Keep provider credentials out of `--pass-env`; forward only the application settings the test needs, such as `QA_BASE_URL`.
 
 ### Android with Appium and UiAutomator2 (experimental)
 

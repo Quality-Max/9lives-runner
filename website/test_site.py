@@ -117,14 +117,24 @@ def test_llms_txt_examples_use_real_commands_tools_and_no_release_versions():
     assert used <= CLI_COMMANDS, used - CLI_COMMANDS
     assert {"run", "plan", "assess", "prove", "confirm", "heal", "scan", "inspect", "mcp", "doctor"} <= used
 
-    tools = ("run_test", "heal_test", "assess_test", "confirm_finding", "scan_url", "inspect_page", "generate_playwright_repro")
-    mcp_doc = (ROOT / "docs" / "mcp.md").read_text()
-    for tool in tools:
-        assert f"`{tool}`" in content and f"`{tool}`" in mcp_doc
-
     # The homepage names no version so a release needs no site change; so does this file.
     assert not re.search(r"\b\d+\.\d+\.\d+\b", content)
     assert "@9l/playwright@" not in content
+
+
+def test_llms_txt_advertises_the_complete_documented_mcp_tool_set():
+    import re
+
+    mcp_doc = (ROOT / "docs" / "mcp.md").read_text()
+    tools_section = mcp_doc.split("\n## Tools\n", 1)[1].split("\n## ", 1)[0]
+    documented = set(re.findall(r"^\|\s*`([a-z][a-z0-9_]*)`\s*\|", tools_section, flags=re.MULTILINE))
+    advertised_line = re.search(r"^The server exposes these tools: (.+?)\.", LLMS.read_text(), flags=re.MULTILINE)
+    assert advertised_line, "missing MCP tool list"
+    advertised = re.findall(r"`([a-z][a-z0-9_]*)`", advertised_line[1])
+
+    assert documented, "no documented MCP tools"
+    assert len(advertised) == len(set(advertised)), "duplicate advertised MCP tool"
+    assert set(advertised) == documented, {"missing": documented - set(advertised), "extra": set(advertised) - documented}
 
 
 def test_llms_txt_copies_the_release_lab_specs_verbatim():
