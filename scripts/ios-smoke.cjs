@@ -8,7 +8,7 @@ const modes=['healthy','defect','missing','ambiguous','label-only','digest','una
 if(process.argv[2]==='--list') {console.log(modes.join('\n'));process.exit(0);}
 const selected=process.argv.slice(2).length?process.argv.slice(2):modes;
 assert(selected.every(mode=>modes.includes(mode)),'unknown iOS case');
-assert.equal(process.platform,'darwin','iOS smoke requires Xcode and iOS 18.5 Simulator');
+assert.equal(process.platform,'darwin','iOS smoke requires Xcode and iOS 18.6 Simulator');
 const work=path.join(root,'.context/ios-qualification',`smoke-${Date.now()}`);
 fs.mkdirSync(work,{recursive:true});
 function command(file,args,options={}) {
@@ -27,7 +27,7 @@ function devices() {
 }
 const deviceSet=()=>devices().map(d=>`${d.udid}:${d.state}`).sort().join(',');
 // An unrelated stopped simulator must survive every success/failure/cancel.
-const sentinel=command('/usr/bin/xcrun',['simctl','create',`9l-sentinel-${Date.now()}`,'com.apple.CoreSimulator.SimDeviceType.iPhone-16','com.apple.CoreSimulator.SimRuntime.iOS-18-5']);
+const sentinel=command('/usr/bin/xcrun',['simctl','create',`9l-sentinel-${Date.now()}`,'com.apple.CoreSimulator.SimDeviceType.iPhone-16','com.apple.CoreSimulator.SimRuntime.iOS-18-6']);
 assert.equal(sentinel.status,0,'create unrelated sentinel');
 const sentinelId=sentinel.stdout.trim();assert.match(sentinelId,/^[A-Fa-f0-9-]{36}$/);
 const results=[];
@@ -57,7 +57,7 @@ try {
       const rt=receipt.iosRuntimes[0];
       const fixture=JSON.parse(fs.readFileSync(path.join(root,'.context/ios-fixture/healthy/build.json'),'utf8'));
       assert.equal(rt.appSHA256,fixture.appSHA256);assert.equal(rt.bundleId,fixture.bundleId);
-      assert.equal(rt.os,'18.5');assert.equal(rt.xcode,'16.4');assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
+      assert.equal(rt.os,'18.6');assert.equal(rt.xcode,'16.4');assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
     } else {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
     if(!['digest','unavailable'].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
     if(mode==='defect') {

@@ -4,7 +4,7 @@ This source checkout adds a deterministic iOS driver. Runtime qualification is
 pending the macOS workflow: unit tests use a synthetic transport and do not
 establish iOS support. No published CLI or SDK version is changed by this work.
 
-The initial qualification target is macOS 15 on Intel (`macos-15-intel`), Xcode 16.4, iOS 18.5,
+The initial qualification target is macOS 15 on Intel (`macos-15-intel`), Xcode 16.4, iOS 18.6,
 and an iPhone 16 Simulator, with Appium 3.8.0 and XCUITest driver 10.43.1.
 ARM hosts, other configurations, real iPhones, goals, healing and verified replay are
 unqualified. This is the owned Simulator foundation of
@@ -15,7 +15,7 @@ is completed by this slice.
 
 ## Run from source
 
-Install full Xcode with the iOS 18.5 Simulator runtime. Command Line Tools alone
+Install full Xcode with the iOS 18.6 Simulator runtime. Command Line Tools alone
 are insufficient. The driver never downloads a runtime or selects a latest
 runtime automatically.
 
@@ -47,7 +47,7 @@ const test = createTargetTest({native: target => iosTargetDriver({
   app,
   appSHA256: iosAppDigest(app),
   bundleId: 'dev.example.finance',
-  runtime: 'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
+  runtime: 'com.apple.CoreSimulator.SimRuntime.iOS-18-6',
   deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
   toolsRoot: '/absolute/path/9lives-runner/tools/ios',
 })});

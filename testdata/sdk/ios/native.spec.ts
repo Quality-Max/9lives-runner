@@ -18,7 +18,7 @@ const test = createTargetTest({native: target => {
   const driver = iosTargetDriver({
     appId: target.appId, app: fixture.app, bundleId: fixture.bundleId,
     appSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.appSHA256,
-    runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : 'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
+    runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : 'com.apple.CoreSimulator.SimRuntime.iOS-18-6',
     deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
     toolsRoot: resolve(__dirname, '../../../tools/ios'),
   });
