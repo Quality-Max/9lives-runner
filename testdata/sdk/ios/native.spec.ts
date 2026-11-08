@@ -9,13 +9,31 @@ import {resolve, join} from 'node:path';
 const mode = process.env.NINELIVES_IOS_CASE ?? 'healthy';
 const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/ios-fixture/${variant}/build.json`), 'utf8'));
-const test = createTargetTest({native: target => iosTargetDriver({
-  appId: target.appId, app: fixture.app, bundleId: fixture.bundleId,
-  appSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.appSHA256,
-  runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : 'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
-  deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
-  toolsRoot: resolve(__dirname, '../../../tools/ios'),
-})}).extend({
+const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: ''};
+const persistProbe = () => {
+  if (process.env.NINELIVES_IOS_PROBE) writeFileSync(process.env.NINELIVES_IOS_PROBE, JSON.stringify(facts));
+};
+const test = createTargetTest({native: target => {
+  const driver = iosTargetDriver({
+    appId: target.appId, app: fixture.app, bundleId: fixture.bundleId,
+    appSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.appSHA256,
+    runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : 'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
+    deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
+    toolsRoot: resolve(__dirname, '../../../tools/ios'),
+  });
+  const open = driver.open.bind(driver);
+  driver.open = async context => {
+    try { await open(context); } catch (error) {
+      // Observe the driver's eventual rejection even if TargetApp's timeout
+      // wins first. Persist before teardown, which can itself fail.
+      const message = (error as {cause?: {message?: unknown}}).cause?.message;
+      if (typeof message === 'string') facts.setupPhase = /^9lives iOS: open_(tools|artifact|runtime|create|boot|bootstatus|architecture|install|server|session|metadata)$/.exec(message)?.[1] ?? '';
+      persistProbe();
+      throw error;
+    }
+  };
+  return driver;
+}}).extend({
   page: async () => { throw new Error('iOS requested a browser page'); },
   context: async () => { throw new Error('iOS requested a browser context'); },
   browser: async () => { throw new Error('iOS requested a browser'); },
@@ -28,20 +46,20 @@ const test = createTargetTest({native: target => iosTargetDriver({
 test('iOS transfer checks the exact native receipt', async ({app}) => {
   const originalFetch = globalThis.fetch;
   const command = promisify(execFile);
-  let udid = '', clickDispatches = 0, started = false, stopReason = '', setupPhase = '';
+  let udid = '';
   let probe: Promise<void> | undefined;
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.endsWith('/session') && init?.method === 'POST') udid = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
     const pending = originalFetch(input, init);
     if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST') {
-      clickDispatches++;
+      facts.clickDispatches++;
       if (mode === 'cancel' || mode === 'blocked') {
         probe = (async () => {
           const {stdout} = await command('/usr/bin/xcrun', ['simctl', 'get_app_container', udid, fixture.bundleId, 'data'], {timeout: 3000, maxBuffer: 16384});
           for (let i = 0; i < 100; i++) {
             if (existsSync(join(stdout.trim(), 'Documents/started'))) {
-              started = true;
+              facts.started = true;
               if (mode === 'cancel') app.cancel();
               return;
             }
@@ -75,21 +93,19 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
     await app.getByTestId('receipt').toHaveText('Sent $5');
   } catch (error) {
     const reason = (error as {reason?: unknown}).reason;
-    if (typeof reason === 'string' && /^[a-z_]{1,64}$/.test(reason)) stopReason = reason;
-    const message = (error as {cause?: {cause?: {message?: unknown}}}).cause?.cause?.message;
-    if (typeof message === 'string') setupPhase = /^9lives iOS: open_(tools|artifact|runtime|create|boot|bootstatus|architecture|install|server|session|metadata)$/.exec(message)?.[1] ?? '';
+    if (typeof reason === 'string' && /^[a-z_]{1,64}$/.test(reason)) facts.stopReason = reason;
+    persistProbe();
     throw error;
   } finally {
     globalThis.fetch = originalFetch;
-    await app.close();
-    await probe;
-    let deviceStopped = false;
-    if (udid) {
-      const {stdout} = await command('/usr/bin/xcrun', ['simctl', 'list', 'devices', '-j'], {timeout: 5000, maxBuffer: 256 * 1024});
-      const devices = JSON.parse(stdout).devices;
-      deviceStopped = !Object.values(devices).some(list => (list as {udid: string}[]).some(d => d.udid === udid));
-    }
-    if (process.env.NINELIVES_IOS_PROBE) writeFileSync(process.env.NINELIVES_IOS_PROBE,
-      JSON.stringify({clickDispatches, started, deviceStopped, stopReason, setupPhase}));
+    try {
+      await app.close();
+      await probe;
+      if (udid) {
+        const {stdout} = await command('/usr/bin/xcrun', ['simctl', 'list', 'devices', '-j'], {timeout: 5000, maxBuffer: 256 * 1024});
+        const devices = JSON.parse(stdout).devices;
+        facts.deviceStopped = !Object.values(devices).some(list => (list as {udid: string}[]).some(d => d.udid === udid));
+      }
+    } finally { persistProbe(); }
   }
 });
