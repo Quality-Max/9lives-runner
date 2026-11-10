@@ -8,6 +8,8 @@ const runCommand = '9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --fo
 const scanCommand = '9l scan https://your-app.dev --format markdown';
 const mcpCommand = 'claude mcp add 9lives -- 9l mcp';
 const repository = 'https://github.com/Quality-Max/9lives-runner';
+const productHunt = 'https://www.producthunt.com/products/9lives';
+const launchThread = 'https://x.com/QualityMaxApp/status/2120111022962884739';
 const documentation = 'https://github.com/Quality-Max/9lives-runner/blob/main/docs/run-existing-project.md';
 const migrationGuide = 'https://github.com/Quality-Max/9lives/blob/main/docs/MIGRATING_TO_GO.md';
 
@@ -49,6 +51,7 @@ function Command({ label, value }: { label: string; value: string }) {
 export default function Home() {
   return <>
     <a className="skip-link" href="#main">Skip to content</a>
+    <a className="launch-banner" href={productHunt}><span>We’re on Product Hunt</span><strong>Meet 9lives. Try it and share your feedback.</strong><span aria-hidden="true">↗</span></a>
     <header className="site-header wrap">
       <div className="brand-lockup"><Brand /><a className="product-logo" href="#main" aria-label="9lives home">9<span>lives</span></a></div>
       <nav aria-label="Primary navigation"><a href="#framework">Framework</a><a href="#demo">Demo</a><a href="#cloud">Cloud</a><a href="#start">Get started</a><a href={documentation}>Quickstart</a><a href={repository}>GitHub <span aria-hidden="true">↗</span></a></nav>
@@ -57,7 +60,7 @@ export default function Home() {
     <main id="main">
       <section className="hero wrap" aria-labelledby="hero-title">
         <div className="hero-content">
-          <p className="eyebrow">9lives by QualityMax / Open-source testing framework</p>
+          <p className="eyebrow">9lives by QualityMax / Open-source e2e testing for coding agents</p>
           <h1 id="hero-title">Your agent writes code.<br /><span>Give it tests to trust.</span></h1>
           <p className="hero-copy">Run your Playwright tests, connect your coding agent, and inspect the evidence behind each result. Extend the framework to Android with experimental Appium support. Start locally or use 9lives in QualityMax Cloud.</p>
           <div className="actions"><a className="button primary" href="#start">Run it yourself <span aria-hidden="true">↓</span></a><a className="button secondary" href="/demo.html#proof">Inspect a real test run <span aria-hidden="true">↗</span></a></div>
@@ -74,6 +77,16 @@ export default function Home() {
         </div>
       </section>
       <div className="principles wrap"><span>Ordinary Playwright specs</span><span>Explicit assertions</span><span>Bounded local execution</span><span>Attributable receipts</span></div>
+
+      <section className="section wrap" id="launch" aria-labelledby="launch-heading">
+        <div className="section-heading"><p className="eyebrow">Our Product Hunt launch / 10 November 2026</p><h2 id="launch-heading">Why we’re building 9lives.</h2><p>Open-source e2e testing for coding agents. Start with tests you own, inspect what ran, and help shape what comes next.</p></div>
+        <div className="status-grid">
+          <article><span className="badge">01 / The reason</span><h3>An action needs an outcome.</h3><p>A completed action tells you little about whether checkout still works. We built 9lives so developers can inspect the test execution behind an agent’s work, with assertions for the outcomes they care about and a record of what ran.</p><a className="text-link" href={launchThread}>Read the launch story on X →</a></article>
+          <article><span className="badge">02 / Your existing project</span><h3>Start with your own suite.</h3><p>Run existing Playwright tests with your project configuration. Connect a coding agent through MCP to run tests, inspect pages, and assess test quality. Use it locally or in CI, without a platform account.</p><a className="text-link" href={repository}>Explore the open-source framework →</a></article>
+          <article><span className="badge">03 / Experimental tools</span><h3>Go further. Inspect the evidence.</h3><p>Repair supported locators, compare the same test before and after a fix, or inject request faults. Android testing via Appium is experimental too. The recorded browser demo shows a checked fix and fault results on a synthetic app.</p><a className="text-link" href="/demo.html#proof">Inspect the demo →</a></article>
+        </div>
+        <div className="actions"><a className="button primary" href={productHunt}>Join the conversation on Product Hunt <span aria-hidden="true">↗</span></a><a className="button secondary" href="#start">Try 9lives locally <span aria-hidden="true">↓</span></a></div>
+      </section>
 
       <section className="section wrap" id="framework" aria-labelledby="framework-heading">
         <div className="section-heading"><p className="eyebrow">One framework, your project</p><h2 id="framework-heading">Tests your agent can run. Results you can inspect.</h2><p>9lives pairs a native Go runner with your existing test project. Use ordinary specs first, then add the SDK or agent tools where they help.</p></div>
