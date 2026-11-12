@@ -355,6 +355,73 @@
       ],
       "type": "object"
     },
+    "IOSRuntime": {
+      "properties": {
+        "appSHA256": {
+          "type": "string"
+        },
+        "appium": {
+          "type": "string"
+        },
+        "architecture": {
+          "type": "string"
+        },
+        "build": {
+          "type": "string"
+        },
+        "bundleId": {
+          "type": "string"
+        },
+        "deviceType": {
+          "type": "string"
+        },
+        "os": {
+          "type": "string"
+        },
+        "runtime": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "viewportHeight": {
+          "type": "string"
+        },
+        "viewportWidth": {
+          "type": "string"
+        },
+        "worker": {
+          "type": "string"
+        },
+        "xcode": {
+          "type": "string"
+        },
+        "xcuitest": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "testId",
+        "bundleId",
+        "appSHA256",
+        "version",
+        "build",
+        "runtime",
+        "deviceType",
+        "os",
+        "architecture",
+        "xcode",
+        "appium",
+        "xcuitest",
+        "worker",
+        "viewportWidth",
+        "viewportHeight"
+      ],
+      "type": "object"
+    },
     "ProvenanceAssessment": {
       "properties": {
         "after": {
@@ -516,6 +583,12 @@
         "goals": {
           "items": {
             "$ref": "#/$defs/GoalReceipt"
+          },
+          "type": "array"
+        },
+        "iosRuntimes": {
+          "items": {
+            "$ref": "#/$defs/IOSRuntime"
           },
           "type": "array"
         },

@@ -1,0 +1,58 @@
+name: iOS Simulator
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/playwright/src/**'
+      - 'internal/adapters/playwrightsdk/**'
+      - 'internal/runner/**'
+      - 'testdata/ios/**'
+      - 'testdata/sdk/ios/**'
+      - 'testdata/sdk/ios.config.ts'
+      - 'scripts/ios-smoke.cjs'
+      - 'scripts/build-ios-fixture.cjs'
+      - 'tools/ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulator:
+    # Standard Intel runner has 14 GB for cold Simulator/WDA startup. ARM's
+    # 7 GB runner exhausted the open bound; no larger-runner billing is used.
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Name the checkout for creation provenance
+        run: git switch -c ios-qualification
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: 1.27.3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm ci --prefix tools/ios --ignore-scripts
+      - name: Qualify healthy, seeded defect, identity, strictness and cancellation
+        run: npm run smoke:ios
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: ios-qualification-${{ github.sha }}
+          path: |
+            .context/ios-qualification/**/results.json
+            .context/ios-qualification/**/creation.json
+            .context/ios-qualification/**/*-probe.json
+            .context/ios-qualification/**/receipt*.json
+            .context/ios-qualification/**/*.ndjson
+            .context/ios-qualification/**/healthy.json
+            .context/ios-qualification/**/defect.json
+          include-hidden-files: true
+          if-no-files-found: ignore

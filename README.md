@@ -347,6 +347,10 @@ the [setup and qualification limits](docs/android-driver.md) below.
 | SDK | `@9l/playwright` 0.6.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
 | Android (experimental) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
+An unreleased [iOS Simulator driver](docs/ios-driver.md) is available in this
+source checkout. Real Simulator qualification is pending; it is not part of
+the released support matrix above.
+
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
 `artifact-metadata`, `terminal-outcomes`, `declared-outcomes` (in that order), then validates the

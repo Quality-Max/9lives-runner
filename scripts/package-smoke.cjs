@@ -48,7 +48,7 @@ try {
   assert.equal(packed.length, 1);
   assert.equal(packed[0].name, manifest.name);
   assert.equal(packed[0].version, manifest.version);
-  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'target-setup', 'android', 'android-runtime', 'android-device', 'android-env'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
+  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'target-setup', 'android', 'android-runtime', 'android-device', 'android-env', 'ios', 'ios-runtime'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
   assert.deepEqual(packed[0].files.map(file => file.path).sort(), expectedFiles);
   const tarball = path.join(work, packed[0].filename);
   const packedManifest = JSON.parse(call('tar', ['-xOf', tarball, 'package/package.json']));
@@ -66,7 +66,7 @@ try {
   const installed = path.join(consumer, 'node_modules/@9l/playwright');
   assert(fs.realpathSync(installed).startsWith(`${fs.realpathSync(consumer)}${path.sep}`), 'consumer resolved a workspace SDK');
   assert.equal(JSON.parse(fs.readFileSync(path.join(installed, 'package.json'))).version, manifest.version);
-  stage = 'optional Android entry point';
+  stage = 'optional native entry points';
   call(process.execPath, ['-e', `const assert = require('node:assert/strict');
     const android = require('@9l/playwright/android');
     assert.equal(typeof android.androidTargetDriver, 'function');
@@ -74,7 +74,10 @@ try {
     const found = android.androidDefaults({env: {ANDROID_HOME: 'sdk-root', NINELIVES_ANDROID_TOOLS: 'android-tools'}});
     assert.equal(found.sdkSource, 'ANDROID_HOME');
     assert.equal(found.toolsSource, 'NINELIVES_ANDROID_TOOLS');
-    for (const name of ['appium', 'appium-uiautomator2-driver']) {
+    const ios = require('@9l/playwright/ios');
+    assert.equal(typeof ios.iosTargetDriver, 'function');
+    assert.equal(typeof ios.iosAppDigest, 'function');
+    for (const name of ['appium', 'appium-uiautomator2-driver', 'appium-xcuitest-driver']) {
       assert.throws(() => require.resolve(name), {code: 'MODULE_NOT_FOUND'});
     }`], consumer);
   fs.writeFileSync(path.join(consumer, 'playwright.config.ts'), "import {defineConfig} from '@playwright/test';\nexport default defineConfig({testDir: './tests', workers: 1, retries: 0, timeout: 15000, use: {headless: true}});\n");
