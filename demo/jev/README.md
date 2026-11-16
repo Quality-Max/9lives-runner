@@ -121,6 +121,8 @@ game. Visitors play every level and the planted bug in their own browser.
 **Watch 9lives play** replays eight recorded live runs (each level, normal and
 bug), showing their screenshots, messages, click outlines and receipts. The page
 labels them as recordings. It makes no Jev request and needs no server or key.
+Each visitor's game runs in their own tab. The browser remembers only which
+levels they have unlocked; blocked storage simply starts at level 1.
 
 `node scripts/sync-hunt.cjs` regenerates `website/public/hunt.html` and the
 rooms from `cats.html` and `cat-room.html`. The website build runs it, and

@@ -68,6 +68,16 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
     await page.locator('#error', { hasText: 'Stopped. No passing result.' }).waitFor();
     assert.equal(await page.locator('#run-result').isHidden(), true);
 
+    // Finishing a level unlocks the next one, and a reload remembers it.
+    await page.getByLabel('Plant a bug: one find earns no point').uncheck();
+    await page.getByRole('button', { name: 'Let’s play' }).click();
+    const cats = page.frame({ url: /\/hunt\/rooms\/cats\.html$/ });
+    for (const id of await cats.evaluate(() => window.catGame.targets().filter(p => !p.decoy).map(p => p.id))) await cats.locator(`[data-target="${id}"]`).click();
+    await page.locator('#card-title', { hasText: 'You found them all!' }).waitFor();
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.ok(await page.getByRole('button', { name: /Dogs/ }).isEnabled(), 'Unlocked level remembered');
+    assert.ok(await page.getByRole('button', { name: /Mice/ }).isDisabled(), 'Only finished levels unlock');
+
     // Every level's recordings load.
     for (const scenario of ['cats', 'dogs', 'mice', 'striped']) for (const variant of ['healthy', 'broken']) {
       const base = `${origin}/hunt/replays/${scenario}-${variant}/`;
@@ -82,6 +92,17 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: resolve(out, 'hunt-site-mobile.png'), fullPage: true });
     assert.deepEqual(errors, []);
-    console.log('PASS: website hunt under production headers: framed manual play, recorded healthy and planted-bug runs, portable receipt, stop without result, all eight recordings, five widths, no errors.');
+    // Private browsing or blocked storage still plays from level 1.
+    const blocked = await browser.newContext();
+    await blocked.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Blocked', 'SecurityError'); } }));
+    const privatePage = await blocked.newPage();
+    const privateErrors = [];
+    privatePage.on('pageerror', error => privateErrors.push(error.message));
+    await privatePage.goto(origin + '/hunt.html', { waitUntil: 'networkidle' });
+    await privatePage.getByRole('button', { name: 'Let’s play' }).waitFor();
+    assert.ok(await privatePage.getByRole('button', { name: /Dogs/ }).isDisabled());
+    assert.deepEqual(privateErrors, []);
+    await blocked.close();
+    console.log('PASS: website hunt under production headers: framed manual play, recorded healthy and planted-bug runs, portable receipt, stop without result, remembered unlocks and blocked storage, all eight recordings, five widths, no errors.');
   } finally { await browser.close(); await new Promise(done => server.close(done)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

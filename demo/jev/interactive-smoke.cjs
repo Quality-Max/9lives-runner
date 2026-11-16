@@ -244,7 +244,10 @@ async function expectShopToFit(page) {
     assert.equal(canceled.receipts[0].status,'canceled','Cancel must stop the owned runner attempt');
     await page.locator('#back').click();
     await expect(page.locator('#counter')).toHaveText('1 / 9 cats found');
-    // A practice peek cannot unlock a level. Mobile zoom stays within the page.
+    // Finished levels stay unlocked across reloads; forget them so a practice
+    // peek is checked from a locked level. Mobile zoom stays within the page.
+    await expect.poll(()=>page.evaluate(()=>localStorage.getItem('9lives-hunt-unlocked'))).not.toBeNull();
+    await page.evaluate(()=>localStorage.removeItem('9lives-hunt-unlocked'));
     await page.reload();await expect(page.locator('#watch')).toBeEnabled();
     await page.setViewportSize({width:390,height:844});
     await page.locator('#start').click();await page.locator('#reveal').click();
@@ -266,6 +269,7 @@ async function expectShopToFit(page) {
     // UI fixtures only: provider availability never makes a request on page load,
     // and a malformed "passed" summary must not paint a green result.
     await page.route('**/api/config',route=>route.fulfill({json:{live:true,images:true,remaining:6,runsRemaining:20}}));
+    await page.evaluate(()=>localStorage.removeItem('9lives-hunt-unlocked'));
     await page.reload();await expect(page.locator('#engine-mode')).toHaveText('Live Jev');
     await expect(page.locator('#look-title')).toHaveText('Jev looks');
     await expect(page.locator('#engine-note')).toContainText('6 left');
