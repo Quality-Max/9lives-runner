@@ -4,7 +4,814 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.0 — 2026-11-07
+
+The first stable release of the 0.6.0 line includes all changes from
+0.6.0-beta through 0.6.0-beta.4, plus the Android qualification below.
+Android remains experimental and opt-in, qualified only on the emulators
+and phone documented in [the Android guide](docs/android-driver.md).
+
+Update the CLI and `@9l/playwright` together to 0.6.0. Compared with 0.5.5,
+receipts, run results and run status use version 2, provenance snapshots use
+version 2, and the shared target contract is `9l.target/3`; older target
+contracts are rejected at the handshake. `9l.engine/1` is unchanged.
+This release adds metadata-only failure summaries, imported-helper
+provenance, Android native operations and Flutter control support, bounded
+readiness queries and optional emulator fingerprint sign-in. The beta
+entries below retain the detailed changes and qualification boundaries.
+
+### Android qualification
+
+- The semantics smoke gives its first assertion after reset a 90-second
+  cold-relaunch allowance. A delayed-render fixture checks that reset can
+  finish before asynchronous content appears; later assertions keep their
+  ordinary bounds.
+- A two-test session fixture checks cleanup after an intentionally failed
+  test, separate runtime workers, and private app-data clearing by reset.
+  A negative control disables reset and must fail the persisted-session
+  assertion after its successful prerequisites and final reset. Qualification
+  rejects earlier assertion failures and failed fixture teardown. This does
+  not qualify server-side session cleanup or resolve
+  the customer app's retained-login report.
+
+## 0.6.0-beta.4 — 2026-11-04
+
+Continues the 0.6.0-beta line on the beta channel with no change to the CLI
+or `@9l/playwright` behavior: it includes everything in 0.6.0-beta.3 plus
+release-process changes. Its npm publication is the first under the channel
+rollback guard and the shared publication queue below. The target contract
+stays `9l.target/3`, so a 0.6.0-beta.3 CLI or SDK still passes the handshake
+with this release's, though only matching versions are a qualified pairing.
+Stable installs stay on 0.5.5.
+
+### Release process
+
+- The `npm` release job refuses to publish a version older than the one its
+  channel (`latest` or `beta`) already holds, so an older tag published late
+  can no longer move npm's channels backwards. Unreadable or unsupported
+  registry metadata also stops publication, the refusal names its reason, and
+  a rerun of an identical, already published tarball still skips. The `npm`
+  jobs of all tags share one concurrency group, so the check and the
+  publication of two release runs cannot interleave; qualification and
+  packaging still run in parallel. GitHub keeps one pending job per group, so
+  a third tag queuing meanwhile cancels the waiting one, which then needs a
+  rerun of its failed jobs.
+- A [release runbook](docs/releases.md#release-runbook) gives the release
+  steps in order with their commands: the starting-state check, the
+  preparation pull request, waiting for `main`, the signed tag, following
+  the release run, what each job failure means and what to do, and the
+  post-release verification. `AGENTS.md` gains the rules agents follow for
+  releases.
+
+## 0.6.0-beta.3 — 2026-11-04
+
+Continues the 0.6.0-beta line on the beta channel: it includes everything in
+0.6.0-beta.2 plus the changes below. Stable installs stay on 0.5.5. It
+answers a field report from a Flutter app on the Android target: Flutter's
+controls are reachable, specs can handle optional screens and system
+windows, failures name the control, bounds are sized for emulators, and
+fingerprint sign-in works on an owned emulator. The target contract is
+`9l.target/3`: update the CLI and `@9l/playwright` together, since either
+on `9l.target/2` is rejected at the handshake. Receipt, run result and run
+status stay version 2.
+
+### CLI
+
+- `9l star` prints the GitHub repository URL and, in a terminal, opens it in
+  the browser; `9l star --gh` stars `Quality-Max/9lives-runner` through the
+  user's own `gh` login. 9l never stars on its own.
+- Help, `9l version` and a passing text `9l doctor` end with a one-line hint
+  to run `9l star`. It goes to stderr only when stdout and stderr are both
+  terminals and `CI` is unset, never into JSON, receipts, MCP responses or piped output. Set
+  `NINELIVES_NO_HINTS=1` to turn it off. `9l version --format json` lists
+  `star` among its commands.
+
+### Android (experimental)
+
+- `getByTestId` reaches the controls a Flutter app reports (#238). A test ID
+  matches the app's prefixed resource name or the same name reported bare,
+  as `Semantics(identifier:)` produces, in one package-scoped query, and IDs
+  may contain `.` and `-`. Before, only `<package>:id/<id>` was queried, so no
+  Flutter identifier was reachable.
+- Two control aliases: `hint` addresses a field that has only an input hint,
+  and `accessibilityIdContains` addresses part of a merged multi-line label.
+- `accessibilityIdSuffix` now matches a suffix containing regex
+  metacharacters such as `(`, `.` or `?`. The selector parser passes
+  backslashes through unescaped, so the escaped suffix never matched. Alias
+  text and description values may no longer contain a backslash (they never
+  matched either).
+- `toHaveState('invalid', boolean)` reads the accessibility error a field
+  reports (`content-invalid`), on Android and on the web (`aria-invalid` or a
+  failed constraint validation). On Android the flag is read between two
+  resolutions of the control, which must be the same single element, so a
+  control that disappears or becomes ambiguous meanwhile never passes. A
+  custom driver whose handles have no `invalid()` fails it as
+  `unsupported_state`.
+- The emulator smoke gained a Flutter-shaped fixture (`semantics`) and a
+  control that never reports the field error (`semantics-defect`).
+
+### Documentation
+
+- `docs/cli.md` says that `--timeout` and `--deadline` count time the host is
+  awake, while receipt durations are wall-clock, so a run that spanned host
+  sleep can report a `durationMs` longer than its deadline (#246).
+- An Android quickstart in the npm package README and at the top of
+  `docs/android-driver.md`: the pinned tooling install, `9l doctor
+  --android`, the fixture, the `android:<alias>` project, the run command
+  and the `--pass-env` list (#245). It also notes that the driver holds the
+  device's only UI-automation connection, so a spec-side
+  `uiautomator dump` returns nothing.
+
+### Target contract
+
+- The shared target contract is `9l.target/3`: it adds the `query-visible`,
+  `foreground` and `fingerprint` operations, the `foreground`,
+  `device-serial` and `fingerprint` driver capabilities and the
+  `operation_timeout` reason. A CLI or SDK on
+  `9l.target/2` is rejected at the handshake with the upgrade message, so
+  update the CLI and `@9l/playwright` together.
+- Fingerprint sign-in on an owned emulator (#240). `androidTargetDriver`
+  accepts `biometrics: {snapshot}` for an AVD that
+  `scripts/prepare-biometric-avd.cjs` prepared (a random, never printed lock
+  PIN, an enrolled fingerprint, saved unlocked as a snapshot); the driver
+  boots that snapshot read-only and never sees a PIN. `app.fingerprint(finger)`
+  touches the virtual sensor once, after the display settles, and is recorded
+  as an action, not an assertion. A snapshot that resumes locked or
+  unenrolled is `setup mismatch` (`biometrics-unavailable`). Attached phones
+  are unchanged: no PIN, no sensor, `unsupported_operation`. The
+  `fingerprint` capability and operation are part of `9l.target/3`.
+
+- A failed target operation on a control names it (#243). The failure
+  summary gains an optional `control`: the test ID the operation addressed,
+  when that is an identifier (letters, digits, `_`, `.`, `-`, at most 64),
+  and the text summary reads `in tap on login-button: missing_test_id`.
+  Only failed steps carry it, so passing evidence still holds no test ID.
+  It travels in the `9l.target/3` stream; receipt, run result and run status
+  stay version 2 (an added optional field keeps the version).
+- `getByTestId(id).isVisible({timeoutMs}?)` answers whether a control is
+  shown without ending the session, for a screen that may or may not appear
+  (#239). One observation by default, a bounded poll with `timeoutMs`; absent
+  is `false`. It answers only from completed reads: ambiguity and any failed
+  read end it, and a poll cut short by Go's worker deadline stops as
+  `deadline` instead of answering `false`. `app.foreground()` reads whether the
+  app, another package's window (a system dialog, permission prompt or
+  Settings) or nothing has input focus, without relaxing package scoping.
+  Both are recorded as executed actions (`query-visible`, `foreground`),
+  never as assertions.
+- `app.deviceSerial()` returns the serial of the device the session targets,
+  for adb commands a spec issues itself (#241). It is not recorded and never
+  enters a receipt.
+- A bound that runs out names itself (#242): the call's own `timeoutMs` is
+  now `operation_timeout`, and `deadline` means only Go's worker deadline.
+  Both classify as `action-timeout`. Consumers that matched `deadline` for a
+  per-call timeout should also accept `operation_timeout`. `invalid_timeout`
+  errors name the accepted range locally.
+- Android bounds are sized for emulators (#242): `reset`, `terminate` and
+  `activate` default to 60 seconds, and Android operations and assertions
+  accept up to 180 seconds (the web keeps 60).
+
+## 0.6.0-beta.2 — 2026-11-02
+
+Continues the 0.6.0-beta line on the beta channel: it includes everything in
+0.6.0-beta.1 plus the changes below. Stable installs stay on 0.5.5. The
+Android target is still experimental, but it is now qualified on real
+devices: every emulator case passes on macOS (API 35 arm64) and in a new
+hosted-Linux CI workflow (API 35 x86_64), and attached-device mode passes on
+an Android 17 foldable. Receipt, run result and run status are version 2 and
+the target contract is `9l.target/2`: update the CLI and `@9l/playwright`
+together.
+
+### Contracts
+
+- Receipt, run result and run status are version 2, and the shared target
+  contract is `9l.target/2`. The experimental Android runtime record gained
+  required fields (the targeted display, posture and installed build
+  identity), which a version 1 validator would reject, and `9l.target/2` adds
+  the native operations and the `target_setup` and `target_diagnostic`
+  frames. A driver or SDK that declares `9l.target/1` is rejected with the
+  upgrade message: update the CLI and `@9l/playwright` together. Plan,
+  progress event and `9l version` stay at version 1; `9l.engine/1` is
+  unchanged. Version 2 receipts also carry this release's `failureSummary`
+  and provenance `dependencyChanges`.
+### Receipts
+
+- Every receipt that did not pass now keeps a bounded, metadata-only
+  `failureSummary`, with or without `--failure-details` (#213), so the
+  reason for an earlier failed attempt is not lost when the project's own
+  output is overwritten. `stop` names why the attempt ended
+  (`test_failed`, `goal_failed`, `deadline`, `canceled`,
+  `invalid_evidence`, `evidence_truncated`, `exit_without_failure`,
+  `provenance_changed`, `not_started` or `infrastructure`), `failedTests`
+  counts the failed tests in validated evidence, and `tests` describes up to
+  20 of them (`testsTruncated` when more failed): with `--sdk`, the engine's
+  SHA-256 test ID (the one `targetSetup` and `targetDiagnostics` use), the
+  failure `class`, the `status` of the last completed Playwright attempt,
+  the category of the failed `step` it is attributed to (the first failed
+  target operation, else assertion, else step), the target `operation` and
+  its stop `reason`, an unrecovered `setup` classification, and
+  `failedSteps` and `attempts` counts. The class comes from structured
+  facts only: a target stop reason `assertion_failed` or a failed `expect`
+  is `assertion`, `deadline` is `action-timeout`, a `setup_*` reason or an
+  unrecovered setup record is `setup`, a timed-out test is `timeout`. For
+  plain Playwright runs the entries keep only the class and status of the
+  report's failures. The summary never holds titles, locations, error
+  messages, stack frames, page or app text, URLs, selector values,
+  environment values or credentials; Go validates it as a closed record
+  and drops any entry outside it, keeping the count. `9l run` and
+  `9l result` print the entries under a failed job when no detailed
+  failures are listed. To carry the reason, a failed typed target step's
+  `step_end` frame gains an optional `reason` token (`[a-z_]{1,64}`, from
+  the fixture's own `9lives target stopped: <reason>`); no other error text
+  crosses the bridge. Go still accepts frames without it, but an older CLI
+  rejects a stream that carries it, so update the CLI and `@9l/playwright`
+  together. The receipt field is additive and ships with the receipt
+  version change of the next beta; the published schemas are regenerated.
+  The spec location of an SDK failure is not in the summary: the engine
+  stream carries no locations, and `--failure-details` still adds titles,
+  lines and errors.
+
+### Provenance
+
+- Imported local helpers are part of agent provenance (#215). `9l
+  provenance` writes snapshot version 2, which adds `dependencies` (the
+  repo-relative path, kind and SHA-256 of every module the spec reaches
+  through relative `import`, `export … from`, `import('…')` and
+  `require('…')`, plus the lockfile nearest the spec) and
+  `dependenciesSHA256`; file contents are never stored. Editing an imported
+  helper after the snapshot was a `matched` spec before; it is now a
+  mismatch, `assess` and `run` report `dependencies: "mismatch"` with
+  `dependencyChanges` naming the modified, added or removed path, and `run`
+  refuses or invalidates the attempt. Capture parses source lexically and
+  never executes it. An import that cannot be resolved, resolves outside the
+  repository (including through a symlink), is absolute (`/`, `\`, a drive
+  letter or UNC path, on every OS) or has a non-literal argument,
+  and a graph over 256 local modules, 1 MiB per module, 8 MiB together or
+  64 MiB per lockfile, fails capture, so provenance stays unknown instead of
+  matching. Package, built-in and path-alias imports are not followed and
+  `node_modules` is not read; installed packages are covered only through
+  the lockfile digest, and files read at runtime are not covered. The scan
+  is not a full parser, so unusual syntax can hide an import on the same
+  line. Version 1 snapshots are still accepted and compared with
+  `scope: "spec"`; the assessment and receipt schemas gain the optional
+  fields, and older CLIs reject version 2 snapshots. The snapshot size limit
+  is 256 KiB, up from 4 KiB.
+
+### Android (experimental)
+
+- A failing target assertion now stops polling while the next read, half
+  again as slow as the slowest so far, would still finish in time. Budgeting
+  on the last read alone let a slow read on a loaded CI emulator overrun the
+  bound, which releases the Android driver before diagnostics can read the
+  device.
+
+- The emulator's version is read from both output streams (Linux prints it on
+  stderr) within 10 s, falling back to the emulator package's
+  `Pkg.Revision`; on hosted Linux runners `open` failed at the runtime
+  identity before.
+
+- Real-device qualification. `npm run smoke:android` gains native operations,
+  opt-in diagnostics and display-width/build-version mismatch cases, and the
+  healthy case checks the recorded display, posture, version and signer; a new
+  `Android` workflow runs it on an API 35 emulator on hosted Linux runners.
+  `scripts/android-phone-smoke.cjs` qualifies attached-device mode on an
+  authorized phone. Running both on an API 35 emulator and an API 37 foldable
+  found and fixed:
+  - the driver's own `am start -n` stacked a second instance of a
+    standard-launch activity on the one the session started, so every
+    attached-device test failed as `dirty` `extra-window`; the app is now
+    brought forward with the launcher intent;
+  - API 35 and later print the focused window only in `dumpsys window
+    displays`, one line per display, with a powered-off display's `null`
+    first; focus is read there, and the app's focus on any display wins;
+  - a failing assertion whose last native read overran its bound ended by its
+    deadline, which on Android releases the driver before diagnostics or the
+    recheck; polling now stops while the next read, as slow as the last,
+    would still finish in time;
+  - `terminate()` failed on a slow emulator because the driver's 500 ms
+    process-exit check expired; it now waits up to 5 s within the operation.
+- Android setup outside this repository. `9l doctor --android` checks Java
+  (17 or newer, from `JAVA_HOME` or `PATH`), the SDK root, `adb` (with its
+  version), the emulator, `build-tools/35.0.0` `aapt2` and `apksigner`, the
+  AVD names, the number of attached emulators and physical devices by state,
+  and the pinned Appium 3.8.0 and UiAutomator2 8.7.0 packages, each with a
+  fix command; a missing prerequisite exits 2 like any other. It runs only
+  `java -version`, `adb version` and `emulator -list-avds`, counts devices
+  through an adb server that is already running (it never starts one), and
+  prints no serials, and paths only with `--paths`. `androidTargetDriver`'s
+  `sdkRoot` and `toolsRoot` and `installInPlace`'s `sdkRoot` become optional:
+  omitted, they come from the new `androidDefaults()` in
+  `@9l/playwright/android`, which doctor runs too: `ANDROID_HOME`, then
+  `ANDROID_SDK_ROOT`, then the Homebrew command-line tools location
+  (`HOMEBREW_PREFIX`, `/opt/homebrew`, `/usr/local`) and the Android Studio
+  default, and for tooling `NINELIVES_ANDROID_TOOLS`, else
+  `~/.9l/android-tools`. Explicit options still win and nothing is
+  downloaded. The pinned tooling installs with `npm install --prefix
+  ~/.9l/android-tools --save-exact --ignore-scripts appium@3.8.0
+  appium-uiautomator2-driver@8.7.0`. A spec that imports
+  `@9l/playwright/android` gets a `spec/android` hint under `doctor --sdk`.
+  The qualification scripts use the same discovery instead of a fixed
+  `/usr/local` SDK path, and the fixture build requires `JAVA_HOME`. Doctor
+  is tested against fake SDK trees; the discovery has not been tried on
+  Linux or Windows hosts.
+
+- Installed-app identity (#217). The Android runtime receipt gains
+  `versionCode`, `versionName` (from the device's package manager) and
+  `signer` (the SHA-256 of the first signing certificate, read with the
+  local `apksigner`), or `unknown` when not read; `apkSHA256` is the
+  verified digest of the installed base APK. `androidTargetDriver` accepts
+  `expected: {apk, versionCode, versionName, signerSHA256}`: a declared
+  artifact's digest (or `apkSHA256`), version or signer that differs from
+  the installed build stops the test as `setup mismatch` (`build-digest`,
+  `build-version`, `build-signer`) before any application operation, where
+  a digest mismatch was an opaque attach failure before. The signer of an
+  installed app is read by pulling its base APK into the attempt's private
+  scratch directory only when declared. `installInPlace({sdkRoot,
+  deviceSerial, apk})` from `@9l/playwright/android` updates an app with
+  `adb install -r` after checking the new APK's signer against the
+  installed one through `apksigner`, under the same exclusive device lease
+  a test takes; a different signer refuses before any device change, a
+  missing package is a first installation, and it never uninstalls or
+  clears data. The runtime
+  schema is closed, so CLI and `@9l/playwright` must be updated together.
+  Version and signer parsing are unit-tested against tool output; the
+  install helper is tested against a fake adb and remains unqualified on
+  a device.
+
+- Multi-display devices (#216). At attachment the driver reads the physical
+  displays from `dumpsys display` and the fold posture from
+  `dumpsys device_state`, and the Android runtime receipt gains `display`
+  (the id of the powered display the session targets, or `unknown`),
+  `displayWidth`, `displayHeight`, `density` and `posture` (`opened`,
+  `half-opened`, `closed`, `flat` for a device without a fold, or
+  `unknown`). The runtime schema is closed, so CLI and `@9l/playwright`
+  must be updated together. A new portable `app.screenDigest()` returns the
+  SHA-256 of a screenshot of that display, computed in memory and never
+  written, attached or returned as an image; on Android it names the display
+  explicitly, so the capture no longer depends on the device default or
+  carries a multiple-displays warning. A spec can declare what it needs with
+  `requires: {posture, minWidthDp}`; another posture or a narrower active
+  display stops the test as `setup mismatch` (`posture`, `display-width`)
+  before any application operation. The readers are unit-tested against
+  dumpsys excerpts; no foldable or two-display device was available, so
+  display selection and posture names remain unqualified.
+
+- Opt-in, metadata-only failure diagnostics for native gestures (#211).
+  With `diagnostics: {gestures: true}` the Android driver reads the app's
+  window count and focus before each gesture (tap, scroll, back, touch) and
+  again when an operation fails, and attaches one record per failed test:
+  operation, its stop reason, elapsed time, the requested coordinates of a
+  touch, the viewport and the window counts before and after. It crosses the
+  engine stream as one `target_diagnostic` frame, lands in the receipt as
+  `targetDiagnostics` and is printed under the job. No screenshot,
+  hierarchy, text, log or device identifier is captured, nothing is retried,
+  and the record claims no cause. With it, a `toBeHidden()` that fails while
+  the window manager shows the app lost a window since the last gesture is
+  classified `setup observer` (`window-gone-element-displayed`): the
+  accessibility snapshot disagreeing with the window manager, as the field
+  investigation established, rather than an application or gesture failure.
+  The classification is a heuristic, made only for a hidden assertion that
+  directly follows the gesture, only with the opt-in, and the diagnostic
+  keeps the counts; screenshot capture is not offered. Exercised by the
+  offline target smoke through the fake driver; the window readers are
+  unit-tested against dumpsys excerpts and remain unqualified on a device.
+
+- The shared target fixture gains the operations an attached-app suite
+  needed beyond tap and fill, so projects no longer have to bridge into the
+  runner-owned Appium session themselves (#209). Portable on web and
+  Android: `app.back()`, `app.tapAt({x, y})` (one touch down/up at device
+  coordinates), `app.viewport()`, `getByTestId(id).bounds()`,
+  `getByTestId(id).scroll(direction, {percent})` (one bounded gesture inside
+  that control) and `toBeHidden()` (absent or not displayed). Android only:
+  `app.toHaveKeyboard(visible)`, `app.hideKeyboard()` (Back while the
+  keyboard shows, read back from the device, never changing the input
+  method), `app.terminate()` and `app.activate()` (force-stop and relaunch
+  of the configured package, keeping its data). A driver without an
+  operation fails it with the stable reason `unsupported_operation`. Each
+  operation is one supported Appium command with fixed arguments; nothing
+  is retried. The engine accepts the new typed steps (`back`,
+  `hide-keyboard`, `scroll`, `tap-at`, `bounds`, `viewport`, `terminate`,
+  `activate`, `assert-hidden`, `assert-keyboard`); an older CLI rejects them
+  as unknown operations, so update the CLI and `@9l/playwright` together.
+  The offline target smoke runs the portable operations on both targets and
+  the native-only ones on the fake driver; the Android commands are
+  unit-tested against a fake transport and remain unqualified on a device.
+
+- A native driver can classify the device or app state instead of letting an
+  environment problem read as an application failure. The attached-device
+  adapter reads the keyguard and wakefulness before any application
+  operation and reports `device-locked` or `screen-off` as `setup blocked`;
+  after a completed assertion failure it rechecks, so a phone that locked
+  during a readiness poll is classified too, and a build whose state it
+  cannot read is reported as `unknown`, never inferred. It never requests,
+  stores or bypasses a PIN and never changes lock settings (#208). After
+  launching the activity it compares the app's window count, focus and
+  keyboard visibility with a declared baseline (`baseline: {windows}`,
+  default one window) and reports `extra-window`, `foreign-focus` or
+  `ime-showing` as `setup dirty`: state a previous test left behind. An
+  opt-in `recovery: {back: N}` presses Back up to N times until the baseline
+  returns and is recorded either way; it never clears data, force-stops or
+  changes settings (#212). The classification crosses the engine stream as
+  a `target_setup` frame (closed enums, no content; at most one made before
+  the test ran and one from a recheck per attempt) and lands in the receipt
+  as `targetSetup`; `9l run` and `9l result` print it under
+  the job, and a `--failure-details` failure carries class `setup`. A test
+  with an unrecovered classification cannot pass; a recovered one runs from
+  the restored baseline with the record kept. The shared target fixture
+  exposes `TargetSetupError` and the optional driver hooks `setup()` and
+  `recheck()`, exercised by the offline target smoke; the device readers
+  are unit-tested against dumpsys excerpts and remain unqualified on
+  arbitrary phones.
+
+### Assessment
+
+- `9l assess` recognizes target tests (#210). A file-level
+  `const test = createTargetTest(...)` from `@9l/playwright`, under any import
+  alias and optionally followed by `.extend(...)`, declares tests. In them, a
+  `toBeVisible`, `toBeHidden`, `toHaveText` or `toHaveState` call on a control
+  from `app.getByTestId(...)` (directly, through a `const` or a same-file
+  helper), and `app.toHaveKeyboard(...)`, are credited as asynchronous
+  assertions named `target:<matcher>`, with the usual await, catch, outcome and
+  absence rules (`toBeHidden` and `toHaveKeyboard(false)` are absence checks).
+  The `app` fixture is the target app only when no `.extend(...)` or
+  `test.use(...)` can redefine it and it is never written; names resolve to
+  their innermost declaration in scope. A factory from another module, a `let`
+  binding or an unreadable extension stays unrecognized. Recognition is source evidence only: a target test's
+  runtime `targetAssertions` stay worker-reported and `verifiedAssertions`
+  stays 0. Policy is `assessment-source-v16`; the analyzer helper version is
+  13; report version 3 and suite version 1 are unchanged.
+
+## 0.6.0-beta.1 — 2026-10-29
+
+Continues the 0.6.0-beta line on the beta channel: it includes everything
+in 0.6.0-beta plus the changes below. Stable installs stay on 0.5.5.
+
+### Evidence
+
+- Results Playwright relabels after a test body has run are visible in
+  `--sdk` receipts. Qualifying Playwright's modifiers for 9l found two
+  upstream defects, reported as microsoft/playwright#43676 and
+  microsoft/playwright#43738: on 1.61.1 through 1.64.1, `test.skip()` in an
+  `afterEach` hook reports a test that ran and passed as skipped, and
+  `test.fail()` in an after hook or fixture teardown turns a failed test into
+  an expected failure, so the summary says `1 passed` and the process exits 0.
+  The engine reporter now sends, on `test_begin`, the expected status
+  Playwright knew before any attempt ran, and Go compares it with the status
+  the attempt ended with. Receipts gain `runtimeExpectedFailures`, failed
+  tests that count as expected only because `test.fail()` ran during the
+  test (in the body, a suite-level condition function or an after hook; the
+  reporter cannot tell which), and `skippedAfterAssertions`, skipped tests
+  whose final attempt had already reported a passed assertion step. `9l run` and
+  `9l result` print both under the job. Neither changes the status:
+  Playwright's semantics for expected failures and pinned skips are kept, and
+  an unpinned skip still makes the attempt incomplete. The counts are the
+  worker's report, not verified outcomes. The `9l.engine/1` capability list
+  is now `steps`, `artifact-metadata`, `terminal-outcomes`,
+  `declared-outcomes`; an SDK without it is rejected at the handshake and
+  `9l doctor` reports the pair as incompatible, so update the CLI and
+  `@9l/playwright` together. Regression fixtures for both defects run in
+  `npm run smoke`.
+
+### Assessment
+
+- `9l assess` reports `test.fail()` in an `afterEach`/`afterAll` hook as
+  `after-hook-fail`: demonstrated only for an unconditional `afterEach` call;
+  suspected with a condition, under a branch, or in an `afterAll` hook, which
+  follows only the group's last test. The declaration and body-level forms are
+  not reported. Policy is `assessment-source-v15`; the analyzer helper version
+  is 12 and facts carry `afterHookFails`; report version 3 and suite version 1
+  are unchanged.
+
+## 0.6.0-beta — 2026-10-28
+
+### Android (experimental)
+
+- Add the opt-in `@9l/playwright/android` adapter using pinned Appium 3.8.0
+  and UiAutomator2 8.7.0. Run native assertions on an owned Android emulator
+  or attach explicitly to an installed app on a connected device. Ordinary
+  Playwright execution remains separate. Android tooling is installed separately.
+- Require exact resource IDs, reject missing or ambiguous controls, check APK
+  identity, and keep mutations to one attempt. Runtime metadata is bounded;
+  screenshots, page source, device logs and private application content are
+  excluded from execution receipts.
+- Add cancellation, deadline, device lease and cleanup controls. Reject late
+  transport completions even when they run before an overdue timer. Installed-device
+  attachment remains experimental: physical disconnect and outer process hard-kill
+  cleanup, arbitrary phones, software keyboards and fold layouts are unqualified.
+- Target assertions are executed but not independently verified. Semantic screen
+  checks, a live combined reporter, the shared finance demo and full epic
+  qualification remain later milestones.
+
+### Releases
+
+- Support explicit beta tags through the same CLI and SDK release gates.
+  GitHub beta releases are prereleases; npm uses the `beta` dist-tag. Stable
+  default installs stay on the current stable release.
+
+## 0.5.5 — 2026-10-28
+
+### Security
+
+- `9l scan`, `9l inspect` and the `scan_url` and `inspect_page` MCP tools no
+  longer let a redirect inside the browser reach a destination the network
+  policy refuses. Chromium follows redirects without asking the browser
+  context's route handler again, so a navigation, image, script, in-page
+  fetch or same-origin link check whose first URL passed the policy could be
+  redirected to a private, link-local or another loopback address (a cloud
+  metadata endpoint, for example) and was requested. A navigation redirected
+  that way loaded, and `inspect` could return what it showed. The browser now
+  reaches the network only through a local proxy in the helper, which checks
+  every hop of every request and connects only to an address that passed the
+  policy when it resolved the name. This also pins the browser's connections
+  against DNS rebinding, closing the browser half of #108. A hop the proxy
+  refuses, or cannot connect to, ends as a network failure in the page:
+  `net::ERR_TUNNEL_CONNECTION_FAILED` for HTTPS, which goes through a CONNECT
+  tunnel, and `net::ERR_EMPTY_RESPONSE` for plain HTTP, rather than the
+  browser's own connection error. A first URL the policy refuses is still
+  blocked before it leaves the browser, as before.
+- `golang.org/x/net` is 0.62.0, which fixes GO-2026-6860 (quadratic time
+  coalescing text nodes when parsing HTML, reachable through the page snapshot
+  healing parses) and GO-2026-6866. The HTTP/2 advisories fixed in 0.60.0 did
+  not reach code 9l calls.
+
+## 0.5.4 — 2026-10-28
+
+### CLI
+
+- `9l update` checks the stable release marked Latest and asks before
+  replacing the running CLI. `--check` checks without installing, and `--yes`
+  explicitly approves a non-interactive update. Downloads, checksums, archive
+  contents and the candidate's runner/version identity are bounded and
+  validated before replacement. Project SDK dependencies are left to the
+  project's developer.
+- After an interactive text `9l run` finishes, the CLI checks for updates at
+  most once per day and offers installation for future runs. CI, JSON output,
+  redirected streams, canceled/incomplete runs and MCP do not prompt or check.
+  `NINELIVES_NO_UPDATE_CHECK=1` disables automatic checks; explicit `9l update`
+  remains available. Update failure does not change the test run's result.
+
+## 0.5.3 — 2026-10-27
+
+### CLI
+
+- A Windows output drain no longer hangs when its initial wait ends while
+  another goroutine is reading a synchronous pipe. After stopping the owned
+  process job, Windows drains to end of file without inspecting the pipe;
+  the byte and time bounds remain as backstops (#198).
+- A run deadline reached during `--wait-for` is reported as the run's
+  deadline, rather than as an environment failure saying the target was not
+  ready. The run remains `timed_out` (#190).
+- Output a command wrote before it exited is no longer lost when the machine
+  is busy. Test-runner stdout and stderr, healing provider CLIs and the
+  helper processes the runner owns used to drop output the runner had not yet
+  read 50 ms after the process exited: a failing provider then reported no
+  reason (`codex provider failed (exit 1)`), and a successful exit could
+  return truncated output as complete. Output is now read until the process
+  group has been stopped and every byte already written has reached its
+  destination, however slowly. Only a pipe that a writer outside the group
+  still holds open, with nothing left unread, is closed after 5 s. After that
+  the runner reads at most what an exited writer can have left in a pipe
+  (1 MiB) for at most 30 s, so a writer outside the group that never stops
+  writing cannot keep the command from returning. Cancelling the run or
+  reaching its deadline ends the 5 s wait at once and fails the command. A
+  destination that rejects output, or a pipe the runner had to close without
+  showing it was drained, fails an otherwise successful command.
+- `9l doctor --sdk <spec>` no longer reports `spec/import` as `missing`, and
+  so exits 2, for a valid spec that registers its tests through a named
+  import from a fixtures module, such as `import { it } from './fixtures'`
+  where the module exports `base.extend(…)` from `@9l/playwright`, beside an
+  unused `test` from `@playwright/test`. A named import the spec uses the way
+  a test function is used (called with a title and a callback outside any
+  test or hook body, or through `describe`, a hook, `extend` or `only`) is
+  now a warning that the module is not followed. Helpers called any other
+  way, such as `login(page)`, a member call `api.it(…)` or a `step('x', fn)`
+  wrapper inside a test, do not count, so a plain spec that uses them is
+  still `missing`; a local alias or extension of the plain test, such as
+  `const t = test.extend({})`, is the plain test. The callback may be a
+  function the spec declares once and passes by name, `it('x', body)`,
+  typed or not; a named function expression's own name declares nothing
+  outside it. A function passed by name to the plain test or a hook,
+  `test('x', body)` or `test.beforeEach(seed)`, is a test body, so a step
+  wrapper in it does not count either. `spec/fixtures` reads the callbacks
+  of such a test function too. Type arguments are read in balance, so
+  `base.extend<{ values: Array<string> }>(…)` from a fixtures module may
+  register tests, and `test.extend<{ get: () => string }>(…)` is still the
+  plain test. Every declarator of a `const`, `let` or `var` list is read, so
+  `const other = 1, body = async ({ page }) => {}` declares `body` and
+  `const other = 1, t = test.extend({})` is still the plain test. A callback
+  may declare type parameters, inline, `it('x', async <T,>({ page }) => {})`,
+  or by name, `async function body<T extends Record<string, unknown>>(…)`.
+  Doctor reads call arguments, annotations, type arguments and a declared
+  callback's head only within a bound; a call or callback it reads only in
+  part, such as one behind a 5,000-character comment or a 600-character one
+  between `async` and its parameters, is not verified and counts as a
+  possible test registration rather than as proof that there is none.
+
+### SDK
+
+- Qualified with `@playwright/test` 1.64.1, which fixes Chromium 155 and
+  later aborting a preflighted cross-origin redirect with `net::ERR_ABORTED`
+  whenever any route is registered. The `playwright-compat` CI job runs the
+  unit, browser, assessment and packed-consumer checks on it, and install
+  examples and `9l doctor` repair commands now name 1.64.1. 1.64.0 stays
+  qualified; the peer range is unchanged (`>=1.61.1 <2`).
+
+### Release process
+
+- SDK qualification publishes worker and server readiness records by rename,
+  so the smoke cannot parse a partially written PID record while checking
+  owned timeout and cancellation. A controlled subprocess test checks that
+  readiness stays unpublished until its JSON is complete.
+- `curl -fsSL https://9lives.run/install.sh | sh` installs the release GitHub
+  marks Latest instead of a version pinned in the script, so a release no
+  longer needs an installer or website change. The release workflow creates
+  each release without marking it Latest and marks it only after the
+  published archives, checksums and provenance attestations were verified and
+  the SDK was published, and only if it is the highest stable version; a run
+  that fails earlier leaves installs on the previous release. The installer
+  follows the github.com redirect, not the GitHub API, and accepts only a
+  stable tag of this repository; `NINELIVES_VERSION=vX.Y.Z` still installs a
+  specific release. The homepage no longer names a CLI version.
+
+## 0.5.2 — 2026-10-27
+
+### CLI
+
+- On Unix, owned process cleanup tracks detached Playwright `webServer`
+  descendants as well as the original process group. Deadline, cancellation
+  and normal completion stop observed owned children before returning, so
+  the server does not retain its listening port for the next run. Process
+  observations run every 500 ms during execution and every 50 ms during
+  cleanup. Temporary inspection failures can recover; startup and cleanup
+  still require fresh successful snapshots and persistent failures remain
+  unsuccessful. Tracking is sampled, not kernel containment: a process that
+  detaches and loses its parent entirely between observations can escape it
+  (#191).
+- `9l assess` reads a matcher whose failure is caught as a conditional
+  probe, not an assertion: one consumed through `.catch(handler)`, a `.then`
+  rejection handler, `Promise.allSettled`, a `.catch` on the `Promise.all`,
+  `race` or `any` call carrying it, or awaited inside a `try` block whose
+  `catch` does not rethrow, including through a helper called that way. Such a
+  matcher cannot fail the test, so it no longer satisfies
+  `no-direct-assertion`, counts toward outcome mapping or acts as the positive
+  completion signal that clears `absence-after-wait`. It gets the new
+  `caught-assertion` finding (informational, assertion adequacy) at the
+  matcher. Promise handlers catch only an asynchronous matcher's rejection,
+  not a synchronous matcher's throw, which a `try` block catches with or
+  without `await`; a promise returned from a `try` block without `await`, by
+  a matcher or a helper, is not caught there. `expect.soft` matchers, and
+  those through `expect.configure` whose outermost `soft` option is `true`,
+  are never probes, since Playwright records their failure on the test either
+  way; a caught matcher whose `soft` option cannot be read (a variable, a
+  spread, a computed key or a non-literal value) stays an assertion and gives
+  the new `possibly-soft` limit. A call made on `expect.configure(...)`, such
+  as `.configure(...)` or `.soft(...)`, is no longer counted as a matcher. A
+  matcher of unknown timing, or a marked helper not declared `async`, caught
+  for only one of a throw and a rejection stays an assertion and gives
+  `unknown-matcher`. A chain ending only in `.then(onFulfilled)` or
+  `.finally`, a `.catch()` with no handler, a handler that is not a function
+  (a literal of any kind, an array or object literal, a template, `null`,
+  `undefined`, `void`, `typeof` or a prefix operator), or a handler that
+  throws or returns `Promise.reject`, including through parentheses or type
+  wrappers, still rejects and stays an assertion. A matcher on
+  `expect.poll(...)` is asynchronous however it is spaced and also on an
+  `expect.configure(...)` chain, so a caught poll is a probe. Policy
+  `assessment-source-v14`; the analyzer helper version is 11, and report
+  version 3 and suite version 1 are unchanged (#21).
+- `9l assess` no longer reports a plain `for`, `for…of`, `for…in`, `while`
+  or `do` loop as `analysis-limit/conditional-flow`, which stays for
+  branches that can skip an assertion (`if`, `switch`, `try`, `?:`, `&&`,
+  `||`, `??`). A loop gives no limit of its own unless it repeats a fixed
+  wait in its body or in a condition or update, directly or through an
+  inlined helper (a wait in a `for` initializer or a `for…of` or `for…in`
+  input runs once and does not count); that gives the new
+  `analysis-limit/loop`, since the order of waits and assertions across
+  iterations is not analyzed. Whether a loop runs at all is not evaluated
+  (#141).
+- Each test in the `9l assess` JSON report lists the assertions it is
+  credited with, as `assertions: {"count", "matchers"}`, whatever its limits:
+  recognized matchers in its body and resolved same-file helpers, and marked
+  helper calls, excluding caught probes. Matcher names come from the pinned
+  Playwright API; anything else is `custom` or `assertion-helper`. The text
+  report prints `recognized assertions: 2 (toBe, toEqual)` under such a
+  test, so direct assertions beside an unresolved helper call are visible
+  while the `unresolved-helper` limit stays at that call. No dimension
+  changes: static rules still never mark assertion adequacy or runtime
+  evidence `supported` (#141).
+- A file in which no test declaration is recognized, such as a helper module
+  passed as a path, is no longer counted as assessed. Suite summaries count
+  it in the new `noTests` field and the text summary as `N with no tests`;
+  the file is listed as `file "<path>": no tests`, and its report, like a
+  single-file report, carries a `no-tests` limit. Exit codes are unchanged
+  (#141).
+- The `assess` and `assess-suite` schemas add the test `assertions` summary
+  and the summary's `noTests` count (additive).
+- `9l scan` and the `scan_url` MCP tool apply the network policy to the
+  address a Node-side link check connects to, not only to the answer seen
+  before the request. Links to another origin, and same-origin links the page
+  could not fetch itself, are requested with `node:http`/`node:https` and a
+  lookup that resolves the name again at connect time and refuses the
+  connection unless every answer passes, on each redirect hop. A hostname
+  whose DNS answer changes between the check and the connection (DNS
+  rebinding) can no longer reach a private, link-local or loopback address,
+  or a second loopback origin under `--allow-private-network`; the refusal
+  reads as before and names no address. Redirect re-validation, the response
+  size limit and the 10 s timeout are unchanged, and the timeout now also
+  ends a response body nobody reads. The browser's navigation, subrequests
+  and WebSockets are not yet pinned (#108).
+
+### Release process
+
+- The release workflow attests SLSA build provenance for every CLI archive
+  and for `SHA256SUMS` before publishing them, then downloads the published
+  assets, requires the bytes it attested and checks each with
+  `gh attestation verify`; a mismatch stops the run before npm publication.
+  Only the GitHub Release job gains `attestations: write` and
+  `id-token: write`; no permission is added at the workflow level. [Installation](docs/install.md#verify-build-provenance)
+  shows the `gh attestation verify` command; the checksum steps remain for
+  users without `gh`, and releases up to 0.5.1 have no attestations (#112).
+- Every action in the repository's workflows is pinned to a full commit SHA
+  with its version in a comment, including CI, which the release runs as its
+  qualification gate, and the Pages deployment.
+
+## 0.5.1 — 2026-10-26
+
+### SDK
+
+- A retrying assertion (`expect.poll`, `toPass`, a custom matcher that calls
+  `expect`) counts once in `reportedAssertions`, including the assertions it
+  runs inside it on every retry, even inside a `test.step`. Previously each
+  passing inner assertion was counted as well, and failed retries were
+  reported as failed assertion steps. The count is of top-level assertion
+  steps, not of every `expect` in the source.
+- The prove channel applies two more opt-in faults. `redirect-cross-origin`
+  answers 302 with `Location: http://redirect.invalid/`, a reserved name that
+  never resolves, so the browser's redirect fails without contacting an
+  application host (DNS may still be asked for the name). `delay` holds the
+  real response for 35 s, longer than Playwright's default test and `expect`
+  timeouts, then lets it through; it is credited when the hold starts and the
+  hold ends as soon as the context closes, so a fault run never outlives its
+  test. A redirect is held as the server sent it and Chromium follows it
+  itself, so the page sees the same redirect as without the fault; one close
+  listener per context serves every hold, however often the page polls. The
+  manifest's `"9l".faults` lists both.
+- When the upstream request of an `empty-json`, `malformed-json` or `delay`
+  fault fails in a fault run, the request is now aborted after the
+  `not-applicable` (`unreachable`) record instead of being sent a second time,
+  which could repeat a request the application had already acted on.
+
+### CLI
+
+- `9l run --wait-for <url|host:port>` (repeatable) and `--wait-timeout` (1s
+  to 30m, default 1m) wait, inside the started run and before any test
+  process starts, until an http(s) target answers without a server error
+  (5xx or 429) or a host:port accepts connections. A target still not ready
+  leaves the run incomplete (exit 3) with an error receipt per job reading
+  `not started: --wait-for target not ready (environment): …`, instead of a
+  test failure against an application that never came up; `9l result` and
+  `9l status` read the run back. The wait counts against `--deadline`, and
+  `9l cancel` or Ctrl-C during it reports the run canceled. Targets are
+  named only as `scheme://host:port` or `host:port`, never with a path,
+  query, fragment or credentials. A self-signed https target is reported as
+  `certificate not trusted`; wait for its `host:port` instead.
+- Agent provenance assessments carry `scope: "spec"` and the text output says
+  what a `matched` status compared: the selected spec, its path, branch,
+  commit and workspace root. Imported modules are not compared, and the
+  wording no longer invites reading `matched` as unchanged dependencies.
+- `9l prove --faults` accepts `redirect-cross-origin` and `delay`, planned
+  after the existing kinds for every observed request. Defaults stay
+  `abort,http-500,empty-json`. An installed SDK that does not report the new
+  kinds is refused for them after the baseline with exit 2, as before, and
+  `9l doctor --sdk` names them under `sdk/faults`. Reports use policy
+  `prove-network-v4`; the rules are unchanged from `v3`. The text output
+  widens the kind column so every kind aligns. The real Chromium smoke
+  qualifies both kinds on the shop fixture (#43).
+- `9l doctor` adds an `executable` check: it compares the file it runs from
+  with the `9l` first on PATH, without running either, and warns when they
+  differ, since terminals, scripts and MCP hosts start the one on PATH unless
+  configured with a full path. It also warns when no `9l` is on PATH, or
+  when a relative PATH entry found it. The paths appear only with the new
+  `--paths` flag, which is for local reading and never persisted, and then
+  in every case, including when the two are the same file.
+  `9l doctor --sdk <spec>` reads one spec as text and adds `spec/import`
+  (`missing`, so exit 2, only when the binding `test` comes from
+  `@playwright/test` and nothing else could provide it; a `test` from a local
+  fixtures module, or a package default or namespace import the spec takes
+  `.test` from, is a warning, and so is a spec that takes the SDK but also
+  registers tests with the plain `test`), `spec/fixtures` (whether a `test`
+  or hook callback destructures `page` or `context`) and `spec/config` (the
+  nearest `playwright.config.*` and, for a single literal `testDir` in a
+  config that neither names `projects` nor spreads or merges other values,
+  whether the spec lies under it). In spec mode the
+  workspace and package checks describe the project `prove` would use for
+  the spec. Neither the spec nor the config is executed; basenames only
+  unless `--paths`. (#165)
+- `9l assess` text output no longer lists every `analysis-limit` finding
+  under its test. After a file's tests, one unindented line counts the limits
+  per code (`analysis limits in this file: unresolved-helper ×37,
+  nested-function ×12 (--limits lists them)`), counted as in the per-rule
+  summary so the two agree; rule findings keep their per-location lines.
+  `--limits` restores the per-location listing. The JSON report is unchanged
+  and identical with and without `--limits` (#23).
 
 ## 0.5.0 — 2026-10-23
 

@@ -11,6 +11,15 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceDependency"
+          },
+          "type": "array"
+        },
+        "dependenciesSHA256": {
+          "type": "string"
+        },
         "repositorySHA256": {
           "type": "string"
         },
@@ -32,6 +41,90 @@
         "commit",
         "sourceSHA256",
         "sourcePathSHA256"
+      ],
+      "type": "object"
+    },
+    "AndroidRuntime": {
+      "properties": {
+        "abi": {
+          "type": "string"
+        },
+        "api": {
+          "type": "string"
+        },
+        "apkSHA256": {
+          "type": "string"
+        },
+        "appPackage": {
+          "type": "string"
+        },
+        "appium": {
+          "type": "string"
+        },
+        "density": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "deviceHash": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string"
+        },
+        "displayHeight": {
+          "type": "string"
+        },
+        "displayWidth": {
+          "type": "string"
+        },
+        "emulator": {
+          "type": "string"
+        },
+        "posture": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "signer": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "uiautomator2": {
+          "type": "string"
+        },
+        "versionCode": {
+          "type": "string"
+        },
+        "versionName": {
+          "type": "string"
+        },
+        "worker": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "testId",
+        "appPackage",
+        "apkSHA256",
+        "api",
+        "release",
+        "abi",
+        "appium",
+        "uiautomator2",
+        "worker",
+        "display",
+        "displayWidth",
+        "displayHeight",
+        "density",
+        "posture",
+        "versionCode",
+        "versionName",
+        "signer"
       ],
       "type": "object"
     },
@@ -114,6 +207,68 @@
       "required": [
         "command",
         "artifacts"
+      ],
+      "type": "object"
+    },
+    "FailedTestSummary": {
+      "properties": {
+        "attempts": {
+          "type": "integer"
+        },
+        "class": {
+          "type": "string"
+        },
+        "control": {
+          "type": "string"
+        },
+        "failedSteps": {
+          "type": "integer"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "setup": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "type": "object"
+    },
+    "FailureSummary": {
+      "properties": {
+        "failedTests": {
+          "type": "integer"
+        },
+        "stop": {
+          "type": "string"
+        },
+        "tests": {
+          "items": {
+            "$ref": "#/$defs/FailedTestSummary"
+          },
+          "type": "array"
+        },
+        "testsTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stop",
+        "failedTests"
       ],
       "type": "object"
     },
@@ -214,10 +369,22 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "type": "string"
+        },
+        "dependencyChanges": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceChange"
+          },
+          "type": "array"
+        },
         "expected": {
           "$ref": "#/$defs/AgentProvenance"
         },
         "repository": {
+          "type": "string"
+        },
+        "scope": {
           "type": "string"
         },
         "source": {
@@ -236,6 +403,44 @@
       ],
       "type": "object"
     },
+    "ProvenanceChange": {
+      "properties": {
+        "change": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "change"
+      ],
+      "type": "object"
+    },
+    "ProvenanceDependency": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "sha256"
+      ],
+      "type": "object"
+    },
     "Receipt": {
       "properties": {
         "adapter": {
@@ -243,6 +448,12 @@
         },
         "agentProvenance": {
           "$ref": "#/$defs/ProvenanceAssessment"
+        },
+        "androidRuntimes": {
+          "items": {
+            "$ref": "#/$defs/AndroidRuntime"
+          },
+          "type": "array"
         },
         "annotations": {
           "items": {
@@ -282,6 +493,9 @@
         },
         "failureCount": {
           "type": "integer"
+        },
+        "failureSummary": {
+          "$ref": "#/$defs/FailureSummary"
         },
         "failures": {
           "items": {
@@ -329,6 +543,12 @@
         "runId": {
           "type": "string"
         },
+        "runtimeExpectedFailures": {
+          "type": "integer"
+        },
+        "skippedAfterAssertions": {
+          "type": "integer"
+        },
         "skippedTests": {
           "type": "integer"
         },
@@ -354,6 +574,18 @@
         },
         "targetAssertions": {
           "type": "integer"
+        },
+        "targetDiagnostics": {
+          "items": {
+            "$ref": "#/$defs/TargetDiagnostic"
+          },
+          "type": "array"
+        },
+        "targetSetup": {
+          "items": {
+            "$ref": "#/$defs/TargetSetup"
+          },
+          "type": "array"
         },
         "termination": {
           "$ref": "#/$defs/Termination"
@@ -395,6 +627,25 @@
       ],
       "type": "object"
     },
+    "SetupRecovery": {
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "presses": {
+          "type": "integer"
+        },
+        "restored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "method",
+        "presses",
+        "restored"
+      ],
+      "type": "object"
+    },
     "Skipped": {
       "properties": {
         "input": {
@@ -407,6 +658,84 @@
       "required": [
         "input",
         "reason"
+      ],
+      "type": "object"
+    },
+    "TargetDiagnostic": {
+      "properties": {
+        "elapsedMs": {
+          "type": "integer"
+        },
+        "focusAfter": {
+          "type": "string"
+        },
+        "focusBefore": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "point": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "viewportHeight": {
+          "type": "integer"
+        },
+        "viewportWidth": {
+          "type": "integer"
+        },
+        "windowsAfter": {
+          "type": "integer"
+        },
+        "windowsBefore": {
+          "type": "integer"
+        },
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "testId",
+        "operation",
+        "reason",
+        "elapsedMs",
+        "windowsBefore",
+        "windowsAfter"
+      ],
+      "type": "object"
+    },
+    "TargetSetup": {
+      "properties": {
+        "classification": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "recovery": {
+          "$ref": "#/$defs/SetupRecovery"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "testId",
+        "classification",
+        "reason",
+        "stage"
       ],
       "type": "object"
     },
@@ -585,7 +914,7 @@
       "type": "integer"
     },
     "version": {
-      "const": 1,
+      "const": 2,
       "type": "integer"
     }
   },

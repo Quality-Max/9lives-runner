@@ -5,8 +5,8 @@ import {isAbsolute, join, sep} from 'node:path';
 export const protocolVersion = '9l.engine/1';
 export const maxFrameBytes = 16 * 1024;
 export const maxEvents = 10000;
-export const capabilities = ['steps', 'artifact-metadata', 'terminal-outcomes'] as const;
-export const targetVersion = '9l.target/1';
+export const capabilities = ['steps', 'artifact-metadata', 'terminal-outcomes', 'declared-outcomes'] as const;
+export const targetVersion = '9l.target/3';
 // Typed target steps carry this module's own location. The reporter counts only
 // those, so a user step titled "9l target ..." stays an ordinary step. Code in the
 // worker can still forge one deliberately; the worker remains trusted.
@@ -14,10 +14,10 @@ export const targetStepFile = realpathSync(join(__dirname, 'targets.js'));
 
 export function selectedTarget(env: NodeJS.ProcessEnv = process.env) {
   const name = env.NINELIVES_TARGET;
-  if (!name || !/^(web|android-fake):[a-zA-Z0-9_-]{1,64}$/.test(name)) {
-    throw new Error('9lives target requires --sdk --target web:<app-alias> or android-fake:<app-alias>');
+  if (!name || !/^(web|android-fake|android):[a-zA-Z0-9_-]{1,64}$/.test(name)) {
+    throw new Error('9lives target requires --sdk --target web:<app-alias>, android:<app-alias> or android-fake:<app-alias>');
   }
-  const [kind, appId] = name.split(':') as ['web' | 'android-fake', string];
+  const [kind, appId] = name.split(':') as ['web' | 'android-fake' | 'android', string];
   return {name, kind, appId, id: createHash('sha256').update(name).digest('hex')};
 }
 

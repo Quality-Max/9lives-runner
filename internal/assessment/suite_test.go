@@ -149,7 +149,11 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 	}
 	node := requireNode(t)
 	previous := suiteFileTimeout
-	suiteFileTimeout = 2 * time.Second
+	// Half the production budget, but with real headroom for the retrying
+	// analyzer run: on the slowest CI runners under -race, Node startup alone
+	// can exceed a 2s budget and turn a transient timeout into a persistent
+	// one. The fixtures sleep longer than the budget either way.
+	suiteFileTimeout = 5 * time.Second
 	t.Cleanup(func() { suiteFileTimeout = previous })
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	source := []byte("import {test,expect} from '@playwright/test';\ntest('a', () => { expect(1).toBe(1); });\n")
@@ -158,9 +162,9 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 		want       string
 	}{
 		// Slow only on the first run: the retry, alone, succeeds.
-		{"transient", "if /bin/mkdir %s 2>/dev/null; then /bin/sleep 5; fi\n", ""},
+		{"transient", "if /bin/mkdir %s 2>/dev/null; then /bin/sleep 8; fi\n", ""},
 		// Always slow: the file stays a timeout; nothing is invented.
-		{"persistent", "/bin/sleep 5\n", "timeout"},
+		{"persistent", "/bin/sleep 8\n", "timeout"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -169,7 +173,7 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "node"), []byte(wrapper), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("PATH", dir)
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			suite, err := AssessSuite(context.Background(), []SuiteInput{{Path: "a.spec.ts", Source: source}}, nil, Options{})
 			if err != nil {
 				t.Fatal(err)
@@ -178,6 +182,25 @@ func TestAssessSuiteRetriesAFileWhoseAnalyzerTimedOutOnce(t *testing.T) {
 				t.Fatalf("file %+v, want error %q", file, test.want)
 			}
 		})
+	}
+}
+
+func TestAssessSuiteCountsAFileWithNoTestsSeparately(t *testing.T) {
+	requireNode(t)
+	inputs := []SuiteInput{
+		{Path: "api.spec.ts", Source: []byte("import {test,expect} from '@playwright/test';\nimport {seed} from './helpers';\ntest('a', async ({request}) => { await seed(request); expect(1).toBe(1); });\n")},
+		{Path: "helpers.ts", Source: []byte("export async function seed(request) { return (await request.post('/seed')).json(); }\n")},
+	}
+	suite, err := AssessSuite(context.Background(), inputs, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := suite.Summary
+	if s.Files != 2 || s.Assessed != 1 || s.NoTests != 1 || s.Unrecognized != 0 || s.Failed != 0 || s.Tests != 1 {
+		t.Fatalf("summary %+v", s)
+	}
+	if !strings.Contains(strings.Join(suite.Limits, "\n"), NoTestsLimit) {
+		t.Fatalf("suite limits %q", suite.Limits)
 	}
 }
 

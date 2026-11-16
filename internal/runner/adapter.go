@@ -76,7 +76,10 @@ type DiagnosticsChannel interface {
 }
 
 type Validation struct {
-	GoalFailed bool
+	AndroidRuntimes   []AndroidRuntime
+	TargetSetup       []TargetSetup
+	TargetDiagnostics []TargetDiagnostic
+	GoalFailed        bool
 	// NonGoalFailureCount counts unexpected test failures in tests with no
 	// failed goal steps. Legacy adapters may leave this zero; it is consulted
 	// only when GoalFailed is true.
@@ -96,7 +99,21 @@ type Validation struct {
 	// Both are worker-reported signals, not verified coverage.
 	ReportedAssertions      int
 	PassedWithoutAssertions int
-	Description             string
+	// RuntimeExpectedFailures counts executed tests that failed and count as
+	// expected only because test.fail() ran during the attempt, in the body
+	// or in an after hook, rather than by a declaration the framework knew
+	// before the test ran. SkippedAfterAssertions counts skipped tests whose
+	// attempt had already reported a passed assertion step, so the body ran
+	// before a modifier relabeled the result. Both are worker-reported
+	// signals that Playwright's own verdict hides; neither changes it.
+	RuntimeExpectedFailures int
+	SkippedAfterAssertions  int
+	// FailedTests describes, from the structured evidence alone, up to
+	// MaxFailureSummaryTests of the FailureCount failed tests for the
+	// receipt's failure summary. Adapters without such evidence leave it
+	// nil and the summary uses the report's failures instead.
+	FailedTests []FailedTestSummary
+	Description string
 }
 
 // AttemptValidator binds structured worker evidence to the attempt that owns it.

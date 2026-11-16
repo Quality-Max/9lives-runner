@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const net = require('node:net');
 const {spawn, spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
@@ -41,12 +42,25 @@ function processTable() {
     return match ? {pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), state: match[4], name: match[5]} : null;
   }).filter(Boolean);
 }
-async function interrupted(kind) {
-  smokeCase = `owned-${kind}`;
-  const marker = path.join(work, `${kind}.json`);
-  const receipts = path.join(work, kind);
-  const child = spawn(engine, ['run', 'testdata/sdk/tests/slow.spec.ts', '--sdk', '--format', 'json', '--timeout', kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s', '--pass-env', 'NINELIVES_SMOKE_MARKER', '--receipt-dir', receipts], {
-    cwd: root, env: {...process.env, NINELIVES_SMOKE_MARKER: marker}, stdio: ['ignore', 'pipe', 'pipe'],
+async function unusedPort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const port = server.address().port;
+  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  return port;
+}
+async function interrupted(kind, webServer = false) {
+  smokeCase = `owned-${webServer ? 'webserver-' : ''}${kind}`;
+  const marker = path.join(work, `${smokeCase}.json`);
+  const receipts = path.join(work, smokeCase);
+  const spec = webServer ? 'testdata/sdk/tests/webserver-cleanup/owned.spec.ts' : 'testdata/sdk/tests/slow.spec.ts';
+  const selection = webServer ? ['--config', path.join(root, 'testdata/sdk/tests/webserver-cleanup/playwright.config.ts')] : [];
+  const port = webServer ? String(await unusedPort()) : '';
+  const environment = {...process.env, NINELIVES_SMOKE_MARKER: marker, NINELIVES_SMOKE_PORT: port, NINELIVES_SMOKE_WAIT: '1'};
+  const passedEnv = ['--pass-env', 'NINELIVES_SMOKE_MARKER', '--pass-env', 'NINELIVES_SMOKE_PORT', '--pass-env', 'NINELIVES_SMOKE_WAIT'];
+  const budget = kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s';
+  const child = spawn(engine, ['run', spec, '--sdk', '--format', 'json', webServer ? '--deadline' : '--timeout', budget, ...selection, ...passedEnv, '--receipt-dir', receipts], {
+    cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
   // Engine diagnostics are not needed for this synthetic smoke.
@@ -68,6 +82,13 @@ async function interrupted(kind) {
     // Chromium starts a separate group; include descendants as well as the
     // engine group so a leaked browser cannot hide behind a successful exit.
     const ownedIds = new Set(process.platform === 'win32' ? [workerPID] : table.filter(item => item.group === worker.group).map(item => item.pid));
+    if (webServer) {
+      const {serverPID} = JSON.parse(fs.readFileSync(`${marker}.server`));
+      const server = table.find(item => item.pid === serverPID);
+      assert(server, 'real webServer is running');
+      if (process.platform !== 'win32') assert.notEqual(server.group, worker.group, 'webServer exercises a detached process group');
+      ownedIds.add(serverPID);
+    }
     for (let changed = true; changed;) {
       changed = false;
       for (const item of table) {
@@ -76,6 +97,7 @@ async function interrupted(kind) {
     }
     const owned = table.filter(item => ownedIds.has(item.pid));
     assert(owned.some(item => /chrom(e|ium)/i.test(item.name)), 'real Chromium is owned by the test worker');
+    if (webServer) console.log(`${smokeCase} ps before: ${JSON.stringify(owned.map(({pid, parent, group, state}) => ({pid, parent, group, state})))}`);
     if (kind === 'cancel') {
       const states = fs.readdirSync(receipts).filter(name => name.startsWith('run-'));
       assert.equal(states.length, 1);
@@ -95,7 +117,20 @@ async function interrupted(kind) {
       assert(Date.now() < deadline, 'owned worker/browser processes survived cancellation');
       await sleep(100);
     }
-    console.log(`SDK ${kind}: real worker/browser cleanup and terminal receipt verified`);
+    if (webServer) {
+      // Reuse the identical port without allowing Playwright to reuse a server.
+      // Also exercise ordinary Playwright execution independently of --sdk.
+      for (const sdk of [true, false]) {
+        const rerun = sync(engine, ['run', spec, ...(sdk ? ['--sdk'] : []), '--format', 'json', ...selection, ...passedEnv, '--receipt-dir', receipts], {
+          env: {...environment, NINELIVES_SMOKE_WAIT: '0'},
+        });
+        assert.equal(rerun.status, 0, 'healthy rerun on the same port succeeds');
+        const result = JSON.parse(rerun.stdout);
+        assert.equal(result.outcome, 'passed');
+        assert.equal(result.receipts[0].executedTests, 1);
+      }
+    }
+    console.log(`SDK ${webServer ? 'webServer ' : ''}${kind}: ps verified no live owned processes${webServer ? `, same-port ${port} SDK/ordinary reruns passed` : ''} and terminal receipt verified`);
   } finally {
     clearTimeout(guard);
     if (child.exitCode === null) { child.kill('SIGTERM'); await completion; }
@@ -107,7 +142,7 @@ async function main() {
   const passing = invoke('testdata/sdk/tests/checkout.spec.ts');
   assert.equal(passing.code, 0);
   assert.equal(passing.summary.complete, true);
-  assert.equal(passing.summary.version, 1);
+  assert.equal(passing.summary.version, 2);
   assert.equal(passing.summary.outcome, 'passed');
   assert.equal(passing.summary.plannedJobs, 1);
   const receipt = passing.summary.receipts[0];
@@ -144,12 +179,29 @@ async function main() {
   assert.equal(failing.summary.receipts[0].status, 'failed');
   assert.equal(failing.summary.receipts[0].failureCount, 1);
   assert.equal(failing.summary.receipts[0].failures, undefined); // titles and errors stay out by default
+  // The failure summary is kept without the opt-in: the expect inside the
+  // n9l.step is the cause, not its wrapper, and no title, selector or text of
+  // the error reaches the receipt.
+  const failingSummary = failing.summary.receipts[0].failureSummary;
+  assert.equal(failingSummary.stop, 'test_failed');
+  assert.equal(failingSummary.failedTests, 1);
+  assert.equal(failingSummary.tests.length, 1);
+  const {testId, ...failedTest} = failingSummary.tests[0];
+  assert.match(testId, /^[a-f0-9]{64}$/);
+  assert.deepEqual(failedTest, {class: 'assertion', status: 'failed', step: 'assertion', failedSteps: 2, attempts: 1});
+  const failingReceipt = fs.readFileSync(failing.summary.receipts[0].receiptPath, 'utf8');
+  assert.deepEqual(JSON.parse(failingReceipt).failureSummary, failingSummary);
+  for (const leaked of ['Order confirmed', 'Order rejected', 'toHaveText', 'getByRole', 'business failure', 'verify the required outcome']) {
+    assert(!failingReceipt.includes(leaked), `failure receipt carries no ${leaked}`);
+  }
+  assert.equal(receipt.failureSummary, undefined); // a passed receipt has none
   // Opt-in failure details come from Playwright's JSON reporter beside the
   // evidence stream; the validated stream itself still carries no titles.
   const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details']);
   assert.equal(detailed.code, 1);
   assert.equal(detailed.summary.receipts[0].status, 'failed');
   const [detail] = detailed.summary.receipts[0].failures;
+  assert.deepEqual(detailed.summary.receipts[0].failureSummary.tests.map(({testId, ...rest}) => rest), [failedTest], 'the summary does not depend on --failure-details');
   assert.equal(detail.title, 'business failure remains a failure');
   assert.match(detail.location, /defect\.spec\.ts:\d+$/);
   assert.match(detail.message, /toHaveText/);
@@ -187,6 +239,36 @@ async function main() {
   const serialFrames = readEvents(serial.summary.receipts[0]);
   assert.equal(serialFrames.filter(frame => frame.type === 'test_begin' && frame.retry === 1).length, 3);
   assert(serialFrames.some(frame => frame.type === 'test_end' && frame.retry === 0 && frame.status === 'skipped'));
+  // Playwright 1.61.1 through 1.64.1 (microsoft/playwright#43738): test.fail()
+  // in an after hook relabels a completed failing test as expected and exits 0.
+  // The receipt keeps that verdict and says the expectation came from a runtime
+  // test.fail(); the stream shows the declared and the final expected status.
+  // Playwright 1.65 is expected to make after-hook modifiers throw instead:
+  // when the qualified range moves past 1.64.1, revisit these assertions and
+  // both fixtures, and the "1.61.1 through 1.64.1" wording in the docs.
+  const relabeledFailure = invoke('testdata/sdk/tests/after-hook-fail.spec.ts');
+  assert.equal(relabeledFailure.code, 0);
+  assert.equal(relabeledFailure.summary.outcome, 'passed');
+  assert.equal(relabeledFailure.summary.receipts[0].executedTests, 1);
+  assert.equal(relabeledFailure.summary.receipts[0].failureCount, 0);
+  assert.equal(relabeledFailure.summary.receipts[0].runtimeExpectedFailures, 1);
+  assert.match(relabeledFailure.summary.receipts[0].validation, /1 failed test\(s\) expected to fail only by a runtime test\.fail\(\)/);
+  const relabeledFrames = readEvents(relabeledFailure.summary.receipts[0]);
+  assert(relabeledFrames.some(frame => frame.type === 'test_begin' && frame.expectedStatus === 'passed'));
+  assert(relabeledFrames.some(frame => frame.type === 'test_end' && frame.status === 'failed' && frame.expectedStatus === 'failed'));
+  // microsoft/playwright#43676: test.skip() in an afterEach reports a passed
+  // test as skipped. Unpinned, the attempt stays incomplete as for any skip;
+  // pinned, it counts as skipped and the receipt says the body had asserted.
+  const relabeledSkip = invoke('testdata/sdk/tests/after-hook-skip.spec.ts');
+  assert.equal(relabeledSkip.code, 3);
+  assert.equal(relabeledSkip.summary.complete, false);
+  const pinnedRelabeledSkip = invoke('testdata/sdk/tests/after-hook-skip.spec.ts', ['--pin-skip', 'after-hook-skip.spec.ts › relabeled › a passing test an after hook reports as skipped']);
+  assert.equal(pinnedRelabeledSkip.code, 0);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].executedTests, 1);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].skippedTests, 1);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].skippedAfterAssertions, 1);
+  assert.equal(pinnedRelabeledSkip.summary.receipts[0].runtimeExpectedFailures, undefined);
+  assert.match(pinnedRelabeledSkip.summary.receipts[0].validation, /1 skipped test\(s\) had reported a passed assertion step/);
   console.log('SDK checkout: browser assertions, step/artifact metadata and canonical receipts verified; business defect stays red');
   const missingProvider = invoke('testdata/sdk/tests/goal-start-failure.spec.ts');
   assert.equal(missingProvider.code, 3); // a goal that never ran proves no defect
@@ -286,6 +368,8 @@ async function main() {
   console.log('Goals: real Chromium multi-step execution, delayed controls, style drift, policy rejection and state redaction verified');
   await interrupted('timeout');
   await interrupted('cancel');
+  await interrupted('timeout', true);
+  await interrupted('cancel', true);
 }
 main().catch(error => {
   const kind = error instanceof assert.AssertionError ? 'assertion' : error instanceof SyntaxError ? 'invalid-json' : error instanceof TypeError ? 'invalid-result' : 'execution';

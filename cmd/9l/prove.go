@@ -417,7 +417,7 @@ func printProof(w io.Writer, report prove.Report, saved string, paths bool) {
 		if paths {
 			label += " " + request.URL
 		}
-		fmt.Fprintf(w, "  %-26s %-14s %s\n", strings.ToUpper(fault.Result), fault.Kind, label)
+		fmt.Fprintf(w, "  %-26s %-21s %s\n", strings.ToUpper(fault.Result), fault.Kind, label)
 		retried = retried || fault.Result == prove.Retried
 		// With several tests, say which one each result comes from.
 		if len(fault.Tests) > 1 {

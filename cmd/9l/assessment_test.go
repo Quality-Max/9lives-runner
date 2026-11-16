@@ -166,7 +166,7 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if code := assessCommand([]string{"tests"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
-		t.Fatalf("suite failed: code=%d stderr=%q", code, stderr.String())
+		t.Fatalf("suite failed: code=%d stderr=%q report=%s", code, stderr.String(), stdout.String())
 	}
 	for _, want := range []string{"file \"tests/a.spec.ts\":\n", "file \"tests/nested/b.test.ts\":\n", "Summary: 2 files (2 assessed, 0 not assessed), 2 tests, 2 findings\n  absence-after-wait: 1\n  fixed-wait: 1\n"} {
 		if !strings.Contains(stdout.String(), want) {
@@ -214,5 +214,230 @@ func TestAssessSuiteReportsEveryFileAndExitsTwoForFailures(t *testing.T) {
 	stderr.Reset()
 	if code := assessCommand([]string{"tests", "--agent-provenance", "snapshot.json"}, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "applies to a single spec") {
 		t.Fatalf("suite provenance accepted: code=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestAssessTextNamesFilesWithNoTestsAndCreditedAssertions(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		if os.Getenv("NINELIVES_REQUIRE_ASSESSMENT") == "1" {
+			t.Fatal("CI requires Node for assessment qualification")
+		}
+		t.Skip("requires Node")
+	}
+	root := t.TempDir()
+	write := func(name, source string) {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A helper module passed as a path holds no tests; the spec's direct
+	// assertions are listed beside its unresolved helper call.
+	write("api.spec.ts", "import {test,expect} from '@playwright/test';\nimport {seed} from './helpers';\n"+
+		"test('a', async ({request}) => {\n  const rows = await seed(request);\n  for (const row of rows) {\n    expect(row.id).toBeDefined();\n    expect(row.total).toEqual(2);\n  }\n});\n")
+	write("helpers.ts", "export async function seed(request) { return (await request.post('/seed')).json(); }\n")
+	t.Chdir(root)
+	var stdout, stderr bytes.Buffer
+	if code := assessCommand([]string{"api.spec.ts", "helpers.ts", "--limits"}, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("suite failed: code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{
+		"test at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  recognized assertions: 2 (toBeDefined, toEqual)\n  analysis-limit/unresolved-helper [unsupported] at 4:22: ",
+		"file \"helpers.ts\": no tests\n",
+		"Limit: " + assessment.NoTestsLimit + "\n",
+		"Summary: 2 files (1 assessed, 1 with no tests, 0 not assessed), 1 tests, 1 findings\n",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("suite text lacks %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "conditional-flow") {
+		t.Fatalf("a plain loop is reported as conditional flow:\n%s", stdout.String())
+	}
+	stdout.Reset()
+	if code := assessCommand([]string{"api.spec.ts", "helpers.ts", "--format", "json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("json suite failed: code=%d stderr=%q", code, stderr.String())
+	}
+	var suite struct {
+		Files []struct {
+			Report struct {
+				Tests []struct {
+					Assertions struct {
+						Count    int      `json:"count"`
+						Matchers []string `json:"matchers"`
+					} `json:"assertions"`
+				} `json:"tests"`
+			} `json:"report"`
+		} `json:"files"`
+		Summary struct {
+			Assessed int `json:"assessed"`
+			NoTests  int `json:"noTests"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &suite); err != nil || suite.Summary.Assessed != 1 || suite.Summary.NoTests != 1 ||
+		len(suite.Files) != 2 || suite.Files[0].Report.Tests[0].Assertions.Count != 2 || len(suite.Files[1].Report.Tests) != 0 {
+		t.Fatalf("json suite %s (%v)", stdout.String(), err)
+	}
+}
+
+func TestAssessTextGroupsAnalysisLimitsPerFile(t *testing.T) {
+	limit := func(code string, line, column int) assessment.Finding {
+		return assessment.Finding{Rule: "analysis-limit", Classification: "unsupported", Dimension: "assertionAdequacy", Location: assessment.Location{Line: line, Column: column}, Message: "limit", Suggestion: "review", Code: code}
+	}
+	dimensions := map[string]string{"purpose": "unknown", "intentAlignment": "unknown", "assertionAdequacy": "unknown", "runtimeEvidence": "unknown", "engineeringQuality": "concern"}
+	// Two tests of a.spec.ts hit the same unresolved helper at its own line; it
+	// counts once, as in the summary. b.spec.ts has one limit code only.
+	suite := assessment.SuiteReport{Version: 1, Files: []assessment.SuiteFile{
+		{Path: "tests/a.spec.ts", Report: &assessment.Report{Tests: []assessment.Test{
+			{Location: assessment.Location{Line: 3, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{limit("unresolved-helper", 9, 3), limit("nested-function", 4, 20)}},
+			{Location: assessment.Location{Line: 6, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{
+				limit("unresolved-helper", 9, 3),
+				limit("unresolved-helper", 7, 5),
+				{Rule: "fixed-wait", Classification: "demonstrated", Dimension: "runtimeEvidence", Location: assessment.Location{Line: 7, Column: 9}, Message: "A waitForTimeout call is present.", Suggestion: "wait for state", Code: "fixed-wait"},
+			}},
+		}}},
+		{Path: "tests/b.spec.ts", Report: &assessment.Report{Tests: []assessment.Test{
+			{Location: assessment.Location{Line: 2, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{limit("nested-function", 2, 30), limit("nested-function", 3, 12)}},
+		}}},
+		{Path: "tests/c.spec.ts", Error: "syntax"},
+	}, Summary: assessment.SuiteSummary{Files: 3, Assessed: 2, Failed: 1, Tests: 3, Findings: 6, Rules: map[string]int{"analysis-limit/unresolved-helper": 2, "analysis-limit/nested-function": 3, "fixed-wait": 1}}}
+
+	var grouped bytes.Buffer
+	writeSuiteText(&grouped, suite, false)
+	for _, want := range []string{
+		"file \"tests/a.spec.ts\":\ntest at 3:1: ",
+		"  fixed-wait [demonstrated] at 7:9: A waitForTimeout call is present.\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nfile \"tests/b.spec.ts\":\n",
+		"test at 2:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=concern\nanalysis limits in this file: nested-function ×2 (--limits lists them)\nfile \"tests/c.spec.ts\": not assessed: syntax\n",
+		"Summary: 3 files (2 assessed, 1 not assessed), 3 tests, 6 findings\n  analysis-limit/nested-function: 3\n  analysis-limit/unresolved-helper: 2\n  fixed-wait: 1\n",
+	} {
+		if !strings.Contains(grouped.String(), want) {
+			t.Fatalf("grouped text lacks %q:\n%s", want, grouped.String())
+		}
+	}
+	if strings.Contains(grouped.String(), "[unsupported]") {
+		t.Fatalf("grouped text still lists limit locations:\n%s", grouped.String())
+	}
+
+	var listed bytes.Buffer
+	writeSuiteText(&listed, suite, true)
+	for _, want := range []string{
+		"test at 3:1: ",
+		"  analysis-limit/unresolved-helper [unsupported] at 9:3: limit\n  analysis-limit/nested-function [unsupported] at 4:20: limit\ntest at 6:1: ",
+		"  analysis-limit/unresolved-helper [unsupported] at 9:3: limit\n  analysis-limit/unresolved-helper [unsupported] at 7:5: limit\n  fixed-wait [demonstrated] at 7:9: ",
+		"  analysis-limit/nested-function [unsupported] at 2:30: limit\n  analysis-limit/nested-function [unsupported] at 3:12: limit\n",
+	} {
+		if !strings.Contains(listed.String(), want) {
+			t.Fatalf("--limits text lacks %q:\n%s", want, listed.String())
+		}
+	}
+	if strings.Contains(listed.String(), "analysis limits in this file") {
+		t.Fatalf("--limits text still groups limits:\n%s", listed.String())
+	}
+
+	// The single-file report groups the same way, and its grouped counts agree
+	// with its per-rule summary.
+	var single bytes.Buffer
+	writeAssessmentText(&single, *suite.Files[0].Report, false)
+	if want := "test at 6:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=concern\n  fixed-wait [demonstrated] at 7:9: A waitForTimeout call is present.\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 2 tests, 4 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n  fixed-wait: 1\n"; !strings.Contains(single.String(), want) {
+		t.Fatalf("single-file text lacks %q:\n%s", want, single.String())
+	}
+}
+
+func TestAssessGroupedLimitsCountLikeTheSummaryWhateverTheirSites(t *testing.T) {
+	dimensions := map[string]string{"purpose": "unknown", "intentAlignment": "unknown", "assertionAdequacy": "unknown", "runtimeEvidence": "unknown", "engineeringQuality": "unknown"}
+	limit := func(code string, line int, site *assessment.Location) assessment.Finding {
+		return assessment.Finding{Rule: "analysis-limit", Classification: "unsupported", Dimension: "assertionAdequacy", Location: assessment.Location{Line: line, Column: 3}, Site: site, Message: "limit", Suggestion: "review", Code: code}
+	}
+	// One helper limit at 20:3 reached from three tests through different call
+	// sites, one without a site, and a second location of the same code: the
+	// summary counts two unresolved-helper locations, and so must the file line.
+	report := assessment.Report{Tests: []assessment.Test{
+		{Location: assessment.Location{Line: 1, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{limit("unresolved-helper", 20, &assessment.Location{Line: 2, Column: 5}), limit("nested-function", 3, nil)}},
+		{Location: assessment.Location{Line: 5, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{limit("unresolved-helper", 20, &assessment.Location{Line: 6, Column: 5}), limit("unresolved-helper", 22, nil)}},
+		{Location: assessment.Location{Line: 9, Column: 1}, Dimensions: dimensions, Findings: []assessment.Finding{limit("unresolved-helper", 20, &assessment.Location{Line: 10, Column: 5}), limit("unresolved-helper", 20, nil)}},
+	}}
+	counts, total := assessment.CountFindings(report)
+	if counts["analysis-limit/unresolved-helper"] != 2 || counts["analysis-limit/nested-function"] != 1 || total != 3 {
+		t.Fatalf("summary counts = %v, %d", counts, total)
+	}
+	var single bytes.Buffer
+	writeAssessmentText(&single, report, false)
+	if want := "test at 9:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 3 tests, 3 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n"; !strings.Contains(single.String(), want) {
+		t.Fatalf("single-file text lacks %q:\n%s", want, single.String())
+	}
+	suite := assessment.SuiteReport{Version: 1, Files: []assessment.SuiteFile{{Path: "tests/a.spec.ts", Report: &report}}, Summary: assessment.SuiteSummary{Files: 1, Assessed: 1, Tests: 3, Findings: total, Rules: counts}}
+	var combined bytes.Buffer
+	writeSuiteText(&combined, suite, false)
+	if want := "analysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 1 files (1 assessed, 0 not assessed), 3 tests, 3 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n"; !strings.Contains(combined.String(), want) {
+		t.Fatalf("suite text lacks %q:\n%s", want, combined.String())
+	}
+}
+
+func TestAssessLimitsFlagChangesTextOnly(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		if os.Getenv("NINELIVES_REQUIRE_ASSESSMENT") == "1" {
+			t.Fatal("CI requires Node for assessment qualification")
+		}
+		t.Skip("requires Node")
+	}
+	root := t.TempDir()
+	write := func(name, source string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte("import {test,expect} from '@playwright/test';\nimport {login} from './helpers';\n"+source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An imported helper stays unresolved; a callback holding an assertion is
+	// a nested function. A test calling the helper twice reports it once.
+	write("tests/a.spec.ts", "test('one', async ({page}) => { await login(page); await login(page); });\n"+
+		"test('two', async ({page}) => { await login(page); [1].forEach(x => expect(x).toBe(1)); await page.waitForTimeout(5); });\n")
+	write("tests/b.spec.ts", "test('three', async ({page}) => { await login(page); expect(1).toBe(1); });\n")
+	t.Chdir(root)
+
+	run := func(args ...string) string {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if code := assessCommand(args, &stdout, &stderr); code != 0 || stderr.Len() != 0 {
+			t.Fatalf("assess %v: code=%d stderr=%q", args, code, stderr.String())
+		}
+		return stdout.String()
+	}
+	grouped := run("tests")
+	for _, want := range []string{
+		"file \"tests/a.spec.ts\":\n",
+		"  fixed-wait [demonstrated] at 4:95: ",
+		"analysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nfile \"tests/b.spec.ts\":\n",
+		"analysis limits in this file: unresolved-helper ×1 (--limits lists them)\nLimit: ",
+		"Summary: 2 files (2 assessed, 0 not assessed), 3 tests, 5 findings\n  analysis-limit/unresolved-helper: 3\n  analysis-limit/nested-function: 1\n  fixed-wait: 1\n",
+	} {
+		if !strings.Contains(grouped, want) {
+			t.Fatalf("grouped suite text lacks %q:\n%s", want, grouped)
+		}
+	}
+	if strings.Contains(grouped, "[unsupported]") {
+		t.Fatalf("grouped suite text lists limit locations:\n%s", grouped)
+	}
+	listed := run("tests", "--limits")
+	for _, want := range []string{
+		"  analysis-limit/unresolved-helper [unsupported] at 3:39: ",
+		"  analysis-limit/unresolved-helper [unsupported] at 4:39: ",
+		"  analysis-limit/nested-function [unsupported] at 4:64: ",
+		"file \"tests/b.spec.ts\":\ntest at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  recognized assertions: 1 (toBe)\n  analysis-limit/unresolved-helper [unsupported] at 3:41: ",
+	} {
+		if !strings.Contains(listed, want) {
+			t.Fatalf("--limits suite text lacks %q:\n%s", want, listed)
+		}
+	}
+	if strings.Contains(listed, "analysis limits in this file") {
+		t.Fatalf("--limits suite text still groups limits:\n%s", listed)
+	}
+	// --limits is a text option only; the JSON report is unchanged.
+	if suite, withLimits := run("tests", "--format", "json"), run("tests", "--format", "json", "--limits"); suite != withLimits {
+		t.Fatalf("suite JSON differs with --limits:\n%s\n%s", suite, withLimits)
+	}
+	if single, withLimits := run("tests/a.spec.ts", "--format", "json"), run("tests/a.spec.ts", "--format", "json", "--limits"); single != withLimits {
+		t.Fatalf("single-file JSON differs with --limits:\n%s\n%s", single, withLimits)
 	}
 }

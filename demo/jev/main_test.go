@@ -34,7 +34,8 @@ printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,
 	if err := os.WriteFile(filepath.Join(bin, "node"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin)
+	// The fake node comes first; the runner still needs system tools such as ps.
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv(jev.CredentialName, "present") // non-credential presence sentinel
 	var c capture
 	if err := captureFixture(context.Background(), t.TempDir(), &c, "declined"); err != nil || !c.AssertionFailed {

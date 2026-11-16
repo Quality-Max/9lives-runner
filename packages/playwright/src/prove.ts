@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {closeSync, openSync, writeSync} from 'node:fs';
 import {isAbsolute, join} from 'node:path';
-import type {BrowserContext, Request} from '@playwright/test';
+import type {BrowserContext, Request, Route} from '@playwright/test';
 import {engineIdentity} from './protocol';
 
 // `9l prove` runs a spec once to observe its fetch/XHR requests, then once per
@@ -11,7 +11,7 @@ import {engineIdentity} from './protocol';
 // enter the 9l.engine/1 stream, whose metadata excludes URLs by design.
 export const proveProtocol = '9l.prove/1';
 // Must match prove.Kinds in internal/prove/prove.go.
-export const faultKinds = ['abort', 'http-500', 'empty-json', 'http-401', 'http-403', 'http-429', 'malformed-json'] as const;
+export const faultKinds = ['abort', 'http-500', 'empty-json', 'http-401', 'http-403', 'http-429', 'malformed-json', 'redirect-cross-origin', 'delay'] as const;
 export type FaultKind = typeof faultKinds[number];
 export type Target = {method: string; origin: string; path: string};
 export type Fault = Target & {id: string; kind: FaultKind};
@@ -105,12 +105,50 @@ export function openProveChannel(env: NodeJS.ProcessEnv, testInfo: {testId: stri
   return channel;
 }
 
+// redirect-cross-origin sends the page to a fixed origin on a reserved,
+// never-resolving name (RFC 2606), so following the redirect always fails
+// and no application host is contacted; DNS may still be asked for the name.
+export const redirectLocation = 'http://redirect.invalid/';
+// delay holds the response this long before letting it through: longer than
+// Playwright's default 30s test timeout and 5s expect timeout, so a test that
+// waits for the response fails unless its own timeouts are longer. The hold
+// ends early when the context closes, so it never outlives the test.
+export const delayHoldMs = 35_000;
+
 const statusFaults: Partial<Record<FaultKind, {status: number; headers?: Record<string, string>}>> = {
   'http-500': {status: 500},
   'http-401': {status: 401},
   'http-403': {status: 403},
   'http-429': {status: 429, headers: {'retry-after': '1'}},
+  'redirect-cross-origin': {status: 302, headers: {location: redirectLocation}},
 };
+
+// Holds for one context. Each hold resolves after ms, or as soon as the
+// context closes. One close listener serves every hold, so a page that polls
+// the delayed request never piles up listeners. The timers never keep the
+// worker process alive on their own.
+function holds(context: Pick<BrowserContext, 'once'>) {
+  const waiting = new Set<() => void>();
+  let closed = false;
+  context.once('close', () => {
+    closed = true;
+    for (const release of [...waiting]) release();
+  });
+  return (ms: number) => new Promise<void>(resolve => {
+    if (closed) return resolve();
+    const release = () => { clearTimeout(timer); waiting.delete(release); resolve(); };
+    const timer = setTimeout(release, ms);
+    timer.unref?.();
+    waiting.add(release);
+  });
+}
+
+// The fault cannot replace a response the upstream never gave. The request is
+// aborted rather than sent again: the upstream may already have acted on it.
+function unreachable(route: Route, channel: ProveChannel, fault: Fault) {
+  channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
+  return route.abort('failed').catch(() => {});
+}
 
 // The replacement body for a JSON object or array, or undefined when the
 // response is neither. malformed-json keeps the first half of the trimmed
@@ -129,8 +167,9 @@ function isJSON(contentType: string | undefined) {
   return media.endsWith('/json') || media.endsWith('+json');
 }
 
-export async function instrument(context: BrowserContext, channel: ProveChannel) {
+export async function instrument(context: BrowserContext, channel: ProveChannel, options: {holdMs?: number} = {}) {
   const fault = channel.fault;
+  const holdMs = options.holdMs ?? delayHoldMs;
   if (!fault) {
     // Observation is passive: listeners only, so the baseline run is unchanged.
     context.on('request', request => {
@@ -143,6 +182,7 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
     });
     return;
   }
+  const hold = fault.kind === 'delay' ? holds(context) : undefined;
   // Registered when the context is created, so routes the test adds later run
   // first; a request the test fulfills itself is never faulted.
   await context.route('**/*', async route => {
@@ -153,6 +193,23 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
     if (fault.kind === 'abort') return route.abort('failed').then(applied);
     const status = statusFaults[fault.kind];
     if (status) return route.fulfill({...status, body: ''}).then(applied);
+    if (hold) {
+      // The request is dispatched first, so the application receives it as
+      // usual; only its response is held. The hold is the fault, so it is
+      // credited as soon as it starts, and the response follows once it ends
+      // unless the test is already over. A redirect is held and delivered as
+      // it came, not followed here, so the browser follows it itself and the
+      // page sees the same redirect as without the fault.
+      let response;
+      try {
+        response = await route.fetch({maxRedirects: 0});
+      } catch {
+        return unreachable(route, channel, fault);
+      }
+      applied();
+      await hold(holdMs);
+      return route.fulfill({response}).catch(() => {});
+    }
     const kind = fault.kind as 'empty-json' | 'malformed-json';
     // The JSON faults need the real response first; say why when it cannot
     // be replaced: the upstream was unreachable, or the body was not an
@@ -161,8 +218,7 @@ export async function instrument(context: BrowserContext, channel: ProveChannel)
     try {
       response = await route.fetch();
     } catch {
-      channel.record({type: 'not-applicable', fault: fault.id, reason: 'unreachable'});
-      return route.continue().catch(() => {});
+      return unreachable(route, channel, fault);
     }
     const body = replaceJSON(kind, await response.text().catch(() => ''));
     if (body === undefined) {

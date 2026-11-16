@@ -5,7 +5,7 @@
   "workspaces": ["packages/playwright", "packages/browser-checks", "testdata/sdk"],
   "scripts": {
     "build": "npm run build --workspace @9l/playwright && npm run build --workspace @9l/browser-checks",
-    "test": "npm run build && node --test packages/playwright/test/*.test.cjs packages/browser-checks/test/*.test.cjs internal/assessment/analyzer.test.cjs scripts/bundle-assessment-parser.test.cjs scripts/sdk-registry.test.cjs scripts/release-version.test.cjs scripts/check-blocked-terms.test.cjs scripts/sync-hunt.test.cjs",
+    "test": "npm run build && node --test packages/playwright/test/*.test.cjs packages/browser-checks/test/*.test.cjs internal/assessment/analyzer.test.cjs scripts/bundle-assessment-parser.test.cjs scripts/sdk-registry.test.cjs scripts/release-version.test.cjs scripts/check-blocked-terms.test.cjs scripts/smoke-marker.test.cjs scripts/android-isolation-evidence.test.cjs scripts/sync-hunt.test.cjs",
     "smoke": "npm run build && node scripts/sdk-smoke.cjs",
     "smoke:targets": "npm run build && node scripts/target-smoke.cjs",
     "smoke:contracts": "npm run build && node scripts/contracts-smoke.cjs",
@@ -25,7 +25,8 @@
     "demo:lab": "node demo/release-lab/run-demo.cjs",
     "demo:first-run": "npm run build && node demo/first-run/run-demo.cjs",
     "smoke:demo": "node scripts/demo-smoke.cjs",
-    "demo:shop": "node demo/release-lab/app/server.cjs"
+    "demo:shop": "node demo/release-lab/app/server.cjs",
+    "smoke:android": "npm run build && node scripts/android-smoke.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

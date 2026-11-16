@@ -20,7 +20,15 @@ import (
 
 type ExecuteOptions struct {
 	// OnStarted runs after durable initialization, before any jobs start.
-	OnStarted       func()
+	OnStarted func()
+	// BeforeJobs runs after OnStarted, inside the stored run and under its
+	// cancellation and deadline, before any job starts; the CLI waits for
+	// --wait-for targets here. An error while the run is still live means no
+	// job may start: each planned job gets an error receipt reading "not
+	// started: " and the error text, which is persisted and so must carry
+	// nothing secret. If the run was canceled or its deadline passed, the
+	// jobs are reported canceled or timed out as for any interrupted run.
+	BeforeJobs      func(context.Context) error
 	AgentProvenance *AgentProvenance
 	Workers         int
 	Timeout         time.Duration
@@ -168,9 +176,21 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 		<-watchDone
 	}()
 
+	notStarted := ""
+	if opts.BeforeJobs != nil {
+		if err := opts.BeforeJobs(runCtx); err != nil && runCtx.Err() == nil {
+			notStarted = "not started: " + err.Error()
+		}
+	}
 	// Dependency plans are deliberately serial. A failed prerequisite produces
 	// a durable blocked receipt for descendants rather than running them.
-	if hasDependencies {
+	if notStarted != "" {
+		// No process starts; every planned job still has a terminal receipt.
+		for _, job := range orderedJobs {
+			receipt := Receipt{Version: ReceiptVersion, RunID: plan.RunID, JobID: job.ID, AttemptID: fmt.Sprintf("%s-attempt-%03d", job.ID, 1), Attempt: 1, Target: job.Target, Spec: job.Spec, Adapter: job.Adapter, Status: StatusError, Error: notStarted, StartedAt: time.Now().UTC(), ExitCode: -1, Evidence: Evidence{Artifacts: []ArtifactReference{}}}
+			summary.Receipts = append(summary.Receipts, persistAttempt(receipt, store, nil, nil))
+		}
+	} else if hasDependencies {
 		completed := map[string]Receipt{}
 		for _, job := range orderedJobs {
 			if runCtx.Err() != nil {
@@ -369,14 +389,19 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	if opts.AgentProvenance != nil {
 		unknown := UnknownAgentProvenance()
 		receipt.AgentProvenance = &unknown
-		actual, err := CaptureAgentProvenance(ctx, job.Spec, opts.AgentProvenance.Agent)
+		actual, err := CaptureAgentProvenanceFor(ctx, job.Spec, *opts.AgentProvenance)
 		if err != nil {
-			return infrastructureError("agent branch/source provenance unavailable; execution refused")
+			reason := "agent branch/source provenance unavailable; execution refused"
+			if graph := (ImportGraphError{}); errors.As(err, &graph) {
+				// Our own bounded message: repo-relative paths, never raw Git output.
+				reason = "agent branch/source provenance unavailable (" + graph.Error() + "); execution refused"
+			}
+			return infrastructureError(reason)
 		}
 		checked := CompareAgentProvenance(*opts.AgentProvenance, actual)
 		receipt.AgentProvenance = &checked
 		if checked.Status != "matched" {
-			return infrastructureError("agent creation branch, commit, repository or source differs; execution refused")
+			return infrastructureError("agent creation branch, commit, repository, source or local imports differ; execution refused")
 		}
 	}
 	job.Env = mergeMaps(passedEnvironment(opts.PassEnv), job.Env, map[string]string{"CI": "1", "NINELIVES_RUN_ID": runID, "NINELIVES_JOB_ID": job.ID, "NINELIVES_ATTEMPT_ID": receipt.AttemptID})
@@ -404,6 +429,18 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			return infrastructureError("engine evidence channel could not be created")
 		}
 		defer os.RemoveAll(directory)
+		if strings.HasPrefix(job.Target, "android:") {
+			scratch := filepath.Join(directory, "native")
+			if err := os.Mkdir(scratch, 0o700); err != nil {
+				if service != nil {
+					receipt.Goals = service.Close()
+				}
+				return infrastructureError("native scratch directory could not be created")
+			}
+			job.Env["NINELIVES_TARGET_SCRATCH_DIR"] = scratch
+			job.Env["PLAYWRIGHT_NO_COPY_PROMPT"] = "1"
+			job.Command = append(job.Command, "--output="+filepath.Join(scratch, "playwright-output"))
+		}
 		evidencePath = filepath.Join(directory, "events.ndjson")
 		job.Env[channel.EvidenceEnv()] = evidencePath
 		if diagnostics, ok := channel.(DiagnosticsChannel); ok && diagnostics.DiagnosticsEnv() != "" {
@@ -433,6 +470,9 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		receipt.Status, receipt.Error = StatusError, output.Err.Error()
 	}
 
+	// failedTests is the engine's own account of the failed tests, kept for
+	// the failure summary only when the evidence validated.
+	var failedTests []FailedTestSummary
 	if receipt.Status == "" {
 		adapter := adapterNamed(opts.Adapters, job.Adapter)
 		if adapter == nil {
@@ -464,9 +504,9 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				validationErr = fmt.Errorf("%w; the test selection (%s) may match none of its tests", validationErr, job.Selection)
 			}
 			if validationErr != nil {
-				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), "missing or invalid structured report"
+				receipt.Status, receipt.Error, receipt.Validation = StatusError, validationErr.Error(), invalidReport
 			} else if err := validateValidation(validation); err != nil {
-				receipt.Status, receipt.Error, receipt.Validation = StatusError, err.Error(), "missing or invalid structured report"
+				receipt.Status, receipt.Error, receipt.Validation = StatusError, err.Error(), invalidReport
 			} else {
 				receipt.Validated = true
 				receipt.FailureCount = validation.FailureCount
@@ -477,10 +517,16 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.FlakyTests = validation.FlakyTests
 				receipt.VerifiedAssertions = validation.VerifiedAssertions
 				receipt.TargetAssertions = validation.TargetAssertions
+				receipt.AndroidRuntimes = validation.AndroidRuntimes
+				receipt.TargetSetup = validation.TargetSetup
+				receipt.TargetDiagnostics = validation.TargetDiagnostics
 				receipt.AssertionCoverage = validation.AssertionCoverage
 				receipt.ReportedAssertions = validation.ReportedAssertions
 				receipt.PassedWithoutAssertions = validation.PassedWithoutAssertions
+				receipt.RuntimeExpectedFailures = validation.RuntimeExpectedFailures
+				receipt.SkippedAfterAssertions = validation.SkippedAfterAssertions
 				receipt.Validation = validation.Description
+				failedTests = validation.FailedTests
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
 				} else if receipt.ExitCode != 0 && validation.FailureCount == 0 {
@@ -507,7 +553,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	}
 	receipt.Evidence.StderrTruncated = output.StderrTruncated
 	if opts.AgentProvenance != nil {
-		actual, err := CaptureAgentProvenance(parent, job.Spec, opts.AgentProvenance.Agent)
+		actual, err := CaptureAgentProvenanceFor(parent, job.Spec, *opts.AgentProvenance)
 		if err != nil {
 			unknown := UnknownAgentProvenance()
 			unknown.Expected, unknown.Before = receipt.AgentProvenance.Expected, receipt.AgentProvenance.Before
@@ -518,6 +564,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			receipt.AgentProvenance.Status = checked.Status
 			receipt.AgentProvenance.Branch, receipt.AgentProvenance.Commit = checked.Branch, checked.Commit
 			receipt.AgentProvenance.Source, receipt.AgentProvenance.Repository = checked.Source, checked.Repository
+			receipt.AgentProvenance.Dependencies, receipt.AgentProvenance.DependencyChanges = checked.Dependencies, checked.DependencyChanges
 		}
 		if receipt.AgentProvenance.Status != "matched" {
 			receipt.Validated = false
@@ -555,6 +602,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
 		output.Stdout, output.Stderr = sanitizer.SanitizeEvidence(output.Stdout, output.Stderr, receipt.Validated)
 	}
+	receipt.FailureSummary = summarizeFailure(receipt, failedTests)
 	receipt = persistAttempt(receipt, store, output.Stdout, output.Stderr)
 	_ = store.AppendEvent(ProgressEvent{Type: "attempt_finished", JobID: job.ID, AttemptID: receipt.AttemptID, Detail: string(receipt.Status)})
 	return receipt
@@ -632,6 +680,17 @@ func validateValidation(validation Validation) error {
 	if validation.ReportedAssertions < 0 || validation.PassedWithoutAssertions < 0 || validation.PassedWithoutAssertions > validation.ExecutedTests {
 		return errors.New("structured report has inconsistent reported assertion counts")
 	}
+	if validation.RuntimeExpectedFailures < 0 || validation.RuntimeExpectedFailures > validation.ExecutedTests || validation.SkippedAfterAssertions < 0 || validation.SkippedAfterAssertions > validation.SkippedTests {
+		return errors.New("structured report has inconsistent relabeled test counts")
+	}
+	if len(validation.FailedTests) > validation.FailureCount || len(validation.FailedTests) > MaxFailureSummaryTests {
+		return errors.New("structured report describes more failed tests than it failed")
+	}
+	for _, test := range validation.FailedTests {
+		if err := test.Validate(); err != nil {
+			return errors.New("structured report has a malformed failed test summary")
+		}
+	}
 	return nil
 }
 
@@ -654,15 +713,22 @@ func terminationFor(err error) *Termination {
 func persistAttempt(receipt Receipt, store Store, stdout, stderr []byte) Receipt {
 	receipt.FinishedAt = time.Now().UTC()
 	receipt.DurationMS = receipt.FinishedAt.Sub(receipt.StartedAt).Milliseconds()
+	// Every receipt that did not pass says why, including attempts that
+	// never started; the main path has already added its evidence's tests.
+	if receipt.FailureSummary == nil {
+		receipt.FailureSummary = summarizeFailure(receipt, nil)
+	}
 	persisted, err := store.PersistAttempt(receipt, stdout, stderr)
 	if err != nil {
 		receipt.Error = joinError(receipt.Error, "could not persist attempt: "+err.Error())
 		receipt.Status = StatusError
+		receipt.FailureSummary = withStop(receipt.FailureSummary, StopInfrastructure)
 		return receipt
 	}
 	if persisted.RunID != receipt.RunID || persisted.JobID != receipt.JobID || persisted.AttemptID != receipt.AttemptID || persisted.Attempt != receipt.Attempt {
 		receipt.Status = StatusError
 		receipt.Error = joinError(receipt.Error, "store returned a receipt with an unreserved identity")
+		receipt.FailureSummary = withStop(receipt.FailureSummary, StopInfrastructure)
 		return receipt
 	}
 	return persisted

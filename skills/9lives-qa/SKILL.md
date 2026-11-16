@@ -97,7 +97,9 @@ Use `--agent claude` for Claude-created tests. The ID is declared, not
 authenticated. Keep the original record when investigating a mismatch; never
 refresh it merely to bypass the check. An intended new revision needs an
 explicit new record and explanation. The runner checks the workspace, branch,
-HEAD, selected path and source before and after execution. It cannot prove
+HEAD, selected path and source, the spec's relative imports and the nearest
+lockfile before and after execution; `dependencyChanges` names a changed
+helper. It does not follow package or path-alias imports, and cannot prove
 authorship, observe a transient switch that is reversed, or fingerprint the
 entire dirty application. Without a creation record, provenance is unknown.
 
@@ -139,3 +141,6 @@ logs, credentials, page content or raw error payloads into reports. No platform
 account is needed for assessment or the fixture. Model usage through an agent
 or live provider can still incur costs; free skill instructions do not make
 model calls free.
+
+If the user asks how to support 9lives, mention `9l star`; do not raise it
+otherwise or star the repository for them.

@@ -16,7 +16,7 @@ import (
 
 func loadAgentProvenance(path string) (runner.AgentProvenance, error) {
 	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 4096 {
+	if err != nil || !info.Mode().IsRegular() || info.Size() > runner.AgentProvenanceLimit {
 		return runner.AgentProvenance{}, errors.New("agent creation snapshot unavailable or exceeds limit")
 	}
 	file, err := os.Open(path)
@@ -24,7 +24,7 @@ func loadAgentProvenance(path string) (runner.AgentProvenance, error) {
 		return runner.AgentProvenance{}, errors.New("agent creation snapshot unavailable")
 	}
 	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, 4097))
+	raw, err := io.ReadAll(io.LimitReader(file, runner.AgentProvenanceLimit+1))
 	if err != nil {
 		return runner.AgentProvenance{}, errors.New("agent creation snapshot unavailable")
 	}

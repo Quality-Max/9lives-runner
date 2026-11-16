@@ -35,6 +35,28 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Readiness: `--wait-for <url|host:port>` (repeatable) waits, inside the
+  started run and before any test process starts, until an http(s) target
+  answers without a server error (a status below 500 other than 429) or a
+  host:port accepts a TCP connection, polling every 500 ms for
+  `--wait-timeout` (1s to 30m, default 1m). A target still not ready when
+  the wait timeout passes leaves the run incomplete (exit 3): no test
+  process starts, and each planned job gets an error receipt reading `not
+  started: --wait-for target not ready (environment): <target> was not ready
+  after 1m0s: dial: connection refused`, so `9l result` and `9l status` read
+  the run back and an application that never came up is not reported as
+  failing tests. The wait counts against `--deadline`, and `9l cancel` or
+  Ctrl-C during it reports the run canceled, like any canceled run. A
+  target is named only as `scheme://host:port` or `host:port`, never with
+  its path, query, fragment or credentials; the reason is an HTTP status, a
+  network error code, `no such host` (the resolver said the name does not
+  exist), `dns lookup timed out` or `dns lookup failed` (the resolver did not
+  answer), `timed out`, `certificate not trusted` or `tls handshake failed`. An https target with a self-signed certificate is not
+  trusted and never becomes ready; wait for its `host:port` instead, which
+  checks only that it accepts connections. The host is a name, an IPv4
+  address or a bracketed IPv6 literal (`[::1]:8080`, `http://[fe80::1%25en0]/`);
+  any other host with a colon, such as `http://localhost:80:90`, is a usage
+  error. `plan` and `--dry-run` validate the targets but do not wait.
 - Retries: `--attempts <n>` is 9l's own retry of the whole job, with a receipt
   per attempt. The project's Playwright `retries` still apply inside each
   attempt, so a failing test can run several times within one receipt.
@@ -72,11 +94,26 @@
 - Assertion steps: with `--sdk`, the receipt records `reportedAssertions`,
   the assertion steps the worker reported as passed in each executed test's
   last completed attempt, and `passedWithoutAssertions`, the tests that passed
-  while reporting none. `9l run` and `9l result` print `N passed test(s)
+  while reporting none. A retrying assertion (`expect.poll`, `toPass`) counts
+  once, including the assertions inside it. `9l run` and `9l result` print `N passed test(s)
   reported no assertion step` under such a job. These are the worker's
-  report, not verified coverage: `assertionCoverage` stays `unknown`. Without
+  report, not verified coverage: `assertionCoverage` stays `unknown`. The
+  same stream gives `runtimeExpectedFailures`, failed tests that count as
+  expected only because `test.fail()` ran during the test, and
+  `skippedAfterAssertions`, skipped tests that had already reported a passed
+  assertion step; both are printed under the job and neither changes the
+  status. See [results relabeled while the test ran](sdk-bridge.md#results-relabeled-while-the-test-ran). Without
   `--sdk`, Playwright's JSON reporter carries only `test.step` steps, so the
   counts are absent. See [sdk-bridge.md](sdk-bridge.md).
+- Native setup classifications: with `--sdk --target android:<alias>`, a
+  driver that found the device locked, state left by a previous test, or a
+  state it could not read records `targetSetup` in the receipt; `9l run`
+  and `9l result` print `setup blocked: device-locked (...)` lines under the
+  job, and with `--failure-details` the failure's class is `setup`. Such a
+  failure is inconclusive, not an application defect. With the driver's
+  opt-in diagnostics, a failed operation also records `targetDiagnostics`
+  (timing, requested point, viewport, window counts), printed as
+  `diagnostic <operation>: ...`. See [Android](android-driver.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`
@@ -116,6 +153,38 @@
   reported only with `--failure-details`: Playwright's JSON reporter then
   writes a separate private report beside the evidence stream, which explains
   failures and never validates the run.
+- Failure summary: every receipt that did not pass carries `failureSummary`,
+  with or without `--failure-details`. `stop` says why the attempt ended:
+  `test_failed`, `goal_failed` (only a goal's own test failed), `deadline`,
+  `canceled`, `invalid_evidence`, `evidence_truncated`,
+  `exit_without_failure` (the process failed but no test did),
+  `provenance_changed`, `not_started` or `infrastructure`. `failedTests`
+  counts the failed tests in validated evidence and `tests` describes up to
+  20 of them (`testsTruncated` when more failed). With `--sdk` each entry
+  has the engine's SHA-256 `testId` (the one `targetSetup`,
+  `targetDiagnostics` and `androidRuntimes` use for the same test), the
+  failure `class` (the classes above), the `status` of the last completed
+  Playwright attempt, the category of the failed `step` the failure is
+  attributed to (the first failed target operation, else the first failed
+  assertion, else the first failed step), the target `operation`, the
+  `control` it addressed (the failed control's test ID, when that is an
+  identifier: letters, digits, `_`, `.` and `-`, at most 64), its stop
+  `reason` (such as `assertion_failed`, `operation_timeout`, `deadline`,
+  `operation_failed`, `setup_blocked`), an unrecovered `setup` classification, and the
+  `failedSteps` and Playwright `attempts` of the test. The class is derived
+  from those facts alone: a stop reason `assertion_failed` or a failed
+  `expect` is `assertion`, `operation_timeout` (the operation's own bound)
+  and `deadline` (the worker deadline) are `action-timeout`, a `setup_*`
+  reason or unrecovered setup record is `setup`, a timed-out test is
+  `timeout`, and any other stop reason is `other`. Without `--sdk` an entry
+  keeps only the class and status of the report's failure. The summary holds
+  closed tokens, counts and digests only, never titles, locations, messages,
+  stack frames, page or app text, URLs, selector values, environment values
+  or credentials; Go validates it as a closed record and drops an entry
+  outside it while keeping the count. When a job lists no detailed failures,
+  `9l run` and `9l result` print each entry, as `✗ test 1a2b3c4d5e6f
+  [assertion] in assert-text: assertion_failed`. Each attempt has its own
+  receipt directory, so a later run never overwrites an earlier summary.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
@@ -124,24 +193,43 @@
   incomplete. The JSON `outcome` field carries the same classification. See
   the [machine-readable contract](contracts.md) for hosts, schemas and
   `9l version --format json`.
+- `9l star`: print the GitHub repository URL and, in an interactive terminal,
+  open it in the browser. `9l star --gh` stars `Quality-Max/9lives-runner`
+  through the GitHub CLI's own login (`gh api --method PUT /user/starred/...`); nothing else in 9l stars or calls GitHub
+  for this. Help, `9l version` and a passing text `9l doctor` end with a
+  one-line `9l star` hint on stderr, shown only when both stdout and stderr
+  are terminals and `CI` is unset. JSON, receipts, MCP and piped output never carry it; set
+  `NINELIVES_NO_HINTS=1` to turn it off.
 - `9l assess`: advisory source assessment of a spec, or a combined report for
   several specs, a directory or a quoted pattern, optionally against a shared
   requirements contract (`--requirements`); `--titles` adds literal test titles
-  for local use. Static findings do not establish executed assertion coverage.
+  for local use. Text output sums analysis limits in one line per file,
+  counted per code; `--limits` lists each limit location instead. Static
+  findings do not establish executed assertion coverage.
 - Experimental `9l prove`: run one spec, then re-run it once per injected
   network fault (`abort`, `http-500`, `empty-json` by default; `http-401`,
-  `http-403`, `http-429` and `malformed-json` with `--faults`) on each
-  fetch/XHR request it made, and report which faults an assertion caught and
-  which survived.
-  Requires `@9l/playwright` 0.1.1 or newer, and 0.1.3 or newer for the
-  `--faults` opt-in kinds; see [Prove](prove.md).
+  `http-403`, `http-429`, `malformed-json`, `redirect-cross-origin` and
+  `delay` with `--faults`) on each fetch/XHR request it made, and report
+  which faults an assertion caught and which survived.
+  Requires `@9l/playwright` 0.1.1 or newer, 0.1.3 or newer for the
+  `--faults` opt-in kinds and 0.5.1 or newer for `redirect-cross-origin`
+  and `delay`; see [Prove](prove.md).
 - Experimental `9l confirm`: run one reproduction spec on the revision a
   finding was reported against (`--unfixed`) and on the fixing revision
   (`--fixed`, default the working tree), each in its own Git worktree, and
   report `confirmed`, `not-reproduced`, `fix-ineffective`, `regressed` or
   `inconclusive`. Exits 0 only for confirmed; see [Confirm](confirm.md).
 - `9l provenance`: record a declared agent and the current workspace, branch,
-  commit and test source for later assessment/execution checks.
+  commit and test source for later assessment/execution checks. Snapshot
+  version 2 also digests the spec's transitive relative imports (helpers,
+  page objects, JSON fixtures) and the nearest lockfile; a `matched`
+  assessment then has `scope: "spec-and-local-imports"`, and a mismatch
+  names each changed file in `dependencyChanges`. Package and path-alias
+  imports and installed packages are not compared. An import that cannot be
+  resolved, leaves the repository or is non-literal, or a graph over the
+  bounds, fails capture so provenance stays unknown. Version 1 snapshots
+  compare only the spec (`scope: "spec"`); see
+  [agent provenance](test-assessment.md#agent-creation-and-execution-provenance).
 - `9l tier1`: bounded offline healing proposals from a JSON request on stdin;
   proposals remain unverified and require approval.
 - `9l heal`: execute a failing Playwright spec, verify a selector-only
@@ -192,8 +280,13 @@ scan checks same-origin links with the session, except links whose path or
 query names a sign-out or data change (`logout`, `sign_out`, `delete`,
 `remove`, `unsubscribe` and similar): those are reported as skipped `info`
 findings rather than requested. Use `--max-links 0` to request none.
-Destinations are checked before each request; a hostname whose DNS answer
-changes between that check and the connection is not yet pinned (#108).
+Destinations are checked before each request and again for the address
+each connection is made to, on every redirect, so a hostname whose DNS answer
+changes after the first check (DNS rebinding) is still refused. Link checks
+requested from Node do this themselves; the browser reaches the network only
+through a local proxy in the helper that does the same for its navigation,
+subrequests, in-page fetches and WebSockets, so a redirect inside the browser
+is checked hop by hop as well.
 
 `scan` and `inspect` are observations from one cold page load on this
 machine, not field data. They run in a Node helper embedded in the binary,
@@ -229,6 +322,15 @@ Release packaging targets macOS, Linux and Windows on amd64 and arm64.
 Windows ZIPs start with CLI v0.2.0. Owned process-tree
 cancellation uses Unix process groups or Windows kill-on-close Job Objects;
 native CI exercises real Chromium timeout and cancellation cleanup.
+
+`--timeout` (each job) and `--deadline` (the whole run) count time the host
+is awake: they run on the monotonic clock, which does not advance while a
+macOS or Linux host sleeps. A receipt's `startedAt`, `finishedAt` and
+`durationMs` are wall-clock, so a run that spanned host sleep reports a
+`durationMs` longer than its deadline without either bound being exceeded.
+`pmset -g log` (macOS) or the system journal (Linux) shows whether the host
+slept during a run. Keep long local runs, such as the emulator smoke, on a
+host that stays awake.
 
 The runner classifies interruption and persists terminal receipts. Automatic
 restart, durable leases and crash recovery remain planned.

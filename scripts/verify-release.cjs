@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const {semver, releaseVersion} = require('./release-version.cjs');
+const {semver, releaseVersion, releaseChannel} = require('./release-version.cjs');
 
 // Verify a release tag before anything is built or published. One
 // v<version> tag releases the CLI and @9l/playwright together, so it must
@@ -24,9 +24,9 @@ try {
   assert.notEqual(manifest.private, true);
   const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], {cwd: root, stdio: 'ignore'});
   assert.equal(ancestor.status, 0);
-  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nprerelease=${releaseChannel(version) === 'beta'}\n`);
   console.log(`Release ${version}: tag, CLI and SDK versions, public repository and main ancestry verified`);
 } catch {
-  console.error('Release rejected: require a v<major.minor.patch> tag on public main history that equals the CLI and SDK versions');
+  console.error('Release rejected: require a stable or beta version tag on public main history that equals the CLI and SDK versions');
   process.exitCode = 1;
 }

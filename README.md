@@ -1,15 +1,25 @@
-# 9lives runner
+# 9lives by QualityMax
 
 [![npm version](https://img.shields.io/npm/v/@9l/playwright?cacheSeconds=3600)](https://www.npmjs.com/package/@9l/playwright)
-[![npm downloads](https://img.shields.io/npm/dm/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
+[![npm downloads](https://img.shields.io/npm/d18m/@9l/playwright)](https://www.npmjs.com/package/@9l/playwright)
 [![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/Quality-Max/9lives-runner?style=flat&cacheSeconds=3600)](https://github.com/Quality-Max/9lives-runner/stargazers)
 
-[![9lives by QualityMax: Agent fixes. 9l checks the change.](docs/assets/9lives-overview.svg)](https://9lives.run/demo.html#proof)
+[![9lives by QualityMax: open-source testing framework for coding agents](docs/assets/9lives-overview.svg)](https://9lives.run)
 
-Your coding agent proposes a fix. **9lives runs the test, compares the results,
-and records what its assertions caught.** Keep your Playwright suite and inspect
-the evidence locally. No QualityMax account or hosted service required.
+**An open-source testing framework for coding agents, built by QualityMax.**
+Run your Playwright tests, connect your agent through MCP, and inspect the
+assertions and execution receipts behind each result. Extend the framework to
+Android with experimental Appium support. Start locally without an account or
+use 9lives in QualityMax Cloud.
+
+| Start with | What you get |
+| --- | --- |
+| **Your Playwright suite** | Native Go runner, existing project configuration, bounded execution and attributable receipts. The TypeScript SDK is optional. |
+| **Your coding agent** | MCP tools for execution, page inspection, test assessment, and supported locator repairs verified in isolation. |
+| **Android apps (experimental)** | Appium and UiAutomator2 actions and assertions, qualified on the documented API 35 emulators and one Android 17 phone. [Qualification and limits](docs/android-driver.md). |
+| **QualityMax Cloud** | Hosted coding-agent sessions and test workflows. Local passing results remain distinct from cloud-verified results. [Integration contract](docs/qualitymax-coding-sessions.md). |
 
 [Quickstart](docs/run-existing-project.md) ·
 [Runnable first example](demo/first-run/README.md) ·
@@ -17,6 +27,52 @@ the evidence locally. No QualityMax account or hosted service required.
 [Website](https://9lives.run) · [Memes](https://9lives.run/memes) · [Documentation](docs/README.md) ·
 [npm SDK](https://www.npmjs.com/package/@9l/playwright) ·
 [CLI releases](https://github.com/Quality-Max/9lives-runner/releases)
+
+If 9lives is useful to you, [star it on GitHub](https://github.com/Quality-Max/9lives-runner)
+or run `9l star`.
+
+## Run your existing Playwright tests
+
+Install the native CLI on macOS or Linux:
+
+```sh
+curl -fsSL https://9lives.run/install.sh | sh
+export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
+9l plan tests/checkout.spec.ts --format json
+9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json
+```
+
+Run from your project root and replace the path with an existing spec. Follow the
+[quickstart](docs/run-existing-project.md) for prerequisites, expected results and
+troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
+
+From CLI v0.4.8, run `9l doctor` from the application project before the
+first scan. It checks
+local prerequisites and gives repair commands without downloading browsers or
+loading project config. Use `9l doctor --sdk` for SDK runs. See the
+[setup diagnostics guide](docs/setup-diagnostics.md) for limits and first-run steps.
+
+From 0.5.4, the CLI includes `9l update` (ask and install),
+`9l update --check` (check only), and `9l update --yes` (explicit scripted
+approval). See [updating the CLI](docs/install.md#updating-the-cli).
+
+Your project supplies its Playwright dependencies, browsers, configuration, and
+assertions. The SDK is optional. Native v0.6.0 binaries support macOS, Linux and
+Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
+and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
+other browser engines are unqualified.
+
+Connect the tools to a coding agent through native MCP. For Claude Code:
+
+```sh
+claude mcp add 9lives -- 9l mcp
+```
+
+The [agent setup guide](docs/agent-setup.md) covers Codex, Claude, and the optional
+[QA skill](skills/9lives-qa/SKILL.md). Native tools expose execution, assessment,
+healing, page inspection, reproduction generation, and fix confirmation.
+[qmax-code](https://github.com/Quality-Max/qmax-code) is the separate QA terminal
+that can run standalone or connect to QualityMax.
 
 ## Inspect a real experiment
 
@@ -39,12 +95,6 @@ an agent. It works in light and dark themes and as a [single offline HTML file](
 To execute the eight-chapter lab yourself, follow the [release lab guide](demo/release-lab/README.md).
 The earlier [Demo Bank locator repair](demo/README.md#qualitymax-demo-bank) is also reproducible.
 
-From CLI v0.4.8, run `9l doctor` from the application project before the
-first scan. It checks
-local prerequisites and gives repair commands without downloading browsers or
-loading project config. Use `9l doctor --sdk` for SDK runs. See the
-[setup diagnostics guide](docs/setup-diagnostics.md) for limits and first-run steps.
-
 ## From a failure to a checked fix
 
 1. **Reproduce:** run a reviewed Playwright spec with an assertion that fails on the broken app.
@@ -57,59 +107,36 @@ validated. Confirmation shows that the test distinguishes the revisions. A
 caught fault means an assertion failed under that fault. **None establishes full
 requirement coverage.** See the [confirmation](docs/confirm.md) and [fault testing](docs/prove.md) contracts.
 
-## Run your existing Playwright tests
+## Local first, with a cloud workflow
 
-Install the native CLI on macOS or Linux:
-
-```sh
-curl -fsSL https://9lives.run/install.sh | sh
-export PATH="$HOME/.local/share/9lives-runner/bin:$PATH"
-9l plan tests/checkout.spec.ts --format json
-9l run tests/checkout.spec.ts --timeout 2m --attempts 1 --format json
-```
-
-Run from your project root and replace the path with an existing spec. Follow the
-[quickstart](docs/run-existing-project.md) for prerequisites, expected results and
-troubleshooting, or try the [synthetic fault example](demo/first-run/README.md).
-
-Your project supplies its Playwright dependencies, browsers, configuration, and
-assertions. The SDK is optional. Native v0.5.0 binaries support macOS, Linux and
-Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
-and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
-other browser engines are unqualified.
-
-Connect the tools to a coding agent through native MCP. For Claude Code:
-
-```sh
-claude mcp add 9lives -- 9l mcp
-```
-
-The [agent setup guide](docs/agent-setup.md) covers Codex, Claude, and the optional
-[QA skill](skills/9lives-qa/SKILL.md). Native tools expose execution, assessment,
-healing, page inspection, reproduction generation, and fix confirmation.
-[qmax-code](https://github.com/Quality-Max/qmax-code) is the separate QA terminal
-that can run standalone or connect to QualityMax.
+Run 9lives on your machine or CI without a platform account. For hosted test
+management, execution, and team workflows, use [QualityMax Cloud](https://qualitymax.io).
+QualityMax coding-agent sessions run a qualified, pinned 9lives version and read
+its receipts alongside QualityMax-managed test results. A local pass and a
+cloud-verified result are reported separately. See the
+[integration contract](docs/qualitymax-coding-sessions.md) for version and evidence boundaries.
 
 ## What is available
 
-- **Local execution:** `plan`, `run`, `status`, `result`, and `cancel` bound execution and record attributable terminal receipts. Each failed test carries a class (assertion, timeout, action timeout, environment), receipts count flaky passes and, with the SDK, the assertion steps the worker reported.
+- **Local execution:** `plan`, `run`, `status`, `result`, and `cancel` bound execution and record attributable terminal receipts. Each failed test carries a class (assertion, timeout, action timeout, environment), receipts count flaky passes and, with the SDK, the assertion steps the worker reported. `run --wait-for` waits for the application first, so one that never comes up leaves the run incomplete instead of failing its tests.
 - **Assessment:** `9l assess` advises on waits, skips, assertions, requirement mappings, and source provenance.
 - **Page observations:** `9l scan` runs nine check categories; `9l inspect` ranks controls and locators.
 - **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
 - **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
-- **Planned:** independent behavioral verification, verified replay, and native mobile qualification.
+- **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](docs/android-driver.md).
+- **Planned:** independent behavioral verification, verified replay, iOS, and broader Android device qualification.
 
 ## Add the optional SDK
 
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.5.0 @playwright/test@1.64.0
+npm install --save-dev @9l/playwright@0.6.0 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
 Use Node 24 for the qualified runtime (Node 22 minimum) and Playwright 1.61.1
-through 1.64.0; an existing project can keep its version in that range. On Linux, use
+through 1.64.1; an existing project can keep its version in that range. On Linux, use
 `npm exec playwright install --with-deps chromium` for browser dependencies.
 
 Install the Go CLI separately. With Go 1.27.3 or newer:
@@ -165,6 +192,18 @@ result. Receipts persist under `.9lives/receipts/`; inspect them with
 A passing execution means the test's assertions passed and its report was
 validated. It does not prove that the assertions fully cover the requirements.
 Independent behavioral verification remains planned.
+
+Playwright's own verdict is not the evidence. Qualifying its modifiers for 9l
+found two upstream defects, reported as
+[microsoft/playwright#43676](https://github.com/microsoft/playwright/issues/43676)
+and [microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738):
+on 1.61.1 through 1.64.1 a `test.skip()` in an after hook reports a test that
+ran and passed as skipped, and a `test.fail()` there turns a failed test into
+an expected failure, so `1 passed` and exit code 0 can describe a failing
+run. With `--sdk`, the receipt reports `runtimeExpectedFailures` and
+`skippedAfterAssertions` for results relabeled while the test ran, and
+`9l assess` flags `test.fail()` in an after hook. See
+[results relabeled while the test ran](docs/sdk-bridge.md#results-relabeled-while-the-test-ran).
 
 ### Check the page you changed
 
@@ -294,26 +333,56 @@ the spec or prove its assertions protect the requirement. See the
 
 ## Compatibility
 
+The experimental Android target (Appium with UiAutomator2) ships in 0.6.0.
+Install the matching 0.6.0 CLI and SDK together; Android remains opt-in with
+the [setup and qualification limits](docs/android-driver.md) below.
+
 | Component | Qualified | Boundary |
 | --- | --- | --- |
-| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
-| `9l assess` matchers | Playwright 1.61.1 through 1.64.0 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
+| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
+| `9l assess` matchers | Playwright 1.61.1 through 1.64.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.5.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.5.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.6.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.6.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| Android (experimental) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
-`artifact-metadata`, `terminal-outcomes` (in that order), then validates the
+`artifact-metadata`, `terminal-outcomes`, `declared-outcomes` (in that order), then validates the
 execution evidence. It does not compare package versions or enforce a
-same-minor rule. A mixed `0.4.x` pair is not rejected just for differing package
-versions, but is not a qualified pairing; align both versions before diagnosing
+same-minor rule. The shared target contract is `9l.target/3`; older target
+contracts are rejected at the handshake. Mixed package versions are unqualified even when
+their contracts match; update both distributions together before diagnosing
 a bridge failure. See the [SDK contract](docs/sdk-bridge.md).
 
-An experimental [shared target contract](docs/targets.md) dispatches one
-deterministic scenario to web and an in-memory native fixture. Real Android
-execution remains a subsequent milestone.
+An experimental [shared target contract](docs/targets.md) (`9l.target/3`)
+dispatches one deterministic scenario to web and to native targets with the
+same `app` fixture. The experimental [Android target](docs/android-driver.md)
+drives an owned local emulator, or an installed app on an explicitly selected
+phone, through Appium and UiAutomator2. It supports:
+
+- **Native operations:** tap, fill, touch at a point, Back, scroll, bounds,
+  viewport, keyboard, terminate and activate, with visible, hidden, text,
+  state and invalid-state assertions. Controls are reached by resource ID
+  (prefixed or bare, as Flutter reports them) or by text, description, hint
+  and label aliases.
+- **Queries that keep the session:** `isVisible()` for a screen that may or
+  may not appear, and `foreground()` to tell a system window from the app;
+  both are recorded as actions, never as assertions.
+- **Fingerprint sign-in (opt-in):** on an owned emulator booted from a
+  prepared snapshot, `fingerprint()` touches the virtual sensor; the driver
+  never sees a PIN, and phones have no such operation.
+- **Setup classification:** a locked device, a screen that is off, state a
+  previous test left behind, or a posture, width or build that doesn't match
+  is reported as a setup problem, not an application failure.
+- **Identity and evidence:** the installed build identity, the active display
+  and fold posture, and opt-in metadata-only gesture diagnostics.
+
+`9l doctor --android` checks Java, the SDK, AVDs, devices and the pinned
+Appium tooling. Every emulator case runs in CI on hosted Linux, and the
+attached-device cases passed on one Android 17 foldable. Target assertions are
+reported by the worker and are not independently verified.
 
 Keep your project's existing Playwright version if it is in the qualified
 range; upgrading is not required. To check a release locally, see the
@@ -373,9 +442,11 @@ from Playwright and browser costs.
 
 ## Support and responsible disclosure
 
-Use [GitHub Issues](https://github.com/Quality-Max/9lives-runner/issues) for
-non-sensitive usage and documentation questions. Report vulnerabilities
-privately using the [security policy](SECURITY.md).
+Use [Discussions](https://github.com/Quality-Max/9lives-runner/discussions) for
+questions and [GitHub Issues](https://github.com/Quality-Max/9lives-runner/issues/new/choose)
+for bugs and feature proposals. See the [support guide](SUPPORT.md),
+[code of conduct](CODE_OF_CONDUCT.md), and [accessibility statement](ACCESSIBILITY.md).
+Report vulnerabilities privately using the [security policy](SECURITY.md).
 
 ## Development
 
@@ -393,7 +464,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.5.0](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.6.0](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions with one shared version: a single
 `v<version>` tag releases both. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)

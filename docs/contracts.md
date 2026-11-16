@@ -18,9 +18,9 @@ runner and its contract versions before decoding anything else:
   "version": 1,
   "name": "9l",
   "implementation": "go-runner",
-  "cliVersion": "0.5.0",
+  "cliVersion": "0.5.1",
   "contracts": {
-    "plan": 1, "runResult": 1, "runStatus": 1, "receipt": 1,
+    "plan": 1, "runResult": 2, "runStatus": 2, "receipt": 2,
     "progressEvent": 1, "assess": 3, "assessSuite": 1,
     "executionReceipt": "execution-receipt/1.0", "engine": "9l.engine/1"
   },
@@ -39,7 +39,7 @@ its one-line text output.
 | 0 | `passed` | Every planned job has a validated passing receipt |
 | 1 | `failed` | Every planned job ran to a validated receipt and at least one reported a test failure |
 | 2 | — | Usage or setup error before execution: invalid flags, no specs, an unavailable provider, invalid provenance, provenance selecting several specs, or an invalid/over-budget supplied plan |
-| 3 | `incomplete` | The run proves neither: skipped inputs, cancellation, run or job timeouts, infrastructure errors, missing or invalid evidence, provenance drift, or a goal that did not complete |
+| 3 | `incomplete` | The run proves neither: skipped inputs, cancellation, run or job timeouts, infrastructure errors, missing or invalid evidence, provenance drift, a goal that did not complete, or a `--wait-for` target not ready (each job's receipt is an error reading `not started: --wait-for target not ready (environment): …`) |
 
 A goal that is policy-blocked, out of budget, interrupted or without a
 provider does not establish a defect in the test that called it. Failures in
@@ -87,6 +87,12 @@ findings and 2 when any input could not be assessed.
   inputs or fewer receipts than planned jobs is incomplete.
 - Results written by CLI 0.1.1 or earlier have no `version`; `9l result`
   fills in version 1 fields from the persisted plan and receipts.
+- Each receipt that did not pass carries `failureSummary`: a `stop` token
+  for why the attempt ended, the `failedTests` count and up to 20 metadata
+  entries (class, status, failed step, target operation and stop reason,
+  setup classification, hashed test ID). It never holds titles or error
+  text and is present without `--failure-details`; receipts written before
+  it have none. See [cli.md](cli.md).
 
 ## Schemas and versioning
 
@@ -118,6 +124,12 @@ its schema and listed under `contracts` in `9l version --format json`.
   Removing or renaming a field, changing its type, adding a value to a closed
   `enum`, or changing a field's meaning increments the version.
 - Consumers should ignore unknown fields and reject versions they do not know.
+
+Receipt, run result and run status are version 2 from 0.6.0-beta.2: the
+experimental Android runtime record gained required fields (the targeted
+display, posture and installed build identity), so a version 1 validator
+would reject them. A run result or status embeds receipts, so all three move
+together. Plan, progress event and version stay at 1.
 
 The portable `execution-receipt-1.0.json` beside each receipt follows the
 platform's `execution-receipt/1.0` schema, and `9l.engine/1` is the SDK bridge

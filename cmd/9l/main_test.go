@@ -158,6 +158,38 @@ func TestPrintResultShowsWhyAJobDidNotPass(t *testing.T) {
 	}
 }
 
+func TestPrintResultShowsTheFailureSummaryWithoutDetails(t *testing.T) {
+	id := strings.Repeat("c2", 32)
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/pay.spec.ts", FailureCount: 22,
+		FailureSummary: &runner.FailureSummary{Stop: runner.StopTestFailed, FailedTests: 22, TestsTruncated: true, Tests: []runner.FailedTestSummary{
+			{TestID: id, Class: runner.FailureSetup, Status: "failed", Step: "assertion", Operation: "assert-text", Reason: "assertion_failed", Setup: runner.SetupBlocked},
+			{TestID: id, Class: runner.FailureTimeout, Status: "timedOut", Step: "browser"},
+			{Class: runner.FailureAssertion, Status: "failed", Step: "assertion"},
+		}},
+	}}})
+	want := "  FAILED   tests/pay.spec.ts\n" +
+		"           ✗ test c2c2c2c2c2c2 [setup] in assert-text: assertion_failed (setup blocked)\n" +
+		"           ✗ test c2c2c2c2c2c2 [timeout] timed out in a failed browser step\n" +
+		"           ✗ test [assertion] in a failed assertion step\n" +
+		"           … 19 more failed test(s) not listed\n" +
+		"           --failure-details adds each failed test's title, line and error\n"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("text summary:\n%s", out.String())
+	}
+	// Detailed failures already name each test; the summary is not repeated.
+	out.Reset()
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/pay.spec.ts", FailureCount: 1,
+		Failures:       []runner.TestFailure{{Title: "pays", Class: runner.FailureAssertion}},
+		FailureSummary: &runner.FailureSummary{Stop: runner.StopTestFailed, FailedTests: 1, Tests: []runner.FailedTestSummary{{TestID: id, Class: runner.FailureAssertion}}},
+	}}})
+	if strings.Contains(out.String(), "c2c2c2") || strings.Contains(out.String(), "--failure-details") {
+		t.Fatalf("summary repeated beside details:\n%s", out.String())
+	}
+}
+
 func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 	errorContext := filepath.Join(t.TempDir(), "test-results", "login", "error-context.md")
 	var out bytes.Buffer
@@ -340,6 +372,21 @@ func TestPrintResultFlagsPassedTestsWithoutAssertionSteps(t *testing.T) {
 	}
 }
 
+// Results Playwright relabeled while the test ran are printed under the job:
+// a failure that counts as expected only through a runtime test.fail(), and a
+// skip after the body had reported a passed assertion. Clean jobs add nothing.
+func TestPrintResultFlagsResultsRelabeledAtRunTime(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomePassed, Complete: true, Passed: 2, Receipts: []runner.Receipt{
+		{Status: runner.StatusPassed, Spec: "tests/hooks.spec.ts", ExecutedTests: 2, SkippedTests: 1, RuntimeExpectedFailures: 1, SkippedAfterAssertions: 1},
+		{Status: runner.StatusPassed, Spec: "tests/shop.spec.ts", ExecutedTests: 1, ReportedAssertions: 2},
+	}})
+	want := "  PASSED   tests/hooks.spec.ts\n           1 failed test(s) count as expected only because test.fail() ran during the test; Playwright reports them green\n           1 skipped test(s) had already reported a passed assertion step; the body ran before the skip\n  PASSED   tests/shop.spec.ts\n"
+	if !strings.Contains(out.String(), want) || strings.Count(out.String(), "test.fail() ran") != 1 {
+		t.Fatalf("unexpected output:\n%s", out.String())
+	}
+}
+
 func TestPrintResultMarksAnExpectedFailureThatPassed(t *testing.T) {
 	var out bytes.Buffer
 	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
@@ -399,5 +446,50 @@ func TestPrintResultFlagsFlakyPasses(t *testing.T) {
 	}})
 	if !strings.Contains(out.String(), "  PASSED   tests/flaky.spec.ts\n           1 test(s) passed only on a Playwright retry inside this attempt\n") || strings.Count(out.String(), "Playwright retry") != 1 {
 		t.Fatalf("unexpected output:\n%s", out.String())
+	}
+}
+
+func TestPrintResultExplainsTargetSetupClassifications(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Passed: 1, Complete: true, Receipts: []runner.Receipt{
+		{Status: runner.StatusFailed, Spec: "tests/planner.spec.ts", ExecutedTests: 2, FailureCount: 2, TargetSetup: []runner.TargetSetup{
+			{TestID: "a", Classification: runner.SetupBlocked, Reason: "device-locked", Stage: runner.SetupStageRecheck},
+			{TestID: "b", Classification: runner.SetupDirty, Reason: "extra-window", Stage: runner.SetupStageOpen, Recovery: &runner.SetupRecovery{Method: "back", Presses: 3, Restored: false}},
+		}},
+		{Status: runner.StatusPassed, Spec: "tests/coherence.spec.ts", ExecutedTests: 1, TargetSetup: []runner.TargetSetup{
+			{TestID: "c", Classification: runner.SetupDirty, Reason: "ime-showing", Stage: runner.SetupStageOpen, Recovery: &runner.SetupRecovery{Method: "back", Presses: 1, Restored: true}},
+		}},
+	}})
+	for _, want := range []string{
+		"           setup blocked: device-locked (rechecked after a failed assertion); inconclusive, not an application failure\n",
+		"           setup dirty: extra-window (before any application operation); back recovery did not restore the baseline after 3 press(es); inconclusive, not an application failure\n",
+		"  PASSED   tests/coherence.spec.ts\n           setup dirty: ime-showing (before any application operation); back recovery restored the baseline after 1 press(es), the test ran from it\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in:\n%s", want, out.String())
+		}
+	}
+	if got := setupSummary(runner.TargetSetup{Classification: runner.SetupUnknown, Reason: "device-state-unknown", Stage: runner.SetupStageRecheck}); got != "setup unknown: device-state-unknown (rechecked after a failed assertion); the device state could not be determined, so the failure is inconclusive" {
+		t.Fatalf("unexpected unknown summary: %s", got)
+	}
+}
+
+func TestPrintResultExplainsObserverClassificationAndDiagnostics(t *testing.T) {
+	var out bytes.Buffer
+	printResult(&out, runner.RunSummary{Outcome: runner.OutcomeFailed, Failed: 1, Complete: true, Receipts: []runner.Receipt{{
+		Status: runner.StatusFailed, Spec: "tests/picker.spec.ts", ExecutedTests: 1, FailureCount: 1,
+		TargetSetup:       []runner.TargetSetup{{TestID: "a", Classification: runner.SetupObserver, Reason: "window-gone-element-displayed", Stage: runner.SetupStageRecheck}},
+		TargetDiagnostics: []runner.TargetDiagnostic{{TestID: "a", Operation: "assert-hidden", Reason: "assertion_failed", ElapsedMS: 10012, X: 390, Y: 790, Point: true, ViewportWidth: 1080, ViewportHeight: 2340, WindowsBefore: 2, WindowsAfter: 1, FocusBefore: "app", FocusAfter: "app"}},
+	}}})
+	for _, want := range []string{
+		"           setup observer: window-gone-element-displayed (rechecked after a failed assertion); the accessibility snapshot disagreed with the window manager, an observer staleness rather than an application or gesture failure\n",
+		"           diagnostic assert-hidden: assertion_failed after 10012 ms; requested point (390, 790) in a 1080x2340 viewport; app windows at the last mutation 2 (focus app), after the failure 1 (focus app)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in:\n%s", want, out.String())
+		}
+	}
+	if got := diagnosticSummary(runner.TargetDiagnostic{Operation: "tap-at", Reason: "deadline", ElapsedMS: 5000, WindowsBefore: -1, WindowsAfter: -1}); got != "diagnostic tap-at: deadline after 5000 ms; app windows at the last mutation not observed, after the failure not observed" {
+		t.Fatalf("unexpected minimal summary: %s", got)
 	}
 }

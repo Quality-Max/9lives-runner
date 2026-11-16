@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "requirements": [
+    {
+      "id": "QUA-2204",
+      "reference": "https://linear.app/quality-max/issue/QUA-2204",
+      "revision": "2026-10-24",
+      "expectedOutcomes": [
+        {
+          "id": "visible-native-receipt",
+          "description": "The healthy native transfer displays a receipt against fresh device state."
+        },
+        {
+          "id": "exact-native-transfer",
+          "description": "The native receipt states exactly the requested amount and recipient; a planted wrong amount must fail the exact-text assertion."
+        },
+        {
+          "id": "completed-native-transfer",
+          "description": "The native completion state is true after sending; a planted false completion state must fail the state assertion."
+        }
+      ]
+    }
+  ]
+}

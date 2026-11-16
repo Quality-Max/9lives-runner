@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
@@ -16,7 +17,7 @@ import (
 )
 
 const Version = "9l.engine/1"
-const TargetVersion = "9l.target/1"
+const TargetVersion = "9l.target/3"
 const maxFrameBytes = 16 * 1024
 const maxEvents = 10000
 const maxProtocolBytes = 4 << 20
@@ -46,26 +47,82 @@ type event struct {
 		Kind     string `json:"kind"`
 		Retained bool   `json:"retained"`
 	} `json:"artifacts"`
-	TargetID      string `json:"targetId"`
-	TargetVersion string `json:"targetVersion"`
-	Operation     string `json:"operation"`
+	TargetID      string                   `json:"targetId"`
+	TargetVersion string                   `json:"targetVersion"`
+	Operation     string                   `json:"operation"`
+	Control       string                   `json:"control"`
+	Reason        string                   `json:"reason"`
+	Runtime       *runner.AndroidRuntime   `json:"runtime"`
+	Setup         *runner.TargetSetup      `json:"setup"`
+	Diagnostic    *runner.TargetDiagnostic `json:"diagnostic"`
 }
 
 type testState struct {
-	retry        int
-	active       bool
-	statuses     []string
+	retry    int
+	active   bool
+	statuses []string
+	// declared is the expected status the worker reported before the first
+	// attempt ran; expected is the one it reported when the last attempt
+	// ended. They differ when a modifier ran during an attempt.
+	declared     string
 	expected     string
 	final        bool
 	goalFailed   bool
 	targetFailed bool
 	assertions   int
+	runtime      bool
+	// setupOpen and setupRecheck record a driver classification made before
+	// the test ran and one made after a failed assertion; setupUnrecovered
+	// that a record exists whose recovery did not restore the baseline (a
+	// recheck record never does), so the test cannot pass.
+	setupOpen        bool
+	setupRecheck     bool
+	setupUnrecovered bool
+	diagnostic       bool
 	// reportedAttempt counts the assertion steps the worker reported as passed
 	// in the attempt in progress; reportedFinal and finalStatus keep the last
 	// completed attempt's count and status.
 	reportedAttempt int
 	reportedFinal   int
 	finalStatus     string
+	// skippedAfterAssertions marks a test whose last attempt ended skipped
+	// after the worker had reported a passed assertion step in it: the body
+	// ran before a modifier relabeled the result.
+	skippedAfterAssertions bool
+	// failedAttempt is the failed step the attempt in progress attributes
+	// its failure to, and failedFinal that of the last completed attempt;
+	// see attribute. setupClass is a setup classification that was not
+	// recovered.
+	failedAttempt failedStep
+	failedFinal   failedStep
+	setupClass    string
+}
+
+// failedStep is the step a test's failure is attributed to, with the number
+// of failed steps in the same attempt.
+type failedStep struct {
+	category, operation, control, reason string
+	count                                int
+}
+
+// attribute keeps the first failed target operation, else the first failed
+// assertion, else the first failed step. A typed target step ends after the
+// browser calls inside it, and a test.step after the expect inside it, so
+// the first failure alone would name the wrapper's child or the wrapper.
+func (step *failedStep) attribute(category, operation, control, reason string) {
+	rank := func(category, operation string) int {
+		switch {
+		case operation != "":
+			return 2
+		case category == "assertion":
+			return 1
+		}
+		return 0
+	}
+	step.count++
+	if step.count == 1 || rank(category, operation) > rank(step.category, step.operation) {
+		step.category, step.operation, step.control, step.reason = category, operation, control, reason
+	}
 }
 
 func TargetID(target string) string {
@@ -123,15 +180,15 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		if index == 0 {
 			caps := frame.Capabilities
 			if targeted {
-				if frame.TargetVersion != TargetVersion || len(caps) != 4 || caps[3] != TargetVersion {
-					return invalid("unsupported target contract")
+				if frame.TargetVersion != TargetVersion || len(caps) != 5 || caps[4] != TargetVersion {
+					return invalid("unsupported target contract; update the CLI and @9l/playwright together")
 				}
-				caps = caps[:3]
+				caps = caps[:4]
 			} else if frame.TargetVersion != "" {
 				return invalid("unexpected target contract")
 			}
 			if frame.Type != "hello" || frame.TotalTests < 1 || frame.TotalTests > maxEvents || !equalCapabilities(caps) {
-				return invalid("missing handshake, unsupported capabilities or zero tests")
+				return invalid("missing handshake, unsupported capabilities or zero tests; update the CLI and @9l/playwright together")
 			}
 			total = frame.TotalTests
 			continue
@@ -165,7 +222,43 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if state.active || state.final || frame.Retry != state.retry+1 {
 				return invalid("duplicate or late test attempt")
 			}
-			state.retry, state.active, state.reportedAttempt = frame.Retry, true, 0
+			// The declaration is what Playwright knew before the test ran; it
+			// cannot change between attempts.
+			if !oneOf(frame.ExpectedStatus, "passed", "failed", "skipped") || (state.declared != "" && state.declared != frame.ExpectedStatus) {
+				return invalid("missing or changed declared outcome")
+			}
+			state.retry, state.active, state.reportedAttempt, state.declared = frame.Retry, true, 0, frame.ExpectedStatus
+			state.failedAttempt = failedStep{}
+		case "target_runtime":
+			if !strings.HasPrefix(identity.Target, "android:") || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.runtime || frame.Runtime == nil || !validAndroidRuntime(*frame.Runtime) {
+				return invalid("missing, foreign or malformed Android runtime")
+			}
+			state.runtime = true
+			frame.Runtime.TestID = frame.TestID
+			validation.AndroidRuntimes = append(validation.AndroidRuntimes, *frame.Runtime)
+		case "target_setup":
+			if !nativeTarget(identity.Target) || summarizing || state == nil || !state.active || frame.Retry != state.retry || frame.Setup == nil || !validTargetSetup(*frame.Setup) ||
+				(frame.Setup.Stage == runner.SetupStageOpen && (state.setupOpen || state.setupRecheck)) || (frame.Setup.Stage == runner.SetupStageRecheck && state.setupRecheck) {
+				return invalid("missing, foreign, repeated or malformed target setup classification")
+			}
+			if frame.Setup.Stage == runner.SetupStageOpen {
+				state.setupOpen = true
+			} else {
+				state.setupRecheck = true
+			}
+			if frame.Setup.Recovery == nil || !frame.Setup.Recovery.Restored {
+				state.setupUnrecovered = true
+				state.setupClass = frame.Setup.Classification
+			}
+			frame.Setup.TestID = frame.TestID
+			validation.TargetSetup = append(validation.TargetSetup, *frame.Setup)
+		case "target_diagnostic":
+			if !nativeTarget(identity.Target) || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.diagnostic || frame.Diagnostic == nil || !validTargetDiagnostic(*frame.Diagnostic) {
+				return invalid("missing, foreign, repeated or malformed target diagnostic")
+			}
+			state.diagnostic = true
+			frame.Diagnostic.TestID = frame.TestID
+			validation.TargetDiagnostics = append(validation.TargetDiagnostics, *frame.Diagnostic)
 		case "step_end":
 			if summarizing || state == nil || !state.active || frame.Retry != state.retry || !stepID.MatchString(frame.StepID) || steps[frame.StepID] {
 				return invalid("foreign, duplicate or late step")
@@ -173,13 +266,26 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if !oneOf(frame.Category, "action", "assertion", "browser", "fixture", "other", "goal") || !oneOf(frame.Status, "passed", "failed") {
 				return invalid("unsupported step outcome")
 			}
+			// A stop reason is the target fixture's closed token for a failed
+			// typed operation; nothing else of an error crosses the bridge.
+			if frame.Reason != "" && (frame.Operation == "" || frame.Status != "failed" || !stopReason.MatchString(frame.Reason)) {
+				return invalid("unsupported target stop reason")
+			}
+			// A control is the identifier-shaped test ID a failed control
+			// operation addressed; app-level operations and passed steps name none.
+			if frame.Control != "" && (frame.Status != "failed" || !oneOf(frame.Operation, targetControlOperations...) || !targetControl.MatchString(frame.Control)) {
+				return invalid("unsupported target control")
+			}
 			steps[frame.StepID] = true
 			if frame.Category == "assertion" && frame.Status == "passed" {
 				state.reportedAttempt++
 			}
+			if frame.Status == "failed" {
+				state.failedAttempt.attribute(frame.Category, frame.Operation, frame.Control, frame.Reason)
+			}
 			if frame.Operation != "" {
-				assertion := oneOf(frame.Operation, "assert-visible", "assert-text", "assert-state")
-				if !targeted || !oneOf(frame.Operation, "open", "reset", "tap", "fill", "assert-visible", "assert-text", "assert-state") || (assertion && frame.Category != "assertion") || (!assertion && frame.Category != "action") {
+				assertion := oneOf(frame.Operation, targetAssertions...)
+				if !targeted || !(assertion || oneOf(frame.Operation, targetActions...)) || (assertion && frame.Category != "assertion") || (!assertion && frame.Category != "action") {
 					return invalid("unsupported target operation")
 				}
 				if frame.Status == "failed" {
@@ -208,6 +314,12 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("target test hid a failed target operation")
 				case frame.Status == "passed" && state.assertions == 0:
 					return invalid("target test passed without a successful target assertion")
+				case frame.Status == "passed" && strings.HasPrefix(identity.Target, "android:") && !state.runtime:
+					return invalid("Android test passed without runtime identity")
+				case frame.Status == "passed" && state.setupUnrecovered:
+					return invalid("target test passed after an unrecovered setup classification")
+				case frame.Status != "failed" && frame.Status != "timedOut" && state.diagnostic:
+					return invalid("only a failed target test can carry a failure diagnostic")
 				}
 			}
 			if state.expected != "" && state.expected != frame.ExpectedStatus {
@@ -225,6 +337,12 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			state.statuses = append(state.statuses, frame.Status)
 			if frame.Status != "skipped" {
 				state.reportedFinal, state.finalStatus = state.reportedAttempt, frame.Status
+				state.failedFinal = state.failedAttempt
+			} else {
+				// From the last attempt only: a skip before any reported
+				// assertion step did not run the body, whatever an earlier
+				// attempt of this test did.
+				state.skippedAfterAssertions = state.reportedAttempt > 0
 			}
 		case "test_result":
 			summarizing = true
@@ -243,11 +361,20 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				if !skipPins[frame.SkipKey] {
 					unpinned++
 				}
+				if state.skippedAfterAssertions {
+					validation.SkippedAfterAssertions++
+				}
 			} else {
 				validation.ExecutedTests++
 				validation.TargetAssertions += state.assertions
 				if frame.Outcome == "flaky" {
 					validation.FlakyTests++
+				}
+				// A failure that counts as expected only because test.fail()
+				// ran during the attempt. Playwright reports it green either
+				// way; the receipt says the expectation was not declared.
+				if frame.Outcome == "expected" && state.finalStatus == "failed" && state.declared == "passed" {
+					validation.RuntimeExpectedFailures++
 				}
 				// Worker-reported, from the last completed attempt: a signal
 				// that a passed test asserted nothing, never verified coverage.
@@ -256,6 +383,9 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					validation.PassedWithoutAssertions++
 				}
 				if frame.Outcome == "unexpected" {
+					if len(validation.FailedTests) < runner.MaxFailureSummaryTests {
+						validation.FailedTests = append(validation.FailedTests, failedTest(frame.TestID, state))
+					}
 					validation.FailureCount++
 					// Preserve failures in other tests even if a goal failed
 					// (including a caught goal error) elsewhere in this file.
@@ -289,6 +419,23 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			if validation.PassedWithoutAssertions != 0 {
 				validation.Description += fmt.Sprintf("; %d passed test(s) reported none", validation.PassedWithoutAssertions)
 			}
+			if validation.RuntimeExpectedFailures != 0 {
+				validation.Description += fmt.Sprintf("; %d failed test(s) expected to fail only by a runtime test.fail()", validation.RuntimeExpectedFailures)
+			}
+			if validation.SkippedAfterAssertions != 0 {
+				validation.Description += fmt.Sprintf("; %d skipped test(s) had reported a passed assertion step", validation.SkippedAfterAssertions)
+			}
+			if len(validation.TargetSetup) != 0 {
+				// A test may carry an open and a recheck record; count tests, not records.
+				classified := map[string]bool{}
+				for _, setup := range validation.TargetSetup {
+					classified[setup.TestID] = true
+				}
+				validation.Description += fmt.Sprintf("; %d test(s) carry a driver setup classification", len(classified))
+			}
+			if len(validation.TargetDiagnostics) != 0 {
+				validation.Description += fmt.Sprintf("; %d opt-in failure diagnostic(s)", len(validation.TargetDiagnostics))
+			}
 			if (frame.Status == "passed") != (validation.FailureCount == 0) {
 				return invalid("inconsistent terminal outcome")
 			}
@@ -301,9 +448,21 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		return invalid("missing terminal outcome")
 	}
 	if targeted {
-		validation.Description += "; 9l.target/1; required target tests; worker-reported target assertion count only"
+		validation.Description += "; 9l.target/3; required target tests; worker-reported target assertion count only"
 	}
 	return validation, nil
+}
+
+// failedTest summarizes a failed test from its validated frames only: its
+// digest, final status, attributed step and setup classification.
+func failedTest(id string, state *testState) runner.FailedTestSummary {
+	step := state.failedFinal
+	return runner.FailedTestSummary{
+		TestID: id, Status: state.finalStatus,
+		Class: runner.EngineFailureClass(state.finalStatus, step.category, step.reason, state.setupClass),
+		Step:  step.category, Operation: step.operation, Control: step.control, Reason: step.reason, Setup: state.setupClass,
+		FailedSteps: min(step.count, runner.MaxFailureSummaryCount), Attempts: len(state.statuses),
+	}
 }
 
 // Match Playwright test.outcome(): an expected attempt after an unexpected
@@ -332,10 +491,21 @@ func outcome(state *testState) string {
 	return "expected"
 }
 
+// The typed operations of the shared target fixture (9l.target/3). Queries
+// such as bounds, viewport, query-visible and foreground are actions:
+// executed, never assertions.
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground", "fingerprint"}
+var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
+
+// targetControlOperations address one control by test ID and may name it;
+// targetControl is the identifier shape a named control has.
+var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "assert-visible", "assert-hidden", "assert-text", "assert-state"}
+var targetControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
+
 // Capabilities is the exact capability list a hello frame must carry. The
 // SDK declares the same list in its package metadata so doctor can compare
 // an installed SDK with this engine without running it.
-var Capabilities = []string{"steps", "artifact-metadata", "terminal-outcomes"}
+var Capabilities = []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes"}
 
 func equalCapabilities(values []string) bool     { return slices.Equal(values, Capabilities) }
 func oneOf(value string, allowed ...string) bool { return slices.Contains(allowed, value) }
@@ -396,11 +566,23 @@ func decodeEvent(raw []byte) (event, error) {
 	case "required_test":
 		fields = append(fields, "testId")
 	case "test_begin":
-		fields = append(fields, "testId", "retry")
+		fields = append(fields, "testId", "retry", "expectedStatus")
+	case "target_runtime":
+		fields = append(fields, "testId", "retry", "runtime")
+	case "target_setup":
+		fields = append(fields, "testId", "retry", "setup")
+	case "target_diagnostic":
+		fields = append(fields, "testId", "retry", "diagnostic")
 	case "step_end":
 		fields = append(fields, "testId", "retry", "stepId", "category", "status")
 		if frame.Operation != "" {
 			fields = append(fields, "operation")
+		}
+		if frame.Control != "" {
+			fields = append(fields, "control")
+		}
+		if frame.Reason != "" {
+			fields = append(fields, "reason")
 		}
 	case "test_end":
 		fields = append(fields, "testId", "retry", "status", "expectedStatus", "artifacts")
@@ -424,6 +606,62 @@ func decodeEvent(raw []byte) (event, error) {
 		}
 	}
 	// Artifact objects are a closed metadata schema too.
+	if value := values["runtime"]; value != nil {
+		var runtime map[string]json.RawMessage
+		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture", "versionCode", "versionName", "signer"}
+		if json.Unmarshal(value, &runtime) != nil {
+			return frame, fmt.Errorf("invalid runtime")
+		}
+		if string(runtime["device"]) == `"physical"` {
+			keys = []string{"appPackage", "apkSHA256", "api", "release", "abi", "device", "deviceHash", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture", "versionCode", "versionName", "signer"}
+		}
+		if len(runtime) != len(keys) {
+			return frame, fmt.Errorf("invalid runtime")
+		}
+		for _, key := range keys {
+			if runtime[key] == nil {
+				return frame, fmt.Errorf("invalid runtime")
+			}
+		}
+	}
+	if value := values["setup"]; value != nil {
+		var setup map[string]json.RawMessage
+		if json.Unmarshal(value, &setup) != nil || setup["classification"] == nil || setup["reason"] == nil || setup["stage"] == nil {
+			return frame, fmt.Errorf("invalid setup")
+		}
+		keys := 3
+		if recovery := setup["recovery"]; recovery != nil {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(recovery, &fields) != nil || len(fields) != 3 || fields["method"] == nil || fields["presses"] == nil || fields["restored"] == nil {
+				return frame, fmt.Errorf("invalid setup recovery")
+			}
+			keys++
+		}
+		if len(setup) != keys {
+			return frame, fmt.Errorf("invalid setup")
+		}
+	}
+	if value := values["diagnostic"]; value != nil {
+		var diagnostic map[string]json.RawMessage
+		if json.Unmarshal(value, &diagnostic) != nil {
+			return frame, fmt.Errorf("invalid diagnostic")
+		}
+		for _, key := range []string{"operation", "reason", "elapsedMs", "windowsBefore", "windowsAfter"} {
+			if diagnostic[key] == nil {
+				return frame, fmt.Errorf("invalid diagnostic")
+			}
+		}
+		for key := range diagnostic {
+			if !oneOf(key, "operation", "reason", "elapsedMs", "x", "y", "point", "viewportWidth", "viewportHeight", "windowsBefore", "windowsAfter", "focusBefore", "focusAfter") {
+				return frame, fmt.Errorf("invalid diagnostic")
+			}
+		}
+		// A requested point is both coordinates and the flag, or none of them;
+		// an omitted coordinate must not default to zero.
+		if hasPoint := diagnostic["point"] != nil; hasPoint != (diagnostic["x"] != nil) || hasPoint != (diagnostic["y"] != nil) || (hasPoint && string(diagnostic["point"]) != "true") {
+			return frame, fmt.Errorf("invalid diagnostic")
+		}
+	}
 	if value := values["artifacts"]; value != nil {
 		var artifacts []map[string]json.RawMessage
 		if json.Unmarshal(value, &artifacts) != nil {
@@ -437,6 +675,66 @@ func decodeEvent(raw []byte) (event, error) {
 	}
 	return frame, nil
 }
+
+// setupReasons lists the closed reasons a driver may report per
+// classification. A reason outside its classification is invalid evidence.
+var setupReasons = map[string][]string{
+	runner.SetupBlocked:  {"device-locked", "screen-off"},
+	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
+	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable"},
+	runner.SetupObserver: {"window-gone-element-displayed"},
+	runner.SetupUnknown:  {"device-state-unknown"},
+}
+
+var stopReason = regexp.MustCompile(`^[a-z_]{1,64}$`)
+
+func validTargetDiagnostic(d runner.TargetDiagnostic) bool {
+	pixel := func(v int) bool { return v >= 0 && v <= 65535 }
+	focus := func(v string) bool { return oneOf(v, "", "app", "foreign", "none", "unknown") }
+	return d.TestID == "" && (oneOf(d.Operation, targetActions...) || oneOf(d.Operation, targetAssertions...)) && stopReason.MatchString(d.Reason) &&
+		d.ElapsedMS >= 0 && d.ElapsedMS <= 3_600_000 && pixel(d.X) && pixel(d.Y) && (d.Point || (d.X == 0 && d.Y == 0)) &&
+		pixel(d.ViewportWidth) && pixel(d.ViewportHeight) && (d.ViewportWidth == 0) == (d.ViewportHeight == 0) &&
+		d.WindowsBefore >= -1 && d.WindowsBefore <= 1024 && d.WindowsAfter >= -1 && d.WindowsAfter <= 1024 && focus(d.FocusBefore) && focus(d.FocusAfter)
+}
+
+func nativeTarget(target string) bool {
+	return strings.HasPrefix(target, "android:") || strings.HasPrefix(target, "android-fake:")
+}
+
+func validTargetSetup(s runner.TargetSetup) bool {
+	reasons, known := setupReasons[s.Classification]
+	if !known || !oneOf(s.Reason, reasons...) || !oneOf(s.Stage, runner.SetupStageOpen, runner.SetupStageRecheck) || s.TestID != "" {
+		return false
+	}
+	if s.Classification == runner.SetupObserver && s.Stage != runner.SetupStageRecheck {
+		return false
+	}
+	if s.Recovery == nil {
+		return true
+	}
+	// A recovery is a declared step taken before the test ran, only for state
+	// a previous test left behind.
+	return s.Classification == runner.SetupDirty && s.Stage == runner.SetupStageOpen && s.Recovery.Method == "back" && s.Recovery.Presses >= 0 && s.Recovery.Presses <= 16
+}
+
+var androidPackage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$`)
+var androidVersion = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$`)
+
+func validAndroidRuntime(r runner.AndroidRuntime) bool {
+	return len(r.AppPackage) <= 200 && androidPackage.MatchString(r.AppPackage) && testID.MatchString(r.APKSHA256) && testID.MatchString(r.Worker) && r.TestID == "" &&
+		regexp.MustCompile(`^[0-9]{1,3}$`).MatchString(r.API) && androidVersion.MatchString(r.Release) &&
+		((r.Device == "" && r.DeviceHash == "" && androidVersion.MatchString(r.Emulator)) ||
+			(r.Device == "physical" && r.Emulator == "" && testID.MatchString(r.DeviceHash))) &&
+		r.Appium == "3.8.0" && r.UIAutomator2 == "8.7.0" && oneOf(r.ABI, "arm64-v8a", "x86_64") &&
+		(r.Display == "unknown" || displayID.MatchString(r.Display)) && pixels.MatchString(r.DisplayWidth) && pixels.MatchString(r.DisplayHeight) && regexp.MustCompile(`^[0-9]{1,4}$`).MatchString(r.Density) &&
+		oneOf(r.Posture, "opened", "half-opened", "closed", "flat", "unknown") &&
+		(r.VersionCode == "unknown" || regexp.MustCompile(`^[0-9]{1,10}$`).MatchString(r.VersionCode)) &&
+		(r.VersionName == "unknown" || regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`).MatchString(r.VersionName)) &&
+		(r.Signer == "unknown" || testID.MatchString(r.Signer))
+}
+
+var displayID = regexp.MustCompile(`^[0-9]{1,24}$`)
+var pixels = regexp.MustCompile(`^[0-9]{1,5}$`)
 
 // TestAssertionFacts is one test's outcome in an attempt's evidence.
 type TestAssertionFacts struct {

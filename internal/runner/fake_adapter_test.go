@@ -48,13 +48,17 @@ func TestFakeAdapterContractOutcomes(t *testing.T) {
 		name, mode string
 		want       ReceiptStatus
 		validated  bool
+		// stop and failed are the persisted failure summary's stop token
+		// and failed-test count; a passed receipt has no summary.
+		stop   string
+		failed int
 	}{
 		{name: "success", mode: "success", want: StatusPassed, validated: true},
-		{name: "test failure", mode: "test-failure", want: StatusFailed, validated: true},
-		{name: "infrastructure failure", mode: "infrastructure", want: StatusError},
-		{name: "nonzero without finding", mode: "infra-json", want: StatusError, validated: true},
-		{name: "malformed output", mode: "malformed", want: StatusError},
-		{name: "missing artifact", mode: "missing-artifact", want: StatusError},
+		{name: "test failure", mode: "test-failure", want: StatusFailed, validated: true, stop: StopTestFailed, failed: 1},
+		{name: "infrastructure failure", mode: "infrastructure", want: StatusError, stop: StopInvalidEvidence},
+		{name: "nonzero without finding", mode: "infra-json", want: StatusError, validated: true, stop: StopExitWithoutFailure},
+		{name: "malformed output", mode: "malformed", want: StatusError, stop: StopInvalidEvidence},
+		{name: "missing artifact", mode: "missing-artifact", want: StatusError, stop: StopInvalidEvidence},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -63,6 +67,14 @@ func TestFakeAdapterContractOutcomes(t *testing.T) {
 			summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 5 * time.Second, MaxAttempts: 1, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
 			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != test.want || summary.Receipts[0].Validated != test.validated {
 				t.Fatalf("unexpected result: %#v", summary)
+			}
+			// The summary is in the receipt on disk, not only in the result.
+			var persisted Receipt
+			if raw, err := os.ReadFile(summary.Receipts[0].ReceiptPath); err != nil || json.Unmarshal(raw, &persisted) != nil {
+				t.Fatalf("receipt unreadable: %v", err)
+			}
+			if got := persisted.FailureSummary; (got == nil) != (test.stop == "") || (got != nil && (got.Stop != test.stop || got.FailedTests != test.failed || got.Validate() != nil)) {
+				t.Fatalf("failure summary %+v, want stop %q with %d failed", got, test.stop, test.failed)
 			}
 			if test.mode == "success" {
 				canonical := filepath.Join(filepath.Dir(summary.Receipts[0].ReceiptPath), "execution-receipt-1.0.json")
@@ -103,6 +115,10 @@ func TestFakeAdapterTimeoutAndCancellation(t *testing.T) {
 			}
 			if len(summary.Receipts) != 1 || summary.Receipts[0].Status != want || summary.Receipts[0].Termination == nil || summary.Receipts[0].Termination.Kind != test.kind {
 				t.Fatalf("unexpected termination: %#v", summary)
+			}
+			stop := map[string]string{"timeout": StopDeadline, "canceled": StopCanceled}[test.kind]
+			if got := summary.Receipts[0].FailureSummary; got == nil || got.Stop != stop || got.FailedTests != 0 || got.Tests != nil {
+				t.Fatalf("failure summary %+v, want stop %q", got, stop)
 			}
 		})
 	}
@@ -245,7 +261,7 @@ func TestDependencyOrderingAndCycleRejection(t *testing.T) {
 func TestAttemptAndOutputBudgetsAreEnforced(t *testing.T) {
 	root := t.TempDir()
 	plan := Plan{Version: 1, RunID: "run-attempt-budget", Jobs: []Job{fakeJob("job-001", "infrastructure", 0)}}
-	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: time.Second, MaxAttempts: 2, MaxOutputBytes: 1024, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 10 * time.Second, MaxAttempts: 2, MaxOutputBytes: 1024, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
 	if len(summary.Receipts) != 1 || summary.Receipts[0].Attempt != 2 {
 		t.Fatalf("attempt limit was not enforced: %#v", summary)
 	}
@@ -266,7 +282,7 @@ func TestAttemptAndOutputBudgetsAreEnforced(t *testing.T) {
 func TestNonRepeatableWorkerNeverRetriesIncompleteEvidence(t *testing.T) {
 	job := fakeJob("job-001", "infrastructure", 0)
 	job.Target = "android-fake:finance"
-	summary, _ := Execute(context.Background(), Plan{Version: 1, RunID: "run-no-retry", Jobs: []Job{job}}, ExecuteOptions{MaxAttempts: 3, Timeout: time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
+	summary, _ := Execute(context.Background(), Plan{Version: 1, RunID: "run-no-retry", Jobs: []Job{job}}, ExecuteOptions{MaxAttempts: 3, Timeout: 10 * time.Second, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
 	if len(summary.Receipts) != 1 || summary.Receipts[0].Attempt != 1 || summary.Receipts[0].Status != StatusError {
 		t.Fatalf("unsafe retry: %+v", summary)
 	}
@@ -495,5 +511,45 @@ func TestServiceStartFailureIsInfrastructureError(t *testing.T) {
 	}
 	if !finished {
 		t.Fatalf("attempt was never finished in the event log: %#v", events)
+	}
+}
+
+// Native artifacts must disappear even when the worker exits before SDK teardown.
+type nativeScratchExecutor struct {
+	scratch string
+	t       *testing.T
+}
+
+func (e *nativeScratchExecutor) Run(_ context.Context, job Job, _ int) ProcessOutput {
+	e.scratch = job.Env["NINELIVES_TARGET_SCRATCH_DIR"]
+	if e.scratch == "" || job.Env["PLAYWRIGHT_NO_COPY_PROMPT"] != "1" {
+		e.t.Fatal("native attempt did not receive private artifact output")
+	}
+	output := "--output=" + filepath.Join(e.scratch, "playwright-output")
+	found := false
+	for _, arg := range job.Command {
+		if arg == output {
+			found = true
+		}
+	}
+	if !found {
+		e.t.Fatal("Playwright output was not redirected into owned scratch")
+	}
+	if err := os.WriteFile(filepath.Join(e.scratch, "worker-artifact"), []byte("synthetic transient output"), 0600); err != nil {
+		e.t.Fatal(err)
+	}
+	return ProcessOutput{Executed: true, ExitCode: 1, Err: errors.New("worker exited")}
+}
+func TestNativeScratchRemovedAfterWorkerFailure(t *testing.T) {
+	executor := &nativeScratchExecutor{t: t}
+	job := fakeJob("job-001", "success", 0)
+	job.Target = "android:finance"
+	plan := Plan{Version: 1, RunID: "run-native-scratch", Jobs: []Job{job}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Timeout: time.Second, ReceiptDir: t.TempDir(), Executor: executor, Adapters: []Adapter{channelAdapter{}}})
+	if len(summary.Receipts) != 1 || summary.Receipts[0].Status == StatusPassed {
+		t.Fatal("failed worker became passing")
+	}
+	if _, err := os.Stat(executor.scratch); !os.IsNotExist(err) {
+		t.Fatal("worker artifacts survived attempt cleanup")
 	}
 }

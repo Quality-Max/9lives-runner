@@ -29,6 +29,7 @@ const node_module_1 = require("node:module");
 const node_path_1 = __importDefault(require("node:path"));
 const doctor_1 = require("./doctor");
 const network_policy_1 = require("./network-policy");
+const policy_proxy_1 = require("./policy-proxy");
 exports.SEVERITY_RANK = {
     critical: 0,
     high: 1,
@@ -188,11 +189,19 @@ async function withPage(options, fn) {
         ? await resolveWorkspaceStorageStatePath(options.storageStatePath)
         : undefined;
     const browserName = options.browser ?? 'chromium';
+    const policy = { allowPrivateNetwork: options.allowPrivateNetwork, privateNetworkOrigin: initialUrl.origin };
+    // Every connection the browser makes, redirects included, goes through the
+    // policy proxy; `<-loopback>` keeps loopback destinations from bypassing it.
+    const proxy = await (0, policy_proxy_1.startPolicyProxy)(policy);
     let browser;
     try {
-        browser = await browserType(browserName).launch({ headless: !options.headed });
+        browser = await browserType(browserName).launch({
+            headless: !options.headed,
+            proxy: { server: proxy.server, bypass: '<-loopback>' },
+        });
     }
     catch (error) {
+        await proxy.close();
         throw missingBrowserError(error, browserName) ?? error;
     }
     try {
@@ -209,10 +218,7 @@ async function withPage(options, fn) {
             }
             throw error;
         }
-        await enforceBrowserNetworkPolicy(context, {
-            allowPrivateNetwork: options.allowPrivateNetwork,
-            privateNetworkOrigin: initialUrl.origin,
-        });
+        await enforceBrowserNetworkPolicy(context, policy);
         const page = await context.newPage();
         page.setDefaultTimeout(15_000);
         try {
@@ -229,6 +235,7 @@ async function withPage(options, fn) {
     }
     finally {
         await browser.close();
+        await proxy.close();
     }
 }
 const MAX_STORAGE_STATE_BYTES = 10 * 1024 * 1024;

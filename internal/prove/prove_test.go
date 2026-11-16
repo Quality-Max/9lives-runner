@@ -290,6 +290,7 @@ func TestReadChannelPlansOnlyKindsEveryAttemptCanApply(t *testing.T) {
 		{"advertised kinds are added to the defaults", []string{hello("observe") + capabilityRecord("abort", "http-401")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP401}},
 		{"every kind", []string{hello("observe") + extended + observed("GET", "/a", 200, true)}, Kinds},
 		{"names this engine does not know are ignored", []string{hello("observe") + capabilityRecord("http-429", "future-fault")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP429}},
+		{"an SDK with the status and JSON kinds only applies neither redirect nor delay", []string{hello("observe") + capabilityRecord("http-401", "http-403", "http-429", "malformed-json")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP401, KindHTTP403, KindHTTP429, KindMalformedJSON}},
 		{"one older worker limits the plan to the defaults", []string{hello("observe") + extended, helloFor("observe", testB, 0)}, DefaultKinds},
 		{"workers agree only on their common kinds", []string{hello("observe") + capabilityRecord("http-401", "http-403"), helloFor("observe", testB, 0) + capabilityRecord("http-403", "malformed-json")}, []string{KindAbort, KindHTTP500, KindEmptyJSON, KindHTTP403}},
 	}
@@ -343,13 +344,14 @@ func TestPlanUsesTheSelectedKindsInKindsOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, faults, notRun := Plan(observations, 24, []string{KindMalformedJSON, KindHTTP429, KindHTTP401})
+	_, faults, notRun := Plan(observations, 24, []string{KindDelay, KindMalformedJSON, KindRedirectCrossOrigin, KindHTTP429, KindHTTP401})
 	kinds := []string{}
 	for _, fault := range append(faults, notRun...) {
 		kinds = append(kinds, fault.Request+":"+fault.Kind)
 	}
-	// malformed-json, like empty-json, needs a successful JSON baseline response.
-	want := "req-1:http-401 req-1:http-429 req-1:malformed-json req-2:http-401 req-2:http-429"
+	// malformed-json, like empty-json, needs a successful JSON baseline
+	// response; redirect-cross-origin and delay apply to every request.
+	want := "req-1:http-401 req-1:http-429 req-1:malformed-json req-1:redirect-cross-origin req-1:delay req-2:http-401 req-2:http-429 req-2:redirect-cross-origin req-2:delay"
 	if strings.Join(kinds, " ") != want || len(notRun) != 0 {
 		t.Fatalf("faults %q, want %q", strings.Join(kinds, " "), want)
 	}

@@ -26,9 +26,10 @@ goals, and replay verified actions without depending on a platform account.
   isolation and verify the result before application. Cache/replay admission
   requires verified behavior and source/environment provenance; replay must
   recheck the expected outcome and invalidate stale entries.
-- Separate working features from planned capabilities. Independent
-  behavioral verification, verified replay and native mobile qualification are
-  subsequent milestones. Claim support only after real runtime qualification;
+- Separate working features from planned capabilities. Android execution is
+  experimental and qualified only on the emulators and phone documented in
+  `docs/android-driver.md`. Independent behavioral verification, verified
+  replay, iOS and broader device qualification are subsequent milestones. Claim support only after real runtime qualification;
   deterministic synthetic results are not production benchmark results.
 - Natural-language goals use finite observed controls and typed actions; reuse
   the existing Go provider transports. Keep parameters in browser workers and
@@ -52,6 +53,28 @@ goals, and replay verified actions without depending on a platform account.
   for correctness, privacy, cleanup and completeness before committing.
 - Test failure modes and observable behavior. Avoid tests that merely reproduce
   implementation details or report green without exercising assertions.
+
+## Releases
+
+- Release only when a maintainer explicitly asks for a release. Implementation
+  work never tags, publishes or promotes anything on its own.
+- Follow the [release runbook](docs/releases.md#release-runbook) step by step.
+  The CLI and `@9l/playwright` share one version; a beta is `X.Y.Z-beta.N`.
+- Tag only the merged release-preparation commit on `main`, after its CI (and
+  the Android workflow when it ran) passed, with a signed annotated tag:
+  `git tag -s v<version> -m "9lives <version>" <sha>`.
+- Never move, delete or reuse a pushed tag, never publish to npm by hand and
+  never edit a published release's assets. A defective release is replaced
+  by a new version.
+- On a failed release job, read its log first. Rerun only the failed jobs of
+  the same run (`gh run rerun <id> --failed`), and only for a known
+  infrastructure flake; any other failure stops the release for a fix and a
+  new version.
+- A beta never becomes Latest or npm `latest`. A stable release becomes
+  Latest only through the workflow's own `latest` job.
+- Re-check tags, GitHub releases and npm immediately before any statement
+  about what is released, and report each verification as passed, failed or
+  not run; a skipped check is never a pass.
 
 ## Mandatory secret handling
 

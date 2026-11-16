@@ -1,11 +1,25 @@
 import {test as base, type Locator, type Page, type TestInfo} from '@playwright/test';
 import {setTimeout as delay} from 'node:timers/promises';
+import {createHash} from 'node:crypto';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
+import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
+import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
+export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
-export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state'] as const;
-export type TargetIdentity = {kind: 'web' | 'android-fake'; appId: string};
+export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
+  'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
+  'foreground', 'device-serial', 'fingerprint'] as const;
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
+/** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
+export type TargetPoint = {x: number; y: number};
+export type TargetRect = TargetPoint & {width: number; height: number};
+export type TargetSize = {width: number; height: number};
+export type TargetIdentity = {kind: 'web' | 'android-fake' | 'android'; appId: string};
 export type TargetContext = {signal: AbortSignal; deadlineMs: number};
-export type TargetState = 'enabled' | 'checked';
+/** `invalid`: the control reports a validation error (Android's
+ * content-invalid; on the web aria-invalid or failed constraint validation). */
+export type TargetState = 'enabled' | 'checked' | 'invalid';
+export type TargetForeground = 'app' | 'foreign' | 'none';
 /** Per-call bound, capped by Go's worker deadline. */
 export type TargetOperationOptions = {timeoutMs?: number};
 
@@ -17,7 +31,13 @@ export interface TargetHandle {
   fill(value: string, context: TargetContext): Promise<void>;
   visible(context: TargetContext): Promise<boolean>;
   text(context: TargetContext): Promise<string>;
-  state(name: TargetState, context: TargetContext): Promise<boolean>;
+  state(name: 'enabled' | 'checked', context: TargetContext): Promise<boolean>;
+  /** Whether the control reports a validation error. A handle without it
+   * fails `toHaveState('invalid', …)` as unsupported_state. */
+  invalid?(context: TargetContext): Promise<boolean>;
+  /** One bounded scroll gesture inside this element; percent of its size. */
+  scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
+  bounds?(context: TargetContext): Promise<TargetRect>;
 }
 export interface TargetDriver extends TargetIdentity {
   version: typeof targetVersion;
@@ -26,33 +46,86 @@ export interface TargetDriver extends TargetIdentity {
   reset(context: TargetContext): Promise<void>;
   /** Observe at most two matches; two means ambiguous and must fail. */
   observeTestId(id: string, context: TargetContext): Promise<readonly TargetHandle[]>;
+  // Optional operations. A driver without one fails the operation with the
+  // stable reason unsupported_operation; it never substitutes another action.
+  /** Platform back: Android's Back key, the browser's history. */
+  back?(context: TargetContext): Promise<void>;
+  /** Software keyboard visibility; an unreadable state throws. Android only. */
+  keyboardShown?(context: TargetContext): Promise<boolean>;
+  /** Dismiss the keyboard without changing the input method. Android only. */
+  hideKeyboard?(context: TargetContext): Promise<void>;
+  /** One touch down/up at device coordinates. */
+  tapAt?(point: TargetPoint, context: TargetContext): Promise<void>;
+  viewport?(context: TargetContext): Promise<TargetSize>;
+  /** Which window has input focus: the app's, another package's (a system
+   * dialog, a permission prompt, Settings) or none. Read-only. Android only. */
+  foreground?(context: TargetContext): Promise<TargetForeground>;
+  /** The serial of the device the open session targets, for spec-side adb
+   * commands. Never written to receipts. Android only. */
+  deviceSerial?(): string | undefined;
+  /** Touch and lift the virtual fingerprint sensor with an enrolled (or
+   * deliberately unenrolled) finger. Owned emulators with declared
+   * biometrics only. */
+  fingerprint?(finger: number, context: TargetContext): Promise<void>;
+  /** SHA-256 of a screenshot of the target display, computed in memory. The
+   * image itself is never returned, written or attached. */
+  screenDigest?(context: TargetContext): Promise<string>;
+  /** Stop and relaunch the configured app, keeping its data. Android only. */
+  terminate?(context: TargetContext): Promise<void>;
+  activate?(context: TargetContext): Promise<void>;
   close(): Promise<void>;
+  runtime?(): AndroidRuntime | undefined;
+  /** After a successful open: the setup record of a declared recovery that
+   * restored the baseline, so the receipt shows the test ran from it. */
+  setup?(): TargetSetupRecord | undefined;
+  /** After a completed assertion failure, while the driver is still open:
+   * classify the device state (a locked phone, for example) so the failure
+   * reads as inconclusive setup, never as an application defect. It must only
+   * read state; it never acts on the device. Its own errors are ignored. */
+  recheck?(context: TargetContext, failed: {operation: string}): Promise<TargetSetupRecord | undefined>;
+  /** Opt-in: describe a failed operation as bounded metadata, captured before
+   * fixture teardown. Read-only; errors are ignored; one record per test. */
+  diagnose?(failure: {operation: string; reason: string; elapsedMs: number; point?: TargetPoint}, context: TargetContext): Promise<TargetDiagnostic | undefined>;
 }
 
 const defaultOperationMs = 5_000;
 const defaultAssertionMs = 5_000;
 const maxOperationMs = 60_000;
+// An emulator relaunches an app, clears its data or settles a cold start in
+// tens of seconds: Android lifecycle operations default to a minute, and
+// every Android operation and assertion accepts up to the open bound.
+const androidLifecycleMs = 60_000;
+const androidMaxMs = 180_000;
 const maxObservations = 200;
 // An operation is aborted and rejected at its deadline. If it is still pending
 // after this grace, the session closes its driver to cancel it.
 const settleMs = 250;
 const stepLocation = {file: targetStepFile, line: 1, column: 1};
+/** A test ID that names its control in the step title, and from there in
+ * receipts: an identifier, never free text. Other IDs (with spaces, `@` or
+ * other characters that could carry data) name no control. */
+export const controlPattern = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/;
 
 class TargetStopped extends Error {
-  constructor(readonly reason: string, cause?: unknown) {
-    super(`9lives target stopped: ${reason}`, cause === undefined ? undefined : {cause});
+  constructor(readonly reason: string, cause?: unknown, detail?: string) {
+    super(`9lives target stopped: ${reason}${detail ? ` (${detail})` : ''}`, cause === undefined ? undefined : {cause});
   }
 }
-const stopped = (reason: string, cause?: unknown) => new TargetStopped(reason, cause);
+const stopped = (reason: string, cause?: unknown, detail?: string) => new TargetStopped(reason, cause, detail);
+const recheckMs = 5_000;
+// A closed metadata record; the reporter forwards it as one target_setup frame.
+const attachSetup = (record: TargetSetupRecord) => base.info().attach('9l.target-setup', {body: Buffer.from(JSON.stringify(record)), contentType: targetSetupType});
+const attachDiagnostic = (record: TargetDiagnostic) => base.info().attach('9l.target-diagnostic', {body: Buffer.from(JSON.stringify(record)), contentType: targetDiagnosticType});
 const boundedText = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max;
 
-/** Deterministic shared operations. No semantic judge, replay or native driver. */
+/** Deterministic shared operations; browser/device handles stay in the worker. */
 export class TargetApp {
   private controller = new AbortController();
   private timer: NodeJS.Timeout;
   private busy = false;
   private reason = 'canceled';
   private closing?: Promise<void>;
+  private diagnosed = false;
   private externalAbort = () => this.stop('canceled');
 
   constructor(private driver: TargetDriver, expected: TargetIdentity, private options: {deadlineMs: number; signal?: AbortSignal}) {
@@ -94,29 +167,64 @@ export class TargetApp {
   /** Permanently stop this session, including a pending mutation. */
   cancel() { this.stop('canceled'); }
 
-  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs): Promise<T> {
-    // The SDK location marks this as a typed target step for the reporter.
-    return base.step(`9l target ${operation}`, async () => {
+  /** Opt-in failure diagnostics: ask the driver once per test, while it is
+   * still open, and attach only a validated record. Never changes the outcome. */
+  private async diagnose(operation: string, reason: string, startedAt: number, point?: TargetPoint) {
+    // A released driver (an Android deadline or cancellation) still answers
+    // with what it knows; the driver decides what it can read.
+    if (this.diagnosed || !this.driver.diagnose) return;
+    this.diagnosed = true;
+    // Bounded like the recheck: a hook still running at the bound is
+    // abandoned and its late record discarded, so the failure reports on time.
+    const bound = Math.min(this.options.deadlineMs, Date.now() + recheckMs);
+    const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
+    const late = Symbol('late');
+    let record: TargetDiagnostic | typeof late | undefined;
+    try {
+      record = await Promise.race([
+        this.driver.diagnose({operation, reason, elapsedMs: Math.max(0, Date.now() - startedAt), ...(point ? {point} : {})}, {signal, deadlineMs: bound}),
+        new Promise<typeof late>(resolve => signal.addEventListener('abort', () => resolve(late), {once: true})),
+      ]);
+    } catch { record = undefined; }
+    if (record === late) return;
+    if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
+  }
+
+  private get maxMs() { return this.driver.kind === 'android' ? androidMaxMs : maxOperationMs; }
+
+  /** The stop reason for a bound that ran out: operation_timeout for the
+   * call's own bound, deadline for the attempt's (Go's worker deadline). */
+  private boundReason(deadlineMs: number) { return deadlineMs < this.options.deadlineMs ? 'operation_timeout' : 'deadline'; }
+
+  private async perform<T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs = defaultOperationMs, maxTimeoutMs = this.maxMs, deadlineReason = () => 'operation_timeout', point?: TargetPoint, control?: string): Promise<T> {
+    // The SDK location marks this as a typed target step for the reporter;
+    // an identifier-shaped test ID after the operation names its control.
+    const named = control !== undefined && controlPattern.test(control) ? ` ${control}` : '';
+    return base.step(`9l target ${operation}${named}`, async () => {
       if (this.controller.signal.aborted) throw stopped(this.reason);
       if (this.busy) { this.stop('concurrent_operation'); throw stopped(this.reason); }
-      if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxOperationMs) {
-        this.stop('invalid_timeout', false); throw stopped(this.reason);
+      if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maxTimeoutMs) {
+        // The accepted range is named locally; only the reason crosses the bridge.
+        this.stop('invalid_timeout', false); throw stopped(this.reason, undefined, `accepted 1-${maxTimeoutMs} ms`);
       }
       this.busy = true;
       const deadlineMs = Math.min(this.options.deadlineMs, Date.now() + timeoutMs);
+      const startedAt = Date.now();
       const signal = this.controller.signal;
       const work = Promise.resolve().then(() => { signal.throwIfAborted(); return body({signal, deadlineMs}); });
       let settled = false;
       void work.then(() => { settled = true; }, () => { settled = true; });
       // Abort and reject at the deadline: a late result never succeeds. The
-      // grace only decides whether to close the driver, if work is still pending.
-      const timer = setTimeout(() => {
-        this.stop('deadline', false);
-        setTimeout(() => { if (!settled) this.release(); }, settleMs);
-      }, Math.max(0, deadlineMs - Date.now()));
+      // Android close stops native work; web retains its artifact-preservation grace.
+      const expire = () => {
+        this.stop(deadlineMs < this.options.deadlineMs ? deadlineReason() : 'deadline', false);
+        if (this.driver.kind === 'android') this.release();
+        else setTimeout(() => { if (!settled) this.release(); }, settleMs);
+      };
+      const timer = setTimeout(expire, Math.max(0, deadlineMs - Date.now()));
       let abort: () => void = () => {};
       try {
-        return await Promise.race([
+        const result = await Promise.race([
           work,
           new Promise<never>((_, reject) => {
             abort = () => reject(stopped(this.reason));
@@ -124,11 +232,33 @@ export class TargetApp {
             if (signal.aborted) abort();
           }),
         ]);
+        // A driver completion can run before an overdue timer. Enforce the
+        // bound here too, so late success or transport failure cannot win.
+        if (!signal.aborted && Date.now() >= deadlineMs) expire();
+        if (signal.aborted) throw stopped(this.reason);
+        return result;
       } catch (error) {
         // Keep the first reason (deadline, cancellation, a missing control...)
         // and the local cause. Neither crosses the engine bridge.
-        if (signal.aborted) throw error instanceof TargetStopped ? error : stopped(this.reason, error);
+        if (!signal.aborted && Date.now() >= deadlineMs) expire();
+        // The operation is over: its timer must not fire while diagnostics
+        // or a recheck run, or it would release the driver under them.
+        clearTimeout(timer);
+        if (signal.aborted) {
+          // The driver may already be released (an Android deadline closes
+          // it); the driver answers with what it still knows, or nothing.
+          await this.diagnose(operation, this.reason, startedAt, point);
+          throw error instanceof TargetStopped ? error : stopped(this.reason, error);
+        }
+        if (error instanceof TargetSetupError) {
+          // The driver classified the device/app state before the operation
+          // could establish anything about the application.
+          this.stop(`setup_${error.record.classification}`, false);
+          await attachSetup(error.record);
+          throw stopped(this.reason, error);
+        }
         this.stop(error instanceof TargetStopped ? error.reason : 'operation_failed', false);
+        await this.diagnose(operation, this.reason, startedAt, point);
         throw error instanceof TargetStopped ? error : stopped(this.reason, error);
       } finally {
         clearTimeout(timer);
@@ -138,8 +268,181 @@ export class TargetApp {
     }, {location: stepLocation});
   }
 
-  open(options: TargetOperationOptions = {}) { return this.perform('open', context => this.driver.open(context), options.timeoutMs); }
-  reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs); }
+  open(options: TargetOperationOptions = {}) { return this.perform('open', async context => {
+    await this.driver.open(context);
+    if (this.driver.kind === 'android') {
+      const runtime = this.driver.runtime?.();
+      if (!validAndroidRuntime(runtime)) throw stopped('missing_android_runtime');
+      await base.info().attach('9l.android-runtime', {body: Buffer.from(JSON.stringify(runtime)), contentType: androidRuntimeType});
+    }
+    const recovered = this.driver.setup?.();
+    if (recovered !== undefined) {
+      if (!validTargetSetup(recovered) || !recovered.recovery?.restored) throw stopped('invalid_setup_record');
+      await attachSetup(recovered);
+    }
+  }, options.timeoutMs === undefined && this.driver.kind === 'android' ? androidMaxMs : options.timeoutMs); }
+  // Defaults apply only to an omitted timeout; any other non-integer,
+  // including null, stops as invalid_timeout.
+  reset(options: TargetOperationOptions = {}) { return this.perform('reset', context => this.driver.reset(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
+  private get lifecycleMs() { return this.driver.kind === 'android' ? androidLifecycleMs : defaultOperationMs; }
+
+  /** Poll a check until it holds or the next read could overrun the bound.
+   * Held, or not held after at least one completed observation (with the
+   * last failed read, if any); failed reads alone throw their own error, and
+   * a bound reached before any completed read is a deadline. Ambiguity,
+   * invalid input and cancellation are never transient. */
+  private async poll(context: TargetContext, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs: number, observations = maxObservations, falseSeen = () => {}, strict = false): Promise<{held: boolean; last?: unknown}> {
+    const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
+    let last: unknown, slowest = 0, observedFalse = false;
+    for (let poll = 0; poll < observations; poll++) {
+      context.signal.throwIfAborted();
+      const started = Date.now();
+      try {
+        if (await attempt(context)) return {held: true};
+        observedFalse = true; falseSeen();
+      } catch (error) {
+        // A query answers only from reads that completed: any failed read
+        // (a lost transport, a driver-level ambiguity) ends it.
+        if (strict || error instanceof TargetStopped || context.signal.aborted) throw error;
+        last = error;
+      }
+      // Stop while the next observation, half again as slow as the slowest
+      // so far, would still finish in time. A last read that overran the
+      // bound would end the operation by its deadline, which on Android
+      // releases the driver before diagnostics or the recheck can read
+      // the device; native read times vary on a loaded host.
+      slowest = Math.max(slowest, Date.now() - started);
+      if (poll + 1 >= observations || Date.now() + interval + slowest * 1.5 >= context.deadlineMs) break;
+      await delay(interval, undefined, {signal: context.signal});
+    }
+    if (observedFalse) return {held: false, last};
+    // Failed reads alone establish nothing. Keep their operation failure
+    // distinct from an executed false comparison.
+    if (last !== undefined) throw last;
+    throw stopped(this.boundReason(context.deadlineMs));
+  }
+
+  /** Poll a check to its bound. A completed false observation is an assertion
+   * failure even if a later read stalls; a bound reached before any completed
+   * check is a deadline; failed reads alone keep their own operation error.
+   * After a completed failure, the driver may reclassify the device state. */
+  private async assertLoop(operation: string, attempt: (context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs, control?: string) {
+    let observedFalse = false;
+    try {
+      return await this.perform(operation, async context => {
+        const result = await this.poll(context, attempt, timeoutMs, maxObservations, () => { observedFalse = true; });
+        if (!result.held) throw stopped('assertion_failed', result.last);
+      }, timeoutMs, this.maxMs, () => observedFalse ? 'assertion_failed' : 'operation_timeout', undefined, control);
+    } catch (error) {
+      // A completed mismatch on a device the driver can still read: ask it
+      // whether the device became unavailable (locked, screen off) during
+      // the readiness poll. A positive answer reclassifies the failure as
+      // setup; the assertion step stays failed and the test still fails.
+      if (!(error instanceof TargetStopped) || error.reason !== 'assertion_failed' || !this.driver.recheck || this.closing) throw error;
+      // The hook gets a bounded signal; a stalled hook cannot keep the
+      // assertion pending, and a result after the bound, cancellation or
+      // close is discarded so it never rewrites the recorded failure.
+      const bound = Math.min(this.options.deadlineMs, Date.now() + recheckMs);
+      const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
+      let record: TargetSetupRecord | undefined;
+      try {
+        record = await Promise.race([
+          this.driver.recheck({signal, deadlineMs: bound}, {operation}),
+          new Promise<undefined>(resolve => signal.addEventListener('abort', () => resolve(undefined), {once: true})),
+        ]);
+      } catch { record = undefined; }
+      if (record === undefined || signal.aborted || this.closing) throw error;
+      if (!validTargetSetup(record) || record.stage !== 'recheck' || record.recovery) throw error;
+      this.reason = `setup_${record.classification}`;
+      await attachSetup(record);
+      throw stopped(this.reason, error);
+    }
+  }
+
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint'>(name: K): NonNullable<TargetDriver[K]> {
+    const method = this.driver[name];
+    if (typeof method !== 'function') throw stopped('unsupported_operation');
+    return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
+  }
+
+  /** Platform back: Android's Back key, the browser's history. */
+  back(options: TargetOperationOptions = {}) { return this.perform('back', context => this.optional('back')(context), options.timeoutMs); }
+  /** Dismiss the software keyboard, keeping the selected input method. Android only. */
+  hideKeyboard(options: TargetOperationOptions = {}) { return this.perform('hide-keyboard', context => this.optional('hideKeyboard')(context), options.timeoutMs); }
+  /** Android only: assert the software keyboard is shown or hidden. */
+  toHaveKeyboard(visible: boolean, timeoutMs?: number) {
+    if (typeof visible !== 'boolean') return this.assertLoop('assert-keyboard', async () => { throw stopped('invalid_value'); }, timeoutMs);
+    return this.assertLoop('assert-keyboard', async context => await this.optional('keyboardShown')(context) === visible, timeoutMs);
+  }
+  /** One touch down/up at device coordinates, for example outside a pane.
+   * Coordinates are integers inside the viewport, checked against the
+   * driver's viewport when it reports one; nothing is retried. */
+  tapAt(point: TargetPoint, options: TargetOperationOptions = {}) {
+    return this.perform('tap-at', async context => {
+      if (!validPoint(point)) throw stopped('invalid_point');
+      if (typeof this.driver.viewport === 'function') {
+        const size = await this.driver.viewport(context);
+        if (!validSize(size)) throw stopped('invalid_property');
+        if (point.x >= size.width || point.y >= size.height) throw stopped('invalid_point');
+      }
+      await this.optional('tapAt')({x: point.x, y: point.y}, context);
+    }, options.timeoutMs, this.maxMs, () => 'operation_timeout', validPoint(point) ? {x: point.x, y: point.y} : undefined);
+  }
+  viewport(options: TargetOperationOptions = {}) {
+    return this.perform('viewport', async context => {
+      const size = await this.optional('viewport')(context);
+      if (!validSize(size)) throw stopped('invalid_property');
+      return {width: size.width, height: size.height};
+    }, options.timeoutMs);
+  }
+  /** A digest of the active display's current image, for settling checks
+   * (two equal digests mean nothing moved). The image is never retained. */
+  screenDigest(options: TargetOperationOptions = {}) {
+    return this.perform('screen-digest', async context => {
+      const digest = await this.optional('screenDigest')(context);
+      if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) throw stopped('invalid_property');
+      return digest;
+    }, options.timeoutMs);
+  }
+  /** Stop the configured app without clearing its data. Android only. */
+  terminate(options: TargetOperationOptions = {}) { return this.perform('terminate', context => this.optional('terminate')(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
+  /** Bring the configured app back to the foreground. Android only. */
+  activate(options: TargetOperationOptions = {}) { return this.perform('activate', context => this.optional('activate')(context), options.timeoutMs === undefined ? this.lifecycleMs : options.timeoutMs); }
+
+  /** Which window has input focus: the app's, another package's (a system
+   * dialog, permission prompt or Settings) or none. Read-only; package
+   * scoping of every action is unchanged. Recorded as an executed action,
+   * never an assertion. Android only. */
+  foreground(options: TargetOperationOptions = {}) {
+    return this.perform('foreground', async context => {
+      const value: unknown = await this.optional('foreground')(context);
+      if (value !== 'app' && value !== 'foreign' && value !== 'none') throw stopped('invalid_property');
+      return value as TargetForeground;
+    }, options.timeoutMs);
+  }
+
+  /** Touch the emulator's fingerprint sensor with finger 1-10, as a person
+   * would at a biometric prompt. Only an owned emulator whose driver
+   * declares biometrics has a sensor to touch; elsewhere this fails as
+   * unsupported_operation before touching the device. Recorded as an
+   * executed action: a biometric sign-in still needs an assertion. */
+  fingerprint(finger: number, options: TargetOperationOptions = {}) {
+    return this.perform('fingerprint', async context => {
+      if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw stopped('invalid_value');
+      await this.optional('fingerprint')(finger, context);
+    }, options.timeoutMs);
+  }
+
+  /** The serial of the device the open session targets, for adb commands a
+   * spec issues itself; those are outside the driver's cleanup and evidence.
+   * Not a device operation and never recorded. Android only. */
+  deviceSerial() {
+    if (this.controller.signal.aborted) throw stopped(this.reason);
+    if (typeof this.driver.deviceSerial !== 'function') throw stopped('unsupported_operation');
+    const serial: unknown = this.driver.deviceSerial();
+    if (typeof serial !== 'string' || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(serial)) throw stopped('session_unavailable');
+    return serial;
+  }
 
   getByTestId(id: string) {
     const observe = async (context: TargetContext) => {
@@ -147,6 +450,9 @@ export class TargetApp {
       const matches = await this.driver.observeTestId(id, context);
       context.signal.throwIfAborted();
       if (!Array.isArray(matches) || matches.length > 1) throw stopped('ambiguous_test_id');
+      // Only an empty observation is absence; a reported match without a
+      // handle (null, undefined, a hole) is malformed lookup evidence.
+      if (matches.length === 1 && (!(0 in matches) || typeof matches[0] !== 'object' || matches[0] === null)) throw stopped('invalid_property');
       return matches[0];
     };
     const required = async (context: TargetContext) => {
@@ -154,34 +460,60 @@ export class TargetApp {
       if (!handle) throw stopped('missing_test_id');
       return handle;
     };
-    const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs = defaultAssertionMs) =>
-      this.perform(operation, async context => {
-        // At most maxObservations polls within the bound; the poll ends before
-        // the deadline so a false assertion fails by itself.
-        const interval = Math.max(25, Math.ceil(timeoutMs / maxObservations));
-        let last: unknown;
-        for (let poll = 0; poll < maxObservations; poll++) {
-          context.signal.throwIfAborted();
-          try {
-            const handle = await observe(context);
-            if (handle && await check(handle, context)) return;
-          } catch (error) {
-            // Ambiguity, invalid input and cancellation are not transient.
-            if (error instanceof TargetStopped || context.signal.aborted) throw error;
-            last = error;
-          }
-          if (Date.now() + interval >= context.deadlineMs) break;
-          await delay(interval, undefined, {signal: context.signal});
-        }
-        throw stopped('assertion_failed', last);
-      }, timeoutMs);
+    // A missing control is a completed false observation, except for a
+    // hidden assertion, where absence is exactly what it asserts.
+    // Every operation on this control names it.
+    const step = <T>(operation: string, body: (context: TargetContext) => Promise<T>, timeoutMs?: number) =>
+      this.perform(operation, body, timeoutMs, undefined, undefined, undefined, id);
+    const assertion = (operation: string, check: (handle: TargetHandle, context: TargetContext) => Promise<boolean>, timeoutMs?: number, absent = false) =>
+      this.assertLoop(operation, async context => {
+        const handle = await observe(context);
+        return handle ? check(handle, context) : absent;
+      }, timeoutMs, id);
     return {
-      tap: (options: TargetOperationOptions = {}) => this.perform('tap', async context => (await required(context)).tap(context), options.timeoutMs),
-      fill: (value: string, options: TargetOperationOptions = {}) => this.perform('fill', async context => {
+      tap: (options: TargetOperationOptions = {}) => step('tap', async context => (await required(context)).tap(context), options.timeoutMs),
+      fill: (value: string, options: TargetOperationOptions = {}) => step('fill', async context => {
         if (!boundedText(value, 4096)) throw stopped('invalid_value');
         await (await required(context)).fill(value, context);
       }, options.timeoutMs),
-      toBeVisible: (timeoutMs?: number) => assertion('assert-visible', (handle, context) => handle.visible(context), timeoutMs),
+      /** One bounded scroll gesture inside this control, by a fraction of its size. */
+      scroll: (direction: ScrollDirection, options: TargetOperationOptions & {percent?: number} = {}) => step('scroll', async context => {
+        const percent = options.percent ?? 0.5;
+        if (!['up', 'down', 'left', 'right'].includes(direction) || typeof percent !== 'number' || !(percent > 0 && percent <= 1)) throw stopped('invalid_value');
+        const handle = await required(context);
+        if (typeof handle.scroll !== 'function') throw stopped('unsupported_operation');
+        await handle.scroll(direction, percent, context);
+      }, options.timeoutMs),
+      /** The control's rectangle in device coordinates. */
+      bounds: (options: TargetOperationOptions = {}) => step('bounds', async context => {
+        const handle = await required(context);
+        if (typeof handle.bounds !== 'function') throw stopped('unsupported_operation');
+        const rect = await handle.bounds(context);
+        if (!validRect(rect)) throw stopped('invalid_property');
+        return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+      }, options.timeoutMs),
+      /** Whether the control is visible, without ending the session when it
+       * is not: one observation, or with timeoutMs a poll until it appears.
+       * Absent counts as not visible; ambiguity and reads that never
+       * complete still fail. Recorded as an executed action, never an
+       * assertion, so it cannot stand in for one. */
+      isVisible: (options: TargetOperationOptions = {}) => {
+        const polling = options.timeoutMs !== undefined;
+        const bound = polling ? options.timeoutMs as number : defaultOperationMs;
+        return step('query-visible', async context => {
+          const result = await this.poll(context, async context => {
+            const handle = await observe(context);
+            return handle ? visibility(handle, context) : false;
+          }, bound, polling ? maxObservations : 1, () => {}, true);
+          // A poll that Go's worker deadline cut short has not answered:
+          // the requested wait never ran to its end.
+          if (!result.held && polling && context.deadlineMs >= this.options.deadlineMs) throw stopped('deadline');
+          return result.held;
+        }, bound);
+      },
+      toBeVisible: (timeoutMs?: number) => assertion('assert-visible', async (handle, context) => await visibility(handle, context), timeoutMs),
+      /** Passes when the control is absent or not displayed. */
+      toBeHidden: (timeoutMs?: number) => assertion('assert-hidden', async (handle, context) => !await visibility(handle, context), timeoutMs, true),
       toHaveText: (value: string, timeoutMs?: number) => {
         if (!boundedText(value, 4096)) return assertion('assert-text', async () => { throw stopped('invalid_value'); }, timeoutMs);
         return assertion('assert-text', async (handle, context) => {
@@ -190,12 +522,33 @@ export class TargetApp {
         }, timeoutMs);
       },
       toHaveState: (name: TargetState, value: boolean, timeoutMs?: number) => {
-        if (!['enabled', 'checked'].includes(name) || typeof value !== 'boolean') return assertion('assert-state', async () => { throw stopped('unsupported_state'); }, timeoutMs);
-        return assertion('assert-state', async (handle, context) => await handle.state(name, context) === value, timeoutMs);
+        if (!['enabled', 'checked', 'invalid'].includes(name) || typeof value !== 'boolean') return assertion('assert-state', async () => { throw stopped('unsupported_state'); }, timeoutMs);
+        return assertion('assert-state', async (handle, context) => {
+          if (name !== 'invalid') return await handle.state(name, context) === value;
+          if (typeof handle.invalid !== 'function') throw stopped('unsupported_state');
+          const invalid: unknown = await handle.invalid(context);
+          if (typeof invalid !== 'boolean') throw stopped('invalid_property');
+          return invalid === value;
+        }, timeoutMs);
       },
     };
   }
 }
+
+// A driver's visibility answer counts only as a boolean: a missing or
+// malformed return proves neither visible nor hidden.
+const visibility = async (handle: TargetHandle, context: TargetContext) => {
+  const visible: unknown = await handle.visible(context);
+  if (typeof visible !== 'boolean') throw stopped('invalid_property');
+  return visible;
+};
+const coordinate = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+// A rectangle origin may be negative: a control scrolled partly above or
+// left of the viewport still has geometry. Tap coordinates and sizes do not.
+const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
+const validPoint = (value: unknown): value is TargetPoint => !!value && typeof value === 'object' && coordinate((value as TargetPoint).x) && coordinate((value as TargetPoint).y);
+const validSize = (value: unknown): value is TargetSize => !!value && typeof value === 'object' && coordinate((value as TargetSize).width) && coordinate((value as TargetSize).height) && (value as TargetSize).width > 0 && (value as TargetSize).height > 0;
+const validRect = (value: unknown): value is TargetRect => !!value && typeof value === 'object' && offset((value as TargetRect).x) && offset((value as TargetRect).y) && coordinate((value as TargetRect).width) && coordinate((value as TargetRect).height);
 
 const remaining = (context: TargetContext) => { context.signal.throwIfAborted(); return Math.max(1, context.deadlineMs - Date.now()); };
 
@@ -208,6 +561,23 @@ function locatorHandle(locator: Locator): TargetHandle {
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),
+    invalid: async context => locator.evaluate(element => {
+      const aria = element.getAttribute('aria-invalid');
+      return (aria !== null && aria !== '' && aria !== 'false') || element.matches(':invalid');
+    }, undefined, {timeout: remaining(context)}),
+    scroll: async (direction, percent, context) => {
+      remaining(context);
+      await locator.evaluate((element, {direction, percent}) => {
+        const dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
+        const dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
+        element.scrollBy({left: dx * element.clientWidth * percent, top: dy * element.clientHeight * percent, behavior: 'instant'});
+      }, {direction, percent}, {timeout: remaining(context)});
+    },
+    bounds: async context => {
+      const box = await locator.boundingBox({timeout: remaining(context)});
+      if (!box) throw new Error('control has no box');
+      return {x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height)};
+    },
   };
 }
 
@@ -220,6 +590,15 @@ export function webTargetDriver(page: Page, appId: string, lifecycle: {
     version: targetVersion, capabilities: targetCapabilities, kind: 'web', appId,
     open: context => lifecycle.open(page, context), reset: context => lifecycle.reset(page, context),
     close: () => page.close({runBeforeUnload: false}),
+    back: async context => { await page.goBack({timeout: remaining(context)}); },
+    tapAt: async (point, context) => { remaining(context); await page.mouse.click(point.x, point.y); },
+    viewport: async context => {
+      // viewport: null disables emulation; the page still has a real size.
+      remaining(context);
+      const size = page.viewportSize() ?? await page.evaluate(() => ({width: window.innerWidth, height: window.innerHeight}));
+      return {width: Math.round(size.width), height: Math.round(size.height)};
+    },
+    screenDigest: async context => createHash('sha256').update(await page.screenshot({timeout: remaining(context), animations: 'allow', caret: 'initial'})).digest('hex'),
     observeTestId: async (id, context) => {
       remaining(context);
       const locator = page.getByTestId(id);
@@ -266,7 +645,7 @@ export function createTargetTest(options: TargetOptions) {
   return base.extend<TargetFixtures>({app: async ({}, use, info) => {
     const target = resolve();
     owned(target, info);
-    if (target.kind !== 'android-fake' || !options.native) throw stopped('unsupported_target');
+    if ((target.kind !== 'android-fake' && target.kind !== 'android') || !options.native) throw stopped('unsupported_target');
     await useApp(target, options.native(target), use);
   }});
 }

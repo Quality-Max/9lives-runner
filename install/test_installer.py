@@ -37,8 +37,12 @@ def installer(tmp_path):
         "import os, pathlib, shutil, sys\n"
         "args = sys.argv[1:]\n"
         "url = args[args.index('-o') - 1]\n"
-        "assert url.startswith('https://github.com/Quality-Max/9lives-runner/releases/download/v0.1.1/')\n"
         "with open(os.environ['INSTALLER_TEST_REQUESTS'], 'a') as log: log.write(url + '\\n')\n"
+        "if url == 'https://github.com/Quality-Max/9lives-runner/releases/latest':\n"
+        "    latest = os.environ.get('INSTALLER_TEST_LATEST')\n"
+        "    if not latest: sys.exit(22)\n"
+        "    sys.stdout.write(latest); sys.exit(0)\n"
+        "assert url.startswith('https://github.com/Quality-Max/9lives-runner/releases/download/v0.1.1/')\n"
         "shutil.copyfile(pathlib.Path(os.environ['INSTALLER_TEST_ASSETS']) / url.rsplit('/', 1)[1], "
         "args[args.index('-o') + 1])\n",
     )
@@ -244,3 +248,60 @@ def test_update_replaces_regular_legal_files(installer):
     for artifact in ("9l", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"):
         assert (destination / artifact).read_bytes() == (source / artifact).read_bytes()
     assert not list(destination.glob(".9l-install.*"))
+
+
+LATEST = "https://github.com/Quality-Max/9lives-runner/releases/latest"
+
+
+def test_without_a_pinned_version_installs_the_latest_release(installer):
+    package, run, environment, destination, _, requests, _ = installer
+    package()
+    del environment["NINELIVES_VERSION"]
+    environment["INSTALLER_TEST_LATEST"] = "https://github.com/Quality-Max/9lives-runner/releases/tag/v0.1.1"
+    result = run()
+    assert result.returncode == 0, result.stderr
+    assert "downloading Go runner v0.1.1" in result.stdout
+    assert (destination / "9l").exists()
+    assert requests.read_text().splitlines()[0] == LATEST
+
+
+def test_a_pinned_version_skips_the_latest_lookup(installer):
+    package, run, _, destination, _, requests, _ = installer
+    package()
+    result = run()
+    assert result.returncode == 0, result.stderr
+    assert LATEST not in requests.read_text()
+
+
+@pytest.mark.parametrize(
+    "latest",
+    [
+        "https://example.invalid/Quality-Max/9lives-runner/releases/tag/v0.1.1",
+        "https://github.com/Other/9lives-runner/releases/tag/v0.1.1",
+        "https://github.com/Quality-Max/9lives-runner/releases",
+        "https://github.com/Quality-Max/9lives-runner/releases/tag/v0.1.1-rc.1",
+        "https://github.com/Quality-Max/9lives-runner/releases/tag/v0.1.1/../../main",
+        "https://github.com/Quality-Max/9lives-runner/releases/tag/",
+    ],
+)
+def test_an_unexpected_latest_release_never_downloads(installer, latest):
+    package, run, environment, destination, _, requests, _ = installer
+    package()
+    del environment["NINELIVES_VERSION"]
+    environment["INSTALLER_TEST_LATEST"] = latest
+    result = run()
+    assert result.returncode != 0
+    assert "NINELIVES_VERSION" in result.stderr or "stable tag" in result.stderr
+    assert requests.read_text().splitlines() == [LATEST]
+    assert not (destination / "9l").exists()
+
+
+def test_a_failed_latest_lookup_names_the_pin(installer):
+    package, run, environment, destination, _, requests, _ = installer
+    package()
+    del environment["NINELIVES_VERSION"]
+    result = run()
+    assert result.returncode != 0
+    assert "could not find the latest release; set NINELIVES_VERSION" in result.stderr
+    assert requests.read_text().splitlines() == [LATEST]
+    assert not (destination / "9l").exists()

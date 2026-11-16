@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -22,18 +24,17 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	format := fs.String("format", "text", "text or json")
-	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK")
+	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK; with a spec path, also check that spec for prove")
+	paths := fs.Bool("paths", false, "print executable and config paths for local use; never persisted")
+	android := fs.Bool("android", false, "also check the optional Android target: Java, SDK tools, AVDs, attached devices and the pinned Appium tooling")
 	jevEnabled := fs.Bool("jev", false, "check optional Jev configuration locally (no API request)")
 	jevModel := fs.String("jev-model", jev.DefaultModel, "explicit Jev model for local configuration preflight")
 	jevImages := fs.String("jev-images", "off", "explicit image-upload policy: off, synthetic or masked")
-	if err := fs.Parse(args); err != nil {
+	// Flags may follow the spec, as with run and prove.
+	if err := fs.Parse(flagsFirst(args, map[string]bool{"-format": true, "--format": true, "-jev-model": true, "--jev-model": true, "-jev-images": true, "--jev-images": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
-	}
-	if fs.NArg() != 0 || (*format != "text" && *format != "json") {
-		fmt.Fprintln(errOut, "9l: doctor takes --sdk, --format text|json, or --jev with --jev-model and --jev-images")
 		return 2
 	}
 	jevMode, jevOptions := false, false
@@ -45,19 +46,46 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 			jevOptions = true
 		}
 	})
-	if (jevOptions && !jevMode) || (jevMode && *sdk) {
-		fmt.Fprintln(errOut, "9l: Jev preflight requires --jev and cannot be combined with --sdk")
+	// The Jev preflight is local-only and separate from the Node diagnostics.
+	if jevOptions && !jevMode {
+		fmt.Fprintln(errOut, "9l: --jev-model and --jev-images require --jev")
 		return 2
 	}
 	if jevMode {
+		if fs.NArg() != 0 || *sdk || *android || *paths || (*format != "text" && *format != "json") {
+			fmt.Fprintln(errOut, "9l: Jev preflight takes only --jev, --jev-model, --jev-images and --format text|json")
+			return 2
+		}
 		return jevPreflight(jev.Config{Enabled: *jevEnabled, Model: *jevModel, Images: *jevImages}, *format, out, errOut)
+	}
+	if fs.NArg() > 1 || (fs.NArg() == 1 && !*sdk) || (*format != "text" && *format != "json") {
+		fmt.Fprintln(errOut, "9l: doctor takes only --sdk [spec], --android, --paths and --format text|json, or --jev")
+		return 2
+	}
+	helperArgs := map[string]any{"cliVersion": version, "sdk": *sdk, "paths": *paths, "android": *android, "executable": executableFacts(*paths)}
+	if fs.NArg() == 1 {
+		// The helper reads the spec as text and never executes it; refuse
+		// anything but a regular file here so the report names a real spec.
+		spec, err := filepath.Abs(fs.Arg(0))
+		if info, statErr := os.Stat(spec); err != nil || statErr != nil || !info.Mode().IsRegular() {
+			fmt.Fprintln(errOut, "9l: doctor: the spec must be an existing file")
+			return 2
+		}
+		helperArgs["spec"] = spec
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// What this engine admits and can request, so the helper can judge an
 	// installed SDK by its declared protocol rather than by version string.
-	engine := map[string]any{"protocol": playwrightsdk.Version, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}
-	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: map[string]any{"cliVersion": version, "sdk": *sdk, "engine": engine}}, browsercheck.Options{Timeout: 10 * time.Second})
+	helperArgs["engine"] = map[string]any{"protocol": playwrightsdk.Version, "capabilities": playwrightsdk.Capabilities, "faults": prove.Kinds}
+	options := browsercheck.Options{Timeout: 10 * time.Second}
+	if *android {
+		// The Android checks run java, adb and emulator, each bounded at
+		// eight seconds, and read the SDK and tooling locations from these.
+		options.Timeout = 40 * time.Second
+		options.Env = androidDoctorEnv
+	}
+	response, err := browsercheck.Run(ctx, browsercheck.Request{Tool: "doctor", Args: helperArgs}, options)
 	if err != nil {
 		// Never echo a helper's arbitrary stderr or project paths from diagnostics.
 		if errors.Is(err, browsercheck.ErrNodeUnavailable) {
@@ -97,5 +125,64 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	if !report.Ready {
 		return 2
 	}
+	if *format == "text" {
+		starHint(out, errOut)
+	}
 	return 0
+}
+
+// androidDoctorEnv names the locations `doctor --android` reads, on top of
+// the browser-check allowlist: SDK, Java, tooling, AVD homes and the adb
+// server port. None of them is a credential.
+var androidDoctorEnv = []string{"ANDROID_HOME", "ANDROID_SDK_ROOT", "JAVA_HOME", "HOMEBREW_PREFIX", "NINELIVES_ANDROID_TOOLS",
+	"ANDROID_USER_HOME", "ANDROID_EMULATOR_HOME", "ANDROID_AVD_HOME", "ANDROID_ADB_SERVER_PORT"}
+
+// executableFacts compares the file doctor runs from with the 9l that PATH
+// resolves to, without executing either. The paths travel to the helper only
+// under --paths; otherwise the report says just whether the two match, whether
+// 9l is on PATH at all and whether a relative PATH entry found it.
+func executableFacts(paths bool) map[string]any {
+	facts := map[string]any{"samePath": false, "otherOnPath": false}
+	self, err := os.Executable()
+	if err != nil {
+		facts["selfUnknown"] = true
+		return facts
+	}
+	if paths {
+		facts["self"] = realPath(self)
+	}
+	other, err := exec.LookPath("9l")
+	if err != nil && !errors.Is(err, exec.ErrDot) {
+		return facts
+	}
+	facts["otherOnPath"] = true
+	if !filepath.IsAbs(other) {
+		// A relative PATH entry resolves against the current directory, so
+		// what it finds depends on where a terminal or host starts.
+		facts["relative"] = true
+		if absolute, err := filepath.Abs(other); err == nil {
+			other = absolute
+		}
+	}
+	facts["samePath"] = sameFile(self, other)
+	if paths {
+		facts["other"] = realPath(other)
+	}
+	return facts
+}
+
+func realPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+func sameFile(a, b string) bool {
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	if errA == nil && errB == nil {
+		return os.SameFile(infoA, infoB)
+	}
+	return realPath(a) == realPath(b)
 }

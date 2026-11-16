@@ -11,6 +11,15 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceDependency"
+          },
+          "type": "array"
+        },
+        "dependenciesSHA256": {
+          "type": "string"
+        },
         "repositorySHA256": {
           "type": "string"
         },
@@ -32,6 +41,31 @@
         "commit",
         "sourceSHA256",
         "sourcePathSHA256"
+      ],
+      "type": "object"
+    },
+    "AssertionSummary": {
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "matchers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "count",
+        "matchers"
       ],
       "type": "object"
     },
@@ -112,10 +146,22 @@
         "commit": {
           "type": "string"
         },
+        "dependencies": {
+          "type": "string"
+        },
+        "dependencyChanges": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceChange"
+          },
+          "type": "array"
+        },
         "expected": {
           "$ref": "#/$defs/AgentProvenance"
         },
         "repository": {
+          "type": "string"
+        },
+        "scope": {
           "type": "string"
         },
         "source": {
@@ -131,6 +177,44 @@
         "commit",
         "source",
         "repository"
+      ],
+      "type": "object"
+    },
+    "ProvenanceChange": {
+      "properties": {
+        "change": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "change"
+      ],
+      "type": "object"
+    },
+    "ProvenanceDependency": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "sha256"
       ],
       "type": "object"
     },
@@ -237,6 +321,9 @@
         "findings": {
           "type": "integer"
         },
+        "noTests": {
+          "type": "integer"
+        },
         "rules": {
           "anyOf": [
             {
@@ -262,6 +349,7 @@
         "assessed",
         "failed",
         "unrecognized",
+        "noTests",
         "tests",
         "findings",
         "rules"
@@ -270,6 +358,9 @@
     },
     "Test": {
       "properties": {
+        "assertions": {
+          "$ref": "#/$defs/AssertionSummary"
+        },
         "column": {
           "type": "integer"
         },
@@ -324,6 +415,7 @@
         "column",
         "requirements",
         "dimensions",
+        "assertions",
         "findings"
       ],
       "type": "object"

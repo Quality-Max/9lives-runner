@@ -41,7 +41,11 @@ var (
 	kindPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 )
 
-// Reasons an empty-json or malformed-json fault was not applicable to a request.
+// Reasons a fault was not applicable to a request: not-json for empty-json and
+// malformed-json, whose response was not a JSON object or array; unreachable
+// for those and for delay, whose upstream request failed in the fault run, so
+// there was no response to replace or hold. The SDK aborts such a request
+// rather than sending it again.
 const (
 	ReasonNotJSON     = "not-json"
 	ReasonUnreachable = "unreachable"

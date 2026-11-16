@@ -9,7 +9,7 @@ function createAnalyzer(ts) {
   if (ts.version !== '5.9.3' || typeof ts.createSourceFile !== 'function') throw new AnalysisError('parser-unavailable');
   const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/;
   // Playwright 1.61.1's locator, page, API response and function async matchers,
-  // unchanged through 1.64.0. The regression suite checks this against the
+  // unchanged through 1.64.1. The regression suite checks this against the
   // installed public type declarations; CI installs each qualified release.
   const asyncMatchers = new Set([
     'toBeAttached', 'toBeChecked', 'toBeDisabled', 'toBeEditable', 'toBeEmpty',
@@ -30,6 +30,11 @@ function createAnalyzer(ts) {
     'toEqual', 'toHaveLength', 'toHaveProperty', 'toMatch', 'toMatchObject',
     'toStrictEqual', 'toThrow', 'toThrowError', 'toMatchSnapshot',
   ]);
+  // @9l/playwright target assertions (9l.target/3): on a control from
+  // app.getByTestId(...), and the app-level keyboard check. Each polls the
+  // driver and rejects when the state is not reached, so it is asynchronous.
+  const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState']);
+  const targetAppMatchers = new Set(['toHaveKeyboard']);
   // Page, frame, locator, handle and context methods whose function arguments
   // Playwright serializes and runs in the browser.
   const browserMethods = new Set(['evaluate', 'evaluateHandle', 'evaluateAll', '$eval', '$$eval', 'waitForFunction', 'addInitScript']);
@@ -104,7 +109,9 @@ function createAnalyzer(ts) {
       : ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     if (file.parseDiagnostics.length) throw new AnalysisError('syntax');
     if (javascript && !javaScriptOnly(file)) throw new AnalysisError('typescript-in-javascript');
-    const tests = new Set(), expects = new Set(), foreignTests = new Set();
+    // Target tests: a file-level `const test = createTargetTest(...)` from
+    // @9l/playwright declares a test whose `app` fixture drives a target.
+    const tests = new Set(), expects = new Set(), foreignTests = new Set(), factories = new Set(), targetTests = new Set();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
       const bindings = statement.importClause?.namedBindings;
@@ -122,8 +129,58 @@ function createAnalyzer(ts) {
         const imported = (binding.propertyName || binding.name).text;
         if (imported === 'test') tests.add(binding.name.text);
         if (imported === 'expect') expects.add(binding.name.text);
+        if (imported === 'createTargetTest' && statement.moduleSpecifier.text === '@9l/playwright') factories.add(binding.name.text);
       }
     }
+    // Whether fixtures passed to .extend() may define `app`: only object
+    // literals, and spreads of literals or of a conditional between them, are
+    // read; anything else may.
+    const mayDefineApp = node => {
+      while (ts.isParenthesizedExpression(node)) node = node.expression;
+      if (ts.isConditionalExpression(node)) return mayDefineApp(node.whenTrue) || mayDefineApp(node.whenFalse);
+      if (!ts.isObjectLiteralExpression(node)) return true;
+      return node.properties.some(property => ts.isSpreadAssignment(property) ? mayDefineApp(property.expression)
+        : !property.name || ts.isComputedPropertyName(property.name) || ((ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) && property.name.text === 'app'));
+    };
+    // createTargetTest(...), optionally followed by .extend(...) calls. The
+    // result declares tests; its `app` is the target app unless an extension
+    // may redefine it.
+    const targetFactory = node => {
+      let extendsApp = false;
+      while (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'extend') {
+        if (node.arguments.length !== 1 || mayDefineApp(node.arguments[0])) extendsApp = true;
+        node = node.expression.expression;
+      }
+      if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || !factories.has(node.expression.text)) return null;
+      return { app: !extendsApp };
+    };
+    for (const statement of file.statements) {
+      if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        const factory = declaration.initializer && targetFactory(declaration.initializer);
+        if (!ts.isIdentifier(declaration.name) || !factory) continue;
+        tests.add(declaration.name.text);
+        if (factory.app) targetTests.add(declaration.name.text);
+      }
+    }
+    // A target test binding may only be called or have a property read from
+    // it. test.use(...) that may set `app` replaces the fixture for some of its
+    // tests, and any other use (an alias, an element access such as
+    // test['use'], an argument) lets it be overridden out of sight: in either
+    // case none of its tests is trusted.
+    (function references(node) {
+      if (ts.isIdentifier(node) && targetTests.has(node.text) && !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)
+        && !((ts.isPropertyAccessExpression(node.parent) || ts.isPropertyAssignment(node.parent)) && node.parent.name === node)
+        && !ts.isImportSpecifier(node.parent)) {
+        const parent = node.parent;
+        const called = ts.isCallExpression(parent) && parent.expression === node;
+        const read = ts.isPropertyAccessExpression(parent) && parent.expression === node;
+        const use = read && parent.name.text === 'use';
+        if ((!called && !read) || (use && !(ts.isCallExpression(parent.parent) && parent.parent.expression === parent
+          && parent.parent.arguments.length === 1 && !mayDefineApp(parent.parent.arguments[0])))) targetTests.delete(node.text);
+      }
+      ts.forEachChild(node, references);
+    })(file);
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
       return { line: pos.line + 1, column: pos.character + 1 };
@@ -165,14 +222,20 @@ function createAnalyzer(ts) {
     // Playwright reads a string followed by a function as a declaration at
     // runtime, so only calls that cannot be one are modifiers. Ambiguous calls
     // such as test.skip(name, run) stay declarations.
-    const isModifier = node => {
-      if (!isTestCall(node, ['skip', 'fixme'])) return false;
+    const modifierShape = node => {
       const [first, second] = node.arguments;
       if (!first) return true;
       if (isTitle(first)) return false;
       if (isFunction(first) || isBoolean(first)) return true;
       return node.arguments.length === 1 || (node.arguments.length === 2 && isTitle(second));
     };
+    const isModifier = node => isTestCall(node, ['skip', 'fixme']) && modifierShape(node);
+    // test.fail()/test.fail(condition, reason) with the same shapes. Only one in
+    // an after hook is reported: Playwright 1.61.1 through 1.64.1 apply it to
+    // the test that has just run, so a failed body becomes an expected failure
+    // and the run can exit 0 (microsoft/playwright#43738). A declaration or a
+    // body-level call is the documented expected-failure form.
+    const isFailModifier = node => isTestCall(node, ['fail']) && modifierShape(node);
     // An assertion that something is absent or did not happen, which a slow
     // application also satisfies. A negated absence matcher is a presence check.
     const absence = (matcher, modifiers, args) => {
@@ -204,13 +267,17 @@ function createAnalyzer(ts) {
     // conditional rather than disabling the suite.
     // Conditions that read process.env are reported separately: such a test
     // may never run in an environment like CI.
+    // Guarded marks a modifier under a branch, apart from the after-hook case.
+    // afterAll marks a modifier in an afterAll hook: it follows the group's
+    // last test, so which tests it can affect is not known from source.
     const modifierScope = (node, scope) => {
-      let conditional = false, afterExecution = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
+      let conditional = false, afterExecution = false, guarded = false, afterAll = false, environment = !!node.arguments[0] && readsEnvironment(node.arguments[0]);
       for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor === scope) return { conditional, environment, afterExecution };
+        if (ancestor === scope) return { conditional, environment, afterExecution, guarded, afterAll };
         if (ts.isFunctionLike(ancestor)) {
           if (!isHookCallback(ancestor)) return null;
           if (isTestCall(ancestor.parent, ['afterEach', 'afterAll'])) {
+            afterAll = isTestCall(ancestor.parent, ['afterAll']);
             conditional = true;
             afterExecution = true;
           }
@@ -219,6 +286,7 @@ function createAnalyzer(ts) {
         if (ts.isExpressionStatement(ancestor) || ts.isBlock(ancestor) || ts.isAwaitExpression(ancestor) || ts.isParenthesizedExpression(ancestor)
           || (ts.isCallExpression(ancestor) && isTestCall(ancestor, ['beforeEach', 'beforeAll', 'afterEach', 'afterAll']))) continue;
         conditional = true;
+        guarded = true;
         const guard = condition(ancestor);
         if (guard && readsEnvironment(guard)) environment = true;
       }
@@ -311,7 +379,7 @@ function createAnalyzer(ts) {
     const budget = { facts: 0, visits: 0 };
     let direct = 0;
     (function count(node) {
-      if (ts.isCallExpression(node) && ((ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'waitForTimeout')
+      if (ts.isCallExpression(node) && ((ts.isPropertyAccessExpression(node.expression) && ['waitForTimeout', ...targetControlMatchers, ...targetAppMatchers].includes(node.expression.name.text))
         || expects.has(root(node.expression)))) direct++;
       ts.forEachChild(node, count);
     })(file);
@@ -327,12 +395,23 @@ function createAnalyzer(ts) {
       const alias = ts.isCallExpression(node) ? root(node.expression) : '';
       if (tests.has(alias) && !enclosingDeclarations(node).some(declaration => boundNames(declaration.name).includes(alias))) {
         const expr = node.expression;
+        if (isFailModifier(node)) {
+          const scope = scopes[scopes.length - 1];
+          const attributed = modifierScope(node, scope);
+          const first = node.arguments[0];
+          if (attributed?.afterExecution && first?.kind !== ts.SyntaxKind.FalseKeyword) {
+            const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [], afterHookFails: [] };
+            entry.afterHookFails.push({ ...location(node), conditional: attributed.guarded || attributed.afterAll || (!!first && first.kind !== ts.SyntaxKind.TrueKeyword) });
+            scopeModifiers.set(scope, entry);
+          }
+          return;
+        }
         if (isModifier(node)) {
           const scope = scopes[scopes.length - 1];
           const attributed = modifierScope(node, scope);
           const first = node.arguments[0];
           if (attributed && first?.kind !== ts.SyntaxKind.FalseKeyword) {
-            const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [] };
+            const entry = scopeModifiers.get(scope) || { disabled: false, conditional: [], afterHookFails: [] };
             if (!attributed.conditional && (!first || first.kind === ts.SyntaxKind.TrueKeyword)) entry.disabled = true;
             else entry.conditional.push({ ...location(node), environment: attributed.environment, afterExecution: attributed.afterExecution });
             scopeModifiers.set(scope, entry);
@@ -344,7 +423,7 @@ function createAnalyzer(ts) {
           const callback = node.arguments[node.arguments.length - 1];
           const statement = ts.isExpressionStatement(node.parent) ? node.parent : node;
           const disabled = inheritedDisabled || (ts.isPropertyAccessExpression(expr) && ['skip', 'fixme'].includes(expr.name.text));
-          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
+          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], afterHookFails: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
           // Titles are source text; include literal ones only when requested.
           if (options.titles && node.arguments[0] && (ts.isStringLiteral(node.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(node.arguments[0]))) fact.title = [...node.arguments[0].text].slice(0, 200).join('');
           factScopes.set(fact, scopes);
@@ -362,11 +441,15 @@ function createAnalyzer(ts) {
           if (!callback || !(ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) || !ts.isBlock(callback.body)) {
             limited('dynamic-callback', node);
           } else {
-            const fixtureRoots = new Set();
+            const fixtureRoots = new Set(), targetApps = new Set();
+            const target = targetTests.has(root(expr));
             for (const parameter of callback.parameters) {
               if (!ts.isObjectBindingPattern(parameter.name)) continue;
               for (const binding of parameter.name.elements) {
-                if (ts.isIdentifier(binding.name) && ['page', 'request', 'context', 'browser'].includes((binding.propertyName || binding.name).text)) fixtureRoots.add(binding.name.text);
+                if (!ts.isIdentifier(binding.name)) continue;
+                const fixture = (binding.propertyName || binding.name).text;
+                if (['page', 'request', 'context', 'browser'].includes(fixture)) fixtureRoots.add(binding.name.text);
+                if (target && fixture === 'app') targetApps.add(binding.name.text);
               }
             }
             // Whether the last recognized fact was a fixed wait, in execution order
@@ -376,7 +459,9 @@ function createAnalyzer(ts) {
             // facts are attributed to the test's call site. `floating` means a
             // promise on the path from the test is neither awaited nor returned;
             // `returned` means the function's return value is consumed.
-            function scanFunction(fn, roots, declarationsAt, ctx) {
+            // `targets` holds the names bound to the app fixture ('app') and to a
+            // control a const took from app.getByTestId(...) ('control').
+            function scanFunction(fn, roots, declarationsAt, ctx, targets = new Map()) {
               const spend = () => { if (ctx.depth > 0 && ++budget.visits > inlineVisits) throw new Exhausted(); };
               // Conservatively exclude matcher facts if an imported binding is
               // redeclared in this function or an enclosing scope.
@@ -449,16 +534,242 @@ function createAnalyzer(ts) {
                 const outer = carrier(child);
                 return !ctx.floating && (ts.isAwaitExpression(unparen(outer).parent) || returnedHere(outer));
               };
+              // A handler rethrows when its own body, outside nested functions,
+              // has a throw statement or a Promise.reject call. Any other handler,
+              // including a named function whose body is not visible, is taken
+              // to swallow the rejection.
+              const rethrows = body => {
+                let found = false;
+                (function walk(node) {
+                  if (found || (ts.isFunctionLike(node) && node !== body)) return;
+                  if (ts.isThrowStatement(node) || (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+                    && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'Promise' && node.expression.name.text === 'reject')) found = true;
+                  else ts.forEachChild(node, walk);
+                })(body);
+                return found;
+              };
+              // Parentheses and type-only wrappers do not change a handler.
+              const bare = node => {
+                while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)
+                  || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
+                return node;
+              };
+              // A promise ignores a handler that is not a function, so the
+              // rejection passes on. Literals of any kind, array and object
+              // literals, templates, `undefined`, `void`, `typeof` and prefix
+              // operators never yield one; an identifier or call result may.
+              const callable = handler => !(ts.isLiteralExpression(handler) || ts.isTemplateExpression(handler)
+                || [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword].includes(handler.kind)
+                || ts.isArrayLiteralExpression(handler) || ts.isObjectLiteralExpression(handler)
+                || ts.isVoidExpression(handler) || ts.isTypeOfExpression(handler) || ts.isPrefixUnaryExpression(handler)
+                || (ts.isIdentifier(handler) && handler.text === 'undefined'));
+              const swallows = argument => {
+                const handler = bare(argument);
+                return !!handler && callable(handler) && !(isFunction(handler) && rethrows(handler));
+              };
+              // Whether a then/catch/finally chain on the promise handles its
+              // rejection: .catch(handler), or .then(onFulfilled, onRejected).
+              const handledChain = child => {
+                while (true) {
+                  while (ts.isParenthesizedExpression(child.parent)) child = child.parent;
+                  const access = child.parent;
+                  if (!ts.isPropertyAccessExpression(access) || !['then', 'catch', 'finally'].includes(access.name.text)
+                    || !ts.isCallExpression(access.parent) || access.parent.expression !== access) return false;
+                  const call = access.parent;
+                  if ((access.name.text === 'catch' && swallows(call.arguments[0])) || (access.name.text === 'then' && swallows(call.arguments[1]))) return true;
+                  child = call;
+                }
+              };
+              // Whether a failure of `child` cannot fail the test. A synchronous
+              // failure is thrown ('throw') while the expression is evaluated; an
+              // asynchronous one rejects its promise ('reject'). Only a rejection
+              // is handled by the promise's chain, by the chain of the Promise
+              // combinator carrying it, or by Promise.allSettled. A try block of
+              // this function whose catch does not rethrow catches a throw, and a
+              // rejection only when it is awaited inside the block. A failure
+              // that leaves this function, a throw from its own body or a
+              // rejection it awaits or returns, reaches its caller: as a
+              // rejection from an async function, otherwise unchanged, and is
+              // caught there as `ctx.caught` records.
+              const handled = (child, mode) => {
+                if (mode === 'reject') {
+                  if (handledChain(child)) return true;
+                  const outer = unparen(chained(child));
+                  if (ts.isArrayLiteralExpression(outer.parent)) {
+                    const array = unparen(outer.parent);
+                    const call = array.parent;
+                    if (ts.isCallExpression(call) && call.arguments[0] === array && ts.isPropertyAccessExpression(call.expression)
+                      && ts.isIdentifier(call.expression.expression) && call.expression.expression.text === 'Promise'
+                      && (call.expression.name.text === 'allSettled' || (['all', 'race', 'any'].includes(call.expression.name.text) && handledChain(call)))) return true;
+                  }
+                }
+                let awaited = false, node = child;
+                for (; node.parent && !ts.isFunctionLike(node.parent); node = node.parent) {
+                  if (ts.isAwaitExpression(node.parent)) awaited = true;
+                  const parent = node.parent;
+                  if (ts.isTryStatement(parent) && parent.tryBlock === node && parent.catchClause && !rethrows(parent.catchClause.block)
+                    && (mode === 'throw' || awaited)) return true;
+                }
+                // A failure inside a nested function goes to its unknown caller.
+                if (node.parent !== fn) return false;
+                if (mode === 'reject') {
+                  const outer = unparen(carrier(child));
+                  if (!ts.isAwaitExpression(outer.parent) && !ts.isReturnStatement(outer.parent) && outer.parent !== fn) return false;
+                }
+                return ctx.caught[mode === 'reject' || isAsync(fn) ? 'reject' : 'throw'];
+              };
+              // A matcher or helper that may either throw or reject (mode null)
+              // is caught only when both are. When just one is, the answer
+              // depends on whether it returns a promise, which is unknown.
+              const caught = (child, mode) => {
+                if (mode) return handled(child, mode);
+                const thrown = handled(child, 'throw'), rejected = handled(child, 'reject');
+                if (thrown !== rejected) limited('unknown-matcher', child);
+                return thrown && rejected;
+              };
+              // expect.soft, or an expect configured as soft, records its failure
+              // on the test whether or not anything catches it. Each
+              // expect.configure call merges its options over the ones it was
+              // called on, so the outermost call setting `soft` decides. Options
+              // the analyzer cannot read (a variable, a spread, a computed key or
+              // a `soft` value other than true or false) make it 'unknown'.
+              const softness = call => {
+                const configured = options => {
+                  if (!options) return null;
+                  if (!ts.isObjectLiteralExpression(options)) return 'unknown';
+                  let value = null;
+                  for (const property of options.properties) {
+                    const name = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) ? property.name.text : null;
+                    if (ts.isSpreadAssignment(property) || (property.name && ts.isComputedPropertyName(property.name))) value = 'unknown';
+                    else if (name !== 'soft') continue;
+                    else if (ts.isPropertyAssignment(property) && property.initializer.kind === ts.SyntaxKind.TrueKeyword) value = 'soft';
+                    else if (ts.isPropertyAssignment(property) && property.initializer.kind === ts.SyntaxKind.FalseKeyword) value = 'hard';
+                    else value = 'unknown';
+                  }
+                  return value;
+                };
+                for (let callee = call.expression; ;) {
+                  if (ts.isPropertyAccessExpression(callee)) {
+                    if (callee.name.text === 'soft') return 'soft';
+                    callee = callee.expression;
+                  } else if (ts.isCallExpression(callee)) {
+                    if (ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === 'configure') {
+                      const value = configured(callee.arguments[0]);
+                      if (value) return value;
+                    }
+                    callee = callee.expression;
+                  } else return 'hard';
+                }
+              };
+              // expect.poll(...), also on an expect.configure(...) chain, read
+              // from the syntax tree rather than the source text, so spacing,
+              // line breaks and configuration do not hide it. Every matcher on
+              // a poll is asynchronous.
+              const polls = call => {
+                const callee = bare(call.expression);
+                if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'poll') return false;
+                for (let receiver = bare(callee.expression); ;) {
+                  if (ts.isIdentifier(receiver)) return expects.has(receiver.text);
+                  if (!ts.isCallExpression(receiver)) return false;
+                  const configure = bare(receiver.expression);
+                  if (!ts.isPropertyAccessExpression(configure) || configure.name.text !== 'configure') return false;
+                  receiver = bare(configure.expression);
+                }
+              };
               const record = () => { if (ctx.depth > 0 && ++budget.facts > inlineFacts) throw new Exhausted(); };
+              // Target provenance is read from declarations, not scan order: every
+              // name declared in this function (nested functions included) and
+              // every name written anywhere in it.
+              const declared = new Map(), written = new Set();
+              // Assigning a target matcher or getByTestId on any object may
+              // replace a control's or the app's method: then nothing here is trusted.
+              let patched = false;
+              const replaceable = new Set([...targetControlMatchers, ...targetAppMatchers, 'getByTestId']);
+              const patches = node => {
+                node = bare(node);
+                if (ts.isPropertyAccessExpression(node)) return replaceable.has(node.name.text);
+                return ts.isElementAccessExpression(node) && (!ts.isStringLiteralLike(node.argumentExpression) || replaceable.has(node.argumentExpression.text));
+              };
+              const declareName = (name, node) => declared.set(name, [...(declared.get(name) || []), node]);
+              const writes = node => {
+                if (ts.isIdentifier(node)) written.add(node.text);
+                else ts.forEachChild(node, writes);
+              };
+              (function walk(node) {
+                if (ts.isVariableDeclaration(node) || ts.isParameter(node)) boundNames(node.name).forEach(name => declareName(name, node));
+                else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isFunctionExpression(node) || ts.isClassExpression(node))
+                  && node.name && ts.isIdentifier(node.name)) declareName(node.name.text, node);
+                if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+                  writes(node.left);
+                  if (patches(node.left)) patched = true;
+                }
+                // for (app of ...) and for (app in ...) assign without a declaration.
+                if ((ts.isForOfStatement(node) || ts.isForInStatement(node)) && !ts.isVariableDeclarationList(node.initializer)) writes(node.initializer);
+                if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
+                  && [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)) writes(node.operand);
+                ts.forEachChild(node, walk);
+              })(fn);
+              // The scope a parameter or block-scoped declaration binds in;
+              // null for var, functions and classes, which this does not follow.
+              const scopeOf = declaration => {
+                if (ts.isParameter(declaration)) return declaration.parent;
+                if (!ts.isVariableDeclaration(declaration) || !ts.isVariableDeclarationList(declaration.parent)
+                  || !(declaration.parent.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let))) return null;
+                const scope = ts.isVariableStatement(declaration.parent.parent) ? declaration.parent.parent.parent : declaration.parent.parent;
+                // A case clause shares the switch's scope with every other case.
+                return ts.isCaseClause(scope) || ts.isDefaultClause(scope) ? scope.parent : scope;
+              };
+              const depth = node => { let n = 0; for (; node; node = node.parent) n++; return n; };
+              // The innermost declaration of a name in this function whose scope
+              // holds the use, or null when it cannot be read.
+              const bindingOf = use => {
+                const declarations = declared.get(use.text) || [];
+                if (written.has(use.text) || declarations.some(declaration => !scopeOf(declaration))) return null;
+                const visible = declarations.filter(declaration => contains(scopeOf(declaration), use));
+                return visible.sort((a, b) => depth(scopeOf(b)) - depth(scopeOf(a)))[0] || null;
+              };
+              // 'app' for the target app, 'control' for a control from
+              // app.getByTestId(...), or undefined. A parameter of this function
+              // keeps the kind its caller gave it; a const holds a control from
+              // its declaration on. A name that is written is neither.
+              const targetKind = node => {
+                if (patched) return undefined;
+                node = bare(node);
+                if (ts.isIdentifier(node)) {
+                  const declaration = bindingOf(node);
+                  if (!declaration) return undefined;
+                  if (ts.isParameter(declaration)) return fn.parameters.includes(declaration) ? targets.get(node.text) : undefined;
+                  if (!(declaration.parent.flags & ts.NodeFlags.Const) || !ts.isIdentifier(declaration.name) || !declaration.initializer
+                    || declaration.end > node.pos) return undefined;
+                  return targetKind(declaration.initializer) === 'control' ? 'control' : undefined;
+                }
+                return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'getByTestId'
+                  && targetKind(node.expression.expression) === 'app' ? 'control' : undefined;
+              };
+              // A target assertion's matcher, or null for any other call.
+              const targetMatcher = call => {
+                if (!ts.isPropertyAccessExpression(call.expression)) return null;
+                const name = call.expression.name.text, kind = targetKind(call.expression.expression);
+                if (targetControlMatchers.has(name) && kind === 'control') return name;
+                if (targetAppMatchers.has(name) && kind === 'app') return name;
+                return null;
+              };
+              // The identifier a call chain starts from.
+              const rootNode = expression => {
+                while (ts.isPropertyAccessExpression(expression) || ts.isCallExpression(expression)) expression = expression.expression;
+                return ts.isIdentifier(expression) ? expression : null;
+              };
               // The outermost nested function being scanned, if any.
               let nested = null;
               const browserSide = child => ts.isCallExpression(child.parent) && child.parent.arguments.includes(child)
                 && ts.isPropertyAccessExpression(child.parent.expression) && browserMethods.has(child.parent.expression.name.text)
                 && roots.has(root(child.parent.expression));
-              const assertion = (child, outcomes, unawaited, isAbsence) => {
+              // A caught assertion is a conditional probe: it cannot fail the
+              // test, so it is no completion signal after a fixed wait.
+              const assertion = (child, outcomes, unawaited, isAbsence, matcher, isCaught) => {
                 record();
-                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited });
-                order.waited = false;
+                fact.assertions.push({ ...at(child), outcomes, unawaited, absence: isAbsence, afterWait: order.waited, caught: isCaught, matcher });
+                if (!isCaught) order.waited = false;
               };
               function scan(child) {
                 spend();
@@ -478,8 +789,9 @@ function createAnalyzer(ts) {
                     return;
                   }
                 }
-                // Helpers, branches and shadowed identifiers prevent complete analysis.
-                if (ts.isIfStatement(child) || ts.isIterationStatement(child, false) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
+                // Helpers, branches and shadowed identifiers prevent complete
+                // analysis. A loop is not a branch; see the loop case below.
+                if (ts.isIfStatement(child) || ts.isTryStatement(child) || ts.isConditionalExpression(child) || ts.isSwitchStatement(child)
                   || (ts.isBinaryExpression(child) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(child.operatorToken.kind))) limited('conditional-flow', child);
                 // Hazards are present in source whether or not their code runs, so
                 // they do not make a nested function a limit. A location is
@@ -506,7 +818,8 @@ function createAnalyzer(ts) {
                   while (ts.isPropertyAccessExpression(callee) && ['then', 'catch', 'finally'].includes(callee.name.text) && ts.isCallExpression(callee.expression)) callee = callee.expression.expression;
                   const combinator = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
                     && callee.expression.text === 'Promise' && ['all', 'allSettled', 'race', 'any'].includes(callee.name.text);
-                  if (!combinator && !expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression))) {
+                  const start = rootNode(child.expression);
+                  if (!combinator && !expects.has(root(child.expression)) && !tests.has(root(child.expression)) && !roots.has(root(child.expression)) && !(start && targetKind(start))) {
                     const helper = ts.isIdentifier(child.expression) ? resolveHelper(child.expression.text, child, fn) : null;
                     if (!helper || (!helper.marked && (ctx.depth >= 4 || ctx.stack.has(helper.fn) || order.expansions >= 64))) {
                       limited('unresolved-helper', child);
@@ -520,21 +833,28 @@ function createAnalyzer(ts) {
                       // other unconsumed marked helper the timing is unknown.
                       const pending = !settled && !ctx.floating;
                       if (pending && !(helper.fn && isAsync(helper.fn))) limited('unknown-matcher', child);
-                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false);
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (pending && !!helper.fn && isAsync(helper.fn)), false,
+                        'assertion-helper', caught(child, helper.fn && isAsync(helper.fn) ? 'reject' : null));
                     } else {
                       // Inline a same-file helper. Parameters given a browser
                       // fixture value are fixture roots inside it.
                       order.expansions++;
-                      const helperRoots = new Set();
+                      const helperRoots = new Set(), helperTargets = new Map();
+                      // After a spread argument, which parameter receives which
+                      // argument is unknown, so nothing is passed on from there.
+                      const spread = child.arguments.findIndex(argument => ts.isSpreadElement(argument));
                       helper.fn.parameters.forEach((parameter, index) => {
-                        const argument = child.arguments[index];
+                        const argument = spread >= 0 && index >= spread ? undefined : child.arguments[index];
                         if (ts.isIdentifier(parameter.name) && argument && roots.has(root(argument))) helperRoots.add(parameter.name.text);
+                        const kind = argument && !parameter.dotDotDotToken && targetKind(argument);
+                        if (ts.isIdentifier(parameter.name) && kind) helperTargets.set(parameter.name.text, kind);
                       });
                       const settled = consumed(child);
                       const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
-                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]) });
+                          returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]),
+                          caught: { throw: handled(child, 'throw'), reject: handled(child, 'reject') } }, helperTargets);
                       } catch (error) {
                         if (!(error instanceof Exhausted)) throw error;
                         fact.assertions.length = saved.assertions;
@@ -549,6 +869,21 @@ function createAnalyzer(ts) {
                       }
                     }
                   }
+                  // A target assertion polls the driver and rejects when the state
+                  // is not reached. Hidden, and a keyboard expected not to show,
+                  // are absence checks.
+                  // Passed to expect(...), the target promise is the subject of that
+                  // matcher (often .rejects), not an assertion of its own.
+                  const subject = unparen(child);
+                  const wrapped = ts.isCallExpression(subject.parent) && subject.parent.arguments[0] === subject && expects.has(root(subject.parent.expression));
+                  const native = wrapped ? null : targetMatcher(child);
+                  if (native) {
+                    let anchor = child;
+                    while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
+                    const [first] = child.arguments;
+                    const isAbsence = native === 'toBeHidden' || (native === 'toHaveKeyboard' && !!first && bare(first).kind === ts.SyntaxKind.FalseKeyword);
+                    assertion(child, annotations(anchor, 'outcome'), ctx.floating || !consumed(child), isAbsence, `target:${native}`, caught(child, 'reject'));
+                  }
                   // The matcher call, rather than expect(...), expect.poll(...) or a
                   // promise method chained after the matcher.
                   if (ts.isPropertyAccessExpression(child.expression) && expects.has(root(child.expression)) && !shadowed.has(root(child.expression))
@@ -556,18 +891,50 @@ function createAnalyzer(ts) {
                     let chain = child.expression.expression;
                     const modifiers = [];
                     while (ts.isPropertyAccessExpression(chain)) { modifiers.push(chain.name.text); chain = chain.expression; }
-                    if (ts.isCallExpression(chain)) {
+                    // expect.configure(...) returns an expect function, so a call
+                    // made on it, such as .configure or .soft, is not a matcher.
+                    if (ts.isCallExpression(chain) && !(ts.isPropertyAccessExpression(chain.expression) && chain.expression.name.text === 'configure')) {
                       let anchor = child;
                       while (anchor.parent && !ts.isStatement(anchor)) anchor = anchor.parent;
                       const awaited = consumed(child);
                       const matcher = child.expression.name.text;
-                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects')
-                        || child.getText(file).startsWith(root(child.expression) + '.poll(');
+                      const asyncMatcher = asyncMatchers.has(matcher) || modifiers.includes('resolves') || modifiers.includes('rejects') || polls(chain);
                       // An unawaited matcher of unknown timing may be an unawaited promise.
                       if (!asyncMatcher && !syncMatchers.has(matcher) && !awaited && !ctx.floating) limited('unknown-matcher', child);
-                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments));
+                      // Matcher names outside the pinned API are source identifiers
+                      // and are reported only as custom.
+                      const known = asyncMatchers.has(matcher) || syncMatchers.has(matcher) ? matcher : 'custom';
+                      // A caught matcher that may be soft may still fail the test:
+                      // it stays an assertion, with a limit, rather than a probe.
+                      const soft = softness(chain);
+                      let isCaught = soft !== 'soft' && caught(child, asyncMatcher ? 'reject' : syncMatchers.has(matcher) ? 'throw' : null);
+                      if (isCaught && soft === 'unknown') {
+                        limited('possibly-soft', child);
+                        isCaught = false;
+                      }
+                      assertion(child, annotations(anchor, 'outcome'), ctx.floating || (asyncMatcher && !awaited), absence(matcher, modifiers, child.arguments),
+                        known, isCaught);
                     }
                   }
+                }
+                // A loop repeats its body an unknown number of times. Its
+                // assertions are recorded once and need no limit; a fixed wait in
+                // its body or in a condition or update, directly or through an
+                // inlined helper, repeats too, and the order of waits and
+                // assertions across iterations is not read. A for initializer
+                // and a for…of or for…in input run once, so a wait there is
+                // recorded in order but does not make the loop a limit.
+                if (ts.isIterationStatement(child, false)) {
+                  const once = new Set([ts.isForStatement(child) ? child.initializer : null,
+                    ts.isForOfStatement(child) || ts.isForInStatement(child) ? child.expression : null]);
+                  let repeated = false;
+                  ts.forEachChild(child, part => {
+                    const before = fact.sleeps.length;
+                    scan(part);
+                    if (!once.has(part) && fact.sleeps.length > before) repeated = true;
+                  });
+                  if (repeated) limited('loop', child);
+                  return;
                 }
                 ts.forEachChild(child, scan);
               }
@@ -576,7 +943,8 @@ function createAnalyzer(ts) {
               if (ts.isBlock(fn.body)) ts.forEachChild(fn.body, scan);
               else scan(fn.body);
             }
-            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set() });
+            scanFunction(callback, fixtureRoots, node, { site: null, floating: false, returned: true, depth: 0, stack: new Set(), caught: { throw: false, reject: false } },
+              new Map([...targetApps].map(name => [name, 'app'])));
           }
           results.push(fact);
           if (results.length > 256) throw new AnalysisError('limit');
@@ -596,14 +964,15 @@ function createAnalyzer(ts) {
         if (!entry) continue;
         if (entry.disabled) fact.disabled = true;
         fact.conditionalSkips.push(...entry.conditional);
+        fact.afterHookFails.push(...entry.afterHookFails);
       }
-      if (fact.conditionalSkips.length > 16) throw new AnalysisError('limit');
+      if (fact.conditionalSkips.length > 16 || fact.afterHookFails.length > 16) throw new AnalysisError('limit');
     }
     // A shared modifier counts once, however many tests it applies to.
-    const modifiers = new Set(results.flatMap(f => f.conditionalSkips.map(s => `${s.line}:${s.column}`)));
+    const modifiers = new Set(results.flatMap(f => [...f.conditionalSkips, ...f.afterHookFails].map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 10, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 13, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -626,7 +995,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 10, error: code }));
+    process.stdout.write(JSON.stringify({ version: 13, error: code }));
     process.exitCode = 2;
   }
 }

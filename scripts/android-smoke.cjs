@@ -1,0 +1,198 @@
+// Opt-in real Android qualification. Uses installed SDK/AVD and private fixtures only.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {spawnSync} = require('node:child_process');
+const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
+const root = path.resolve(__dirname, '..');
+const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
+  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect'];
+// `--list` prints the cases (CI checks its job groups cover them); an unknown
+// case is refused before anything is built or booted.
+// Biometric cases need a dedicated AVD prepared by
+// scripts/prepare-biometric-avd.cjs, named by NINELIVES_ANDROID_BIOMETRIC_AVD;
+// they run only when requested and are not in the default list.
+const biometricModes = ['biometric', 'biometric-unenrolled'];
+if (process.argv[2] === '--list') { console.log(allModes.join('\n')); process.exit(0); }
+const unknownModes = process.argv.slice(2).filter(mode => !allModes.includes(mode) && !biometricModes.includes(mode));
+if (process.argv.slice(2).some(mode => biometricModes.includes(mode)) && !process.env.NINELIVES_ANDROID_BIOMETRIC_AVD) throw Error('biometric cases need NINELIVES_ANDROID_BIOMETRIC_AVD: run scripts/prepare-biometric-avd.cjs first');
+if (unknownModes.length) throw Error(`unknown cases: ${unknownModes.join(', ')}`);
+const work = path.join(root, '.context', 'android-qualification', `smoke-${Date.now()}`);
+fs.mkdirSync(work, {recursive: true});
+const engine = path.join(work, '9l');
+const nativeSpec = path.join(root, 'testdata/sdk/android/native.spec.ts');
+const isolationSpec = path.join(root, 'testdata/sdk/android/isolation.spec.ts');
+const config = path.join(root, 'testdata/sdk/android.config.ts');
+function sync(command, args, options = {}) {
+  const r = spawnSync(command, args, {cwd: root, encoding: 'utf8', timeout: 330000, maxBuffer: 4 << 20, ...options});
+  assert.ifError(r.error); return r;
+}
+assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
+for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect','semantics-delayed','isolation','biometric']) {
+  assert.equal(sync(process.execPath, ['scripts/build-android-fixture.cjs',mode]).status,0, `build ${mode}`);
+}
+const bad = path.join(root,'.context/android-bad-version/node_modules');
+for (const name of ['appium','appium-uiautomator2-driver']) {
+  fs.mkdirSync(path.join(bad,name),{recursive:true});
+  fs.writeFileSync(path.join(bad,name,'package.json'), JSON.stringify({version:'0.0.0'}));
+}
+const provenances = new Map();
+for (const spec of [nativeSpec, isolationSpec]) {
+  const creation = sync(engine,['provenance',spec,'--agent','codex']);
+  assert.equal(creation.status,0);
+  const provenance = path.join(work,`${path.basename(spec)}-creation.json`);
+  fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
+  provenances.set(spec, provenance);
+}
+// Device identifiers stay in memory. Persist only preservation/cleanup facts.
+function emulatorSet() {
+  const sdk=require('../packages/playwright/dist/android-env').androidDefaults().sdkRoot;assert(sdk,'No Android SDK found: set ANDROID_HOME, or run 9l doctor --android');
+  const r=sync(path.join(sdk,'platform-tools/adb'),['devices']);assert.equal(r.status,0);
+  return r.stdout.split('\n').map(line=>/^(emulator-[0-9]+)\s+device$/.exec(line)?.[1]).filter(Boolean).sort().join(',');
+}
+const results = [];
+const modes = process.argv.slice(2).length ? process.argv.slice(2) : allModes;
+// Native operations and their diagnostics run the second spec test.
+const operationModes = ['operations','diagnostics'];
+const rejectionReasons = {
+  'install-fail': 'open_failed_apk_install',
+  unavailable: 'open_failed_emulator_boot',
+  version: 'open_failed_configuration',
+};
+for (const mode of modes) {
+  try {
+  assert(allModes.includes(mode) || biometricModes.includes(mode));
+  const isolation = mode.startsWith('isolation');
+  const spec = isolation ? isolationSpec : nativeSpec;
+  const provenance = provenances.get(spec);
+  const beforeDevices=emulatorSet();
+  const probe = path.join(work, `${mode}-probe.json`);
+  const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
+    '--grep',isolation?'native isolation':operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':'native transfer',
+    '--timeout',isolation?'8m':'4m','--deadline',isolation?'9m':'5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
+    '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,NINELIVES_ANDROID_BIOMETRIC_AVD,NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
+    {timeout:isolation?600000:330000,env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
+  fs.writeFileSync(path.join(work, `${mode}.json`),r.stdout,{mode:0o600});
+  const run = JSON.parse(r.stdout), receipt=run.receipts[0];
+  assert.equal(run.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: mutations must never retry`);
+  assert.equal(receipt.agentProvenance.status,'matched',mode);
+  const facts=isolation ? {} : JSON.parse(fs.readFileSync(probe,'utf8'));
+  facts.emulatorSetPreserved=emulatorSet()===beforeDevices;assert.equal(facts.emulatorSetPreserved,true,`${mode}: emulator set changed`);
+  const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';
+  assert(!['Sent $','Ada','hierarchy','Signed in','Signed out'].some(value=>raw.includes(value)), `${mode}: private content in protocol`);
+  const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
+  if (isolation) {
+    assert.notEqual(r.status,0,'isolation: intentional assertion failure must fail the job');
+    assert.equal(run.outcome,'failed');assert.equal(receipt.validated,true);
+    assert.equal(receipt.executedTests,2,'isolation: both required tests must execute');
+    assert.equal(receipt.androidRuntimes.length,2,'isolation: both tests must open an emulator');
+    assert.equal(new Set(receipt.androidRuntimes.map(rt=>rt.worker)).size,2,'isolation: separate owned runtimes');
+    const terminals=assertIsolationEvidence(frames,mode);
+    assert.equal(receipt.failureCount,mode==='isolation'?1:2);
+    const result={mode,qualified:true,outcome:run.outcome,validated:true,executedTests:2,terminalStatuses:terminals.map(f=>f.status),distinctWorkers:true,...facts};
+    results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
+    console.log(JSON.stringify(result));
+    continue;
+  }
+  if (mode==='healthy') {
+    assert.equal(r.status,0);assert.equal(run.outcome,'passed');assert.equal(run.complete,true);
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,5);assert.equal(receipt.verifiedAssertions,0);
+    assert.equal(receipt.androidRuntimes.length,1);assert.equal(facts.clickDispatches,1);
+    // The runtime names the targeted display and the installed build.
+    const rt=receipt.androidRuntimes[0];
+    assert.match(rt.display,/^[0-9]{1,24}$/,'healthy: active display id');
+    assert(Number(rt.displayWidth)>0&&Number(rt.displayHeight)>0&&Number(rt.density)>0,'healthy: display metrics');
+    assert(['opened','half-opened','closed','flat','unknown'].includes(rt.posture),'healthy: posture');
+    assert.deepEqual([rt.versionCode,rt.versionName],['7','1.4.0'],'healthy: installed version');
+    assert.match(rt.signer,/^[a-f0-9]{64}$/,'healthy: signer digest');
+    assert.equal(receipt.targetSetup,undefined);assert.equal(receipt.targetDiagnostics,undefined);
+    facts.runtime={display:rt.display,displayWidth:rt.displayWidth,displayHeight:rt.displayHeight,density:rt.density,posture:rt.posture,versionCode:rt.versionCode,versionName:rt.versionName};
+  } else if (mode==='biometric') {
+    assert.equal(r.status,0,'biometric: the enrolled finger signs in');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,1);assert.equal(receipt.verifiedAssertions,0);
+  } else if (mode==='semantics'||mode==='semantics-delayed') {
+    assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
+  } else if (mode==='operations') {
+    assert.equal(r.status,0,'operations: native operations pass');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,6);assert.equal(receipt.verifiedAssertions,0);
+  } else {
+    assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
+    if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
+  }
+  if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
+  if (mode==='defect' || mode==='state-defect') {
+    const op=mode==='defect'?'assert-text':'assert-state';
+    assert(frames.some(f=>f.operation===op&&f.status==='failed'),`${mode}: relevant assertion must reject defect`);
+    assert.equal(receipt.validated,true);assert.equal(facts.clickDispatches,1);
+    assert.equal(facts.stopReason,'assertion_failed',`${mode}: setup/deadline failure is inconclusive`);
+  }
+  if (mode==='cancel'||mode==='blocked') {
+    assert.equal(facts.started,true,`${mode}: app onClick must actually be in flight`);
+    assert.equal(facts.clickDispatches,1);assert(frames.some(f=>f.operation==='tap'&&f.status==='failed'));
+    // The tap's own 5 s bound names itself; deadline is reserved for the attempt's.
+    assert.equal(facts.stopReason,mode==='cancel'?'canceled':'operation_timeout');
+  }
+  if (mode==='digest') {
+    // A wrong fixture digest is a build mismatch classified before install, not a driver fault.
+    assert.deepEqual(receipt.targetSetup.map(({testId, ...rest}) => rest), [{classification:'mismatch', reason:'build-digest', stage:'open'}], 'digest: setup mismatch');
+    assert.equal(facts.stopReason,'setup_mismatch');
+  }
+  if (mode==='operations') {
+    const ops=new Set(frames.filter(f=>f.operation).map(f=>f.operation));
+    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate','query-visible','foreground']) assert(ops.has(op),`operations: ${op} ran`);
+    // Queries are executed actions, never assertions.
+    assert(frames.filter(f=>f.operation==='query-visible'||f.operation==='foreground').every(f=>f.category==='action'&&f.status==='passed'),'operations: queries are passed actions');
+  }
+  if (mode==='diagnostics') {
+    // The hidden assertion against the open dialog fails as an assertion,
+    // with real window counts: the dialog added a window, so no observer
+    // classification is made.
+    assert(frames.some(f=>f.operation==='assert-hidden'&&f.status==='failed'),'diagnostics: hidden assertion failed');
+    assert.equal(facts.stopReason,'assertion_failed');assert.equal(receipt.targetSetup,undefined,'diagnostics: no observer classification');
+    const d=receipt.targetDiagnostics?.[0];
+    assert(d&&d.operation==='assert-hidden'&&d.reason==='assertion_failed','diagnostics: one record');
+    assert(d.windowsBefore>=1&&d.windowsAfter>d.windowsBefore,`diagnostics: real window counts ${d.windowsBefore}->${d.windowsAfter}`);
+    assert(d.point===true&&d.viewportWidth>0,'diagnostics: the touch point and viewport are kept');
+    facts.diagnostic={windowsBefore:d.windowsBefore,windowsAfter:d.windowsAfter,focusBefore:d.focusBefore,focusAfter:d.focusAfter};
+  }
+  if (mode==='width-mismatch'||mode==='version-mismatch') {
+    // A declared requirement the device or build does not meet is a setup
+    // mismatch found from real dumpsys output before any test step.
+    assert.deepEqual(receipt.targetSetup.map(({testId,...rest})=>rest),[{classification:'mismatch',reason:mode==='width-mismatch'?'display-width':'build-version',stage:'open'}],`${mode}: setup mismatch`);
+    assert.equal(facts.stopReason,'setup_mismatch');
+  }
+  if (mode==='biometric'||mode==='biometric-unenrolled') {
+    // The touch is an executed action, never an assertion; the prompt was
+    // read as another package's window before it.
+    assert(frames.some(f=>f.operation==='fingerprint'&&f.category==='action'&&f.status==='passed'),`${mode}: fingerprint dispatched`);
+    assert(frames.some(f=>f.operation==='foreground'&&f.status==='passed'),`${mode}: foreground read`);
+  }
+  if (mode==='biometric-unenrolled') {
+    // An unenrolled finger does not authenticate: the sign-in assertion rejects it.
+    assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),'biometric-unenrolled: sign-in assertion rejected');
+    assert.equal(facts.stopReason,'assertion_failed');
+  }
+  if (mode==='semantics-defect') {
+    // The invalid-state read is not vacuous: an app that never reports the
+    // field error fails exactly that assertion, after a completed tap.
+    assert(frames.some(f=>f.operation==='assert-state'&&f.status==='failed'),'semantics-defect: invalid state rejected');
+    assert(frames.some(f=>f.operation==='tap'&&f.status==='passed'),'semantics-defect: bare-id tap ran');
+    assert.equal(facts.stopReason,'assertion_failed');
+  }
+  if (mode==='missing'||mode==='ambiguous') {
+    assert.equal(facts.clickDispatches,0);assert.equal(facts.stopReason,mode==='missing'?'missing_test_id':'ambiguous_test_id');
+  }
+  const result={mode,outcome:run.outcome,status:receipt.status,validated:receipt.validated,targetAssertions:receipt.targetAssertions??0,...facts};
+  results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
+  console.log(JSON.stringify(result));
+  } catch (error) {
+    // Only the smoke's own assertion message, never subprocess or device output.
+    const reason=error instanceof assert.AssertionError ? String(error.message).split('\n')[0].slice(0,200) : 'unexpected';
+    const result={mode,qualified:false,reason};results.push(result);
+    fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
+    console.log(JSON.stringify(result));
+  }
+}
+assert(results.every(result=>result.qualified!==false),'Real Android matrix has unqualified cases');
+console.log(`Bounded real Android evidence: ${path.relative(root,work)}`);

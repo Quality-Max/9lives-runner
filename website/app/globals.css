@@ -17,6 +17,10 @@ code { font-family: var(--font-code); font-size: .86em; }
 .wrap { max-width: 1200px; margin-inline: auto; padding-inline: 32px; }
 .skip-link { position: fixed; top: 12px; left: 12px; z-index: 999; padding: 12px 18px; background: var(--bg-elevated); border: 1px solid var(--border-focus); transform: translateY(-180%); }
 .skip-link:focus { transform: none; }
+.launch-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 18px; padding: 14px 20px; background: var(--info-bg); color: var(--text-link); text-align: center; font-size: 13px; border-bottom: 1px solid var(--border-default); }
+.launch-banner > span:first-child { font-weight: 700; }
+.launch-banner strong { color: var(--text-primary); font-weight: 400; }
+.launch-banner:hover strong { text-decoration: underline; text-underline-offset: 3px; }
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 94px; }
 .brand-lockup { display: flex; align-items: center; gap: 18px; }
 .qualitymax-brand { display: inline-flex; align-items: center; }

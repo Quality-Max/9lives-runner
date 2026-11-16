@@ -1,0 +1,44 @@
+name: Bug report
+description: Report unexpected behavior with a minimal, sanitized reproduction.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve 9lives. Search existing issues before reporting.
+        This form is public. Do not include credentials, page content, private application data, or raw receipts/logs.
+        Report security vulnerabilities through [private vulnerability reporting](https://github.com/Quality-Max/9lives-runner/security/advisories/new).
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: CLI and SDK versions, operating system/architecture, Node.js version, and browser or target type where relevant. Do not paste environment variables.
+      placeholder: "9l version: …; @9l/playwright: …; OS: …; Node.js: …; target: …"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal example using synthetic data, including the command or test and relevant non-sensitive settings.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen? Include the assertion or user-visible outcome where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include only a short, sanitized error or outcome. Remove credentials, URLs containing secrets, page content, and private data.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional workaround, regression version, or related issue. Check screenshots for private information before attaching them.

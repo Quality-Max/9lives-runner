@@ -1,8 +1,8 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.5.0`, the same version as the CLI; releases use npm trusted publishing. The
-qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.0. Node 22
+npm workspace at version `0.6.0`, the same version as the CLI; releases use npm trusted publishing. The
+qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.1. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.
 
@@ -28,6 +28,12 @@ a run, but mixed release pairs are unqualified. Align versions first when
 investigating a bridge failure. A successful handshake still needs complete,
 valid execution evidence before an attempt can pass.
 
+Workers predating the `declared-outcomes` capability are rejected, including
+target workers. Update the CLI and `@9l/playwright` together when the handshake
+reports unsupported capabilities or an unsupported target contract. Declared
+outcomes remain required; the engine does not fall back to evidence that
+cannot distinguish declared and runtime result modifiers.
+
 Go supplies `NINELIVES_ENGINE_PROTOCOL=9l.engine/1` and run/job/attempt IDs
 after planning, overriding caller-provided identity. The worker acknowledges
 the protocol and capabilities in a `hello` frame. Go controls the worker through
@@ -47,8 +53,8 @@ per LF-terminated line, with no CR or other surrounding whitespace. Every frame 
 
 | Frame | Evidence |
 | --- | --- |
-| `hello` | Total tests and exact capabilities: steps, artifact metadata, terminal outcomes |
-| `test_begin` | Hashed Playwright test ID and retry index |
+| `hello` | Total tests and exact capabilities: steps, artifact metadata, terminal outcomes, declared outcomes |
+| `test_begin` | Hashed Playwright test ID, retry index and the expected status declared before any attempt ran |
 | `step_end` | Owning test/retry, unique step ID, category and passed/failed outcome |
 | `test_end` | Actual/expected attempt status and bounded attachment metadata |
 | `test_result` | Final expected/unexpected/flaky/skipped outcome per test; skipped results add a `skipKey` digest |
@@ -65,6 +71,44 @@ closed. Validation state is local to an attempt and cannot update another receip
 Retry attempts count as one test. Expected failures retain Playwright semantics;
 skipped tests do not establish completeness. Suite exit code and reported
 outcomes must agree.
+
+## Results relabeled while the test ran
+
+Playwright's modifiers can change a test's expected status after its body
+has run. Qualifying them for 9l found two upstream defects, reported as
+[microsoft/playwright#43676](https://github.com/microsoft/playwright/issues/43676)
+and [microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738):
+on 1.61.1 through 1.64.1, `test.skip()` in an `afterEach` hook reports a test
+whose body ran and passed as skipped (`afterAll`: only the group's last test),
+and `test.fail()` in an after hook or fixture teardown turns a failed test into
+an expected failure, so the summary says it passed and the process exits 0.
+Playwright's JSON report cannot tell either from a test that declared its
+status, so `9l run` without `--sdk` cannot either.
+
+The engine stream can, within the limits of what the reporter observes.
+`test_begin` carries the expected status Playwright knew before any attempt
+ran: `passed`, or `failed`/`skipped` from a `test.fail('title', ...)` or
+`test.skip('title', ...)` declaration or an unconditional suite-level
+modifier. It is the same on every retry. `test_end` carries the status the
+attempt ended with. Go rejects a declaration that changes between attempts
+and derives two counts from the rest:
+
+- `runtimeExpectedFailures`: executed tests that failed and count as expected
+  only because `test.fail()` ran during the attempt. The reporter cannot see
+  whether that call was in the body (the documented
+  `test.fail(browserName === 'webkit')` form), in a suite-level condition
+  function, or in an after hook, so all three count. Playwright's verdict is
+  kept: the test is executed and not a failure, and the attempt can pass.
+- `skippedAfterAssertions`: skipped tests whose final attempt had already
+  reported a passed assertion step, so the body ran before a modifier
+  relabeled it. The skip still needs a `--pin-skip` and still counts as
+  skipped, never as executed; a conditional `test.skip()` placed after an
+  assertion counts too.
+
+Both are in the receipt's validation summary and in its JSON, and `9l run`
+and `9l result` print them under the job. They are the worker's report, not
+verified outcomes: they make a relabeled result visible without claiming the
+original one was right.
 
 ## Skip pins
 
@@ -92,7 +136,11 @@ not independently verified assertion coverage; receipts retain `unknown` coverag
 The receipt does count them: `reportedAssertions` is the number of assertion
 steps the worker reported as passed in each executed test's last completed
 attempt, and `passedWithoutAssertions` the tests that passed while reporting
-none. Both are the worker's report, so a green test that asserted nothing is
+none; `runtimeExpectedFailures` and `skippedAfterAssertions` are described
+above. A retrying assertion (`expect.poll`, `toPass`, a custom matcher)
+counts once, including the assertions it runs inside it on each retry, so
+the count is of top-level assertion steps, not of every `expect` in the
+source. Both are the worker's report, so a green test that asserted nothing is
 visible without any claim that what it asserted was verified. The ordinary
 JSON reporter serializes only `test.step` steps, so without `--sdk` these
 counts are absent. The SDK reporter runs on any spec once `@9l/playwright` is
@@ -106,6 +154,15 @@ opaque ID, coarse kind and `retained: false`; bodies, names and file paths are n
 copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
+
+A failed typed target step (see [targets](targets.md)) also sends its stop
+reason, a `[a-z_]{1,64}` token taken only from the fixture's own
+`9lives target stopped: <reason>` error; any other error text sends none. From
+the validated stream alone, Go builds the receipt's `failureSummary`: per
+failed test, its hashed ID, class, final status, the category, operation and
+stop reason of the failed step, an unrecovered setup classification and
+counts. It is kept without any opt-in and holds no titles, locations or error
+text; see [the CLI reference](cli.md).
 
 `9l run --sdk --failure-details` is the opt-in exception for receipts, not for
 the protocol: Playwright's JSON reporter runs beside the engine reporter and
@@ -133,7 +190,9 @@ test ID and retry index. A baseline records fetch/XHR method, origin and path
 (no query, headers or bodies) and response status and JSON media type; a fault
 run records only how often its one fault, from the closed
 `NINELIVES_PROVE_FAULT` schema, was applied, and why an `empty-json` or
-`malformed-json` fault was not applicable (`not-json` or `unreachable`). When
+`malformed-json` fault was not applicable (`not-json` or `unreachable`) or a
+`delay` fault had no response to hold (`unreachable`); a request whose upstream
+fetch failed is aborted, not sent again. When
 the engine sets `NINELIVES_PROVE_CAPABILITIES=1`, a baseline file also lists
 the fault kinds this SDK can apply, right after the handshake; an engine that
 does not ask never receives the record. These records never enter `9l.engine/1`. Go validates
@@ -146,6 +205,8 @@ cover malformed, duplicate, foreign, late and incomplete evidence. Live provider
 verified replay and independent behavioral verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
-`9l.target/1`, a target identity digest, a declared test list and typed
-deterministic operation outcomes. Ordinary SDK jobs retain the original
-handshake. The native implementation is a fake protocol fixture only.
+`9l.target/3`, a target identity digest, a declared test list, typed
+deterministic operation outcomes and, from a native driver, at most one
+`target_setup` classification per attempt (`blocked`, `dirty`, `mismatch` or
+`unknown`, a closed reason, the stage and a recorded recovery), kept in the
+receipt as `targetSetup`. Ordinary SDK jobs retain the original handshake.

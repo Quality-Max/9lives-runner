@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and community support
+    url: https://github.com/Quality-Max/9lives-runner/discussions
+    about: Ask questions, share workflows, and discuss ideas with the community.
+  - name: Report a security vulnerability privately
+    url: https://github.com/Quality-Max/9lives-runner/security/advisories/new
+    about: Keep vulnerability details and sensitive evidence out of public issues.
+  - name: Documentation
+    url: https://github.com/Quality-Max/9lives-runner/blob/main/README.md
+    about: Start with installation, examples, and links to the detailed guides.

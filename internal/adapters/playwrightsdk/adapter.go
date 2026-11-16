@@ -31,13 +31,13 @@ func (Adapter) Supports(path string) bool { return playwright.New().Supports(pat
 
 // A target name is also its Playwright project name. App IDs are public local
 // aliases, never URLs, device serials, application data or credentials.
-var targetName = regexp.MustCompile(`^(web|android-fake):[a-zA-Z0-9_-]{1,64}$`)
+var targetName = regexp.MustCompile(`^(web|android-fake|android):[a-zA-Z0-9_-]{1,64}$`)
 
 func ValidTarget(target string) bool { return targetName.MatchString(target) }
 
 func (adapter Adapter) PlanTarget(path, input string, index int, target string) (runner.Job, error) {
 	if !ValidTarget(target) {
-		return runner.Job{}, fmt.Errorf("target must be web:<app-alias> or android-fake:<app-alias>")
+		return runner.Job{}, fmt.Errorf("target must be web:<app-alias>, android:<app-alias> or android-fake:<app-alias>")
 	}
 	job, err := adapter.Plan(path, input, index)
 	if err != nil {
