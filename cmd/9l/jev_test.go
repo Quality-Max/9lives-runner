@@ -48,6 +48,11 @@ func TestJevDoctorRejectsUnsafeOptions(t *testing.T) {
 	for _, args := range [][]string{
 		{"--jev-model", "jev-1.14.0"},
 		{"--jev", "--sdk"},
+		{"--jev", "--android"},
+		{"--jev", "--paths"},
+		{"--jev", "spec.ts"},
+		{"spec.ts", "--jev"},
+		{"--jev-images", "off", "--android"},
 		{"--jev", "--jev-images", "all"},
 		{"--jev", "--jev-model", "https://private.example/"},
 	} {
