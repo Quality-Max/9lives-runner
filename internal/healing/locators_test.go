@@ -157,3 +157,37 @@ func TestAriaAlternativeReadsYAMLQuotedEntries(t *testing.T) {
 		t.Fatalf("quoted rename: %q", got)
 	}
 }
+
+func TestRenameCandidatesListOnlyDistinctNamesOfTheSameKind(t *testing.T) {
+	snapshot := "- heading \"Your cart\" [level=1]\n- button \"Back\"\n- button \"Continue to payment\"\n- link \"Help\"\n- button \"Save\"\n- button \"Save\"\n- textbox \"Email\""
+	names, ok := RenameCandidates("getByRole('button', { name: 'Checkout' })", snapshot)
+	if !ok || strings.Join(names, "|") != "Back|Continue to payment" {
+		t.Fatalf("got %v %v", names, ok)
+	}
+	if names, ok := RenameCandidates("getByLabel('Phone')", snapshot); !ok || strings.Join(names, "|") != "Email" {
+		t.Fatalf("labelled controls: %v %v", names, ok)
+	}
+	for _, locator := range []string{
+		"getByRole('button', { name: 'Back' })", // still matches: not a rename
+		"#checkout",                             // CSS has no accessible name to choose
+		"getByText('Checkout')",
+		"getByRole('button', { name: /check/i })",
+	} {
+		if names, ok := RenameCandidates(locator, snapshot); ok {
+			t.Fatalf("%s offered %v", locator, names)
+		}
+	}
+}
+
+func TestRenameLocatorChangesOnlyTheNameLiteral(t *testing.T) {
+	source := "import { test, expect } from '@playwright/test';\n\ntest('pay', async ({ page }) => {\n  // Checkout is the primary action.\n  await page.getByRole('button', { name: 'Checkout', exact: true }).click();\n  await expect(page.getByText('Payment form')).toBeVisible();\n});\n"
+	candidate, ok := RenameLocator(source, "getByRole('button', { name: 'Checkout', exact: true })", "Continue to payment", "playwright")
+	want := strings.Replace(source, "name: 'Checkout'", "name: 'Continue to payment'", 1)
+	if !ok || candidate != want || !ExactLocatorSelectorReplacement(source, candidate, "getByRole('button', { name: 'Checkout', exact: true })", "playwright") {
+		t.Fatalf("got %q", candidate)
+	}
+	asserted := "test('t', async ({ page }) => {\n  await expect(page.getByRole('button', { name: 'Checkout' })).toBeVisible();\n});\n"
+	if _, ok := RenameLocator(asserted, "getByRole('button', { name: 'Checkout' })", "Pay", "playwright"); ok {
+		t.Fatal("a locator inside an assertion was renamed")
+	}
+}

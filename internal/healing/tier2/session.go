@@ -31,6 +31,18 @@ type RunResult struct {
 	// one. It is page content: it feeds Tier 1 and the provider prompt and is
 	// never part of the session result.
 	Snapshot string `json:"-"`
+	// Attempt is the run's receipt, for proposers that need its attempt-bound
+	// evidence. It is never part of the session result.
+	Attempt *runner.Receipt `json:"-"`
+}
+
+// GroundedProposer proposes a new literal for the failed locator from the
+// original run's attempt-bound evidence, or abstains with "". Its candidate
+// passes the same exact-literal boundary and isolated verification as every
+// other proposal; the decision is recorded, never trusted.
+type GroundedProposer interface {
+	Name() string
+	Propose(ctx context.Context, source, failure string, original RunResult) (candidate string, decision any, err error)
 }
 
 // MaxSourceBytes is the largest spec native healing reads.
@@ -44,6 +56,8 @@ type SessionOptions struct {
 	Preview                func(original, candidate string)
 	Provider               Provider
 	Run                    RunFunc
+	// Grounded is optional and runs after Tier 1, before any Tier 2 provider.
+	Grounded GroundedProposer
 }
 
 const (
@@ -68,12 +82,17 @@ type Session struct {
 	// null when the session ended before that stage ran, so a session that
 	// stopped at the original run (it passed, ran zero tests or failed an
 	// assertion) does not read as a failed verification.
-	Tier1     *RunResult `json:"tier1"`
-	Verified  *RunResult `json:"verified"`
-	State     string     `json:"state"`
-	Applied   bool       `json:"applied"`
-	SavedPath string     `json:"savedPath,omitempty"`
-	Reason    string     `json:"reason,omitempty"`
+	Tier1    *RunResult `json:"tier1"`
+	Verified *RunResult `json:"verified"`
+	// Grounded is the grounded candidate's verification run, GroundedBy the
+	// proposer and GroundedDecision its recorded, unverified decision.
+	Grounded         *RunResult `json:"grounded,omitempty"`
+	GroundedBy       string     `json:"groundedBy,omitempty"`
+	GroundedDecision any        `json:"groundedDecision,omitempty"`
+	State            string     `json:"state"`
+	Applied          bool       `json:"applied"`
+	SavedPath        string     `json:"savedPath,omitempty"`
+	Reason           string     `json:"reason,omitempty"`
 	// Provider is the Tier 2 provider's name ("" when healing was offline) and
 	// ProviderCalls how many proposals it was asked for.
 	Provider      string `json:"provider,omitempty"`
@@ -154,10 +173,40 @@ func Heal(ctx context.Context, opts SessionOptions, tier1 func(source, failure, 
 		result.State = "canceled"
 		return result, ctx.Err()
 	}
-	// Without a provider, healing is offline Tier 1 only.
+	if opts.Grounded != nil {
+		result.GroundedBy = opts.Grounded.Name()
+		candidate, decision, groundErr := opts.Grounded.Propose(ctx, string(original), result.Original.Failure, result.Original)
+		result.GroundedDecision = decision
+		if ctx.Err() != nil {
+			result.State = "canceled"
+			return result, ctx.Err()
+		}
+		selector, editable := editableFailure(result.Original.Failure)
+		if groundErr == nil && candidate != "" && editable {
+			candidate = preserveNewlines(string(original), candidate)
+			if SafeCandidate(string(original), candidate, selector, opts.Framework) == nil {
+				verified := verify(ctx, opts, original, candidate, "grounded")
+				result.Grounded = &verified
+				if verified.Passed && verified.ExecutedTests == result.Original.ExecutedTests {
+					return finish(ctx, opts, original, candidate, verified, result)
+				}
+				if ctx.Err() != nil {
+					result.State = "canceled"
+					return result, ctx.Err()
+				}
+				if result.stopAfterFailedVerification(verified, result.Original.ExecutedTests) {
+					return result, nil
+				}
+			}
+		}
+	}
+	// Without a provider, healing is offline Tier 1 and grounded proposals only.
 	if opts.Provider == nil {
 		result.State = "unverified"
 		result.Reason = "Tier 1 found no verified candidate and no Tier 2 provider is available"
+		if opts.Grounded != nil {
+			result.Reason = "Tier 1 and the grounded proposal found no verified candidate, and no Tier 2 provider is available"
+		}
 		return result, nil
 	}
 	latestSource, latestFailure, latestSnapshot := string(original), result.Original.Failure, result.Original.Snapshot
