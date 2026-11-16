@@ -58,6 +58,8 @@ func run(args []string, out, errOut io.Writer) int {
 		return runCommand(args[0], args[1:], out, errOut)
 	case "status", "result", "cancel":
 		return stateCommand(args[0], args[1:], out, errOut)
+	case "diagnose":
+		return diagnoseCommand(args[1:], out, errOut)
 	case "heal", "heal-native":
 		return healCommand(args[1:], out, errOut)
 	case "mcp":
@@ -104,6 +106,8 @@ Usage:
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
+  9l diagnose <spec> [--jev [--jev-model MODEL] [--jev-images off|synthetic]] [--run-timeout D] [--pass-env NAME]... [--format text|json]
+          # run once; on failure report observed facts and, with --jev, a bounded diagnosis; never changes the result
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
   9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding,
           # scan_url, inspect_page, generate_playwright_repro

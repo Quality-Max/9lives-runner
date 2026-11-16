@@ -51,6 +51,9 @@ func (q Question) MarshalJSON() ([]byte, error) {
 	}{q.Type, q.Instructions, criteria})
 }
 
+// Validate checks a contract offline, without a client or credential.
+func (c Contract) Validate() error { return c.validate() }
+
 func (c Contract) validate() error {
 	if c.Version != Version || !identifier.MatchString(c.Task) || !identifier.MatchString(c.QuestionVersion) || !identifier.MatchString(c.CriteriaVersion) || len(c.Questions) == 0 || len(c.Questions) > 9 {
 		return errors.New("invalid Jev contract")

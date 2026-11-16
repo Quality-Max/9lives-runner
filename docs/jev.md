@@ -6,11 +6,52 @@ bounded HTTP transport with native Tier 2 providers and uses the runner's
 attempt identity and cancellation context. Ordinary Playwright runs remain
 provider-free.
 
-The client is infrastructure for subsequent diagnosis, locator repair, semantic
-checks and goal adapters. Those integrations are not enabled by this change.
+The client is infrastructure for diagnosis, locator repair, semantic checks and
+goal adapters. Failed-step diagnosis (QUA-2229) is available as `9l diagnose`;
+the others are separate work.
 There is no new SDK method or `run --provider jev` option. A schema-valid answer
 is an inference; by itself it cannot create a passing execution receipt or
 execute an action. Live accuracy and model availability have not been qualified here.
+
+## Diagnose a failed step
+
+```sh
+9l diagnose tests/checkout.spec.ts                      # observed facts only
+9l diagnose tests/checkout.spec.ts --jev                # plus one Jev request on failure
+9l diagnose tests/checkout.spec.ts --jev --jev-images synthetic
+```
+
+`9l diagnose` runs the spec once through the normal runner. A passing test is
+not diagnosed. On failure it reports **observed facts** from the receipt: the
+runner's failure class, the native deterministic class, the failed locator and
+hashes of the attached accessible snapshot and screenshot. With `--jev` it also
+asks one bounded Jev request while the evidence is fresh (under a minute old),
+bound to that attempt and the exact source that ran.
+
+Jev answers typed questions only: a choice of failure family (locator drift,
+obstructing overlay, transient state, wrong page, application defect or
+unresolved) and independent yes/no observations (overlay, loading, visible
+error and, when a locator is named, target presence). Observed page text is sent
+as data, never as instructions or criteria. Go maps the answers to a
+disposition: `eligible-for-repair`, `investigate-test`, `investigate-app`,
+`require-new-observation` or `unresolved`. A family needs confidence and
+probability of at least 0.6; contradictory observations, such as drift with an
+absent target, are unresolved. Missing or stale evidence, provider failure and
+malformed answers are explicit `unresolved` or `error` states.
+
+An assertion failure, such as a wrong price, quantity or status, is never
+eligible for repair, even when the page looks plausible or Jev suggests drift.
+The diagnosis never changes the receipt, retries, dismisses an overlay or acts
+on the application. The command exits 1 for any failed test. Without `--jev`, or
+when Jev is unavailable, the observed facts are still reported.
+
+By default only the error message and a redacted accessible snapshot are sent.
+`--jev-images synthetic` also sends the failure screenshot; use it only when the
+screen shows test data you are allowed to upload. Screenshots require
+`screenshot: 'only-on-failure'` in the Playwright config. The record is saved as
+`diagnosis.json` beside the run's receipts in `.9lives/diagnoses/`. The
+offline tests establish wiring and policy only; diagnosis quality is measured
+separately (QUA-2233).
 
 ## Configuration and API key
 
