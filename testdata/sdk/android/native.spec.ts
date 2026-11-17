@@ -11,7 +11,7 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
 const biometric = mode.startsWith('biometric');
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed'].includes(mode) ? mode : 'healthy';
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed', 'focus'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -56,6 +56,10 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   const originalFetch = globalThis.fetch;
   let stopReason = '', driverReason = '';
   let serial = '', started = false, clickDispatches = 0;
+  // The send button's element references, from its own lookups: fill also
+  // taps the fields it focuses, and only a tap on send counts as the
+  // transfer's dispatch.
+  const sendRefs = new Set<string>();
   const readTiming: Record<string, {count: number; errors: number; maxMs: number}> = {};
   const sdk = androidDefaults().sdkRoot ?? '';
   const command = promisify(execFile);
@@ -67,7 +71,16 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     }
     const route = url.endsWith('/elements') ? 'find' : url.endsWith('/text') ? 'text' : url.endsWith('/displayed') ? 'visible' : /\/attribute\/(enabled|checked)$/.test(url) ? 'state' : '';
     const requestStart = Date.now();
-    const pending = originalFetch(input, init);
+    let pending = originalFetch(input, init);
+    if (url.endsWith('/elements') && init?.method === 'POST' && String(init.body).includes('\\\\Qsend\\\\E')) {
+      pending = pending.then(async response => {
+        try {
+          const found = (await response.clone().json()).value;
+          if (Array.isArray(found)) for (const element of found) sendRefs.add(element['element-6066-11e4-a52e-4f735466cecf']);
+        } catch { /* a lookup that did not answer names no button */ }
+        return response;
+      });
+    }
     if (route) {
       const timing = readTiming[route] ??= {count: 0, errors: 0, maxMs: 0};
       timing.count++;
@@ -77,7 +90,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       };
       void pending.then(() => finished(false), () => finished(true));
     }
-    if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST') {
+    if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST' && sendRefs.has(/\/element\/([^/]+)\/click$/.exec(url)![1])) {
       clickDispatches++;
       if (mode === 'cancel' || mode === 'blocked') probe = (async () => {
         for (let i = 0; i < 80; i++) {
@@ -176,8 +189,8 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     await app.getByTestId('list').scroll('down', {percent: 0.5});
     await app.getByTestId('status').toHaveText('scrolled');
     if (attachedSerial) {
-      // A phone keeps its own input method: touching the field shows it
-      // (fill sets the text without opening it), hiding closes it.
+      // A phone keeps its own input method: fill focuses the field like a
+      // touch, which shows it, and hiding closes it.
       await app.getByTestId('amount').fill('7');
       await app.getByTestId('amount').tap();
       await app.toHaveKeyboard(true);
@@ -297,6 +310,44 @@ test('native biometrics: a fingerprint at the system prompt', async ({app}) => {
     // @9l-outcome biometric-sign-in
     await app.getByTestId('auth.status').toHaveText('Authenticated', mode === 'biometric-unenrolled' ? 3000 : 15000);
     if (await app.foreground() !== 'app') throw new Error('the app is not back in front');
+  } catch (error) {
+    const e = error as {reason?: unknown; cause?: {message?: unknown}};
+    if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
+    const cause = e.cause?.message;
+    if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+    let deviceStopped = false;
+    if (serial) {
+      try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      catch { deviceStopped = true; }
+    }
+    if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming: {}}));
+  }
+});
+
+// Checks a form runs on a user's focus changes and keyboard action: fill
+// focuses the field, so moving to the next field runs the e-mail check, and
+// submit presses the done action in the name field.
+test('native focus: fill focuses the field and submit sends the done action', async ({app}) => {
+  let stopReason = '', driverReason = '', serial = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    return originalFetch(input, init);
+  };
+  try {
+    await app.open({timeoutMs: 180000});
+    await app.reset();
+    await app.getByTestId('email-field').fill('ada-at-example', {timeoutMs: 20000});
+    await app.getByTestId('name-field').fill('Ada', {timeoutMs: 20000, submit: true});
+    // @9l-outcome lose-focus-check-ran
+    await app.getByTestId('focus.checked').toHaveText('Checked: invalid', 15000);
+    // @9l-outcome done-action-submitted
+    await app.getByTestId('focus.submitted').toHaveText('Submitted: Ada', 15000);
   } catch (error) {
     const e = error as {reason?: unknown; cause?: {message?: unknown}};
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;

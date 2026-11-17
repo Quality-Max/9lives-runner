@@ -6,7 +6,7 @@ const {spawnSync} = require('node:child_process');
 const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
-  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect'];
+  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
 // case is refused before anything is built or booted.
 // Biometric cases need a dedicated AVD prepared by
@@ -28,7 +28,7 @@ function sync(command, args, options = {}) {
   assert.ifError(r.error); return r;
 }
 assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
-for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect','semantics-delayed','isolation','biometric']) {
+for (const mode of ['healthy','defect','state-defect','missing','ambiguous','blocked','install-fail','semantics','semantics-defect','semantics-delayed','isolation','biometric','focus']) {
   assert.equal(sync(process.execPath, ['scripts/build-android-fixture.cjs',mode]).status,0, `build ${mode}`);
 }
 const bad = path.join(root,'.context/android-bad-version/node_modules');
@@ -55,7 +55,6 @@ const modes = process.argv.slice(2).length ? process.argv.slice(2) : allModes;
 // Native operations and their diagnostics run the second spec test.
 const operationModes = ['operations','diagnostics'];
 const rejectionReasons = {
-  'install-fail': 'open_failed_apk_install',
   unavailable: 'open_failed_emulator_boot',
   version: 'open_failed_configuration',
 };
@@ -68,7 +67,7 @@ for (const mode of modes) {
   const beforeDevices=emulatorSet();
   const probe = path.join(work, `${mode}-probe.json`);
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
-    '--grep',isolation?'native isolation':operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':'native transfer',
+    '--grep',isolation?'native isolation':operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':mode==='focus'?'native focus':'native transfer',
     '--timeout',isolation?'8m':'4m','--deadline',isolation?'9m':'5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
     '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,NINELIVES_ANDROID_BIOMETRIC_AVD,NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
     {timeout:isolation?600000:330000,env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
@@ -110,6 +109,11 @@ for (const mode of modes) {
   } else if (mode==='biometric') {
     assert.equal(r.status,0,'biometric: the enrolled finger signs in');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,1);assert.equal(receipt.verifiedAssertions,0);
+  } else if (mode==='focus') {
+    // Fill focuses the field, so the app's lose-focus check runs, and
+    // submit sends the keyboard's done action to the focused field.
+    assert.equal(r.status,0,'focus: focus-dependent checks run');assert.equal(run.outcome,'passed');
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,2);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='semantics'||mode==='semantics-delayed') {
     assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
@@ -156,10 +160,11 @@ for (const mode of modes) {
     assert(d.point===true&&d.viewportWidth>0,'diagnostics: the touch point and viewport are kept');
     facts.diagnostic={windowsBefore:d.windowsBefore,windowsAfter:d.windowsAfter,focusBefore:d.focusBefore,focusAfter:d.focusAfter};
   }
-  if (mode==='width-mismatch'||mode==='version-mismatch') {
+  if (mode==='width-mismatch'||mode==='version-mismatch'||mode==='install-fail') {
     // A declared requirement the device or build does not meet is a setup
-    // mismatch found from real dumpsys output before any test step.
-    assert.deepEqual(receipt.targetSetup.map(({testId,...rest})=>rest),[{classification:'mismatch',reason:mode==='width-mismatch'?'display-width':'build-version',stage:'open'}],`${mode}: setup mismatch`);
+    // mismatch found from real device facts before any test step: the
+    // install-fail APK needs API 99, read from it before installing.
+    assert.deepEqual(receipt.targetSetup.map(({testId,...rest})=>rest),[{classification:'mismatch',reason:{'width-mismatch':'display-width','version-mismatch':'build-version','install-fail':'build-sdk'}[mode],stage:'open'}],`${mode}: setup mismatch`);
     assert.equal(facts.stopReason,'setup_mismatch');
   }
   if (mode==='biometric'||mode==='biometric-unenrolled') {

@@ -42,7 +42,11 @@ platform); as with any SDK skip, the run is complete only with a matching
 `createTargetTest({web, native})` returns a Playwright test with an `app` fixture.
 The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `getByTestId(id)`. Observed controls expose `tap({timeoutMs}?)`,
-`fill(value, {timeoutMs}?)`, `toBeVisible(timeoutMs?)`,
+`fill(value, {submit, timeoutMs}?)` (focus the field and replace its text,
+as a user would; with `submit: true`, then press the keyboard's action key in
+it: Enter on the web, the input method's done action on Android. A driver
+whose handles cannot press it refuses with `unsupported_operation` before
+filling), `toBeVisible(timeoutMs?)`,
 `toHaveText(exactText, timeoutMs?)`,
 `toHaveState('enabled' | 'checked' | 'invalid', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
 (absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle

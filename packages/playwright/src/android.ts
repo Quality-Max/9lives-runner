@@ -343,6 +343,17 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     return signer;
   };
   let versionCode = 'unknown', versionName = 'unknown', signer = 'unknown';
+  let apkNeeds: {minSdk: number; abis: string[]} | undefined;
+  // One `adb install` of the owned emulator's APK: undefined on success,
+  // else adb's INSTALL_FAILED_ code (or `unknown`). Its output stays in
+  // memory; only that fixed token is read from it.
+  const installOwned = (apk: string, c: TargetContext) => new Promise<string | undefined>((yes, no) => execFile(adb, ['-s', serial, 'install', '--no-streaming', '-r', apk], {
+    signal: c.signal, timeout: timeout(c), maxBuffer: 64 * 1024, env,
+  }, (error, stdout, stderr) => {
+    if (interrupted(c)) return no(failure('device_command_failed'));
+    if (!error) return yes(undefined);
+    yes(/\bINSTALL_FAILED_[A-Z_]{1,48}\b/.exec(`${stdout}\n${stderr}`)?.[0] ?? 'unknown');
+  }));
   // Version from the package manager; the signer from the local APK (owned
   // emulator) or, when declared, from the installed base APK pulled into the
   // attempt's private scratch directory and removed with it.
@@ -451,11 +462,23 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   };
   const handle = (id: string): TargetHandle => ({
     tap: async c => { const ref = await resolveOne(id, c); await observeGesture(c); await endpoint(`/element/${ref}/click`, c, 'POST', {}); },
+    // A user's fill: a touch focuses the field (so checks an app runs on
+    // focus changes run), then its text is replaced. Setting text alone
+    // never focused it.
     fill: async (value, c) => {
       disarm();
       const ref = await resolveOne(id, c);
+      await endpoint(`/element/${ref}/click`, c, 'POST', {});
       await endpoint(`/element/${ref}/clear`, c, 'POST', {});
       await endpoint(`/element/${ref}/value`, c, 'POST', {text: value});
+    },
+    // The input method's done action goes to whichever field has focus, so
+    // it is sent only while this field reports focus, never to another one.
+    submit: async c => {
+      disarm();
+      const focused = await endpoint(`/element/${await resolveOne(id, c)}/attribute/focused`, c);
+      if (focused !== true && focused !== 'true') throw failure('field_not_focused');
+      await endpoint('/execute/sync', c, 'POST', {script: 'mobile: performEditorAction', args: [{action: 'done'}]});
     },
     // A control that vanished since it was observed is not visible; two
     // matches are still ambiguous.
@@ -611,6 +634,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             await writeFile(installedAPK, apkBytes, {mode: 0o400});
             const badging = await command(sdkTools.aapt2, ['dump', 'badging', installedAPK], c, env);
             if (/^package: name='([^']+)'/.exec(badging)?.[1] !== options.appPackage) throw failure('apk_package_mismatch');
+            // What the device must offer: checked against it before install,
+            // so a build that cannot run there is a setup mismatch, not an
+            // install error.
+            // aapt2 prints `minSdkVersion:'N'`; older tools printed `sdkVersion:'N'`.
+            const minSdk = /^(?:minSdkVersion|sdkVersion):'([0-9]{1,3})'/m.exec(badging)?.[1];
+            apkNeeds = {minSdk: minSdk === undefined ? 1 : Number(minSdk),
+              abis: [...(/^native-code:(.*)$/m.exec(badging)?.[1] ?? '').matchAll(/'([a-z0-9_-]{1,32})'/g)].map(m => m[1])};
           }
           await writeFile(join(directory, 'package.json'), JSON.stringify({private: true, dependencies: {appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2}}));
           // The emulator atomically reserves its own available console port.
@@ -697,7 +727,27 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             stage = 'displays';
             await readDisplays(c);
             stage = 'apk_install';
-            await adbRun(['install', '--no-streaming', '-r', installedAPK], c);
+            if (apkNeeds) {
+              // An unreadable property decides nothing; the install itself is the check then.
+              const sdk = await adbRun(['shell', 'getprop', 'ro.build.version.sdk'], c);
+              if (/^[0-9]{1,3}$/.test(sdk) && apkNeeds.minSdk > Number(sdk)) throw new TargetSetupError({classification: 'mismatch', reason: 'build-sdk', stage: 'open'});
+              const abis = (await adbRun(['shell', 'getprop', 'ro.product.cpu.abilist'], c)).split(',').map(abi => abi.trim()).filter(Boolean);
+              if (apkNeeds.abis.length > 0 && abis.length > 0 && !apkNeeds.abis.some(abi => abis.includes(abi))) throw new TargetSetupError({classification: 'mismatch', reason: 'build-abi', stage: 'open'});
+            }
+            // The AVD may already hold the package: a newer build (a
+            // downgrade) or one with another signer cannot be updated in
+            // place. On this read-only, discarded emulator it is uninstalled
+            // and the declared APK installed fresh; the AVD is unchanged.
+            let code = await installOwned(installedAPK, c);
+            if (code === 'INSTALL_FAILED_VERSION_DOWNGRADE' || code === 'INSTALL_FAILED_UPDATE_INCOMPATIBLE') {
+              await adbRun(['uninstall', options.appPackage], c);
+              code = await installOwned(installedAPK, c);
+            }
+            // Only adb's own failure code is named; nothing else it printed is kept.
+            if (code !== undefined) {
+              if (code !== 'unknown') stage = `apk_install_${code.slice('INSTALL_FAILED_'.length).toLowerCase()}`;
+              throw failure('apk_install_failed');
+            }
             stage = 'build_identity';
             await buildIdentity(c, installedAPK);
           }

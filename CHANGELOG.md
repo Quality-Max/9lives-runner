@@ -4,6 +4,26 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Android (experimental)
+
+- `fill` focuses the field before setting its text, as a user's tap would.
+  Setting text alone never focused it, so checks an app runs when a field
+  gains or loses focus (an e-mail check, for example) never ran. On a phone
+  the keyboard now opens on `fill`; `hideKeyboard()` closes it.
+- `fill(value, {submit: true})` then presses the keyboard's action key in
+  the field: the input method's done action on Android, sent only while the
+  field reports focus, and Enter on the web. A driver whose handles cannot
+  press it refuses with `unsupported_operation` before filling.
+- On an owned emulator, an APK whose minimum SDK or native code the emulator
+  cannot run stops the test as `setup mismatch` (`build-sdk`, `build-abi`)
+  before install. A newer or differently signed build already in the AVD is
+  uninstalled and the declared APK installed fresh (the AVD is unchanged), so
+  a downgrade no longer fails with a generic install error. Other install
+  failures are named by adb's failure code. The `install-fail` smoke case is
+  now a `build-sdk` setup mismatch.
+
 ## 0.6.0 — 2026-11-07
 
 The first stable release of the 0.6.0 line includes all changes from

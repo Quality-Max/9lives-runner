@@ -35,6 +35,11 @@ export interface TargetHandle {
   /** Whether the control reports a validation error. A handle without it
    * fails `toHaveState('invalid', …)` as unsupported_state. */
   invalid?(context: TargetContext): Promise<boolean>;
+  /** Press the keyboard's action key in this field, as a user finishing it
+   * would: Enter on the web, the input method's done action on Android. A
+   * handle without it fails `fill(value, {submit: true})` as
+   * unsupported_operation. */
+  submit?(context: TargetContext): Promise<void>;
   /** One bounded scroll gesture inside this element; percent of its size. */
   scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
   bounds?(context: TargetContext): Promise<TargetRect>;
@@ -472,9 +477,15 @@ export class TargetApp {
       }, timeoutMs, id);
     return {
       tap: (options: TargetOperationOptions = {}) => step('tap', async context => (await required(context)).tap(context), options.timeoutMs),
-      fill: (value: string, options: TargetOperationOptions = {}) => step('fill', async context => {
-        if (!boundedText(value, 4096)) throw stopped('invalid_value');
-        await (await required(context)).fill(value, context);
+      /** Focus the field, replace its text and, with `submit`, press the
+       * keyboard's action key in it, as a user would: checks an app runs
+       * when the field gains or loses focus, or on its done action, run. */
+      fill: (value: string, options: TargetOperationOptions & {submit?: boolean} = {}) => step('fill', async context => {
+        if (!boundedText(value, 4096) || (options.submit !== undefined && typeof options.submit !== 'boolean')) throw stopped('invalid_value');
+        const handle = await required(context);
+        if (options.submit && typeof handle.submit !== 'function') throw stopped('unsupported_operation');
+        await handle.fill(value, context);
+        if (options.submit) await handle.submit!(context);
       }, options.timeoutMs),
       /** One bounded scroll gesture inside this control, by a fraction of its size. */
       scroll: (direction: ScrollDirection, options: TargetOperationOptions & {percent?: number} = {}) => step('scroll', async context => {
@@ -558,6 +569,7 @@ function locatorHandle(locator: Locator): TargetHandle {
   return {
     tap: async context => { await locator.click({timeout: remaining(context)}); },
     fill: async (value, context) => { await locator.fill(value, {timeout: remaining(context)}); },
+    submit: async context => { await locator.press('Enter', {timeout: remaining(context)}); },
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),
