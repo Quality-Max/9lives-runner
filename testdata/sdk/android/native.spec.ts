@@ -20,7 +20,7 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   toolsRoot: resolve(__dirname, mode === 'version' ? '../../../.context/android-bad-version' : '../../../tools/android'),
   ...(attachedSerial ? {deviceSerial: attachedSerial, apkSHA256: fixture.apkSHA256} : {
     avd: mode === 'unavailable' ? '9l_missing_avd' : biometric ? process.env.NINELIVES_ANDROID_BIOMETRIC_AVD! : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
-    // A dedicated AVD prepared by scripts/prepare-biometric-avd.cjs.
+    // A dedicated AVD prepared by `npx 9l-prepare-biometric-avd`.
     ...(biometric ? {biometrics: {snapshot: process.env.NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT ?? '9l-biometric'}} : {}),
     apk: fixture.apk, apkSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.apkSHA256,
   }),

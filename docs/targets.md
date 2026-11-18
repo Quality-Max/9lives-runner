@@ -123,7 +123,11 @@ Native fixture resolution has no implicit browser, context or page dependency.
 Drivers declare `9l.target/3`, the selected kind/app alias, and the exact ordered
 `targetCapabilities`. They observe at most two handles for a test ID: zero is
 missing, two is ambiguous. Mutations require exactly one observed handle and
-never silently select the first match. The web driver acts through strict
+never silently select the first match. An action on a control (`tap`, `fill`,
+`scroll`, `bounds`) waits within its own bound for that control to appear,
+for example on a screen still loading after a navigating tap, then acts once:
+only the read-only lookup repeats, never the action. A control still absent
+before the bound fails as `missing_test_id`; ambiguity fails at once. The web driver acts through strict
 Playwright locators: a control replaced by re-rendering is followed, and a
 second match at action time fails instead of being chosen. Only test-ID lookup is supported; CSS,
 XPath, coordinates and role lookup have no API in this contract. Unsupported

@@ -460,10 +460,20 @@ export class TargetApp {
       if (matches.length === 1 && (!(0 in matches) || typeof matches[0] !== 'object' || matches[0] === null)) throw stopped('invalid_property');
       return matches[0];
     };
+    // An action waits, within its own bound, for its control to appear (a
+    // screen still loading after a navigating tap), as Playwright's web
+    // actions do, then acts once. Only the read-only lookup repeats; the
+    // action itself is never retried. Ambiguity, invalid input and failed
+    // lookups end the wait at once; a control still absent before the bound
+    // is missing_test_id.
     const required = async (context: TargetContext) => {
-      const handle = await observe(context);
-      if (!handle) throw stopped('missing_test_id');
-      return handle;
+      let found: TargetHandle | undefined;
+      const result = await this.poll(context, async context => {
+        found = await observe(context);
+        return found !== undefined;
+      }, Math.max(1, context.deadlineMs - Date.now()), maxObservations, () => {}, true);
+      if (!result.held || !found) throw stopped('missing_test_id');
+      return found;
     };
     // A missing control is a completed false observation, except for a
     // hidden assertion, where absence is exactly what it asserts.

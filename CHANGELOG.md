@@ -26,6 +26,20 @@ SDK versions.
   a downgrade no longer fails with a generic install error. Other install
   failures are named by adb's failure code. The `install-fail` smoke case is
   now a `build-sdk` setup mismatch.
+- The biometric AVD preparation ships with `@9l/playwright` as
+  `npx 9l-prepare-biometric-avd --avd <dedicated AVD> --wipe`, so
+  `fingerprint()` can be used outside this repository;
+  `scripts/prepare-biometric-avd.cjs` runs the same code here. A missing AVD
+  is now a clear refusal instead of a file error.
+
+### Target contract
+
+- An action on a control (`tap`, `fill`, `scroll`, `bounds`) waits within its
+  own bound for the control to appear, then acts once, as Playwright's web
+  actions do. A `fill` right after a navigating tap failed with
+  `missing_test_id` and needed a `toBeVisible` first. Only the read-only
+  lookup repeats; ambiguity fails at once, and a control still absent before
+  the bound is `missing_test_id`, as before, rather than a timeout.
 
 ## 0.6.0 — 2026-11-07
 
