@@ -12,6 +12,7 @@
   "bugs": {"url": "https://github.com/Quality-Max/9lives-runner/issues"},
   "type": "commonjs",
   "main": "dist/index.js",
+  "bin": {"9l-prepare-biometric-avd": "dist/prepare-biometric-avd.js"},
   "types": "dist/index.d.ts",
   "exports": {
     ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},

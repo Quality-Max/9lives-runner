@@ -220,3 +220,56 @@ test('a null timeout is invalid, not the default', async () => {
     finally { await app.close(); }
   }
 });
+
+// Actions wait, within their own bound, for their control to appear, then
+// act once; only the read-only lookup repeats.
+function appWithLateControl(appearAfterMs: number, observations: {count: number}, taps: {count: number}, ambiguous = false, lifetime = 5000) {
+  const shownAt = Date.now() + appearAfterMs;
+  const handle = {tap: async () => { taps.count++; }, fill: async () => {}, visible: async () => true, state: async () => true, text: async () => ''};
+  const driver: TargetDriver = {
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/3', capabilities: targetCapabilities,
+    open: async () => {}, reset: async () => {}, close: async () => {},
+    observeTestId: async () => { observations.count++; return ambiguous ? [handle, handle] : Date.now() >= shownAt ? [handle] : []; },
+  };
+  return new TargetApp(driver, driver, {deadlineMs: Date.now() + lifetime});
+}
+
+test('an action waits for a control that appears late, then acts once', async () => {
+  const observations = {count: 0}, taps = {count: 0};
+  const app = appWithLateControl(300, observations, taps);
+  try {
+    await app.getByTestId('next').tap({timeoutMs: 2000});
+    expect(taps.count).toBe(1);
+    expect(observations.count).toBeGreaterThan(1);
+  } finally { await app.close(); }
+});
+
+test('a control that never appears is missing before the action bound, not a timeout', async () => {
+  const observations = {count: 0}, taps = {count: 0};
+  const app = appWithLateControl(60_000, observations, taps);
+  try {
+    const started = Date.now();
+    await expect(app.getByTestId('next').tap({timeoutMs: 600})).rejects.toThrow('9lives target stopped: missing_test_id');
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(taps.count).toBe(0);
+  } finally { await app.close(); }
+});
+
+test('an ambiguous control fails at once without waiting', async () => {
+  const observations = {count: 0}, taps = {count: 0};
+  const app = appWithLateControl(0, observations, taps, true);
+  try {
+    await expect(app.getByTestId('next').tap({timeoutMs: 2000})).rejects.toThrow('ambiguous_test_id');
+    expect(observations.count).toBe(1);
+    expect(taps.count).toBe(0);
+  } finally { await app.close(); }
+});
+
+test('an action wait cut short by the worker deadline is a deadline, not a missing control', async () => {
+  const observations = {count: 0}, taps = {count: 0};
+  const app = appWithLateControl(60_000, observations, taps, false, 300);
+  try {
+    await expect(app.getByTestId('next').tap({timeoutMs: 2000})).rejects.toThrow('9lives target stopped: deadline');
+    expect(taps.count).toBe(0);
+  } finally { await app.close(); }
+});

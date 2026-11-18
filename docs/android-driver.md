@@ -246,6 +246,18 @@ the same name reported without a prefix, as Flutter reports
 `Semantics(identifier:)`, in one package-scoped query; a control reported
 both ways is ambiguous. IDs contain 1–128 ASCII letters, digits, `_`, `.`
 or `-`, starting with a letter, digit or `_`.
+`fill` acts as a user would: one tap on the field focuses it, then its text
+is cleared and set. Only a text field is tapped: the resolved control must
+report an EditText class, or an input type in the hierarchy on that same
+element, else `fill` fails as `not_editable` before touching it, so a
+selector that names a button never presses it. Because the field is
+focused first, checks an app runs when a field gains or loses focus run
+(setting text alone never focused it). On a phone the tap opens the
+keyboard, as for a user; `hideKeyboard()` closes it. With
+`fill(value, {submit: true})` the driver then sends the input method's done
+action (`mobile: performEditorAction`), only while the field reports focus,
+so it never reaches another field; a field without focus fails as
+`field_not_focused`.
 Beyond tap, fill and the visibility, text and state checks, the driver maps
 each added operation to one supported command with fixed arguments: `back`
 to the WebDriver back endpoint (the Back key), `scroll` to UiAutomator2's
@@ -267,7 +279,18 @@ filtered `dumpsys window` lines as the baseline (an unreadable dump fails as
 `emulator-<port>` serial, or the configured phone serial, while the session
 is open. The adapter never attaches to an existing emulator. Its private console
 handshake identifies its own emulator child, and a private HTTP base path
-identifies its Appium server. Reset clears only the configured app on that owned
+identifies its Appium server. Before installing the declared APK on its owned
+emulator, the driver compares the APK's minimum SDK and native code (read
+with `aapt2 dump badging`) with the emulator's API level and ABI list: an
+APK the device cannot run stops the test as `setup mismatch` (`build-sdk`,
+`build-abi`) before anything is installed. When the AVD already holds the
+package as a newer build or with another signer, `adb install -r` refuses
+the update in place; on the read-only emulator the driver then uninstalls
+that build and installs the declared APK fresh, without changing the AVD,
+so the test does not inherit the AVD's app data in that case. Any other
+install failure is reported by adb's failure code alone (for example
+`open_failed_apk_install_insufficient_storage`); nothing else adb printed is
+kept. Reset clears only the configured app on that owned
 emulator. Close aborts transports and stops its emulator/server. Go also stops
 the worker process group on outer cancellation/deadline and removes temporary
 native output after the worker exits. The shared adb daemon is preserved.
@@ -338,8 +361,10 @@ read-only and discards when the test closes, the policy is:
   nothing changes. Declaring it with `deviceSerial` is a configuration
   error.
 - **No credential reaches the driver.** A dedicated AVD is prepared once by
-  `node scripts/prepare-biometric-avd.cjs --avd <dedicated AVD> --wipe
-  [--snapshot 9l-biometric]`, which erases that AVD, sets a random lock PIN
+  `npx 9l-prepare-biometric-avd --avd <dedicated AVD> --wipe
+  [--snapshot 9l-biometric]` (the command ships with `@9l/playwright`; in
+  this repository `node scripts/prepare-biometric-avd.cjs` runs the same
+  code), which erases that AVD, sets a random lock PIN
   that is never printed or stored, enrolls fingerprint 1 through Settings
   with the emulator's virtual sensor and saves the unlocked state as a named
   snapshot. The driver boots that snapshot `-read-only -snapshot <name>
@@ -368,7 +393,7 @@ signing in on an API 35 arm64 emulator, and `biometric-unenrolled` qualifies
 that finger 2, which is not enrolled, leaves the sign-in assertion failed:
 
 ```sh
-node scripts/prepare-biometric-avd.cjs --avd 9l_biometric_API_35 --wipe
+npx 9l-prepare-biometric-avd --avd 9l_biometric_API_35 --wipe
 NINELIVES_ANDROID_BIOMETRIC_AVD=9l_biometric_API_35 node scripts/android-smoke.cjs biometric biometric-unenrolled
 ```
 

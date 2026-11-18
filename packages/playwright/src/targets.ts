@@ -36,6 +36,11 @@ export interface TargetHandle {
   /** Whether the control reports a validation error. A handle without it
    * fails `toHaveState('invalid', …)` as unsupported_state. */
   invalid?(context: TargetContext): Promise<boolean>;
+  /** Press the keyboard's action key in this field, as a user finishing it
+   * would: Enter on the web, the input method's done action on Android. A
+   * handle without it fails `fill(value, {submit: true})` as
+   * unsupported_operation. */
+  submit?(context: TargetContext): Promise<void>;
   /** One bounded scroll gesture inside this element; percent of its size. */
   scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
   bounds?(context: TargetContext): Promise<TargetRect>;
@@ -465,10 +470,21 @@ export class TargetApp {
       if (matches.length === 1 && (!(0 in matches) || typeof matches[0] !== 'object' || matches[0] === null)) throw stopped('invalid_property');
       return matches[0];
     };
+    // An action waits, within its own bound, for its control to appear (a
+    // screen still loading after a navigating tap), as Playwright's web
+    // actions do, then acts once. Only the read-only lookup repeats; the
+    // action itself is never retried. Ambiguity, invalid input and failed
+    // lookups end the wait at once; a control still absent before the bound
+    // is missing_test_id, unless Go's worker deadline cut the wait short:
+    // that is `deadline`, as for a query, since the wait never ran its course.
     const required = async (context: TargetContext) => {
-      const handle = await observe(context);
-      if (!handle) throw stopped('missing_test_id');
-      return handle;
+      let found: TargetHandle | undefined;
+      const result = await this.poll(context, async context => {
+        found = await observe(context);
+        return found !== undefined;
+      }, Math.max(1, context.deadlineMs - Date.now()), maxObservations, () => {}, true);
+      if (!result.held || !found) throw stopped(context.deadlineMs >= this.options.deadlineMs ? 'deadline' : 'missing_test_id');
+      return found;
     };
     // A missing control is a completed false observation, except for a
     // hidden assertion, where absence is exactly what it asserts.
@@ -482,9 +498,15 @@ export class TargetApp {
       }, timeoutMs, id);
     return {
       tap: (options: TargetOperationOptions = {}) => step('tap', async context => (await required(context)).tap(context), options.timeoutMs),
-      fill: (value: string, options: TargetOperationOptions = {}) => step('fill', async context => {
-        if (!boundedText(value, 4096)) throw stopped('invalid_value');
-        await (await required(context)).fill(value, context);
+      /** Focus the field, replace its text and, with `submit`, press the
+       * keyboard's action key in it, as a user would: checks an app runs
+       * when the field gains or loses focus, or on its done action, run. */
+      fill: (value: string, options: TargetOperationOptions & {submit?: boolean} = {}) => step('fill', async context => {
+        if (!boundedText(value, 4096) || (options.submit !== undefined && typeof options.submit !== 'boolean')) throw stopped('invalid_value');
+        const handle = await required(context);
+        if (options.submit && typeof handle.submit !== 'function') throw stopped('unsupported_operation');
+        await handle.fill(value, context);
+        if (options.submit) await handle.submit!(context);
       }, options.timeoutMs),
       /** One bounded scroll gesture inside this control, by a fraction of its size. */
       scroll: (direction: ScrollDirection, options: TargetOperationOptions & {percent?: number} = {}) => step('scroll', async context => {
@@ -568,6 +590,7 @@ function locatorHandle(locator: Locator): TargetHandle {
   return {
     tap: async context => { await locator.click({timeout: remaining(context)}); },
     fill: async (value, context) => { await locator.fill(value, {timeout: remaining(context)}); },
+    submit: async context => { await locator.press('Enter', {timeout: remaining(context)}); },
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),

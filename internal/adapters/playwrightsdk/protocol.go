@@ -705,7 +705,7 @@ func decodeEvent(raw []byte) (event, error) {
 var setupReasons = map[string][]string{
 	runner.SetupBlocked:  {"device-locked", "screen-off"},
 	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
-	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable"},
+	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable", "build-sdk", "build-abi"},
 	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
 }

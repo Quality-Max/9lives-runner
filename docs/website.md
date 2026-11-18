@@ -44,6 +44,17 @@ version for the same reason. `NINELIVES_VERSION=vX.Y.Z` still installs a
 specific release, and the downloaded binary must report that version.
 
 Search-engine submission after deploys is described in [IndexNow](indexnow.md).
+
+## llms.txt
+
+`website/public/llms.txt` is the agent-facing index served at
+`https://9lives.run/llms.txt`. Its examples are copied from this repository's
+docs, demos and tests, and its documentation links point to raw Markdown on
+`main`. Like the homepage it names no release version. `website/test_site.py`
+fails when a linked repository file is missing, an example uses a `9l`
+subcommand the CLI does not have, the MCP tool list drifts from
+[the MCP guide](mcp.md), a version number appears, or the copied release-lab
+specs change. Update the file when a command, tool or documented limit changes.
 Campaign images are listed in [meme assets](marketing/meme-assets.md).
 
 ## Branding, demo, and GitHub overview
