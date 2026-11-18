@@ -25,7 +25,16 @@ npm ci --prefix tools/ios --ignore-scripts
 npm run smoke:ios
 ```
 
-The smoke builds an isolated UIKit fixture and runs nine cases: a healthy
+Before any case the smoke prepares the host once, outside every open bound. It
+compiles the pinned WebDriverAgent runner for the Simulator
+(`scripts/build-ios-wda.cjs`, reused while the tools and Xcode are unchanged)
+and boots, then deletes, one throwaway simulator of the qualified runtime. On
+hosted CI the first boot of the runtime took 118 to 237 seconds and the session
+that compiled WebDriverAgent never started inside the open bound; neither cost
+belongs to a test. Step names, durations and outcomes are kept in
+`host-preparation.json`.
+
+The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
 transfer, a deliberately wrong receipt, missing and duplicate controls, a
 label-only decoy, a changed build digest, an unavailable runtime, cancellation,
 and a held response that reaches its operation timeout. Cancellation and timeout
@@ -50,6 +59,8 @@ const test = createTargetTest({native: target => iosTargetDriver({
   runtime: 'com.apple.CoreSimulator.SimRuntime.iOS-18-6',
   deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
   toolsRoot: '/absolute/path/9lives-runner/tools/ios',
+  // Written to .context/ios-wda/build.json by scripts/build-ios-wda.cjs.
+  wdaApp: '/absolute/path/WebDriverAgentRunner-Runner.app',
 })});
 
 test('transfer receipt', async ({app}) => {
@@ -67,6 +78,14 @@ Go supplies the private scratch directory and attempt identity. The driver
 requires that engine context. For repeatable build selection, record the digest
 when producing the app artifact and supply that recorded value to the test.
 Computing it at test startup binds that run to the current local artifact.
+
+`wdaApp` is optional. With it, the driver checks the runner's bundle identifier
+and platform before creating a device, installs it on the owned Simulator and
+starts it without xcodebuild. Build it with `node scripts/build-ios-wda.cjs`
+after installing the pinned tools, and rebuild it when those tools or Xcode
+change. Without it, WebDriverAgent is compiled inside `open`, which needs a
+warm build machine to finish within the bound. A host that has never booted the
+runtime should boot any simulator of that runtime once before the first run.
 
 ## Supported boundary
 
@@ -91,8 +110,12 @@ Computing it at test startup binds that run to the current local artifact.
   real identifier is present. Give controls distinct identifiers and labels.
 - Native lifecycle operations have finite bounds (open defaults to 300 seconds;
   reset defaults to 60 seconds). In-worker abort stops the owned server process group and
-  shuts down/deletes the owned Simulator. Cleanup uses a separate 20-second
-  bound. A cleanup failure fails the test; it cannot produce a passing receipt.
+  shuts down/deletes the owned Simulator. Cleanup bounds each command on its
+  own: 15 seconds for shutdown, 30 for deletion and 30 for the inventory that
+  must confirm the device is gone. The device is removed by the identifier
+  `create` returned, so a slow inventory cannot cost deletion its turn; an
+  inventory locates the device only when that identifier was lost. A cleanup
+  failure fails the test; it cannot produce a passing receipt.
   Runner cancellation, attempt timeout and abrupt worker termination still need
   surviving Simulator cleanup and qualification. Do not rely on device cleanup
   when the worker cannot finish teardown.

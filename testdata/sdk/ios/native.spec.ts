@@ -9,6 +9,7 @@ import {resolve, join} from 'node:path';
 const mode = process.env.NINELIVES_IOS_CASE ?? 'healthy';
 const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/ios-fixture/${variant}/build.json`), 'utf8'));
+const wda = JSON.parse(readFileSync(resolve(__dirname, '../../../.context/ios-wda/build.json'), 'utf8'));
 const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '',
   commands: [] as {operation: string; elapsedMs: number; outcome: 'pending' | 'passed' | 'failed'}[]};
 const persistProbe = () => {
@@ -20,7 +21,7 @@ const test = createTargetTest({native: target => {
     appSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.appSHA256,
     runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : 'com.apple.CoreSimulator.SimRuntime.iOS-18-6',
     deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
-    toolsRoot: resolve(__dirname, '../../../tools/ios'),
+    toolsRoot: resolve(__dirname, '../../../tools/ios'), wdaApp: wda.app,
   });
   const open = driver.open.bind(driver);
   driver.open = async context => {
@@ -28,7 +29,7 @@ const test = createTargetTest({native: target => {
       // Observe the driver's eventual rejection even if TargetApp's timeout
       // wins first. Persist before teardown, which can itself fail.
       const message = (error as {cause?: {message?: unknown}}).cause?.message;
-      if (typeof message === 'string') facts.setupPhase = /^9lives iOS: open_(tools|artifact|runtime|create|boot|bootstatus|architecture|install|server|session|metadata)$/.exec(message)?.[1] ?? '';
+      if (typeof message === 'string') facts.setupPhase = /^9lives iOS: open_(tools|artifact|wda|runtime|create|boot|bootstatus|architecture|install|server|session|metadata)$/.exec(message)?.[1] ?? '';
       persistProbe();
       throw error;
     }
@@ -120,7 +121,7 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
       await app.close();
       await probe;
       if (udid) {
-        const {stdout} = await command('/usr/bin/xcrun', ['simctl', 'list', 'devices', '-j'], {timeout: 5000, maxBuffer: 256 * 1024});
+        const {stdout} = await command('/usr/bin/xcrun', ['simctl', 'list', 'devices', '-j'], {timeout: 30000, maxBuffer: 256 * 1024});
         const devices = JSON.parse(stdout).devices;
         facts.deviceStopped = !Object.values(devices).some(list => (list as {udid: string}[]).some(d => d.udid === udid));
       }

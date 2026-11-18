@@ -18,6 +18,32 @@ function command(file,args,options={}) {
 const engine=path.join(work,'9l');
 assert.equal(command('go',['build','-o',engine,'./cmd/9l']).status,0,'build engine');
 assert.equal(command(process.execPath,['scripts/build-ios-fixture.cjs']).status,0,'build fixtures');
+const runtime='com.apple.CoreSimulator.SimRuntime.iOS-18-6',deviceType='com.apple.CoreSimulator.SimDeviceType.iPhone-16';
+// Host preparation happens once, outside every case's open bound. Only fixed
+// step names, durations and outcomes are kept.
+const preparation={version:1,steps:[]};
+function prepare(operation,file,args,timeout,stdio) {
+  const started=Date.now(),result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout,maxBuffer:4<<20,...(stdio?{stdio}:{})});
+  preparation.steps.push({operation,elapsedMs:Date.now()-started,outcome:!result.error&&result.status===0?'passed':'failed'});
+  fs.writeFileSync(path.join(work,'host-preparation.json'),JSON.stringify(preparation,null,2));
+  return !result.error&&result.status===0?String(result.stdout||'').trim():undefined;
+}
+// Sessions start a prebuilt WebDriverAgent runner instead of compiling one.
+assert.notEqual(prepare('wda-build',process.execPath,['scripts/build-ios-wda.cjs'],1560000,['ignore','inherit','inherit']),undefined,'build WebDriverAgent');
+// The first boot of a runtime on a fresh host is far slower than later ones
+// (118 to 237 s measured on hosted CI). An owned throwaway device pays that
+// once and is removed before the device set is first recorded.
+const simctl=(operation,args,timeout)=>prepare(operation,'/usr/bin/xcrun',['simctl',...args],timeout);
+const warm=simctl('create',['create',`9l-warmup-${Date.now()}`,deviceType,runtime],120000);
+assert.match(warm||'',/^[A-Fa-f0-9-]{36}$/,'create warm-up simulator');
+try {
+  assert.notEqual(simctl('boot',['boot',warm],120000),undefined,'boot warm-up simulator');
+  assert.notEqual(simctl('bootstatus',['bootstatus',warm,'-b'],900000),undefined,'finish warm-up boot');
+  simctl('getenv',['getenv',warm,'SIMULATOR_ARCHS'],300000);
+} finally {
+  simctl('shutdown',['shutdown',warm],120000);
+  assert.notEqual(simctl('delete',['delete',warm],120000),undefined,'remove warm-up simulator');
+}
 const spec=path.join(root,'testdata/sdk/ios/native.spec.ts');
 const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0);
 const provenance=path.join(work,'creation.json');fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
@@ -27,7 +53,7 @@ function devices() {
 }
 const deviceSet=()=>devices().map(d=>`${d.udid}:${d.state}`).sort().join(',');
 // An unrelated stopped simulator must survive every success/failure/cancel.
-const sentinel=command('/usr/bin/xcrun',['simctl','create',`9l-sentinel-${Date.now()}`,'com.apple.CoreSimulator.SimDeviceType.iPhone-16','com.apple.CoreSimulator.SimRuntime.iOS-18-6']);
+const sentinel=command('/usr/bin/xcrun',['simctl','create',`9l-sentinel-${Date.now()}`,deviceType,runtime]);
 assert.equal(sentinel.status,0,'create unrelated sentinel');
 const sentinelId=sentinel.stdout.trim();assert.match(sentinelId,/^[A-Fa-f0-9-]{36}$/);
 const results=[];

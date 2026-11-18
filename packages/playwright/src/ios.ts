@@ -21,10 +21,19 @@ export type IOSTargetOptions = {
   runtime: string; deviceType: string;
   /** Directory containing the pinned packages; defaults to ~/.9l/ios-tools. */
   toolsRoot?: string;
+  /** Absolute path of a Simulator WebDriverAgentRunner-Runner.app built
+   * beforehand from the pinned tools. It is installed on the owned device and
+   * started without xcodebuild. Without it WebDriverAgent is compiled inside
+   * open, which a cold host may not finish within the open bound. */
+  wdaApp?: string;
 };
 const fail = (reason: string) => new Error(`9lives iOS: ${reason}`);
 const uuid = /^[A-Fa-f0-9]{8}(-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}$/;
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf';
+const wdaBundleId = 'com.facebook.WebDriverAgentRunner.xctrunner';
+// Cleanup bounds each command on its own. A shared budget let one slow
+// inventory on a loaded host consume the time reserved for deletion.
+const cleanupShutdownMs = 15_000, cleanupDeleteMs = 30_000, cleanupInventoryMs = 30_000;
 const milliseconds = (c: TargetContext) => {
   c.signal.throwIfAborted();
   const remaining = c.deadlineMs - Date.now();
@@ -83,7 +92,8 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(options.appId) || !/^[a-f0-9]{64}$/.test(options.appSHA256) ||
       !/^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$/.test(options.bundleId) || options.bundleId.length > 200 ||
       !/^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$/.test(options.runtime) ||
-      !/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$/.test(options.deviceType)) throw fail('invalid_options');
+      !/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$/.test(options.deviceType) ||
+      (options.wdaApp !== undefined && (typeof options.wdaApp !== 'string' || !isAbsolute(options.wdaApp) || options.wdaApp.length > 1024))) throw fail('invalid_options');
   const owner = `9l-ios-${randomUUID()}`, controller = new AbortController();
   const tools = resolve(options.toolsRoot ?? join(homedir(), '.9l/ios-tools'));
   const env: NodeJS.ProcessEnv = {};
@@ -166,31 +176,33 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
         if (signal === 'SIGTERM') await delay(250);
       }
     }
-    const c = {signal: AbortSignal.timeout(20_000), deadlineMs: Date.now() + 20_000};
     if (creationStarted) {
-      try {
-        // A canceled simctl create can lose its stdout. Recover ownership by
-        // the unguessable name and exact runtime/type, never by "booted".
-        const devices = JSON.parse(await simctl(['list', 'devices', '-j'], c)).devices;
+      const bounded = (ms: number): TargetContext => ({signal: AbortSignal.timeout(ms), deadlineMs: Date.now() + ms});
+      // Ours by the unguessable name or the identifier create returned, never by "booted".
+      const inventory = async () => {
+        const devices = JSON.parse(await simctl(['list', 'devices', '-j'], bounded(cleanupInventoryMs))).devices;
         if (!devices || typeof devices !== 'object') throw fail('invalid_devices');
-        const named = Object.entries(devices).flatMap(([runtime, list]) =>
-          Array.isArray(list) ? list.filter(d => d.name === owner).map(d => ({...d, runtime})) : []);
-        if (named.some(d => d.runtime !== options.runtime || d.deviceTypeIdentifier !== options.deviceType)) throw fail('ownership_mismatch');
-        const owned = named;
-        if (owned.length > 1 || (udid && owned.some(d => d.udid !== udid))) throw fail('ownership_mismatch');
-        for (const device of owned) {
-          if (typeof device.udid !== 'string' || !uuid.test(device.udid)) throw fail('ownership_mismatch');
-          if (device.state !== 'Shutdown') {
-            // Boot cancellation can race the observed state. Reserve time for
-            // deletion even if shutdown fails or hangs; absence below decides
-            // whether cleanup succeeded, not the shutdown command's exit code.
-            const shutdown = {signal: AbortSignal.any([c.signal, AbortSignal.timeout(10_000)]), deadlineMs: Math.min(c.deadlineMs, Date.now() + 10_000)};
-            try { await simctl(['shutdown', device.udid], shutdown); } catch {}
-          }
-          try { await simctl(['delete', device.udid], c); } catch {}
+        return Object.entries(devices).flatMap(([runtime, list]) =>
+          Array.isArray(list) ? list.filter(d => d && (d.name === owner || (udid && d.udid === udid))).map(d => ({...d, runtime})) : []);
+      };
+      try {
+        let target = udid;
+        if (!target) {
+          // A canceled simctl create can lose its stdout. Only then does
+          // removal depend on an inventory, matched by exact runtime and type.
+          const named = await inventory();
+          if (named.length > 1 || named.some(d => d.runtime !== options.runtime || d.deviceTypeIdentifier !== options.deviceType ||
+              typeof d.udid !== 'string' || !uuid.test(d.udid))) throw fail('ownership_mismatch');
+          target = named[0]?.udid ?? '';
         }
-        const after = JSON.parse(await simctl(['list', 'devices', '-j'], c)).devices;
-        if (!after || Object.values(after).some(list => Array.isArray(list) && list.some(d => d.name === owner || (udid && d.udid === udid)))) throw fail('cleanup_failed');
+        if (target) {
+          // Boot cancellation can race any observed state, so always request
+          // shutdown and never let its failure or hang cost deletion its time.
+          try { await simctl(['shutdown', target], bounded(cleanupShutdownMs)); } catch {}
+          try { await simctl(['delete', target], bounded(cleanupDeleteMs)); } catch {}
+        }
+        // Absence in a fresh inventory decides success, not a command's exit code.
+        if ((await inventory()).length) throw fail('cleanup_failed');
       } catch { failed = true; }
     }
     if (directory) { try { await rm(directory, {recursive: true, force: true}); } catch { failed = true; } }
@@ -227,6 +239,11 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           const plist = (key: string) => command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(app, 'Info.plist')], c, env);
           if (await plist('CFBundleIdentifier') !== options.bundleId || await plist('DTPlatformName') !== 'iphonesimulator') throw fail('app_platform_or_bundle_mismatch');
           const version = await plist('CFBundleShortVersionString'), build = await plist('CFBundleVersion');
+          if (options.wdaApp !== undefined) {
+            phase = 'wda';
+            const wdaPlist = (key: string) => command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(options.wdaApp!, 'Info.plist')], c, env);
+            if (await wdaPlist('CFBundleIdentifier') !== wdaBundleId || await wdaPlist('DTPlatformName') !== 'iphonesimulator') throw fail('wda_platform_or_bundle_mismatch');
+          }
           phase = 'runtime';
           const xcode = /^Xcode ([0-9.]+)\n/.exec(await command('/usr/bin/xcodebuild', ['-version'], c, env))?.[1] ?? '';
           const runtimes = JSON.parse(await simctl(['list', 'runtimes', '-j'], c)).runtimes;
@@ -234,8 +251,11 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           if (runtime.length !== 1 || typeof runtime[0].version !== 'string') throw fail('runtime_unavailable');
           creationStarted = true;
           phase = 'create';
-          udid = await simctl(['create', owner, options.deviceType, options.runtime], c);
-          if (!uuid.test(udid)) throw fail('invalid_device');
+          // Only a well-formed identifier is trusted later; anything else is
+          // recovered by name during cleanup.
+          const created = await simctl(['create', owner, options.deviceType, options.runtime], c);
+          if (!uuid.test(created)) throw fail('invalid_device');
+          udid = created;
           phase = 'boot';
           await simctl(['boot', udid], c);
           phase = 'bootstatus';
@@ -264,8 +284,12 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           const value = await request('/session', c, 'POST', {capabilities: {alwaysMatch: {
             platformName: 'iOS', 'appium:automationName': 'XCUITest', 'appium:udid': udid, 'appium:bundleId': options.bundleId,
             'appium:noReset': true, 'appium:fullReset': false, 'appium:skipLogCapture': true, 'appium:showXcodeLog': false,
-            'appium:printPageSourceOnFindFailure': false, 'appium:derivedDataPath': join(directory, 'wda'),
-            'appium:wdaLocalPort': wdaPort, 'appium:mjpegServerPort': mjpegPort, 'appium:useNewWDA': true,
+            'appium:printPageSourceOnFindFailure': false,
+            // The device is new, so a prebuilt runner is installed and started
+            // directly. Otherwise xcodebuild compiles one into private scratch.
+            ...(options.wdaApp !== undefined ? {'appium:usePreinstalledWDA': true, 'appium:prebuiltWDAPath': options.wdaApp}
+              : {'appium:derivedDataPath': join(directory, 'wda'), 'appium:useNewWDA': true}),
+            'appium:wdaLocalPort': wdaPort, 'appium:mjpegServerPort': mjpegPort,
             'appium:wdaLaunchTimeout': Math.min(90_000, milliseconds(c)), 'appium:wdaStartupRetries': 1,
             'appium:settings[screenshotQuality]': 2, 'appium:disableAutomaticScreenshots': true,
           }, firstMatch: [{}]}});

@@ -12,6 +12,7 @@ on:
       - 'testdata/sdk/ios.config.ts'
       - 'scripts/ios-smoke.cjs'
       - 'scripts/build-ios-fixture.cjs'
+      - 'scripts/build-ios-wda.cjs'
       - 'tools/ios/**'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -25,7 +26,9 @@ jobs:
     # Standard Intel runner has 14 GB for cold Simulator/WDA startup. ARM's
     # 7 GB runner exhausted the open bound; no larger-runner billing is used.
     runs-on: macos-15-intel
-    timeout-minutes: 45
+    # One WebDriverAgent build and one warm-up boot precede nine cases, each
+    # with its own new device.
+    timeout-minutes: 75
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
@@ -49,6 +52,7 @@ jobs:
           path: |
             .context/ios-qualification/**/results.json
             .context/ios-qualification/**/creation.json
+            .context/ios-qualification/**/host-preparation.json
             .context/ios-qualification/**/*-probe.json
             .context/ios-qualification/**/receipt*.json
             .context/ios-qualification/**/*.ndjson

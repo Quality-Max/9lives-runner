@@ -51,7 +51,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
-  let owned, staged, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false;
+  let owned, staged, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
   const udid='12345678-1234-1234-1234-123456789abc';
   const c=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+10000});
   try {
@@ -62,20 +62,25 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       fs.writeFileSync(path.join(dir,'node_modules',name,'package.json'),JSON.stringify({version}));
     }
     const source=path.join(dir,'Fixture.app');fs.mkdirSync(source);fs.writeFileSync(path.join(source,'Info.plist'),'fixture');
+    const wdaApp=path.join(dir,'WebDriverAgentRunner-Runner.app');
     cp.execFile=(file,args,opts,callback)=>{
       commands.push(args);
       let output='';
-      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:'1'})[args[1].slice(7)];
+      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaApp,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:'1'})[args[1].slice(7)];
       else if (file.endsWith('xcodebuild')) output='Xcode 16.4\nBuild version synthetic';
       else if (args[1]==='list'&&args[2]==='runtimes') output=JSON.stringify({runtimes:[{identifier:runtime.runtime,isAvailable:true,version:'18.5'}]});
-      else if (args[1]==='create') { owned={name:args[2],udid,deviceTypeIdentifier:runtime.deviceType,state:'Shutdown'};output=udid; }
-      else if (args[1]==='list'&&args[2]==='devices') output=JSON.stringify({devices:{[runtime.runtime]:owned?[owned]:[]}});
+      else if (args[1]==='create') { owned={name:args[2],udid,deviceTypeIdentifier:runtime.deviceType,state:'Shutdown'};output=createOutput??udid; }
+      else if (args[1]==='list'&&args[2]==='devices') {
+        assert.ok(opts.timeout<=30000);
+        if(inventoryFails) {queueMicrotask(()=>callback(Error('synthetic inventory failure')));return new EventEmitter();}
+        output=JSON.stringify({devices:{[runtime.runtime]:owned?[owned]:[]}});
+      }
       else if (args[1]==='shutdown' && shutdownFails) {
-        assert.equal(args[2],udid);assert.ok(opts.timeout<=10000);
+        assert.equal(args[2],udid);assert.ok(opts.timeout<=15000);
         queueMicrotask(()=>callback(Error('synthetic shutdown failure')));return new EventEmitter();
       }
       else if (args[1]==='delete') {
-        assert.equal(args[2],udid);
+        assert.equal(args[2],udid);assert.ok(opts.timeout<=30000);
         if(deleteFails) {queueMicrotask(()=>callback(Error('synthetic deletion failure')));return new EventEmitter();}
         owned=undefined;
       }
@@ -141,6 +146,34 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     deleteFails=true;driver=iosTargetDriver(opts);await driver.open(c());
     await assert.rejects(driver.close(),/cleanup_failed/);assert.equal(owned.udid,udid);
     assert.equal(fs.existsSync(path.dirname(staged)),false);
+    // An inventory that cannot answer must not cost deletion its turn: the
+    // device goes, and only the unconfirmed absence fails cleanup.
+    owned=undefined;deleteFails=false;shutdownFails=false;driver=iosTargetDriver(opts);await driver.open(c());
+    inventoryFails=true;commands.length=0;
+    await assert.rejects(driver.close(),/cleanup_failed/);assert.equal(owned,undefined);
+    assert.deepEqual(commands.map(args=>args[1]),['shutdown','delete','list']);
+    inventoryFails=false;
+    // A create that registers a device but loses its output is recovered by
+    // the owned name; a malformed identifier is never passed to simctl.
+    createOutput='not-a-device';driver=iosTargetDriver(opts);
+    await assert.rejects(driver.open(c()),e=>e.cause?.message==='9lives iOS: open_create');
+    commands.length=0;await driver.close();assert.equal(owned,undefined);
+    assert.deepEqual(commands.map(args=>args.slice(1,3)),[['list','devices'],['shutdown',udid],['delete',udid],['list','devices']]);
+    createOutput=undefined;
+    // Default sessions compile WebDriverAgent into private scratch. A prebuilt
+    // runner is started without xcodebuild and checked before any device exists.
+    const sessionCaps=()=>requests.filter(r=>r.pathname.endsWith('/session')).at(-1).body.capabilities.alwaysMatch;
+    driver=iosTargetDriver(opts);await driver.open(c());
+    assert.equal(sessionCaps()['appium:useNewWDA'],true);assert.equal(path.basename(sessionCaps()['appium:derivedDataPath']),'wda');
+    assert.equal('appium:usePreinstalledWDA' in sessionCaps(),false);await driver.close();
+    driver=iosTargetDriver({...opts,wdaApp});await driver.open(c());
+    assert.equal(sessionCaps()['appium:usePreinstalledWDA'],true);assert.equal(sessionCaps()['appium:prebuiltWDAPath'],wdaApp);
+    assert.equal('appium:derivedDataPath' in sessionCaps(),false);assert.equal('appium:useNewWDA' in sessionCaps(),false);
+    await driver.close();assert.equal(owned,undefined);
+    wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaApp});
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_wda');
+    await driver.close();assert.equal(commands.some(args=>args[1]==='create'),false);
+    assert.throws(()=>iosTargetDriver({...opts,wdaApp:'relative/Runner.app'}),/invalid_options/);
   } finally {
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;process.kill=original.kill;
     Object.defineProperty(process,'platform',original.platform);
