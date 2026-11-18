@@ -1,6 +1,6 @@
 # Android target (experimental)
 
-The experimental Android target ships in 0.6.0. This page starts with a
+The experimental Android target ships since 0.6.0. This page starts with a
 quickstart, then records the driver decision, host setup,
 the qualification evidence and the attached-device mode.
 
@@ -12,7 +12,7 @@ uses. It is qualified on API 35 emulators and one Android 17 phone;
 [Set up a host](#set-up-a-host) has the details and
 [Run the opt-in qualification](#run-the-opt-in-qualification) the limits.
 
-1. Install the matching 0.6.0 CLI and `@9l/playwright` together (see
+1. Install the matching 0.6.1 CLI and `@9l/playwright` together (see
    [installation](install.md)), and the pinned automation
    tooling once, outside your project:
 
