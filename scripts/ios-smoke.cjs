@@ -30,6 +30,9 @@ function prepare(operation,file,args,timeout,stdio) {
 }
 // Sessions start a prebuilt WebDriverAgent runner instead of compiling one.
 assert.notEqual(prepare('wda-build',process.execPath,['scripts/build-ios-wda.cjs'],1560000,['ignore','inherit','inherit']),undefined,'build WebDriverAgent');
+const spec=path.join(root,'testdata/sdk/ios/native.spec.ts');
+const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0);
+const provenance=path.join(work,'creation.json');fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
 function devices() {
   const result=command('/usr/bin/xcrun',['simctl','list','devices','-j']);assert.equal(result.status,0);
   return Object.values(JSON.parse(result.stdout).devices).flat();
