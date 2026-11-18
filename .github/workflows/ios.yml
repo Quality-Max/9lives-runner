@@ -23,11 +23,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   simulator:
-    # Standard Intel runner has 14 GB for cold Simulator/WDA startup. ARM's
-    # 7 GB runner exhausted the open bound; no larger-runner billing is used.
-    runs-on: macos-15-intel
-    # One WebDriverAgent build and one warm-up boot precede nine cases, each
-    # with its own new device.
+    # Standard runners only; no larger-runner billing. A new simulator's first
+    # boot took 205 to 254 s on macos-15-intel, leaving open too little of its
+    # bound. ARM booted in 83 s and no longer compiles WebDriverAgent in open.
+    runs-on: macos-15
+    # One WebDriverAgent build precedes nine cases, each with its own new device.
     timeout-minutes: 75
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer

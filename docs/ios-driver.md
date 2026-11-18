@@ -25,14 +25,15 @@ npm ci --prefix tools/ios --ignore-scripts
 npm run smoke:ios
 ```
 
-Before any case the smoke prepares the host once, outside every open bound. It
-compiles the pinned WebDriverAgent runner for the Simulator
-(`scripts/build-ios-wda.cjs`, reused while the tools and Xcode are unchanged)
-and boots, then deletes, one throwaway simulator of the qualified runtime. On
-hosted CI the first boot of the runtime took 118 to 237 seconds and the session
-that compiled WebDriverAgent never started inside the open bound; neither cost
-belongs to a test. Step names, durations and outcomes are kept in
-`host-preparation.json`.
+Before any case the smoke compiles the pinned WebDriverAgent runner for the
+Simulator once (`scripts/build-ios-wda.cjs`, reused while the tools and Xcode
+are unchanged), outside every open bound. On hosted CI that build took 260
+seconds, and a session that compiled it inside `open` never started. The step's
+duration and outcome are kept in `host-preparation.json`.
+
+Every new simulator pays its own first boot inside `open`. On the hosted Intel
+runner that boot alone took 205 to 254 seconds, and booting another simulator
+of the same runtime beforehand did not shorten it.
 
 The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
 transfer, a deliberately wrong receipt, missing and duplicate controls, a
@@ -84,8 +85,7 @@ and platform before creating a device, installs it on the owned Simulator and
 starts it without xcodebuild. Build it with `node scripts/build-ios-wda.cjs`
 after installing the pinned tools, and rebuild it when those tools or Xcode
 change. Without it, WebDriverAgent is compiled inside `open`, which needs a
-warm build machine to finish within the bound. A host that has never booted the
-runtime should boot any simulator of that runtime once before the first run.
+warm build machine to finish within the bound.
 
 ## Supported boundary
 

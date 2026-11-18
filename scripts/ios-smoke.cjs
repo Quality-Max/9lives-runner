@@ -30,23 +30,6 @@ function prepare(operation,file,args,timeout,stdio) {
 }
 // Sessions start a prebuilt WebDriverAgent runner instead of compiling one.
 assert.notEqual(prepare('wda-build',process.execPath,['scripts/build-ios-wda.cjs'],1560000,['ignore','inherit','inherit']),undefined,'build WebDriverAgent');
-// The first boot of a runtime on a fresh host is far slower than later ones
-// (118 to 237 s measured on hosted CI). An owned throwaway device pays that
-// once and is removed before the device set is first recorded.
-const simctl=(operation,args,timeout)=>prepare(operation,'/usr/bin/xcrun',['simctl',...args],timeout);
-const warm=simctl('create',['create',`9l-warmup-${Date.now()}`,deviceType,runtime],120000);
-assert.match(warm||'',/^[A-Fa-f0-9-]{36}$/,'create warm-up simulator');
-try {
-  assert.notEqual(simctl('boot',['boot',warm],120000),undefined,'boot warm-up simulator');
-  assert.notEqual(simctl('bootstatus',['bootstatus',warm,'-b'],900000),undefined,'finish warm-up boot');
-  simctl('getenv',['getenv',warm,'SIMULATOR_ARCHS'],300000);
-} finally {
-  simctl('shutdown',['shutdown',warm],120000);
-  assert.notEqual(simctl('delete',['delete',warm],120000),undefined,'remove warm-up simulator');
-}
-const spec=path.join(root,'testdata/sdk/ios/native.spec.ts');
-const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0);
-const provenance=path.join(work,'creation.json');fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
 function devices() {
   const result=command('/usr/bin/xcrun',['simctl','list','devices','-j']);assert.equal(result.status,0);
   return Object.values(JSON.parse(result.stdout).devices).flat();
