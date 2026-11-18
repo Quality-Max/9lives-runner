@@ -1,9 +1,19 @@
 name: iOS Simulator
-# Manual comparison only. Hosted runners do not qualify the iOS driver: a new
-# simulator needed 180 to 238 s to become usable there, so open reached its
-# 300-second bound before a session existed. Qualification runs on a Mac with
-# full Xcode (docs/ios-driver.md).
+# Hosted runners have not qualified the iOS driver (docs/ios-driver.md): a new
+# simulator needed 180 to 238 s to become usable there. This run measures them
+# again now that sessions are headless and no longer boot the device twice.
 on:
+  pull_request:
+    paths:
+      - 'packages/playwright/src/**'
+      - 'testdata/ios/**'
+      - 'testdata/sdk/ios/**'
+      - 'testdata/sdk/ios.config.ts'
+      - 'scripts/ios-smoke.cjs'
+      - 'scripts/build-ios-fixture.cjs'
+      - 'scripts/build-ios-wda.cjs'
+      - 'tools/ios/**'
+      - '.github/workflows/ios.yml'
   workflow_dispatch:
 permissions:
   contents: read

@@ -8,7 +8,11 @@ const modes=['healthy','defect','missing','ambiguous','label-only','digest','una
 if(process.argv[2]==='--list') {console.log(modes.join('\n'));process.exit(0);}
 const selected=process.argv.slice(2).length?process.argv.slice(2):modes;
 assert(selected.every(mode=>modes.includes(mode)),'unknown iOS case');
-assert.equal(process.platform,'darwin','iOS smoke requires Xcode and iOS 18.6 Simulator');
+assert.equal(process.platform,'darwin','iOS smoke requires Xcode and an installed iOS Simulator runtime');
+// One explicit runtime, never "latest". The default is the qualified target;
+// NINELIVES_IOS_OS names another installed runtime for a comparison run.
+const os=process.env.NINELIVES_IOS_OS||'18.6';
+assert.match(os,/^[0-9]{1,3}(\.[0-9]{1,5}){1,2}$/,'NINELIVES_IOS_OS must be an iOS version such as 18.6');
 const work=path.join(root,'.context/ios-qualification',`smoke-${Date.now()}`);
 fs.mkdirSync(work,{recursive:true});
 function command(file,args,options={}) {
@@ -22,10 +26,10 @@ assert.match(hostXcode||'',/^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$/,'full Xcode is requ
 const engine=path.join(work,'9l');
 assert.equal(command('go',['build','-o',engine,'./cmd/9l']).status,0,'build engine');
 assert.equal(command(process.execPath,['scripts/build-ios-fixture.cjs']).status,0,'build fixtures');
-const runtime='com.apple.CoreSimulator.SimRuntime.iOS-18-6',deviceType='com.apple.CoreSimulator.SimDeviceType.iPhone-16';
+const runtime=`com.apple.CoreSimulator.SimRuntime.iOS-${os.replaceAll('.','-')}`,deviceType='com.apple.CoreSimulator.SimDeviceType.iPhone-16';
 // Host preparation happens once, outside every case's open bound. Only fixed
 // step names, durations and outcomes are kept.
-const preparation={version:1,xcode:hostXcode,steps:[]};
+const preparation={version:1,xcode:hostXcode,os,steps:[]};
 function prepare(operation,file,args,timeout,stdio) {
   const started=Date.now(),result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout,maxBuffer:4<<20,...(stdio?{stdio}:{})});
   preparation.steps.push({operation,elapsedMs:Date.now()-started,outcome:!result.error&&result.status===0?'passed':'failed'});
@@ -52,8 +56,8 @@ try {
     const before=deviceSet(),probe=path.join(work,`${mode}-probe.json`);
     const run=command(engine,['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
       '--agent-provenance',provenance,'--timeout','8m','--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
-      '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,DEVELOPER_DIR'],
-      {env:{...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe}});
+      '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,NINELIVES_IOS_OS,DEVELOPER_DIR'],
+      {env:{...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe,NINELIVES_IOS_OS:os}});
     // Only sanitized engine receipts/protocol and bounded probe facts persist.
     fs.writeFileSync(path.join(work,`${mode}.json`),run.stdout,{mode:0o600});
     const data=JSON.parse(run.stdout),receipt=data.receipts[0];
@@ -73,7 +77,7 @@ try {
       const rt=receipt.iosRuntimes[0];
       const fixture=JSON.parse(fs.readFileSync(path.join(root,'.context/ios-fixture/healthy/build.json'),'utf8'));
       assert.equal(rt.appSHA256,fixture.appSHA256);assert.equal(rt.bundleId,fixture.bundleId);
-      assert.equal(rt.os,'18.6');assert.equal(rt.xcode,hostXcode);assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
+      assert.equal(rt.os,os);assert.equal(rt.runtime,runtime);assert.equal(rt.xcode,hostXcode);assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
     } else {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
     if(!['digest','unavailable'].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
     if(mode==='defect') {

@@ -21,16 +21,18 @@ export type IOSTargetOptions = {
   runtime: string; deviceType: string;
   /** Directory containing the pinned packages; defaults to ~/.9l/ios-tools. */
   toolsRoot?: string;
-  /** Absolute path of a Simulator WebDriverAgentRunner-Runner.app built
-   * beforehand from the pinned tools. It is installed on the owned device and
-   * started without xcodebuild. Without it WebDriverAgent is compiled inside
-   * open, which a cold host may not finish within the open bound. */
-  wdaApp?: string;
+  /** Absolute path of the Build/Products directory that xcodebuild
+   * build-for-testing produced for the pinned WebDriverAgent. A private copy
+   * is started on the owned device without compiling. Without it
+   * WebDriverAgent is compiled inside open, which a cold host may not finish
+   * within the open bound. */
+  wdaProducts?: string;
 };
 const fail = (reason: string) => new Error(`9lives iOS: ${reason}`);
 const uuid = /^[A-Fa-f0-9]{8}(-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}$/;
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf';
 const wdaBundleId = 'com.facebook.WebDriverAgentRunner.xctrunner';
+const wdaRunner = 'Debug-iphonesimulator/WebDriverAgentRunner-Runner.app';
 // Cleanup bounds each command on its own. A shared budget let one slow
 // inventory on a loaded host consume the time reserved for deletion.
 const cleanupShutdownMs = 15_000, cleanupDeleteMs = 30_000, cleanupInventoryMs = 30_000;
@@ -43,7 +45,7 @@ const milliseconds = (c: TargetContext) => {
 
 // A canonical bounded tree hash, including relative names and executable modes.
 // Installed and source trees use the same algorithm; no app bytes enter evidence.
-function appFiles(directory: string, check = () => {}) {
+function treeFiles(directory: string, check = () => {}) {
   const files: string[] = []; let bytes = 0, entries = 0;
   const walk = (relative: string) => {
     check();
@@ -61,8 +63,18 @@ function appFiles(directory: string, check = () => {}) {
   };
   if (!lstatSync(directory).isDirectory()) throw fail('invalid_app');
   walk('');
+  return files;
+}
+function appFiles(directory: string, check = () => {}) {
+  const files = treeFiles(directory, check);
   if (!files.includes('Info.plist')) throw fail('invalid_app');
   return files;
+}
+async function copyTree(source: string, destination: string, files: string[]) {
+  for (const file of files) {
+    const dest = join(destination, file); await mkdir(join(dest, '..'), {recursive: true});
+    await copyFile(join(source, file), dest); await chmod(dest, lstatSync(join(source, file)).mode & 0o777);
+  }
 }
 export function iosAppDigest(directory: string): string {
   const hash = createHash('sha256');
@@ -93,7 +105,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       !/^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$/.test(options.bundleId) || options.bundleId.length > 200 ||
       !/^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$/.test(options.runtime) ||
       !/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$/.test(options.deviceType) ||
-      (options.wdaApp !== undefined && (typeof options.wdaApp !== 'string' || !isAbsolute(options.wdaApp) || options.wdaApp.length > 1024))) throw fail('invalid_options');
+      (options.wdaProducts !== undefined && (typeof options.wdaProducts !== 'string' || !isAbsolute(options.wdaProducts) || options.wdaProducts.length > 1024))) throw fail('invalid_options');
   const owner = `9l-ios-${randomUUID()}`, controller = new AbortController();
   const tools = resolve(options.toolsRoot ?? join(homedir(), '.9l/ios-tools'));
   const env: NodeJS.ProcessEnv = {};
@@ -231,18 +243,18 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           phase = 'artifact';
           app = join(directory, 'App.app'); await mkdir(app);
           const source = resolve(options.app);
-          for (const file of appFiles(source, () => check(c))) {
-            const dest = join(app, file); await mkdir(join(dest, '..'), {recursive: true});
-            await copyFile(join(source, file), dest); await chmod(dest, lstatSync(join(source, file)).mode & 0o777);
-          }
+          await copyTree(source, app, appFiles(source, () => check(c)));
           if (iosAppDigest(app) !== options.appSHA256) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
           const plist = (key: string) => command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(app, 'Info.plist')], c, env);
           if (await plist('CFBundleIdentifier') !== options.bundleId || await plist('DTPlatformName') !== 'iphonesimulator') throw fail('app_platform_or_bundle_mismatch');
           const version = await plist('CFBundleShortVersionString'), build = await plist('CFBundleVersion');
-          if (options.wdaApp !== undefined) {
+          if (options.wdaProducts !== undefined) {
+            // Checked and copied before any device exists. xcodebuild writes its
+            // logs beside the products, so each driver runs its own copy.
             phase = 'wda';
-            const wdaPlist = (key: string) => command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(options.wdaApp!, 'Info.plist')], c, env);
+            const wdaPlist = (key: string) => command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(options.wdaProducts!, wdaRunner, 'Info.plist')], c, env);
             if (await wdaPlist('CFBundleIdentifier') !== wdaBundleId || await wdaPlist('DTPlatformName') !== 'iphonesimulator') throw fail('wda_platform_or_bundle_mismatch');
+            await copyTree(options.wdaProducts, join(directory, 'wda/Build/Products'), treeFiles(options.wdaProducts, () => check(c)));
           }
           phase = 'runtime';
           const xcode = /^Xcode ([0-9.]+)\n/.exec(await command('/usr/bin/xcodebuild', ['-version'], c, env))?.[1] ?? '';
@@ -285,11 +297,15 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
             platformName: 'iOS', 'appium:automationName': 'XCUITest', 'appium:udid': udid, 'appium:bundleId': options.bundleId,
             'appium:noReset': true, 'appium:fullReset': false, 'appium:skipLogCapture': true, 'appium:showXcodeLog': false,
             'appium:printPageSourceOnFindFailure': false,
-            // The device is new, so a prebuilt runner is installed and started
-            // directly. Otherwise xcodebuild compiles one into private scratch.
-            ...(options.wdaApp !== undefined ? {'appium:usePreinstalledWDA': true, 'appium:prebuiltWDAPath': options.wdaApp}
-              : {'appium:derivedDataPath': join(directory, 'wda'), 'appium:useNewWDA': true}),
-            'appium:wdaLocalPort': wdaPort, 'appium:mjpegServerPort': mjpegPort,
+            // The device is already booted without a window. Otherwise the
+            // pinned driver shuts it down and boots it again through the
+            // Simulator app, a second cold boot outside this driver's control.
+            'appium:isHeadless': true,
+            // xcodebuild starts WebDriverAgent from private scratch: compiled
+            // there, or only run when prebuilt products were copied in.
+            'appium:derivedDataPath': join(directory, 'wda'), 'appium:useNewWDA': true,
+            ...(options.wdaProducts !== undefined ? {'appium:usePrebuiltWDA': true} : {}),
+            'appium:wdaLocalPort': wdaPort, 'appium:mjpegServerPort': mjpegPort, 'appium:wdaBindingIP': '127.0.0.1',
             'appium:wdaLaunchTimeout': Math.min(90_000, milliseconds(c)), 'appium:wdaStartupRetries': 1,
             'appium:settings[screenshotQuality]': 2, 'appium:disableAutomaticScreenshots': true,
           }, firstMatch: [{}]}});
@@ -298,7 +314,8 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           session = value.sessionId;
           phase = 'metadata';
           await endpoint('/timeouts', c, 'POST', {implicit: 0});
-          const viewport = await endpoint('/window/size', c);
+          // The pinned server answers only the W3C rect; the legacy size route is gone.
+          const viewport = await endpoint('/window/rect', c);
           evidence = {bundleId: options.bundleId, appSHA256: options.appSHA256, version, build, runtime: options.runtime, deviceType: options.deviceType,
             os: runtime[0].version, architecture, xcode, appium: iosVersions.appium, xcuitest: iosVersions.xcuitest,
             worker: createHash('sha256').update(owner).digest('hex'), viewportWidth: String(viewport?.width), viewportHeight: String(viewport?.height)};

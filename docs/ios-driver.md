@@ -1,15 +1,19 @@
 # iOS Simulator (experimental, unreleased)
 
-This source checkout adds a deterministic iOS driver. **No host is qualified
-yet.** Unit tests use a synthetic transport and do not establish iOS support,
-and no run has reached a target assertion on a real Simulator. No published CLI
-or SDK version is changed by this work.
+This source checkout adds a deterministic iOS driver. It is qualified from
+source on one host only; unit tests use a synthetic transport and do not
+establish iOS support by themselves. No published CLI or SDK version is changed
+by this work.
 
-The qualification target is an iOS 18.6 iPhone 16 Simulator on a Mac with full
-Xcode, with Appium 3.8.0 and XCUITest driver 10.43.1. The smoke records the
-host's Xcode version and requires the receipt to match it. Real iPhones, goals,
-healing and verified replay are unqualified. GitHub-hosted macOS runners are a
-known limitation, described below. This is the owned Simulator foundation of
+| Qualified | Not qualified |
+| --- | --- |
+| iOS 18.6 iPhone 16 Simulator on an Apple silicon Mac (M5 Pro, macOS 26.6.2, Xcode 27.2), with Appium 3.8.0 and XCUITest driver 10.43.1 | GitHub-hosted macOS runners, Intel Macs, other Xcode or iOS versions, other device types, real iPhones, goals, healing and verified replay |
+
+On that host all nine smoke cases qualified: the healthy transfer passed with
+three target assertions in 39 seconds, a new simulator was usable 15 to 19
+seconds after boot, and every owned device was removed. The smoke records the
+host's Xcode version and requires the receipt to match it. This is the owned
+Simulator foundation of
 [QUA-2167](https://linear.app/quality-max/issue/QUA-2167), using build identity,
 strict assertions and cleanup requirements from
 [QUA-2108](https://linear.app/quality-max/issue/QUA-2108). Neither umbrella issue
@@ -27,16 +31,17 @@ npm ci --prefix tools/ios --ignore-scripts
 npm run smoke:ios
 ```
 
-Before any case the smoke compiles the pinned WebDriverAgent runner for the
-Simulator once (`scripts/build-ios-wda.cjs`, reused while the tools and Xcode
-are unchanged), outside every open bound. On hosted CI that build took 260
-seconds, and a session that compiled it inside `open` never started. The step's
-duration and outcome are kept in `host-preparation.json`.
+Before any case the smoke compiles the pinned WebDriverAgent for the Simulator
+once (`scripts/build-ios-wda.cjs`, reused while the tools and Xcode are
+unchanged), outside every open bound. That took 20 seconds on the qualified
+host and 53 to 260 seconds on hosted runners. The step's duration and outcome
+are kept in `host-preparation.json`. `NINELIVES_IOS_OS` names another installed
+runtime for a comparison run; nothing selects a latest runtime.
 
-### Known limitation: GitHub-hosted macOS runners
+### GitHub-hosted macOS runners are unqualified
 
-Every new simulator pays its own first boot inside `open`, and on the standard
-hosted runners that leaves too little of the 300-second bound:
+No case has passed on a hosted runner. Every new simulator pays its own first
+boot inside `open`, and there it took most of the 300-second bound:
 
 | Runner | Boot until usable | Install | Open stopped in |
 | --- | --- | --- | --- |
@@ -44,10 +49,10 @@ hosted runners that leaves too little of the 300-second bound:
 | `macos-15` (ARM), Xcode 16.4 | 180 s | 31 s | session creation |
 
 Booting another simulator of the same runtime beforehand did not shorten the
-next one's first boot (254 s, then 205 s). No case has passed on a hosted
-runner, so the `iOS Simulator` workflow is a manual comparison and qualifies
-nothing. Expect `open` to time out there until the driver can start from an
-already booted template or the bound is revisited.
+next one's first boot (254 s, then 205 s). Those runs predate headless
+sessions: the pinned driver was then shutting the booted simulator down and
+booting it again through the Simulator app, which is what the ARM run was doing
+when it ran out of time.
 
 The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
 transfer, a deliberately wrong receipt, missing and duplicate controls, a
@@ -74,8 +79,9 @@ const test = createTargetTest({native: target => iosTargetDriver({
   runtime: 'com.apple.CoreSimulator.SimRuntime.iOS-18-6',
   deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
   toolsRoot: '/absolute/path/9lives-runner/tools/ios',
-  // Written to .context/ios-wda/build.json by scripts/build-ios-wda.cjs.
-  wdaApp: '/absolute/path/WebDriverAgentRunner-Runner.app',
+  // The "products" path in .context/ios-wda/build.json, written by
+  // scripts/build-ios-wda.cjs.
+  wdaProducts: '/absolute/path/ios-wda/derived/Build/Products',
 })});
 
 test('transfer receipt', async ({app}) => {
@@ -94,12 +100,20 @@ requires that engine context. For repeatable build selection, record the digest
 when producing the app artifact and supply that recorded value to the test.
 Computing it at test startup binds that run to the current local artifact.
 
-`wdaApp` is optional. With it, the driver checks the runner's bundle identifier
-and platform before creating a device, installs it on the owned Simulator and
-starts it without xcodebuild. Build it with `node scripts/build-ios-wda.cjs`
-after installing the pinned tools, and rebuild it when those tools or Xcode
-change. Without it, WebDriverAgent is compiled inside `open`, which needs a
-warm build machine to finish within the bound.
+`wdaProducts` is optional. With it, the driver checks the runner's bundle
+identifier and platform before creating a device, copies the products into its
+private scratch and has xcodebuild run them without compiling. Build them with
+`node scripts/build-ios-wda.cjs` after installing the pinned tools, and rebuild
+when those tools or Xcode change. Without it, WebDriverAgent is compiled inside
+`open`, which needs a warm build machine to finish within the bound; that path
+is not qualified.
+
+Sessions are headless. The simulator is booted without a window and the pinned
+driver is told to keep it that way; by default it would shut the device down
+and boot it again through the Simulator app. In headless mode that driver
+closes a Simulator app window that is already open on the Mac, so expect an
+open Simulator window to close when a test starts. WebDriverAgent listens on
+`127.0.0.1` only.
 
 ## Supported boundary
 

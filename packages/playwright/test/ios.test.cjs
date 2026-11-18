@@ -62,11 +62,13 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       fs.writeFileSync(path.join(dir,'node_modules',name,'package.json'),JSON.stringify({version}));
     }
     const source=path.join(dir,'Fixture.app');fs.mkdirSync(source);fs.writeFileSync(path.join(source,'Info.plist'),'fixture');
-    const wdaApp=path.join(dir,'WebDriverAgentRunner-Runner.app');
+    const wdaProducts=path.join(dir,'Products'),wdaRunner='Debug-iphonesimulator/WebDriverAgentRunner-Runner.app';
+    fs.mkdirSync(path.join(wdaProducts,wdaRunner),{recursive:true});fs.writeFileSync(path.join(wdaProducts,wdaRunner,'Info.plist'),'runner');
+    fs.writeFileSync(path.join(wdaProducts,'WebDriverAgentRunner.xctestrun'),'run');
     cp.execFile=(file,args,opts,callback)=>{
       commands.push(args);
       let output='';
-      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaApp,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:'1'})[args[1].slice(7)];
+      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaProducts,wdaRunner,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:'1'})[args[1].slice(7)];
       else if (file.endsWith('xcodebuild')) output='Xcode 16.4\nBuild version synthetic';
       else if (args[1]==='list'&&args[2]==='runtimes') output=JSON.stringify({runtimes:[{identifier:runtime.runtime,isAvailable:true,version:'18.5'}]});
       else if (args[1]==='create') { owned={name:args[2],udid,deviceTypeIdentifier:runtime.deviceType,state:'Shutdown'};output=createOutput??udid; }
@@ -99,7 +101,8 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       requests.push({pathname,body}); let value=null;
       if(pathname.endsWith('/status')) value={ready:true};
       else if(pathname.endsWith('/session')) value={sessionId:'session-1',capabilities:{udid:foreign?'foreign':udid,platformName:'iOS'}};
-      else if(pathname.endsWith('/window/size')) value={width:390,height:844};
+      else if(pathname.endsWith('/window/rect')) value={x:0,y:0,width:390,height:844};
+      else if(pathname.endsWith('/window/size')) return new Response(JSON.stringify({value:{error:'unknown command'}}),{status:404});
       else if(pathname.endsWith('/elements')) {
         assert.match(body.value,/^name == "[a-z]+" AND label != "[a-z]+"$/);
         value=Array.from({length:elements},(_,i)=>({'element-6066-11e4-a52e-4f735466cecf':`element-${i}`}));
@@ -160,20 +163,26 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     commands.length=0;await driver.close();assert.equal(owned,undefined);
     assert.deepEqual(commands.map(args=>args.slice(1,3)),[['list','devices'],['shutdown',udid],['delete',udid],['list','devices']]);
     createOutput=undefined;
-    // Default sessions compile WebDriverAgent into private scratch. A prebuilt
-    // runner is started without xcodebuild and checked before any device exists.
+    // Every session is headless and loopback-bound with private derived data.
+    // Without products WebDriverAgent is compiled there; with them a private
+    // copy is only run, and a wrong runner is refused before any device exists.
     const sessionCaps=()=>requests.filter(r=>r.pathname.endsWith('/session')).at(-1).body.capabilities.alwaysMatch;
+    const copied=()=>path.join(sessionCaps()['appium:derivedDataPath'],'Build/Products');
     driver=iosTargetDriver(opts);await driver.open(c());
+    assert.equal(sessionCaps()['appium:isHeadless'],true);assert.equal(sessionCaps()['appium:wdaBindingIP'],'127.0.0.1');
     assert.equal(sessionCaps()['appium:useNewWDA'],true);assert.equal(path.basename(sessionCaps()['appium:derivedDataPath']),'wda');
-    assert.equal('appium:usePreinstalledWDA' in sessionCaps(),false);await driver.close();
-    driver=iosTargetDriver({...opts,wdaApp});await driver.open(c());
-    assert.equal(sessionCaps()['appium:usePreinstalledWDA'],true);assert.equal(sessionCaps()['appium:prebuiltWDAPath'],wdaApp);
-    assert.equal('appium:derivedDataPath' in sessionCaps(),false);assert.equal('appium:useNewWDA' in sessionCaps(),false);
-    await driver.close();assert.equal(owned,undefined);
-    wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaApp});
+    assert.equal('appium:usePrebuiltWDA' in sessionCaps(),false);assert.equal(fs.existsSync(copied()),false);await driver.close();
+    driver=iosTargetDriver({...opts,wdaProducts});await driver.open(c());
+    assert.equal(sessionCaps()['appium:usePrebuiltWDA'],true);assert.equal(sessionCaps()['appium:isHeadless'],true);
+    assert.notEqual(copied(),wdaProducts);
+    assert.equal(fs.readFileSync(path.join(copied(),wdaRunner,'Info.plist'),'utf8'),'runner');
+    assert.equal(fs.readFileSync(path.join(copied(),'WebDriverAgentRunner.xctestrun'),'utf8'),'run');
+    const scratch=copied();await driver.close();assert.equal(owned,undefined);
+    assert.equal(fs.existsSync(scratch),false);assert.equal(fs.existsSync(path.join(wdaProducts,wdaRunner,'Info.plist')),true);
+    wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaProducts});
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_wda');
     await driver.close();assert.equal(commands.some(args=>args[1]==='create'),false);
-    assert.throws(()=>iosTargetDriver({...opts,wdaApp:'relative/Runner.app'}),/invalid_options/);
+    assert.throws(()=>iosTargetDriver({...opts,wdaProducts:'relative/Products'}),/invalid_options/);
   } finally {
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;process.kill=original.kill;
     Object.defineProperty(process,'platform',original.platform);

@@ -10,6 +10,9 @@ const mode = process.env.NINELIVES_IOS_CASE ?? 'healthy';
 const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/ios-fixture/${variant}/build.json`), 'utf8'));
 const wda = JSON.parse(readFileSync(resolve(__dirname, '../../../.context/ios-wda/build.json'), 'utf8'));
+// The smoke names one installed runtime explicitly; nothing selects "latest".
+const os = process.env.NINELIVES_IOS_OS ?? '18.6';
+if (!/^[0-9]{1,3}(\.[0-9]{1,5}){1,2}$/.test(os)) throw new Error('invalid NINELIVES_IOS_OS');
 const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '',
   commands: [] as {operation: string; elapsedMs: number; outcome: 'pending' | 'passed' | 'failed'}[]};
 const persistProbe = () => {
@@ -19,9 +22,9 @@ const test = createTargetTest({native: target => {
   const driver = iosTargetDriver({
     appId: target.appId, app: fixture.app, bundleId: fixture.bundleId,
     appSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.appSHA256,
-    runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : 'com.apple.CoreSimulator.SimRuntime.iOS-18-6',
+    runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : `com.apple.CoreSimulator.SimRuntime.iOS-${os.replaceAll('.', '-')}`,
     deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
-    toolsRoot: resolve(__dirname, '../../../tools/ios'), wdaApp: wda.app,
+    toolsRoot: resolve(__dirname, '../../../tools/ios'), wdaProducts: wda.products,
   });
   const open = driver.open.bind(driver);
   driver.open = async context => {

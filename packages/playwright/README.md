@@ -62,7 +62,7 @@ iOS and Android devices beyond those listed below are not qualified features.
 ## iOS Simulator (unreleased)
 
 This source checkout includes an experimental `@9l/playwright/ios` driver.
-Simulator runtime qualification is pending. See the [source setup, supported
+It is qualified from source on one Mac only. See the [source setup, supported
 operations and limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/ios-driver.md).
 It is not included in the published support matrix.
 
