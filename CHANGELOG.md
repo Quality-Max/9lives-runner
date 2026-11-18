@@ -11,7 +11,10 @@ SDK versions.
 - `fill` focuses the field before setting its text, as a user's tap would.
   Setting text alone never focused it, so checks an app runs when a field
   gains or loses focus (an e-mail check, for example) never ran. On a phone
-  the keyboard now opens on `fill`; `hideKeyboard()` closes it.
+  the keyboard now opens on `fill`; `hideKeyboard()` closes it. A `fill`
+  whose control is not a text field (an EditText class, or an input type
+  on that element) fails as `not_editable` before anything touches it, so
+  a selector that names a button never presses it.
 - `fill(value, {submit: true})` then presses the keyboard's action key in
   the field: the input method's done action on Android, sent only while the
   field reports focus, and Enter on the web. A driver whose handles cannot

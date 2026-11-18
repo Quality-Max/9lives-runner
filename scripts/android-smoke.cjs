@@ -6,7 +6,7 @@ const {spawnSync} = require('node:child_process');
 const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
-  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus'];
+  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus','misfill'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
 // case is refused before anything is built or booted.
 // Biometric cases need a dedicated AVD prepared by
@@ -55,6 +55,7 @@ const modes = process.argv.slice(2).length ? process.argv.slice(2) : allModes;
 // Native operations and their diagnostics run the second spec test.
 const operationModes = ['operations','diagnostics'];
 const rejectionReasons = {
+  misfill: 'not_editable',
   unavailable: 'open_failed_emulator_boot',
   version: 'open_failed_configuration',
 };
@@ -184,6 +185,10 @@ for (const mode of modes) {
     assert(frames.some(f=>f.operation==='assert-state'&&f.status==='failed'),'semantics-defect: invalid state rejected');
     assert(frames.some(f=>f.operation==='tap'&&f.status==='passed'),'semantics-defect: bare-id tap ran');
     assert.equal(facts.stopReason,'assertion_failed');
+  }
+  if (mode==='misfill') {
+    // The send button was never touched: no transfer was dispatched.
+    assert.equal(facts.clickDispatches,0,'misfill: fill on a button sends no tap');assert.equal(facts.stopReason,'operation_failed');
   }
   if (mode==='missing'||mode==='ambiguous') {
     assert.equal(facts.clickDispatches,0);assert.equal(facts.stopReason,mode==='missing'?'missing_test_id':'ambiguous_test_id');

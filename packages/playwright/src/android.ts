@@ -28,6 +28,8 @@ const matchers: readonly AndroidMatcher[] = ['text', 'accessibilityId', 'accessi
 /** Test IDs: an app resource entry name, which Android reports as
  * `<package>:id/<id>`, or an identifier a framework reports bare (Flutter's
  * `Semantics(identifier:)`), which may also contain `.` and `-`. */
+// Android's text-entry classes: a Flutter or Compose text field reports EditText.
+const editableClasses = ['android.widget.EditText', 'android.widget.AutoCompleteTextView', 'android.widget.MultiAutoCompleteTextView', 'android.widget.SearchView$SearchAutoComplete', 'android.inputmethodservice.ExtractEditText'];
 const testIdPattern = /^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$/;
 // UiAutomator2's selector parser unescapes only \" inside a string
 // argument; every other backslash reaches the matcher as written. Text and
@@ -460,23 +462,35 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (result.length !== 1) throw failure(result.length ? 'ambiguous_resource_id' : 'missing_resource_id');
     return result[0];
   };
-  const handle = (id: string): TargetHandle => ({
+  // The element a fill resolved, kept for its submit: a text alias no longer
+  // matches once the fill replaced that text.
+  const handle = (id: string): TargetHandle => { let filledRef: string | undefined; return {
     tap: async c => { const ref = await resolveOne(id, c); await observeGesture(c); await endpoint(`/element/${ref}/click`, c, 'POST', {}); },
     // A user's fill: a touch focuses the field (so checks an app runs on
     // focus changes run), then its text is replaced. Setting text alone
     // never focused it.
     fill: async (value, c) => {
       disarm();
+      filledRef = undefined;
       const ref = await resolveOne(id, c);
+      // Only a text field is tapped: a tap on a control a selector wrongly
+      // named (a button) would run its action before the fill could fail.
+      // A text field reports an EditText class, or an input type in the
+      // hierarchy (UiAutomator2 reads it only there) on this same element.
+      const kind = await endpoint(`/element/${ref}/attribute/class`, c);
+      if (!(typeof kind === 'string' && editableClasses.includes(kind)) &&
+          !elements(await endpoint('/elements', c, 'POST', {using: 'xpath', value: `${xpathOf(id)}[@input-type and @input-type!="0"]`})).includes(ref)) throw failure('not_editable');
       await endpoint(`/element/${ref}/click`, c, 'POST', {});
       await endpoint(`/element/${ref}/clear`, c, 'POST', {});
       await endpoint(`/element/${ref}/value`, c, 'POST', {text: value});
+      filledRef = ref;
     },
     // The input method's done action goes to whichever field has focus, so
     // it is sent only while this field reports focus, never to another one.
     submit: async c => {
       disarm();
-      const focused = await endpoint(`/element/${await resolveOne(id, c)}/attribute/focused`, c);
+      const ref = filledRef ?? await resolveOne(id, c);
+      const focused = await endpoint(`/element/${ref}/attribute/focused`, c);
       if (focused !== true && focused !== 'true') throw failure('field_not_focused');
       await endpoint('/execute/sync', c, 'POST', {script: 'mobile: performEditorAction', args: [{action: 'done'}]});
     },
@@ -524,7 +538,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       await endpoint('/execute/sync', c, 'POST', {script: 'mobile: scrollGesture', args: [{elementId: ref, direction, percent}]});
     },
     bounds: async c => { disarm(); return rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)); },
-  });
+  };}
   const pixel = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
   const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
   // Only finite numbers are rounded: a null or boolean field is a malformed

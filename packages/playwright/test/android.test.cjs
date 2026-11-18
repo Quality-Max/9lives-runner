@@ -1176,7 +1176,7 @@ test('fill focuses the field and submit sends the done action only to the focuse
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-fill-'));
   const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
   const requests = [];
-  let focused = 'true';
+  let focused = 'true', kind = 'android.widget.EditText', found = ['ref-0'], typed = ['ref-0'];
   const serial = `test-${randomUUID()}`;
   let driver;
   try {
@@ -1212,8 +1212,9 @@ test('fill focuses the field and submit sends the done action only to the focuse
       let value = null;
       if (url.endsWith('/status')) value = {ready: true};
       else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
-      else if (url.endsWith('/elements')) value = [{'element-6066-11e4-a52e-4f735466cecf': 'ref-0'}];
+      else if (url.endsWith('/elements')) value = (body.using === 'xpath' && body.value.endsWith('[@input-type and @input-type!="0"]') ? typed : found).map(ref => ({'element-6066-11e4-a52e-4f735466cecf': ref}));
       else if (url.endsWith('/attribute/focused')) value = focused;
+      else if (url.endsWith('/attribute/class')) value = kind;
       requests.push({path: url.replace(/^.*\/session\/owned-session/, ''), body});
       return new Response(JSON.stringify({value}), {status: 200});
     };
@@ -1224,12 +1225,31 @@ test('fill focuses the field and submit sends the done action only to the focuse
     const [field] = await driver.observeTestId('email-field', context());
     requests.length = 0;
     await field.fill('ada@example.test', context());
-    // The touch comes first, then the text is replaced; the value never leaves the request body.
-    assert.deepEqual(requests.filter(r => !r.path.endsWith('/elements')).map(r => r.path), ['/element/ref-0/click', '/element/ref-0/clear', '/element/ref-0/value']);
+    // A text field's class is read, then it is touched and its text replaced;
+    // the value never leaves the request body.
+    assert.deepEqual(requests.filter(r => !r.path.endsWith('/elements')).map(r => r.path), ['/element/ref-0/attribute/class', '/element/ref-0/click', '/element/ref-0/clear', '/element/ref-0/value']);
     assert.deepEqual(requests.at(-1).body, {text: 'ada@example.test'});
-    requests.length = 0;
+    // submit uses the element the fill resolved, without looking the alias
+    // up again: a text alias no longer matches after the fill.
+    requests.length = 0; found = [];
     await field.submit(context());
+    assert(!requests.some(r => r.path.endsWith('/elements')), 'submit after fill does not look the control up again');
     assert.deepEqual(requests.at(-1), {path: '/execute/sync', body: {script: 'mobile: performEditorAction', args: [{action: 'done'}]}});
+    found = ['ref-0'];
+    // A control that is not a text field is never touched: a tap on a button
+    // a selector wrongly named would run its action.
+    kind = 'android.widget.Button'; typed = [];
+    const [button] = await driver.observeTestId('send', context());
+    requests.length = 0;
+    await assert.rejects(button.fill('5', context()), /not_editable/);
+    assert(!requests.some(r => /\/(click|clear|value)$/.test(r.path)), 'no touch, clear or text on a non-editable control');
+    // A custom view that reports an input type on this element is a field;
+    // an input type on another element is not.
+    kind = 'com.example.CustomField'; typed = ['ref-0'];
+    await button.fill('5', context());
+    typed = ['ref-9'];
+    await assert.rejects(button.fill('5', context()), /not_editable/);
+    kind = 'android.widget.EditText'; typed = ['ref-0'];
     for (const value of ['false', false, null, 'yes']) {
       focused = value; requests.length = 0;
       await assert.rejects(field.submit(context()), /field_not_focused/, String(value));

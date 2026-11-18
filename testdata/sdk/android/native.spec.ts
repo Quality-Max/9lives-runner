@@ -123,6 +123,8 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   if (!attachedSerial) await app.reset({timeoutMs: 30000});
   await app.getByTestId('recipient').fill('Ada', {timeoutMs: 20000});
   await app.getByTestId('amount').fill('5', {timeoutMs: 20000});
+  // A fill aimed at a button must fail without touching it: a tap would send.
+  if (mode === 'misfill') await app.getByTestId('send').fill('5', {timeoutMs: 20000});
   // Strict mutations must reject missing/ambiguous controls before dispatch.
   if (mode === 'missing' || mode === 'ambiguous') await app.getByTestId('send').tap();
   await app.getByTestId('send').toHaveState('enabled', true);

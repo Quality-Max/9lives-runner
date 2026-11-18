@@ -247,8 +247,12 @@ the same name reported without a prefix, as Flutter reports
 both ways is ambiguous. IDs contain 1–128 ASCII letters, digits, `_`, `.`
 or `-`, starting with a letter, digit or `_`.
 `fill` acts as a user would: one tap on the field focuses it, then its text
-is cleared and set, so checks an app runs when a field gains or loses focus
-run (setting text alone never focused it). On a phone the tap opens the
+is cleared and set. Only a text field is tapped: the resolved control must
+report an EditText class, or an input type in the hierarchy on that same
+element, else `fill` fails as `not_editable` before touching it, so a
+selector that names a button never presses it. Because the field is
+focused first, checks an app runs when a field gains or loses focus run
+(setting text alone never focused it). On a phone the tap opens the
 keyboard, as for a user; `hideKeyboard()` closes it. With
 `fill(value, {submit: true})` the driver then sends the input method's done
 action (`mobile: performEditorAction`), only while the field reports focus,
