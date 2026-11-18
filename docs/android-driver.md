@@ -361,8 +361,10 @@ read-only and discards when the test closes, the policy is:
   nothing changes. Declaring it with `deviceSerial` is a configuration
   error.
 - **No credential reaches the driver.** A dedicated AVD is prepared once by
-  `node scripts/prepare-biometric-avd.cjs --avd <dedicated AVD> --wipe
-  [--snapshot 9l-biometric]`, which erases that AVD, sets a random lock PIN
+  `npx 9l-prepare-biometric-avd --avd <dedicated AVD> --wipe
+  [--snapshot 9l-biometric]` (the command ships with `@9l/playwright`; in
+  this repository `node scripts/prepare-biometric-avd.cjs` runs the same
+  code), which erases that AVD, sets a random lock PIN
   that is never printed or stored, enrolls fingerprint 1 through Settings
   with the emulator's virtual sensor and saves the unlocked state as a named
   snapshot. The driver boots that snapshot `-read-only -snapshot <name>
@@ -391,7 +393,7 @@ signing in on an API 35 arm64 emulator, and `biometric-unenrolled` qualifies
 that finger 2, which is not enrolled, leaves the sign-in assertion failed:
 
 ```sh
-node scripts/prepare-biometric-avd.cjs --avd 9l_biometric_API_35 --wipe
+npx 9l-prepare-biometric-avd --avd 9l_biometric_API_35 --wipe
 NINELIVES_ANDROID_BIOMETRIC_AVD=9l_biometric_API_35 node scripts/android-smoke.cjs biometric biometric-unenrolled
 ```
 

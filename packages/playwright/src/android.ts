@@ -84,7 +84,7 @@ export type AndroidTargetOptions = {
 } & ({
   avd: string; apk: string; headless?: boolean; deviceSerial?: never;
   /** Owned emulator only: boot the named snapshot of a dedicated AVD that
-   * scripts/prepare-biometric-avd.cjs prepared (a lock screen and an
+   * `npx 9l-prepare-biometric-avd` prepared (a lock screen and an
    * enrolled fingerprint, saved unlocked), still read-only, and offer
    * app.fingerprint(). The driver never sees, sets or enters a PIN; a
    * snapshot that boots locked or without an enrolled fingerprint is a
