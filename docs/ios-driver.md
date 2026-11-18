@@ -47,12 +47,14 @@ boot inside `open`, and there it took most of the 300-second bound:
 | --- | --- | --- | --- |
 | `macos-15-intel`, Xcode 16.4 | 238 s | cut off after 57 s | install |
 | `macos-15` (ARM), Xcode 16.4 | 180 s | 31 s | session creation |
+| `macos-15` (ARM), Xcode 16.4, headless sessions | 263 s | cut off after 34 s | install |
 
 Booting another simulator of the same runtime beforehand did not shorten the
-next one's first boot (254 s, then 205 s). Those runs predate headless
-sessions: the pinned driver was then shutting the booted simulator down and
-booting it again through the Simulator app, which is what the ARM run was doing
-when it ran out of time.
+next one's first boot (254 s, then 205 s). Headless sessions removed a second
+boot that the pinned driver was adding, but the first boot alone still leaves
+too little of the bound, and it varied from 180 to 263 seconds on the same
+runner type. The `iOS Simulator` workflow is therefore manual and qualifies
+nothing. Expect `open` to time out on these runners.
 
 The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
 transfer, a deliberately wrong receipt, missing and duplicate controls, a
