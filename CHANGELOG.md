@@ -38,8 +38,9 @@ SDK versions.
   own bound for the control to appear, then acts once, as Playwright's web
   actions do. A `fill` right after a navigating tap failed with
   `missing_test_id` and needed a `toBeVisible` first. Only the read-only
-  lookup repeats; ambiguity fails at once, and a control still absent before
-  the bound is `missing_test_id`, as before, rather than a timeout.
+  lookup repeats; ambiguity fails at once, and a control still absent when
+  the action's own bound runs out is `missing_test_id`, as before, rather
+  than a timeout. A wait cut short by Go's worker deadline is `deadline`.
 
 ## 0.6.0 — 2026-11-07
 

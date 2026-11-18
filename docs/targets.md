@@ -127,7 +127,9 @@ never silently select the first match. An action on a control (`tap`, `fill`,
 `scroll`, `bounds`) waits within its own bound for that control to appear,
 for example on a screen still loading after a navigating tap, then acts once:
 only the read-only lookup repeats, never the action. A control still absent
-before the bound fails as `missing_test_id`; ambiguity fails at once. The web driver acts through strict
+when the action's own bound runs out fails as `missing_test_id`; a wait that
+Go's worker deadline cut short stops as `deadline` instead, as a query's
+does; ambiguity fails at once. The web driver acts through strict
 Playwright locators: a control replaced by re-rendering is followed, and a
 second match at action time fails instead of being chosen. Only test-ID lookup is supported; CSS,
 XPath, coordinates and role lookup have no API in this contract. Unsupported

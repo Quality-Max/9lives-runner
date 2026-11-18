@@ -465,14 +465,15 @@ export class TargetApp {
     // actions do, then acts once. Only the read-only lookup repeats; the
     // action itself is never retried. Ambiguity, invalid input and failed
     // lookups end the wait at once; a control still absent before the bound
-    // is missing_test_id.
+    // is missing_test_id, unless Go's worker deadline cut the wait short:
+    // that is `deadline`, as for a query, since the wait never ran its course.
     const required = async (context: TargetContext) => {
       let found: TargetHandle | undefined;
       const result = await this.poll(context, async context => {
         found = await observe(context);
         return found !== undefined;
       }, Math.max(1, context.deadlineMs - Date.now()), maxObservations, () => {}, true);
-      if (!result.held || !found) throw stopped('missing_test_id');
+      if (!result.held || !found) throw stopped(context.deadlineMs >= this.options.deadlineMs ? 'deadline' : 'missing_test_id');
       return found;
     };
     // A missing control is a completed false observation, except for a
