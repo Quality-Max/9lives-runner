@@ -1,20 +1,9 @@
 name: iOS Simulator
+# Manual comparison only. Hosted runners do not qualify the iOS driver: a new
+# simulator needed 180 to 238 s to become usable there, so open reached its
+# 300-second bound before a session existed. Qualification runs on a Mac with
+# full Xcode (docs/ios-driver.md).
 on:
-  push:
-    branches: [main]
-  pull_request:
-    paths:
-      - 'packages/playwright/src/**'
-      - 'internal/adapters/playwrightsdk/**'
-      - 'internal/runner/**'
-      - 'testdata/ios/**'
-      - 'testdata/sdk/ios/**'
-      - 'testdata/sdk/ios.config.ts'
-      - 'scripts/ios-smoke.cjs'
-      - 'scripts/build-ios-fixture.cjs'
-      - 'scripts/build-ios-wda.cjs'
-      - 'tools/ios/**'
-      - '.github/workflows/ios.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,9 +12,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   simulator:
-    # Standard runners only; no larger-runner billing. A new simulator's first
-    # boot took 205 to 254 s on macos-15-intel, leaving open too little of its
-    # bound. ARM booted in 83 s and no longer compiles WebDriverAgent in open.
+    # Standard runners only; no larger-runner billing. ARM was the faster of
+    # the two measured hosts and still ran out of time in session creation.
     runs-on: macos-15
     # One WebDriverAgent build precedes nine cases, each with its own new device.
     timeout-minutes: 75

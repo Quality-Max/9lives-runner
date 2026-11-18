@@ -1,13 +1,15 @@
 # iOS Simulator (experimental, unreleased)
 
-This source checkout adds a deterministic iOS driver. Runtime qualification is
-pending the macOS workflow: unit tests use a synthetic transport and do not
-establish iOS support. No published CLI or SDK version is changed by this work.
+This source checkout adds a deterministic iOS driver. **No host is qualified
+yet.** Unit tests use a synthetic transport and do not establish iOS support,
+and no run has reached a target assertion on a real Simulator. No published CLI
+or SDK version is changed by this work.
 
-The initial qualification target is macOS 15 on Intel (`macos-15-intel`), Xcode 16.4, iOS 18.6,
-and an iPhone 16 Simulator, with Appium 3.8.0 and XCUITest driver 10.43.1.
-ARM hosts, other configurations, real iPhones, goals, healing and verified replay are
-unqualified. This is the owned Simulator foundation of
+The qualification target is an iOS 18.6 iPhone 16 Simulator on a Mac with full
+Xcode, with Appium 3.8.0 and XCUITest driver 10.43.1. The smoke records the
+host's Xcode version and requires the receipt to match it. Real iPhones, goals,
+healing and verified replay are unqualified. GitHub-hosted macOS runners are a
+known limitation, described below. This is the owned Simulator foundation of
 [QUA-2167](https://linear.app/quality-max/issue/QUA-2167), using build identity,
 strict assertions and cleanup requirements from
 [QUA-2108](https://linear.app/quality-max/issue/QUA-2108). Neither umbrella issue
@@ -31,9 +33,21 @@ are unchanged), outside every open bound. On hosted CI that build took 260
 seconds, and a session that compiled it inside `open` never started. The step's
 duration and outcome are kept in `host-preparation.json`.
 
-Every new simulator pays its own first boot inside `open`. On the hosted Intel
-runner that boot alone took 205 to 254 seconds, and booting another simulator
-of the same runtime beforehand did not shorten it.
+### Known limitation: GitHub-hosted macOS runners
+
+Every new simulator pays its own first boot inside `open`, and on the standard
+hosted runners that leaves too little of the 300-second bound:
+
+| Runner | Boot until usable | Install | Open stopped in |
+| --- | --- | --- | --- |
+| `macos-15-intel`, Xcode 16.4 | 238 s | cut off after 57 s | install |
+| `macos-15` (ARM), Xcode 16.4 | 180 s | 31 s | session creation |
+
+Booting another simulator of the same runtime beforehand did not shorten the
+next one's first boot (254 s, then 205 s). No case has passed on a hosted
+runner, so the `iOS Simulator` workflow is a manual comparison and qualifies
+nothing. Expect `open` to time out there until the driver can start from an
+already booted template or the bound is revisited.
 
 The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
 transfer, a deliberately wrong receipt, missing and duplicate controls, a

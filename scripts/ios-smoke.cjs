@@ -15,13 +15,17 @@ function command(file,args,options={}) {
   const result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:600000,maxBuffer:4<<20,...options});
   assert.ifError(result.error);return result;
 }
+// The receipt must name the Xcode this host actually runs, queried here
+// independently of the driver, whichever supported Xcode is installed.
+const hostXcode=/^Xcode ([0-9.]+)\n/.exec(command('/usr/bin/xcodebuild',['-version']).stdout)?.[1];
+assert.match(hostXcode||'',/^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$/,'full Xcode is required; Command Line Tools alone are insufficient');
 const engine=path.join(work,'9l');
 assert.equal(command('go',['build','-o',engine,'./cmd/9l']).status,0,'build engine');
 assert.equal(command(process.execPath,['scripts/build-ios-fixture.cjs']).status,0,'build fixtures');
 const runtime='com.apple.CoreSimulator.SimRuntime.iOS-18-6',deviceType='com.apple.CoreSimulator.SimDeviceType.iPhone-16';
 // Host preparation happens once, outside every case's open bound. Only fixed
 // step names, durations and outcomes are kept.
-const preparation={version:1,steps:[]};
+const preparation={version:1,xcode:hostXcode,steps:[]};
 function prepare(operation,file,args,timeout,stdio) {
   const started=Date.now(),result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout,maxBuffer:4<<20,...(stdio?{stdio}:{})});
   preparation.steps.push({operation,elapsedMs:Date.now()-started,outcome:!result.error&&result.status===0?'passed':'failed'});
@@ -69,7 +73,7 @@ try {
       const rt=receipt.iosRuntimes[0];
       const fixture=JSON.parse(fs.readFileSync(path.join(root,'.context/ios-fixture/healthy/build.json'),'utf8'));
       assert.equal(rt.appSHA256,fixture.appSHA256);assert.equal(rt.bundleId,fixture.bundleId);
-      assert.equal(rt.os,'18.6');assert.equal(rt.xcode,'16.4');assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
+      assert.equal(rt.os,'18.6');assert.equal(rt.xcode,hostXcode);assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
     } else {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
     if(!['digest','unavailable'].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
     if(mode==='defect') {
