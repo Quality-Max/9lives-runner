@@ -211,6 +211,18 @@ the second test must fail its final session assertion after successful
 persistence checks and the final reset. Earlier assertion failures or failed
 fixture/hook steps cannot qualify either case. The deliberate failures
 make the inner jobs fail; only the harness's exact outcome checks qualify them.
+With reset disabled the app is never relaunched, so that final assertion keeps
+the ordinary five-second bound instead of the 90-second cold-relaunch
+allowance: it can only fail, and waiting out the allowance took the test past
+its 240-second budget on a slow hosted emulator.
+
+Every case's result line carries its duration and bounded probe facts, also
+when the case does not qualify: read counts, failures and the slowest read per
+route, how many lookups matched nothing, and for `cancel` and `blocked` how the
+checks for the app's in-flight marker ended. A failed semantics case records
+whether the app's window, another window or none had input focus. These are
+counts, durations and fixed words; no screen text, device output or
+identifiers are kept.
 
 To check preservation of a preexisting emulator, run
 `node scripts/android-preservation.cjs` after building the healthy fixture.
