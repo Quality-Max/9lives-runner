@@ -125,7 +125,8 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,records()[0]),'utf8')),
       {version:1,name:records()[0].replace('.owned.json',''),runtime:runtime.runtime,deviceType:runtime.deviceType});
     assert.equal(owned.name,records()[0].replace('.owned.json',''));
-    if(process.platform!=='win32') assert.equal(fs.statSync(path.join(dir,records()[0])).mode&0o777,0o600);
+    // The test presents itself as macOS; the real host decides whether modes exist.
+    if(original.platform.value!=='win32') assert.equal(fs.statSync(path.join(dir,records()[0])).mode&0o777,0o600);
     await driver.reset(c());
     const [handle]=await driver.observeTestId('send',c());
     elements=2;await assert.rejects(handle.tap(c()),/ambiguous_control/);assert.equal(clicks,0);
