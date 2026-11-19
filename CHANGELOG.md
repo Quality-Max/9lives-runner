@@ -4,7 +4,15 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.6.1 — 2026-11-18
+
+A patch on the 0.6.0 line from a second field report on the experimental
+Android target. Android specs see behavior changes: `fill` focuses the field
+(on a phone that opens the keyboard) and refuses a control that is not a text
+field, and actions wait within their bound for their control to appear. The
+target contract stays `9l.target/3`. Update the CLI and `@9l/playwright`
+together: a 0.6.0 CLI rejects the new `build-sdk` and `build-abi` setup
+reasons as invalid evidence.
 
 ### Android (experimental)
 

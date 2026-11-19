@@ -57,7 +57,7 @@ From 0.5.4, the CLI includes `9l update` (ask and install),
 approval). See [updating the CLI](docs/install.md#updating-the-cli).
 
 Your project supplies its Playwright dependencies, browsers, configuration, and
-assertions. The SDK is optional. Native v0.6.0 binaries support macOS, Linux and
+assertions. The SDK is optional. Native v0.6.1 binaries support macOS, Linux and
 Windows on x64 and ARM64. See [Windows ZIP installation](docs/install.md#windows)
 and the [existing-project guide](docs/run-existing-project.md). Chromium is qualified;
 other browser engines are unqualified.
@@ -131,7 +131,7 @@ cloud-verified result are reported separately. See the
 Install the published SDK in your Playwright project:
 
 ```sh
-npm install --save-dev @9l/playwright@0.6.0 @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.6.1 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
@@ -333,8 +333,8 @@ the spec or prove its assertions protect the requirement. See the
 
 ## Compatibility
 
-The experimental Android target (Appium with UiAutomator2) ships in 0.6.0.
-Install the matching 0.6.0 CLI and SDK together; Android remains opt-in with
+The experimental Android target (Appium with UiAutomator2) ships since 0.6.0.
+Install the matching 0.6.1 CLI and SDK together; Android remains opt-in with
 the [setup and qualification limits](docs/android-driver.md) below.
 
 | Component | Qualified | Boundary |
@@ -343,8 +343,8 @@ the [setup and qualification limits](docs/android-driver.md) below.
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.6.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.6.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.6.1 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.6.1, released with the CLI | Installing the SDK does not install the CLI or browsers |
 | Android (experimental) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
 An unreleased [iOS Simulator driver](docs/ios-driver.md) is available in this
@@ -468,7 +468,7 @@ See [contributing](CONTRIBUTING.md) before proposing changes.
 
 ## Package and release metadata
 
-The published [@9l/playwright 0.6.0](https://www.npmjs.com/package/@9l/playwright)
+The published [@9l/playwright 0.6.1](https://www.npmjs.com/package/@9l/playwright)
 and the Go CLI are separate distributions with one shared version: a single
 `v<version>` tag releases both. Binary archives include `LICENSE`, `NOTICE` and
 release-wide SHA-256 checksums. See the [release runbook](docs/releases.md)
