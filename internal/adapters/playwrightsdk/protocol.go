@@ -52,6 +52,7 @@ type event struct {
 	Operation     string                   `json:"operation"`
 	Control       string                   `json:"control"`
 	Reason        string                   `json:"reason"`
+	IOSRuntime    *runner.IOSRuntime       `json:"iosRuntime"`
 	Runtime       *runner.AndroidRuntime   `json:"runtime"`
 	Setup         *runner.TargetSetup      `json:"setup"`
 	Diagnostic    *runner.TargetDiagnostic `json:"diagnostic"`
@@ -229,6 +230,13 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 			}
 			state.retry, state.active, state.reportedAttempt, state.declared = frame.Retry, true, 0, frame.ExpectedStatus
 			state.failedAttempt = failedStep{}
+		case "ios_runtime":
+			if !strings.HasPrefix(identity.Target, "ios:") || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.runtime || frame.IOSRuntime == nil || !validIOSRuntime(*frame.IOSRuntime) {
+				return invalid("missing, foreign or malformed iOS runtime")
+			}
+			state.runtime = true
+			frame.IOSRuntime.TestID = frame.TestID
+			validation.IOSRuntimes = append(validation.IOSRuntimes, *frame.IOSRuntime)
 		case "target_runtime":
 			if !strings.HasPrefix(identity.Target, "android:") || summarizing || state == nil || !state.active || frame.Retry != state.retry || state.runtime || frame.Runtime == nil || !validAndroidRuntime(*frame.Runtime) {
 				return invalid("missing, foreign or malformed Android runtime")
@@ -316,6 +324,8 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 					return invalid("target test passed without a successful target assertion")
 				case frame.Status == "passed" && strings.HasPrefix(identity.Target, "android:") && !state.runtime:
 					return invalid("Android test passed without runtime identity")
+				case frame.Status == "passed" && strings.HasPrefix(identity.Target, "ios:") && !state.runtime:
+					return invalid("iOS test passed without runtime identity")
 				case frame.Status == "passed" && state.setupUnrecovered:
 					return invalid("target test passed after an unrecovered setup classification")
 				case frame.Status != "failed" && frame.Status != "timedOut" && state.diagnostic:
@@ -567,6 +577,8 @@ func decodeEvent(raw []byte) (event, error) {
 		fields = append(fields, "testId")
 	case "test_begin":
 		fields = append(fields, "testId", "retry", "expectedStatus")
+	case "ios_runtime":
+		fields = append(fields, "testId", "retry", "iosRuntime")
 	case "target_runtime":
 		fields = append(fields, "testId", "retry", "runtime")
 	case "target_setup":
@@ -606,6 +618,18 @@ func decodeEvent(raw []byte) (event, error) {
 		}
 	}
 	// Artifact objects are a closed metadata schema too.
+	if value := values["iosRuntime"]; value != nil {
+		var runtime map[string]json.RawMessage
+		keys := []string{"bundleId", "appSHA256", "version", "build", "runtime", "deviceType", "os", "architecture", "xcode", "appium", "xcuitest", "worker", "viewportWidth", "viewportHeight"}
+		if json.Unmarshal(value, &runtime) != nil || len(runtime) != len(keys) {
+			return frame, fmt.Errorf("invalid iOS runtime")
+		}
+		for _, key := range keys {
+			if runtime[key] == nil {
+				return frame, fmt.Errorf("invalid iOS runtime")
+			}
+		}
+	}
 	if value := values["runtime"]; value != nil {
 		var runtime map[string]json.RawMessage
 		keys := []string{"appPackage", "apkSHA256", "api", "release", "abi", "emulator", "appium", "uiautomator2", "worker", "display", "displayWidth", "displayHeight", "density", "posture", "versionCode", "versionName", "signer"}
@@ -698,7 +722,7 @@ func validTargetDiagnostic(d runner.TargetDiagnostic) bool {
 }
 
 func nativeTarget(target string) bool {
-	return strings.HasPrefix(target, "android:") || strings.HasPrefix(target, "android-fake:")
+	return strings.HasPrefix(target, "android:") || strings.HasPrefix(target, "android-fake:") || strings.HasPrefix(target, "ios:")
 }
 
 func validTargetSetup(s runner.TargetSetup) bool {
@@ -790,4 +814,12 @@ func Assertions(raw []byte) (AssertionFacts, error) {
 		facts.Tests[frame.TestID] = test
 	}
 	return facts, nil
+}
+
+func validIOSRuntime(r runner.IOSRuntime) bool {
+	return r.TestID == "" && len(r.BundleID) <= 200 && regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$`).MatchString(r.BundleID) &&
+		testID.MatchString(r.AppSHA256) && testID.MatchString(r.Worker) && androidVersion.MatchString(r.Version) && androidVersion.MatchString(r.Build) && androidVersion.MatchString(r.OS) && androidVersion.MatchString(r.Xcode) &&
+		regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$`).MatchString(r.Runtime) && r.Runtime == "com.apple.CoreSimulator.SimRuntime.iOS-"+strings.ReplaceAll(r.OS, ".", "-") &&
+		regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$`).MatchString(r.DeviceType) && oneOf(r.Architecture, "arm64", "x86_64") &&
+		r.Appium == "3.8.0" && r.XCUITest == "10.43.1" && regexp.MustCompile(`^[1-9][0-9]{0,4}$`).MatchString(r.ViewportWidth) && regexp.MustCompile(`^[1-9][0-9]{0,4}$`).MatchString(r.ViewportHeight)
 }
