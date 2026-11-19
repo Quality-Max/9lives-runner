@@ -9,9 +9,10 @@ by this work.
 | --- | --- |
 | iOS 18.6 iPhone 16 Simulator on an Apple silicon Mac (M5 Pro, macOS 26.6.2, Xcode 27.2), with Appium 3.8.0 and XCUITest driver 10.43.1 | GitHub-hosted macOS runners, Intel Macs, other Xcode or iOS versions, other device types, real iPhones, goals, healing and verified replay |
 
-On that host all nine smoke cases qualified: the healthy transfer passed with
-three target assertions in 39 seconds, a new simulator was usable 15 to 19
-seconds after boot, and every owned device was removed. The smoke records the
+On that host all twelve smoke cases qualified: the healthy transfer passed with
+three target assertions in 39 seconds, a new simulator was usable 15 to 30
+seconds after boot, and every owned device was removed, by its worker or,
+when the worker was stopped first, by the engine. The smoke records the
 host's Xcode version and requires the receipt to match it. This is the owned
 Simulator foundation of
 [QUA-2167](https://linear.app/quality-max/issue/QUA-2167), using build identity,
