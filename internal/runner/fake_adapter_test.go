@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -553,6 +554,75 @@ func TestNativeScratchRemovedAfterWorkerFailure(t *testing.T) {
 			}
 			if _, err := os.Stat(executor.scratch); !os.IsNotExist(err) {
 				t.Fatal("worker artifacts survived attempt cleanup")
+			}
+		})
+	}
+}
+
+// An adapter's own account of what a stopped worker left registered decides
+// whether the attempt may pass; a cancellation or proven failure keeps its status.
+type reclaimingAdapter struct {
+	channelAdapter
+	outcome string
+	seen    *string
+}
+
+func (adapter reclaimingAdapter) ReclaimTarget(scratch string, env map[string]string) []TargetCleanup {
+	*adapter.seen = scratch
+	if _, err := os.Stat(scratch); err != nil || env["NINELIVES_TARGET_SCRATCH_DIR"] != scratch {
+		return []TargetCleanup{{Kind: "fake-device", Outcome: "scratch was gone before reclaim"}}
+	}
+	if adapter.outcome == "" {
+		return nil
+	}
+	return []TargetCleanup{{Kind: "fake-device", Outcome: adapter.outcome}}
+}
+
+func TestUnreleasedNativeTargetCannotPass(t *testing.T) {
+	for _, test := range []struct {
+		mode, outcome string
+		want          ReceiptStatus
+		wantError     bool
+	}{
+		{"channel", "", StatusPassed, false},
+		{"channel", "removed", StatusPassed, false},
+		{"channel", "absent", StatusPassed, false},
+		{"channel", "unconfirmed", StatusError, true},
+		{"channel", "anything else", StatusError, true},
+		{"success", "removed", StatusError, false},
+		{"sleep", "removed", StatusTimedOut, false},
+		{"sleep", "unconfirmed", StatusTimedOut, true},
+	} {
+		t.Run(test.mode+"/"+test.outcome, func(t *testing.T) {
+			job, timeout := fakeJob("job-001", test.mode, 5000), 5*time.Second
+			if test.mode == "sleep" {
+				timeout = 200 * time.Millisecond
+			}
+			job.Target = "ios:finance"
+			seen := ""
+			plan := Plan{Version: 1, RunID: "run-reclaim", Jobs: []Job{job}}
+			summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: timeout, ReceiptDir: t.TempDir(),
+				Adapters: []Adapter{reclaimingAdapter{outcome: test.outcome, seen: &seen}}})
+			receipt := summary.Receipts[0]
+			unconfirmed := strings.Contains(receipt.Error, "could not be confirmed removed")
+			if receipt.Status != test.want || unconfirmed != test.wantError {
+				t.Fatalf("status %s error %q, want %s (unconfirmed=%v)", receipt.Status, receipt.Error, test.want, test.wantError)
+			}
+			if seen == "" {
+				t.Fatal("the adapter was never asked to reclaim")
+			}
+			if _, err := os.Stat(seen); !os.IsNotExist(err) {
+				t.Fatal("scratch survived the attempt")
+			}
+			want := []TargetCleanup(nil)
+			if test.outcome != "" {
+				want = []TargetCleanup{{Kind: "fake-device", Outcome: test.outcome}}
+			}
+			if !reflect.DeepEqual(receipt.TargetCleanup, want) {
+				t.Fatalf("receipt cleanup %+v, want %+v", receipt.TargetCleanup, want)
+			}
+			if test.wantError && summary.Outcome == OutcomePassed {
+				t.Fatal("a run with an unreleased target was classified passed")
 			}
 		})
 	}

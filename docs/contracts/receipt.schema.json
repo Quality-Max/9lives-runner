@@ -527,6 +527,21 @@
       ],
       "type": "object"
     },
+    "TargetCleanup": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "outcome"
+      ],
+      "type": "object"
+    },
     "TargetDiagnostic": {
       "properties": {
         "elapsedMs": {
@@ -851,6 +866,12 @@
     },
     "targetAssertions": {
       "type": "integer"
+    },
+    "targetCleanup": {
+      "items": {
+        "$ref": "#/$defs/TargetCleanup"
+      },
+      "type": "array"
     },
     "targetDiagnostics": {
       "items": {

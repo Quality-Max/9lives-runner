@@ -13,7 +13,8 @@ const wda = JSON.parse(readFileSync(resolve(__dirname, '../../../.context/ios-wd
 // The smoke names one installed runtime explicitly; nothing selects "latest".
 const os = process.env.NINELIVES_IOS_OS ?? '18.6';
 if (!/^[0-9]{1,3}(\.[0-9]{1,5}){1,2}$/.test(os)) throw new Error('invalid NINELIVES_IOS_OS');
-const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '',
+const stoppedWorker = ['runner-cancel', 'attempt-timeout', 'worker-kill'].includes(mode);
+const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '', deviceReady: false, workerPid: 0,
   commands: [] as {operation: string; elapsedMs: number; outcome: 'pending' | 'passed' | 'failed'}[]};
 const persistProbe = () => {
   if (process.env.NINELIVES_IOS_PROBE) writeFileSync(process.env.NINELIVES_IOS_PROBE, JSON.stringify(facts));
@@ -103,6 +104,13 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
   };
   try {
     await app.open({timeoutMs: 300000});
+    if (stoppedWorker) {
+      // This worker is stopped from outside while it holds a booted device,
+      // so the teardown below never runs. Only the engine can remove it.
+      facts.deviceReady = true; facts.workerPid = process.pid; persistProbe();
+      await delay(420000);
+      throw new Error('worker was not stopped');
+    }
     await app.reset();
     await app.getByTestId('amount').fill('5', {timeoutMs: 20000});
     // Missing IDs, duplicates and a label-only decoy must fail before a tap.

@@ -110,7 +110,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
   const tools = resolve(options.toolsRoot ?? join(homedir(), '.9l/ios-tools'));
   const env: NodeJS.ProcessEnv = {};
   for (const key of ['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'DEVELOPER_DIR']) if (process.env[key]) env[key] = process.env[key];
-  let directory = '', app = '', udid = '', session = '', base = '';
+  let directory = '', app = '', udid = '', session = '', base = '', ownership = '';
   let server: ChildProcess | undefined, serverFailed = false;
   let opening: Promise<void> | undefined, closing: Promise<void> | undefined, closed = false;
   let evidence: IOSRuntime | undefined, creationStarted = false;
@@ -215,7 +215,11 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
         }
         // Absence in a fresh inventory decides success, not a command's exit code.
         if ((await inventory()).length) throw fail('cleanup_failed');
+        await rm(ownership);
       } catch { failed = true; }
+    } else if (ownership) {
+      // Written, but create was never reached: there is nothing to remove.
+      try { await rm(ownership, {force: true}); } catch { failed = true; }
     }
     if (directory) { try { await rm(directory, {recursive: true, force: true}); } catch { failed = true; } }
     if (failed) throw fail('cleanup_failed');
@@ -261,6 +265,11 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           const runtimes = JSON.parse(await simctl(['list', 'runtimes', '-j'], c)).runtimes;
           const runtime = Array.isArray(runtimes) ? runtimes.filter(r => r.identifier === options.runtime && r.isAvailable === true) : [];
           if (runtime.length !== 1 || typeof runtime[0].version !== 'string') throw fail('runtime_unavailable');
+          // Recorded before the device exists and removed only once it is
+          // confirmed gone. If this worker is stopped first, the engine reads
+          // the record and removes exactly this device; see docs/ios-driver.md.
+          ownership = join(scratch, `${owner}.owned.json`);
+          await writeFile(ownership, JSON.stringify({version: 1, name: owner, runtime: options.runtime, deviceType: options.deviceType}), {mode: 0o600, flag: 'wx'});
           creationStarted = true;
           phase = 'create';
           // Only a well-formed identifier is trusted later; anything else is

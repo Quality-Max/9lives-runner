@@ -116,8 +116,16 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     delete require.cache[require.resolve('../dist/ios')];
     const {iosTargetDriver,iosAppDigest}=require('../dist/ios');
     const opts={appId:'finance',app:source,appSHA256:iosAppDigest(source),bundleId:runtime.bundleId,runtime:runtime.runtime,deviceType:runtime.deviceType,toolsRoot:dir};
+    // The engine removes the device from this record if the worker is stopped
+    // before close. It exists exactly while the device may exist.
+    const records=()=>fs.readdirSync(dir).filter(name=>name.endsWith('.owned.json'));
     let driver=iosTargetDriver(opts);
     await driver.open(c());assert.equal(validIOSRuntime(driver.runtime()),true);assert.equal(driver.runtime().architecture,'arm64');
+    assert.equal(records().length,1);assert.match(records()[0],/^9l-ios-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.owned\.json$/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,records()[0]),'utf8')),
+      {version:1,name:records()[0].replace('.owned.json',''),runtime:runtime.runtime,deviceType:runtime.deviceType});
+    assert.equal(owned.name,records()[0].replace('.owned.json',''));
+    if(process.platform!=='win32') assert.equal(fs.statSync(path.join(dir,records()[0])).mode&0o777,0o600);
     await driver.reset(c());
     const [handle]=await driver.observeTestId('send',c());
     elements=2;await assert.rejects(handle.tap(c()),/ambiguous_control/);assert.equal(clicks,0);
@@ -128,10 +136,12 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     while(!clicks) await new Promise(resolve=>setImmediate(resolve));
     await driver.close();await pending;
     assert.equal(clicks,1);assert.equal(owned,undefined);assert.deepEqual(kills,['SIGTERM','SIGKILL']);
+    assert.deepEqual(records(),[]);
     assert.equal(commands.some(args=>args.includes('all')),false);
     assert.equal(fs.existsSync(path.dirname(staged)),false);
     driver=iosTargetDriver({...opts,appSHA256:'0'.repeat(64)});
-    await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-digest');await driver.close();
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-digest');
+    assert.deepEqual(records(),[]);await driver.close();
     architectures='x86_64';driver=iosTargetDriver(opts);
     await driver.open(c());assert.equal(driver.runtime().architecture,'x86_64');await driver.close();
     for (architectures of ['', 'unknown', 'arm64 unknown']) {
@@ -149,19 +159,24 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     deleteFails=true;driver=iosTargetDriver(opts);await driver.open(c());
     await assert.rejects(driver.close(),/cleanup_failed/);assert.equal(owned.udid,udid);
     assert.equal(fs.existsSync(path.dirname(staged)),false);
+    // A device this worker could not remove stays recorded for the engine.
+    assert.deepEqual(records(),[`${owned.name}.owned.json`]);fs.rmSync(path.join(dir,records()[0]));
     // An inventory that cannot answer must not cost deletion its turn: the
     // device goes, and only the unconfirmed absence fails cleanup.
     owned=undefined;deleteFails=false;shutdownFails=false;driver=iosTargetDriver(opts);await driver.open(c());
     inventoryFails=true;commands.length=0;
     await assert.rejects(driver.close(),/cleanup_failed/);assert.equal(owned,undefined);
     assert.deepEqual(commands.map(args=>args[1]),['shutdown','delete','list']);
+    assert.equal(records().length,1,'unconfirmed absence stays recorded');fs.rmSync(path.join(dir,records()[0]));
     inventoryFails=false;
     // A create that registers a device but loses its output is recovered by
     // the owned name; a malformed identifier is never passed to simctl.
     createOutput='not-a-device';driver=iosTargetDriver(opts);
     await assert.rejects(driver.open(c()),e=>e.cause?.message==='9lives iOS: open_create');
+    assert.equal(records().length,1,'a create with lost output is recorded');
     commands.length=0;await driver.close();assert.equal(owned,undefined);
     assert.deepEqual(commands.map(args=>args.slice(1,3)),[['list','devices'],['shutdown',udid],['delete',udid],['list','devices']]);
+    assert.deepEqual(records(),[]);
     createOutput=undefined;
     // Every session is headless and loopback-bound with private derived data.
     // Without products WebDriverAgent is compiled there; with them a private
@@ -182,6 +197,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaProducts});
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_wda');
     await driver.close();assert.equal(commands.some(args=>args[1]==='create'),false);
+    assert.deepEqual(records(),[]);
     assert.throws(()=>iosTargetDriver({...opts,wdaProducts:'relative/Products'}),/invalid_options/);
   } finally {
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;process.kill=original.kill;

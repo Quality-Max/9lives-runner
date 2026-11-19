@@ -56,12 +56,19 @@ too little of the bound, and it varied from 180 to 263 seconds on the same
 runner type. The `iOS Simulator` workflow is therefore manual and qualifies
 nothing. Expect `open` to time out on these runners.
 
-The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
-transfer, a deliberately wrong receipt, missing and duplicate controls, a
-label-only decoy, a changed build digest, an unavailable runtime, cancellation,
-and a held response that reaches its operation timeout. Cancellation and timeout
-must start the actual native mutation, dispatch it once and remove the owned
-device. Every case checks that an unrelated simulator survives. A healthy run
+The smoke then builds an isolated UIKit fixture and runs twelve cases. Nine end
+inside a worker that finishes its own teardown: a healthy transfer, a
+deliberately wrong receipt, missing and duplicate controls, a label-only decoy,
+a changed build digest, an unavailable runtime, cancellation, and a held
+response that reaches its operation timeout. Cancellation and timeout must
+start the actual native mutation, dispatch it once and remove the owned device.
+
+Three stop the worker from outside while it holds a booted device, so its
+teardown never runs: the engine is interrupted (`runner-cancel`), the attempt
+reaches its timeout (`attempt-timeout`), and the worker process is killed
+(`worker-kill`). Each requires the receipt to say the engine removed the
+device, the device and every process of that attempt to be gone, and the run
+not to pass. Every case checks that an unrelated simulator survives. A healthy run
 must have three successful target assertions; the defect must fail the exact
 receipt assertion. Sanitized receipts and probe facts live under
 `.context/ios-qualification/`. A setup failure does not qualify the scenario.
@@ -146,9 +153,24 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   `create` returned, so a slow inventory cannot cost deletion its turn; an
   inventory locates the device only when that identifier was lost. A cleanup
   failure fails the test; it cannot produce a passing receipt.
-  Runner cancellation, attempt timeout and abrupt worker termination still need
-  surviving Simulator cleanup and qualification. Do not rely on device cleanup
-  when the worker cannot finish teardown.
+- A Simulator is registered with CoreSimulator, outside the worker's process
+  tree, so stopping the worker does not remove it. Before `simctl create` the
+  driver writes a small ownership record (the unguessable device name, runtime
+  and device type) into the attempt's private scratch, and deletes it once the
+  device is confirmed gone. When the worker's process tree has stopped, after
+  a normal finish, a cancellation, an attempt timeout or a killed worker, the
+  engine reads any record that is left and removes exactly that device: one
+  device with the recorded name, in the recorded runtime, of the recorded
+  type, never a device chosen by its state. A fresh inventory decides the
+  result, which the receipt lists as `targetCleanup` with `removed`, `absent`
+  or `unconfirmed`. An unconfirmed device may still exist; that attempt cannot
+  pass, and a record the engine cannot trust is never acted on. Removal uses
+  the same per-command bounds, so a stopped attempt can take up to about 100
+  seconds longer to return when `simctl` hangs.
+- The engine itself must survive to do this. If the `9l` process is killed
+  outright (`SIGKILL`, a crash or a host shutdown), the device stays
+  registered; remove it with `xcrun simctl delete <udid>`. Owned devices are
+  named `9l-ios-<uuid>`.
 
 The receipt's closed `iosRuntimes` metadata records bundle/build version, app
 digest, runtime and device type, OS, preferred architecture advertised by the
