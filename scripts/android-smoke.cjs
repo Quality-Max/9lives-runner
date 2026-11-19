@@ -60,6 +60,10 @@ const rejectionReasons = {
   version: 'open_failed_configuration',
 };
 for (const mode of modes) {
+  // What a case had measured when it stopped qualifying: its duration and its
+  // bounded probe facts. An unqualified case prints them too, since a hosted
+  // failure often cannot be reproduced.
+  let measured = {};
   try {
   assert(allModes.includes(mode) || biometricModes.includes(mode));
   const isolation = mode.startsWith('isolation');
@@ -77,6 +81,8 @@ for (const mode of modes) {
   assert.equal(run.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: mutations must never retry`);
   assert.equal(receipt.agentProvenance.status,'matched',mode);
   const facts=isolation ? {} : JSON.parse(fs.readFileSync(probe,'utf8'));
+  // Both isolation tests share the attempt, each within the config's test budget.
+  facts.durationMs=run.durationMs;measured=facts;
   facts.emulatorSetPreserved=emulatorSet()===beforeDevices;assert.equal(facts.emulatorSetPreserved,true,`${mode}: emulator set changed`);
   const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';
   assert(!['Sent $','Ada','hierarchy','Signed in','Signed out'].some(value=>raw.includes(value)), `${mode}: private content in protocol`);
@@ -199,7 +205,7 @@ for (const mode of modes) {
   } catch (error) {
     // Only the smoke's own assertion message, never subprocess or device output.
     const reason=error instanceof assert.AssertionError ? String(error.message).split('\n')[0].slice(0,200) : 'unexpected';
-    const result={mode,qualified:false,reason};results.push(result);
+    const result={mode,qualified:false,reason,...measured};results.push(result);
     fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
     console.log(JSON.stringify(result));
   }
