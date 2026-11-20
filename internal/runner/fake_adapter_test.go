@@ -565,10 +565,12 @@ type reclaimingAdapter struct {
 	channelAdapter
 	outcome string
 	seen    *string
+	until   time.Time
 }
 
 func (adapter reclaimingAdapter) ReclaimTarget(scratch string, env map[string]string) []TargetCleanup {
 	*adapter.seen = scratch
+	time.Sleep(time.Until(adapter.until))
 	if _, err := os.Stat(scratch); err != nil || env["NINELIVES_TARGET_SCRATCH_DIR"] != scratch {
 		return []TargetCleanup{{Kind: "fake-device", Outcome: "scratch was gone before reclaim"}}
 	}
@@ -625,5 +627,28 @@ func TestUnreleasedNativeTargetCannotPass(t *testing.T) {
 				t.Fatal("a run with an unreleased target was classified passed")
 			}
 		})
+	}
+}
+
+// Removal can take long enough to cross the attempt deadline. An attempt whose
+// worker finished in time keeps its validated result instead of becoming a
+// timeout, and the time spent removing is still recorded.
+func TestSlowReclaimDoesNotTimeOutAFinishedAttempt(t *testing.T) {
+	job := fakeJob("job-001", "channel", 0)
+	job.Target = "ios:finance"
+	timeout, seen := 3*time.Second, ""
+	start := time.Now()
+	plan := Plan{Version: 1, RunID: "run-slow-reclaim", Jobs: []Job{job}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: timeout, ReceiptDir: t.TempDir(),
+		Adapters: []Adapter{reclaimingAdapter{outcome: "removed", seen: &seen, until: start.Add(timeout + 500*time.Millisecond)}}})
+	receipt := summary.Receipts[0]
+	if !receipt.FinishedAt.After(start.Add(timeout)) {
+		t.Fatal("removal did not outlast the attempt deadline; the test proves nothing")
+	}
+	if receipt.Status != StatusPassed || !receipt.Validated || receipt.Termination != nil {
+		t.Fatalf("finished attempt reclassified: status %s validated %v termination %+v error %q", receipt.Status, receipt.Validated, receipt.Termination, receipt.Error)
+	}
+	if !reflect.DeepEqual(receipt.TargetCleanup, []TargetCleanup{{Kind: "fake-device", Outcome: "removed"}}) {
+		t.Fatalf("receipt cleanup %+v", receipt.TargetCleanup)
 	}
 }

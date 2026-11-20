@@ -167,7 +167,9 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   or `unconfirmed`. An unconfirmed device may still exist; that attempt cannot
   pass, and a record the engine cannot trust is never acted on. Removal uses
   the same per-command bounds, so a stopped attempt can take up to about 100
-  seconds longer to return when `simctl` hangs.
+  seconds longer to return when `simctl` hangs. Its status is decided when its
+  worker stops, so that time never turns a finished attempt into a timeout. A
+  scratch directory that cannot be read counts as unconfirmed.
 - The engine itself must survive to do this. If the `9l` process is killed
   outright (`SIGKILL`, a crash or a host shutdown), the device stays
   registered; remove it with `xcrun simctl delete <udid>`. Owned devices are

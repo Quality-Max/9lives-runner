@@ -450,6 +450,11 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		}
 	}
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
+	// Whether the attempt was canceled or ran out of time is decided by the
+	// moment its worker stopped. Releasing what the worker left behind can
+	// take long enough to cross the deadline, and must not turn an attempt
+	// that finished in time into a timeout or skip validating its report.
+	stopped := ctx.Err()
 	if service != nil {
 		receipt.Goals = service.Close()
 	}
@@ -468,10 +473,10 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	// Keep actual cleanup attempts as local evidence even when the leader
 	// exited normally before its owned descendants were reaped.
 	receipt.Termination = output.Termination
-	if ctx.Err() != nil {
-		receipt.Status, receipt.Error = statusFor(ctx.Err()), ctx.Err().Error()
+	if stopped != nil {
+		receipt.Status, receipt.Error = statusFor(stopped), stopped.Error()
 		if receipt.Termination == nil {
-			receipt.Termination = terminationFor(ctx.Err())
+			receipt.Termination = terminationFor(stopped)
 		}
 	} else if output.Err != nil && output.ExitCode < 0 {
 		receipt.Status, receipt.Error = StatusError, output.Err.Error()
