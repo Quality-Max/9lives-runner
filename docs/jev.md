@@ -7,8 +7,8 @@ attempt identity and cancellation context. Ordinary Playwright runs remain
 provider-free.
 
 The client is infrastructure for diagnosis, locator repair, semantic checks and
-goal adapters. Failed-step diagnosis (QUA-2229) is available as `9l diagnose`;
-the others are separate work.
+goal adapters. Failed-step diagnosis (QUA-2229) is available as `9l diagnose` and grounded
+locator repair (QUA-2230) as `9l heal --jev`; the others are separate work.
 There is no new SDK method or `run --provider jev` option. A schema-valid answer
 is an inference; by itself it cannot create a passing execution receipt or
 execute an action. Live accuracy and model availability have not been qualified here.
@@ -52,6 +52,44 @@ screen shows test data you are allowed to upload. Screenshots require
 `diagnosis.json` beside the run's receipts in `.9lives/diagnoses/`. The
 offline tests establish wiring and policy only; diagnosis quality is measured
 separately (QUA-2233).
+
+## Grounded locator repair
+
+```sh
+9l heal tests/checkout.spec.ts --jev            # save a verified candidate as .healed
+9l heal tests/checkout.spec.ts --jev --yes      # apply it after verification
+```
+
+`--jev` adds one optional stage to native healing, after offline Tier 1 and
+before any Tier 2 provider. It runs only for a failed direct
+`getByRole(...)` or `getByLabel(...)` action whose accessible name no longer
+matches, when Tier 1 could not pick a single renamed control. The candidates are
+the distinct accessible names of the same role (or labelled controls) in the
+failure's ARIA snapshot; names shared by several controls are left out. Jev
+answers three typed questions: which listed candidate is the intended control
+(or none), whether the target is present, and whether several candidates
+plausibly match. Candidates are referred to by position; their names stay in
+the observation data. A proposal needs presence of at least 0.7, ambiguity of at
+most 0.3, and choice confidence and probability of at least 0.7.
+
+Go builds the candidate by replacing only the failed locator's name literal.
+The role, `exact` flag, imports, assertions, comments and other actions stay
+byte-identical, and the session's existing exact-literal check rejects anything
+else before running. The candidate then runs in a fresh isolated copy with its
+own receipt. Only a passing run with the original test count is verified. A
+wrong choice that reaches the test's assertion stays failing (`needs_human`),
+so real application defects and wrong business outcomes are never repaired.
+Without `--yes` a verified candidate is saved as `<spec>.healed`; with `--yes`
+it is applied after the existing file-hash concurrency check. The session JSON
+records the stage as `groundedBy`, `groundedDecision` (Jev's answers and the
+candidate list) and `grounded` (the verification run).
+
+The stage abstains for assertion failures, CSS or text locators, missing or
+stale evidence (older than a minute; it uses the original run's evidence),
+duplicate or missing candidates, a locator inside an assertion, and unclear
+answers. Jev Box localization is not used: Playwright's failure evidence carries
+no control geometry to match a box against. `--jev-images synthetic` also sends
+the failure screenshot of test-only data.
 
 ## Configuration and API key
 

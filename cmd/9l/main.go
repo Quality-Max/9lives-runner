@@ -105,7 +105,7 @@ Usage:
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
+  9l heal <spec> [--provider NAME|none] [--model NAME] [--jev [--jev-images off|synthetic]] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
   9l diagnose <spec> [--jev [--jev-model MODEL] [--jev-images off|synthetic]] [--run-timeout D] [--pass-env NAME]... [--format text|json]
           # run once; on failure report observed facts and, with --jev, a bounded diagnosis; never changes the result
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
