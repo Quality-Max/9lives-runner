@@ -124,7 +124,8 @@ cloud-verified result are reported separately. See the
 - **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
 - **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
 - **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](docs/android-driver.md).
-- **Planned:** independent behavioral verification, verified replay, iOS, and broader Android device qualification.
+- **iOS Simulator (experimental, beta):** in the 0.7.0 beta releases, qualified from a source checkout on one Mac; see the [iOS driver guide](docs/ios-driver.md).
+- **Planned:** independent behavioral verification, verified replay, iOS qualification on hosted CI and real iPhones, and broader Android device qualification.
 
 ## Add the optional SDK
 
@@ -347,9 +348,10 @@ the [setup and qualification limits](docs/android-driver.md) below.
 | SDK | `@9l/playwright` 0.6.1, released with the CLI | Installing the SDK does not install the CLI or browsers |
 | Android (experimental) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
-An unreleased [iOS Simulator driver](docs/ios-driver.md) is available in this
-source checkout. It is qualified on one Mac only and unqualified on hosted CI;
-it is not part of the released support matrix above.
+An experimental [iOS Simulator driver](docs/ios-driver.md) ships in the 0.7.0
+beta releases (CLI `v0.7.0-beta.1` with `@9l/playwright@0.7.0-beta.1`). It is
+qualified from a source checkout on one Mac only and unqualified on hosted CI;
+it is not part of the stable support matrix above.
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,

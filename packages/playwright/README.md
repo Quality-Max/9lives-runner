@@ -59,12 +59,13 @@ and [SDK bridge](https://github.com/Quality-Max/9lives-runner/blob/main/docs/sdk
 Live provider accuracy, independent behavioral verification, verified replay,
 iOS and Android devices beyond those listed below are not qualified features.
 
-## iOS Simulator (unreleased)
+## iOS Simulator (experimental, beta)
 
-This source checkout includes an experimental `@9l/playwright/ios` driver.
-It is qualified from source on one Mac only. See the [source setup, supported
-operations and limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/ios-driver.md).
-It is not included in the published support matrix.
+The 0.7.0 beta releases include an experimental `@9l/playwright/ios` driver.
+It is qualified from a source checkout on one Mac only, and its setup needs
+the pinned tools and WebDriverAgent build script from the repository. See the
+[setup, supported operations and limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/ios-driver.md).
+It is not included in the stable support matrix.
 
 ## Android (experimental)
 

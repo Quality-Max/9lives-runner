@@ -4,6 +4,64 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## 0.7.0-beta.1 — 2026-11-20
+
+The first beta of the 0.7.0 line adds an experimental iOS Simulator target.
+It is a prerelease: GitHub's Latest release and npm `latest` stay at 0.6.1,
+and installers and `9l update` keep selecting 0.6.1. Web and Android drivers
+are unchanged; the engine's new timing rule below applies to every target.
+Receipts gain `iosRuntimes` and `targetCleanup`; both are
+additive, so the receipt version is unchanged, and the target contract stays
+`9l.target/3`. Update the CLI and `@9l/playwright` together for iOS: a 0.6.1
+CLI rejects `ios:` targets and the SDK's iOS runtime evidence.
+
+### iOS Simulator (experimental)
+
+- `9l run --sdk --target ios:<alias>` with `@9l/playwright/ios`
+  (`iosTargetDriver`, `iosAppDigest`). Each test gets its own new Simulator
+  and a pinned Appium 3.8.0 and XCUITest driver 10.43.1 session. Tap, fill,
+  visibility, text and `enabled` work through exact accessibility
+  identifiers; a label never stands in for an identifier. The unpacked
+  Simulator `.app` must match its declared digest before and after install.
+- Receipts carry closed `iosRuntimes` metadata (build, runtime, device type,
+  OS, architecture, Xcode, pinned tool versions, viewport), bound to the test
+  and attempt. Missing, stale or cross-platform metadata cannot pass.
+- Sessions are headless, and the pinned driver closes a Simulator window that
+  is already open when a test starts. WebDriverAgent can run from products
+  built beforehand (`wdaProducts`) and listens on `127.0.0.1` only.
+- Qualified only from a source checkout on one Mac: Apple silicon, macOS
+  26.6.2, Xcode 27.2 and an iOS 18.6 iPhone 16 Simulator, where all twelve
+  cases of `npm run smoke:ios` qualified. Setup needs full Xcode, the pinned
+  tools in `tools/ios` and `scripts/build-ios-wda.cjs` from this repository;
+  installing the package does not provide them.
+- GitHub-hosted macOS runners are unqualified. A new Simulator needed 180 to
+  263 seconds there before it could be used, so `open` reached its
+  300-second bound before a session existed. See
+  [the iOS guide](docs/ios-driver.md).
+
+### Engine
+
+- When an iOS worker is canceled, reaches its attempt timeout or is killed
+  before its teardown runs, the engine removes the Simulator it had created.
+  It acts only on the record the driver wrote for that device, and a fresh
+  inventory decides the result, listed in the receipt as `targetCleanup`
+  (`removed`, `absent` or `unconfirmed`). An attempt with an unconfirmed
+  entry cannot pass. If the `9l` process itself is killed, the device stays;
+  remove it with `xcrun simctl delete`.
+- An attempt's canceled or timed-out status is decided when its worker
+  stops. Work the engine does afterwards, such as removing a native device or
+  closing the goal service, can no longer turn an attempt that finished in
+  time into a timeout and discard its validated report.
+
+### Android qualification (repository)
+
+- The `isolation-defect` smoke case keeps the ordinary five-second bound for
+  its final assertion, which can only fail. Waiting out the 90-second
+  relaunch allowance ran into the test budget on a slow hosted emulator.
+- Every Android smoke case reports bounded facts (read counts and timings,
+  in-flight marker checks, the focused window) and its duration, also when
+  it does not qualify.
+
 ## 0.6.1 — 2026-11-18
 
 A patch on the 0.6.0 line from a second field report on the experimental

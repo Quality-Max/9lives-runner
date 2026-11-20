@@ -28,8 +28,10 @@ goals, and replay verified actions without depending on a platform account.
   recheck the expected outcome and invalidate stale entries.
 - Separate working features from planned capabilities. Android execution is
   experimental and qualified only on the emulators and phone documented in
-  `docs/android-driver.md`. Independent behavioral verification, verified
-  replay, iOS and broader device qualification are subsequent milestones. Claim support only after real runtime qualification;
+  `docs/android-driver.md`. iOS Simulator execution is experimental and
+  qualified only on the one Mac documented in `docs/ios-driver.md`.
+  Independent behavioral verification, verified replay, iOS on hosted CI and
+  real iPhones, and broader device qualification are subsequent milestones. Claim support only after real runtime qualification;
   deterministic synthetic results are not production benchmark results.
 - Natural-language goals use finite observed controls and typed actions; reuse
   the existing Go provider transports. Keep parameters in browser workers and

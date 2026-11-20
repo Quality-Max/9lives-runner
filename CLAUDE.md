@@ -21,9 +21,13 @@ Android execution is experimental and in the 0.6.0 beta releases: the shared
 target fixture drives an owned emulator or an attached phone through Appium
 and UiAutomator2, qualified only on the documented emulators and one phone
 (see docs/android-driver.md); `npm run smoke:android` and
-`scripts/android-phone-smoke.cjs` are its qualification. Independent
-behavioral verification, verified replay, iOS, broader device qualification
-and production benchmark qualification remain roadmap work. Do not describe proposed capabilities as shipped. Reuse the platform's
+`scripts/android-phone-smoke.cjs` are its qualification. iOS Simulator
+execution is experimental and in the 0.7.0 beta releases, qualified from a
+source checkout on one Mac only (see docs/ios-driver.md); `npm run smoke:ios`
+is its qualification and GitHub-hosted runners do not qualify it. Independent
+behavioral verification, verified replay, iOS on hosted CI and real iPhones,
+broader device qualification and production benchmark qualification remain
+roadmap work. Do not describe proposed capabilities as shipped. Reuse the platform's
 grounding, generation, healing and mobile contracts rather than rebuilding them.
 
 Deliver changes with observable execution evidence. Incomplete or unverified
