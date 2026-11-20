@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -150,8 +151,13 @@ func TestReclaimTrustsOnlyClosedOwnershipRecords(t *testing.T) {
 		"runtime pattern": ownershipJSON(reclaimOwner, "com.apple.CoreSimulator.SimRuntime.iOS-18-6; rm", reclaimType),
 		"type pattern":    ownershipJSON(reclaimOwner, reclaimRuntime, "iPhone 16"),
 		"trailing data":   valid + valid,
-		"not json":        "9l",
-		"oversized":       valid + strings.Repeat(" ", 2000),
+		// A streaming decoder leaves a stray closing bracket unread.
+		"trailing brace":   valid + "}",
+		"trailing bracket": valid + "]",
+		// Decoding alone keeps the last of two members with the same name.
+		"duplicate member": `{"version":2,"version":1,"name":"` + reclaimOwner + `","runtime":"` + reclaimRuntime + `","deviceType":"` + reclaimType + `"}`,
+		"not json":         "9l",
+		"oversized":        valid + strings.Repeat(" ", 2000),
 	}
 	for name, content := range rejected {
 		t.Run(name, func(t *testing.T) {
@@ -176,6 +182,31 @@ func TestReclaimTrustsOnlyClosedOwnershipRecords(t *testing.T) {
 		fake := &fakeSimulators{}
 		if got := reclaimIOSSimulators(scratch, fake.simctl); len(got) != 1 || got[0].Outcome != "unconfirmed" || len(fake.calls) != 0 {
 			t.Fatalf("a linked record was followed: %+v %v", got, fake.calls)
+		}
+	})
+	t.Run("unreadable scratch is unconfirmed", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("reading a file as a directory reports a missing path on Windows")
+		}
+		// A path that exists but cannot be listed may hide a record.
+		scratch := filepath.Join(t.TempDir(), "not-a-directory")
+		writeOwnership(t, filepath.Dir(scratch), filepath.Base(scratch), valid)
+		fake := &fakeSimulators{}
+		got := reclaimIOSSimulators(scratch, fake.simctl)
+		if !reflect.DeepEqual(got, []runner.TargetCleanup{{Kind: "ios-simulator", Outcome: "unconfirmed"}}) || len(fake.calls) != 0 {
+			t.Fatalf("an unreadable scratch reported %+v after %v", got, fake.calls)
+		}
+	})
+	t.Run("only an iOS attempt is reclaimed", func(t *testing.T) {
+		// The real adapter entry point: an Android attempt never reaches
+		// simctl, and an iOS attempt without a record runs no command.
+		scratch := t.TempDir()
+		writeOwnership(t, scratch, reclaimOwner+".owned.json", valid)
+		if got := New().ReclaimTarget(scratch, map[string]string{"NINELIVES_TARGET": "android:finance"}); got != nil {
+			t.Fatalf("an Android attempt reclaimed %+v", got)
+		}
+		if got := New().ReclaimTarget(t.TempDir(), map[string]string{"NINELIVES_TARGET": "ios:finance"}); got != nil {
+			t.Fatalf("an iOS attempt without a record reclaimed %+v", got)
 		}
 	})
 	t.Run("other files are not records", func(t *testing.T) {

@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
+	"github.com/Quality-Max/9lives-runner/internal/strictjson"
 )
 
 // An owned iOS Simulator is registered with CoreSimulator, outside the
@@ -55,12 +59,21 @@ type simctlFunc func(ctx context.Context, args ...string) ([]byte, error)
 // only the recorded unguessable name with the recorded runtime and device
 // type is removed, and only a fresh inventory decides whether it is gone.
 func (Adapter) ReclaimTarget(scratch string, env map[string]string) []runner.TargetCleanup {
+	// Only an iOS worker registers a Simulator. Other native targets share
+	// the scratch layout but have nothing here to reclaim.
+	if !strings.HasPrefix(env["NINELIVES_TARGET"], "ios:") {
+		return nil
+	}
 	return reclaimIOSSimulators(scratch, xcrunSimctl(env))
 }
 
 func reclaimIOSSimulators(scratch string, simctl simctlFunc) []runner.TargetCleanup {
+	// A scratch directory that no longer exists holds no record. One that
+	// cannot be read may hold a record that was not seen, so that device may
+	// still exist: entries read before the failure are still acted on, and
+	// the failure itself is reported as unconfirmed.
 	entries, err := os.ReadDir(scratch)
-	if err != nil {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	var names []string
@@ -81,12 +94,16 @@ func reclaimIOSSimulators(scratch string, simctl simctlFunc) []runner.TargetClea
 		}
 		cleanups = append(cleanups, runner.TargetCleanup{Kind: iosCleanupKind, Outcome: outcome})
 	}
+	if err != nil {
+		cleanups = append(cleanups, runner.TargetCleanup{Kind: iosCleanupKind, Outcome: iosCleanupUnconfirmed})
+	}
 	return cleanups
 }
 
-// readIOSOwnership accepts only a small regular file whose closed content
-// repeats the name in its own file name. The worker wrote it; nothing in it
-// reaches a command line except identifiers that match these fixed patterns.
+// readIOSOwnership accepts only a small regular file holding exactly one JSON
+// object, with no duplicate or unknown members, that repeats the name in its
+// own file name. The worker wrote it; nothing in it reaches a command line
+// except identifiers that match these fixed patterns.
 func readIOSOwnership(path string) (iosOwnership, bool) {
 	var owned iosOwnership
 	info, err := os.Lstat(path)
@@ -97,9 +114,16 @@ func readIOSOwnership(path string) (iosOwnership, bool) {
 	if err != nil || len(raw) > maxIOSOwnershipBytes {
 		return owned, false
 	}
+	// json.Valid rejects anything after the one value, including a stray
+	// closing bracket that a streaming decoder would leave unread.
+	// strictjson rejects duplicate members, which decoding would otherwise
+	// resolve silently in favour of the last one.
+	if !json.Valid(raw) || strictjson.Value(json.NewDecoder(bytes.NewReader(raw))) != nil {
+		return owned, false
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&owned); err != nil || decoder.More() {
+	if err := decoder.Decode(&owned); err != nil {
 		return owned, false
 	}
 	match := iosOwnershipFile.FindStringSubmatch(filepath.Base(path))
