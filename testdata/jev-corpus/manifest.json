@@ -1,0 +1,428 @@
+{
+  "version": "9l.jev-corpus/1",
+  "frozenAt": "2026-11-20",
+  "description": "Synthetic, labeled Jev qualification corpus. Held-out cases are frozen: never tune thresholds or prompts against them.",
+  "heldoutSHA256": "c0eb68f46b221621e457d1680069415618e833049e82d99427aa5aa046c96d22",
+  "cases": [
+    {
+      "id": "D01-renamed-button",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D01-renamed-button.spec.ts",
+      "sha256": "b4342688c6963d250cf28e5f18b32d98e778c392c6ba12c9642130a18863cc52",
+      "label": {
+        "disposition": "eligible-for-repair",
+        "family": "locator_drift",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D02-renamed-link",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D02-renamed-link.spec.ts",
+      "sha256": "820c231cf8f26a4fe4920c6d749132bcbdb1887db0c6923fb74f4782c676130d",
+      "label": {
+        "disposition": "eligible-for-repair",
+        "family": "locator_drift",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D03-renamed-label",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D03-renamed-label.spec.ts",
+      "sha256": "aff58f396e56427006e426a18796876960dfd6072c34d615bcfd1371aa6cb6c2",
+      "label": {
+        "disposition": "eligible-for-repair",
+        "family": "locator_drift",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D04-duplicate-controls",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D04-duplicate-controls.spec.ts",
+      "sha256": "71670b19efbfb9ae11da985cec08ab5ee4b785524c40f6b988ca35a913dce991",
+      "label": {
+        "disposition": "investigate-test",
+        "family": "locator_drift",
+        "runnerClass": "other"
+      }
+    },
+    {
+      "id": "D05-cookie-modal",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D05-cookie-modal.spec.ts",
+      "sha256": "71380b4aaf7ec1a0c953ed7bca8c580230e554a7acb91726eb56ea0c4f278bb1",
+      "label": {
+        "disposition": "investigate-test",
+        "family": "obstructing_overlay",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D06-loading-spinner",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D06-loading-spinner.spec.ts",
+      "sha256": "115718c8b54a1cd0503e0af8758f774a5be2f93a50fca02444ea98c728e43212",
+      "label": {
+        "disposition": "require-new-observation",
+        "family": "transient_state",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D07-wrong-page",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D07-wrong-page.spec.ts",
+      "sha256": "d8cc3dd9c339c4207acdc476cdcb35488321200654e952b3d538a2973385b7cb",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "wrong_page",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D08-disabled-target",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D08-disabled-target.spec.ts",
+      "sha256": "3d2ed2726f1f0f2b3cdd9798831d7be13f0330127f0102e6ae81cc140cfe154e",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D09-visible-error",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D09-visible-error.spec.ts",
+      "sha256": "7cf4f14c39df30f9bee9c4ddeadc23a3db47b5341a0c0b49ad1845fb23ff14ca",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D10-wrong-price",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D10-wrong-price.spec.ts",
+      "sha256": "848215f51d485b11663bb0818a504d6be0ab271e3a036d76688a8da9b2929ea6",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "assertion"
+      }
+    },
+    {
+      "id": "D11-wrong-quantity",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D11-wrong-quantity.spec.ts",
+      "sha256": "7f81182a0a0d02170951cde5756b1ea8c02cdcbd8f7b88908587c3e297d12d81",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "assertion"
+      }
+    },
+    {
+      "id": "D12-wrong-status",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D12-wrong-status.spec.ts",
+      "sha256": "a7bd7e17635b8159e88dbe130fe5ca7d56b049b5420e895c8a5acf40ea74e02c",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "assertion"
+      }
+    },
+    {
+      "id": "D13-error-banner-plausible-page",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D13-error-banner-plausible-page.spec.ts",
+      "sha256": "ad7e03fdb39911e7e7cf0ba98d50242480c63bb757d388e0237f749104961b35",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "assertion"
+      }
+    },
+    {
+      "id": "D14-hidden-promo",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D14-hidden-promo.spec.ts",
+      "sha256": "a5acedc862dcbc28f54372a3322085e3dbc613a85a7673e01d0740cf8d77b079",
+      "label": {
+        "disposition": "investigate-app",
+        "family": "application_defect",
+        "runnerClass": "assertion"
+      }
+    },
+    {
+      "id": "D15-blank-page",
+      "lane": "diagnose",
+      "partition": "dev",
+      "spec": "cases/diagnose/D15-blank-page.spec.ts",
+      "sha256": "100862bf3f197301e2c41ab119c03427600d6bd1a8d2c0ad59bb890426ef09b3",
+      "label": {
+        "disposition": "unresolved",
+        "family": "unresolved",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "D16-renamed-nested",
+      "lane": "diagnose",
+      "partition": "heldout",
+      "spec": "cases/diagnose/D16-renamed-nested.spec.ts",
+      "sha256": "728f1c0212532a6edd2a9b285dc03089dc8d943d4479698c7ce5ec5775418bf5",
+      "label": {
+        "disposition": "eligible-for-repair",
+        "family": "locator_drift",
+        "runnerClass": "action-timeout"
+      }
+    },
+    {
+      "id": "R01-single-candidate",
+      "lane": "repair",
+      "partition": "dev",
+      "spec": "cases/repair/R01-single-candidate.spec.ts",
+      "sha256": "c246f012d2749fb75ae703f0a8bf60e6b1a0458d1df8ce70564abc5d69a157a6",
+      "label": {
+        "failedName": "Checkout",
+        "expectedName": "Continue to payment",
+        "outcome": "verified",
+        "tier1": "verified"
+      }
+    },
+    {
+      "id": "R02-semantic-among-several",
+      "lane": "repair",
+      "partition": "heldout",
+      "spec": "cases/repair/R02-semantic-among-several.spec.ts",
+      "sha256": "ca125690d96ade6d4d79562d696ca998dcbde4c924e1a8216fd973327e48dfdf",
+      "label": {
+        "failedName": "Checkout",
+        "expectedName": "Continue to payment",
+        "outcome": "verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R03-shared-word-trap",
+      "lane": "repair",
+      "partition": "dev",
+      "spec": "cases/repair/R03-shared-word-trap.spec.ts",
+      "sha256": "b05894810694e49acdd91b33db3538ad2a0f39f4454cd37a019fdabe27076486",
+      "label": {
+        "failedName": "Save draft",
+        "expectedName": "Save as draft",
+        "outcome": "verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R04-label-rename",
+      "lane": "repair",
+      "partition": "heldout",
+      "spec": "cases/repair/R04-label-rename.spec.ts",
+      "sha256": "6851f3a724ccaba011116638974f70194346875ac84c1e02b284ce2e5ec0becd",
+      "label": {
+        "failedName": "E-mail",
+        "expectedName": "Email address",
+        "outcome": "verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R05-duplicates-only",
+      "lane": "repair",
+      "partition": "dev",
+      "spec": "cases/repair/R05-duplicates-only.spec.ts",
+      "sha256": "ab4614843b79e84e0a21fc52307506d65cbfb568ef75b53873bf38dc3f16210c",
+      "label": {
+        "failedName": "Delete",
+        "expectedName": null,
+        "outcome": "not-verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R06-target-removed",
+      "lane": "repair",
+      "partition": "heldout",
+      "spec": "cases/repair/R06-target-removed.spec.ts",
+      "sha256": "e444ac2b909a804e46eb63138e4c54c57c8c170b81ea283fd58ad4afccf7ea93",
+      "label": {
+        "failedName": "Checkout",
+        "expectedName": null,
+        "outcome": "not-verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R07-wrong-business-outcome",
+      "lane": "repair",
+      "partition": "dev",
+      "spec": "cases/repair/R07-wrong-business-outcome.spec.ts",
+      "sha256": "616b9dd0ffa468b24a4107d4dcb5b65357c1d40ffa1fcae5878f8862f4680823",
+      "label": {
+        "failedName": "Checkout",
+        "expectedName": null,
+        "outcome": "not-verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R08-nested-name",
+      "lane": "repair",
+      "partition": "heldout",
+      "spec": "cases/repair/R08-nested-name.spec.ts",
+      "sha256": "c90a045e3aefea93510978360572a1035a6d9de843c9d60f4bc95976b38a9383",
+      "label": {
+        "failedName": "Place order",
+        "expectedName": "Proceed to payment",
+        "outcome": "verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R09-link-rename",
+      "lane": "repair",
+      "partition": "dev",
+      "spec": "cases/repair/R09-link-rename.spec.ts",
+      "sha256": "830cc69154971ef8dd4189c147e42696d493dae9fddca6395b40c5603203f216",
+      "label": {
+        "failedName": "Pricing",
+        "expectedName": "Plans and billing",
+        "outcome": "verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "R10-exact-flag-preserved",
+      "lane": "repair",
+      "partition": "heldout",
+      "spec": "cases/repair/R10-exact-flag-preserved.spec.ts",
+      "sha256": "48ac528f3cddfbbec743f12f63a9c832dd50c1dcf5a95d31000610e4ac8c1896",
+      "label": {
+        "failedName": "Submit",
+        "expectedName": "Send application",
+        "outcome": "verified",
+        "tier1": "not-verified"
+      }
+    },
+    {
+      "id": "G01-signup",
+      "lane": "goal",
+      "partition": "dev",
+      "spec": "cases/goal/G01-signup.spec.ts",
+      "sha256": "b109f410c9ee3339274ba95eb9f15d4543686219b2f15082591ecb4b9cecd904",
+      "label": {
+        "goal": [
+          "completed"
+        ],
+        "test": "passed",
+        "oracle": "oracles/G01-signup.json"
+      }
+    },
+    {
+      "id": "G02-delayed-control",
+      "lane": "goal",
+      "partition": "heldout",
+      "spec": "cases/goal/G02-delayed-control.spec.ts",
+      "sha256": "a3a4256921b77c71304157a72633db0760797315accab46bbb00bc4d46914d43",
+      "label": {
+        "goal": [
+          "completed"
+        ],
+        "test": "passed",
+        "oracle": "oracles/G02-delayed-control.json"
+      }
+    },
+    {
+      "id": "G03-two-parameters",
+      "lane": "goal",
+      "partition": "dev",
+      "spec": "cases/goal/G03-two-parameters.spec.ts",
+      "sha256": "b411727ebb92fcaa6af2451fd9478ea418814aa3bf89668beafb4fcc4a7315d3",
+      "label": {
+        "goal": [
+          "completed"
+        ],
+        "test": "passed",
+        "oracle": "oracles/G03-two-parameters.json"
+      }
+    },
+    {
+      "id": "G04-forbidden-action",
+      "lane": "goal",
+      "partition": "heldout",
+      "spec": "cases/goal/G04-forbidden-action.spec.ts",
+      "sha256": "49eb7b65b43b3f94813771806bed6b7c0d68a6d01f73d5f4c9fe65b9be15a7cb",
+      "label": {
+        "goal": [
+          "policy_blocked",
+          "unresolved"
+        ],
+        "test": "failed"
+      }
+    },
+    {
+      "id": "G05-identical-duplicates",
+      "lane": "goal",
+      "partition": "dev",
+      "spec": "cases/goal/G05-identical-duplicates.spec.ts",
+      "sha256": "35dacc16b1a5c387ec94dc44bba2c4b9a259ccefa75b1987cbcf066d223b6323",
+      "label": {
+        "goal": [
+          "ambiguous_target",
+          "unresolved"
+        ],
+        "test": "failed"
+      }
+    },
+    {
+      "id": "G06-wrong-business-outcome",
+      "lane": "goal",
+      "partition": "heldout",
+      "spec": "cases/goal/G06-wrong-business-outcome.spec.ts",
+      "sha256": "ce8c808238a1cf4bf6f57ac6adcae4302debdd1762218d5c4ba7f1f858555fb0",
+      "label": {
+        "goal": [
+          "completed",
+          "policy_blocked"
+        ],
+        "test": "failed"
+      }
+    },
+    {
+      "id": "G07-no-viable-control",
+      "lane": "goal",
+      "partition": "dev",
+      "spec": "cases/goal/G07-no-viable-control.spec.ts",
+      "sha256": "fd4828aa973bbf4307777e4dc26339cce3adfd9aed32f2531da16775bf487d79",
+      "label": {
+        "goal": [
+          "unresolved",
+          "budget_exhausted"
+        ],
+        "test": "failed"
+      }
+    }
+  ]
+}

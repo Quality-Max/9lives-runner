@@ -1,0 +1,270 @@
+#!/usr/bin/env node
+// Qualify the Jev features against the frozen, labeled corpus in
+// testdata/jev-corpus (QUA-2233).
+//
+//   node scripts/jev-qualify.cjs --mode validate   check the labels themselves; no AI
+//   node scripts/jev-qualify.cjs --mode offline    baseline without Jev (Tier 1, facts only)
+//   node scripts/jev-qualify.cjs --mode jev --partition heldout --confirm-paid --max-requests N
+//
+// Only --mode jev makes paid requests. It refuses without TYPESAFE_API_KEY in
+// this process, --confirm-paid, and a request cap covering the planned worst case.
+// Results go to .context/jev-qualification/<stamp>/ (results.json, report.md).
+'use strict';
+const assert = require('node:assert/strict');
+const { createHash, randomBytes } = require('node:crypto');
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.resolve(__dirname, '..');
+const corpus = path.join(root, 'testdata', 'jev-corpus');
+const sha256 = text => createHash('sha256').update(text).digest('hex');
+
+function loadManifest() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(corpus, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.version, '9l.jev-corpus/1');
+  const held = manifest.cases.filter(c => c.partition === 'heldout');
+  assert.equal(sha256(JSON.stringify(held.map(sortKeys))), manifest.heldoutSHA256, 'held-out partition changed after freezing');
+  for (const c of manifest.cases) assert.equal(sha256(fs.readFileSync(path.join(corpus, c.spec), 'utf8')), c.sha256, `${c.id} changed after freezing`);
+  return manifest;
+}
+
+// Python's json.dumps(sort_keys=True) order, so the frozen hash is reproducible.
+function sortKeys(value) {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, sortKeys(value[k])]));
+  return value;
+}
+
+function parseArgs(argv) {
+  const options = { mode: 'validate', partition: 'all', lanes: ['diagnose', 'repair', 'goal'], repeat: 1, images: 'off', goalMaxDecisions: 6, confirmPaid: false, maxRequests: 0 };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i], next = () => argv[++i];
+    if (arg === '--mode') options.mode = next();
+    else if (arg === '--partition') options.partition = next();
+    else if (arg === '--lanes') options.lanes = next().split(',');
+    else if (arg === '--repeat') options.repeat = Number(next());
+    else if (arg === '--images') options.images = next();
+    else if (arg === '--goal-max-decisions') options.goalMaxDecisions = Number(next());
+    else if (arg === '--max-requests') options.maxRequests = Number(next());
+    else if (arg === '--confirm-paid') options.confirmPaid = true;
+    else throw new Error(`unknown option ${arg}`);
+  }
+  if (!['validate', 'offline', 'jev'].includes(options.mode) || !['all', 'dev', 'heldout'].includes(options.partition) || !(options.repeat >= 1 && options.repeat <= 5) || !['off', 'synthetic'].includes(options.images) || !(options.goalMaxDecisions >= 1 && options.goalMaxDecisions <= 12)) throw new Error('invalid options');
+  return options;
+}
+
+// Worst-case Jev requests: one per diagnosis, one per grounded repair, two per goal decision.
+function plannedRequests(cases, options) {
+  const per = { diagnose: 1, repair: 1, goal: options.goalMaxDecisions * 2 };
+  return cases.reduce((sum, c) => sum + per[c.lane], 0) * options.repeat;
+}
+
+function run9l(binary, args, env = {}) {
+  const started = process.hrtime.bigint();
+  const result = spawnSync(binary, args, { cwd: corpus, encoding: 'utf8', env: { ...process.env, ...env }, maxBuffer: 32 << 20, timeout: 180000 });
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+  let json = null;
+  try { json = JSON.parse(result.stdout); } catch { /* reported as unparsed */ }
+  return { code: result.status, json, ms, stderr: (result.stderr || '').slice(-600) };
+}
+
+// A uniquely named working copy inside the corpus test directory.
+function workCopy(c, text) {
+  const dir = path.join(corpus, 'cases', `.work-${randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(dir);
+  const file = path.join(dir, path.basename(c.spec));
+  fs.writeFileSync(file, text);
+  return { file: path.relative(corpus, file), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+function renamed(text, oldName, newName) {
+  const q = s => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  const out = text.replace(`name: ${q(oldName)}`, `name: ${q(newName)}`).replace(`getByLabel(${q(oldName)})`, `getByLabel(${q(newName)})`);
+  assert.notEqual(out, text, 'rename did not apply');
+  return out;
+}
+
+// --- lanes -----------------------------------------------------------------
+
+function diagnoseCase(binary, c, options, receipts) {
+  const args = ['diagnose', c.spec, '--format', 'json', '--receipt-dir', receipts];
+  if (options.mode === 'jev') args.push('--jev', '--jev-images', options.images);
+  const r = run9l(binary, args);
+  const d = r.json && r.json.diagnosis;
+  const record = d && d.jev;
+  const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expected: c.label.disposition, expectedFamily: c.label.family,
+    outcome: r.json && r.json.outcome, runnerClass: d && d.facts.failureClass, status: d && d.status, disposition: d && d.disposition, reason: d && d.reason,
+    family: d && d.inference && d.inference.family, confidence: d && d.inference && d.inference.confidence,
+    jevRequests: record ? record.requestCount : 0, jevMs: record ? record.durationMs : null, usage: record && record.usage, model: record && record.model };
+  row.resultUnchanged = r.code === 1 && row.outcome === 'failed';
+  row.correct = row.disposition === row.expected;
+  row.falseGreen = !row.resultUnchanged || (c.label.runnerClass === 'assertion' && row.disposition === 'eligible-for-repair');
+  return row;
+}
+
+function repairCase(binary, c, options, receipts) {
+  const original = fs.readFileSync(path.join(corpus, c.spec), 'utf8');
+  const copy = workCopy(c, original);
+  try {
+    const args = ['heal', copy.file, '--provider', 'none', '--format', 'json', '--receipt-dir', receipts, '--run-timeout', '60s'];
+    if (options.mode === 'jev') args.push('--jev', '--jev-images', options.images);
+    const r = run9l(binary, args);
+    const s = r.json || {};
+    const decision = s.groundedDecision || null;
+    let saved = null;
+    if (s.savedPath) saved = fs.readFileSync(path.join(corpus, s.savedPath), 'utf8');
+    const verified = s.state === 'verified' && !!saved;
+    const expectedText = c.label.expectedName ? renamed(original, c.label.failedName, c.label.expectedName) : null;
+    const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expected: c.label.outcome, expectedName: c.label.expectedName,
+      state: s.state, reason: s.reason, stage: s.grounded ? 'grounded' : s.tier1 && s.tier1.passed ? 'tier1' : 'none', chosen: decision && decision.chosen, decision: decision && decision.status, decisionReason: decision && decision.reason,
+      jevRequests: decision && decision.jev ? decision.jev.requestCount : 0, jevMs: decision && decision.jev ? decision.jev.durationMs : null, usage: decision && decision.jev && decision.jev.usage, model: decision && decision.jev && decision.jev.model };
+    row.verified = verified;
+    row.verifiedCorrect = verified && saved === expectedText;
+    row.falseGreen = verified && (c.label.outcome !== 'verified' || saved !== expectedText);
+    row.sourceUnchanged = fs.readFileSync(path.join(corpus, copy.file), 'utf8') === original;
+    row.falseGreen = row.falseGreen || !row.sourceUnchanged;
+    return row;
+  } finally { copy.cleanup(); }
+}
+
+function goalCase(binary, c, options, receipts) {
+  const args = ['run', c.spec, '--sdk', '--format', 'json', '--receipt-dir', receipts, '--goal-max-decisions', String(options.goalMaxDecisions)];
+  if (options.mode === 'jev') args.push('--goal-provider', 'jev');
+  else if (options.mode === 'validate' && c.label.oracle) args.push('--goal-script', c.label.oracle);
+  else return { id: c.id, lane: c.lane, partition: c.partition, skipped: options.mode === 'offline' ? 'no goal provider without Jev' : 'no oracle script for a stopping case' };
+  const r = run9l(binary, args);
+  const receipt = r.json && r.json.receipts && r.json.receipts[0];
+  const goal = receipt && receipt.goals && receipt.goals[0];
+  const decisions = goal ? goal.decisions.length : 0;
+  const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expectedGoal: c.label.goal, expectedTest: c.label.test,
+    goal: goal && goal.status, test: receipt && receipt.status, decisions, actions: goal ? goal.decisions.map(d => d.action).join(',') : '',
+    tokens: goal ? goal.decisions.reduce((n, d) => n + (d.inputTokens || 0) + (d.outputTokens || 0), 0) : 0, jevRequests: options.mode === 'jev' ? decisions : 0 };
+  row.goalCorrect = c.label.goal.includes(row.goal);
+  row.testCorrect = row.test === c.label.test;
+  row.falseGreen = row.test === 'passed' && c.label.test !== 'passed';
+  return row;
+}
+
+// --- validate: are the labels themselves true? ------------------------------
+
+function validateCase(binary, c, receipts) {
+  if (c.lane === 'diagnose') {
+    const r = run9l(binary, ['run', c.spec, '--format', 'json', '--receipt-dir', receipts]);
+    const receipt = r.json && r.json.receipts && r.json.receipts[0];
+    const failure = receipt && receipt.failures && receipt.failures[0];
+    const ok = receipt && receipt.status === 'failed' && failure && failure.class === c.label.runnerClass;
+    return { id: c.id, lane: c.lane, ok, detail: `status ${receipt && receipt.status}, class ${failure && failure.class} (label ${c.label.runnerClass})` };
+  }
+  if (c.lane === 'repair') {
+    const original = fs.readFileSync(path.join(corpus, c.spec), 'utf8');
+    const failsAsIs = run9l(binary, ['run', c.spec, '--format', 'json', '--receipt-dir', receipts]);
+    let fixed = 'n/a';
+    let ok = failsAsIs.json && failsAsIs.json.outcome === 'failed';
+    if (c.label.expectedName) {
+      const copy = workCopy(c, renamed(original, c.label.failedName, c.label.expectedName));
+      try {
+        const r = run9l(binary, ['run', copy.file, '--format', 'json', '--receipt-dir', receipts]);
+        fixed = r.json && r.json.outcome;
+        ok = ok && fixed === 'passed';
+      } finally { copy.cleanup(); }
+    }
+    return { id: c.id, lane: c.lane, ok, detail: `as written ${failsAsIs.json && failsAsIs.json.outcome}, with the labeled name ${fixed}` };
+  }
+  const row = goalCase(binary, c, { mode: 'validate', goalMaxDecisions: 6 }, receipts);
+  if (row.skipped) return { id: c.id, lane: c.lane, ok: true, detail: row.skipped };
+  return { id: c.id, lane: c.lane, ok: row.goalCorrect && row.testCorrect, detail: `oracle goal ${row.goal}, test ${row.test}` };
+}
+
+// --- report ----------------------------------------------------------------
+
+function percentile(values, p) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)];
+}
+
+function summarize(rows) {
+  const lane = name => rows.filter(r => r.lane === name && !r.skipped);
+  const timing = list => ({ p50Ms: percentile(list.map(r => r.ms), 0.5), p95Ms: percentile(list.map(r => r.ms), 0.95), jevP50Ms: percentile(list.filter(r => r.jevMs != null).map(r => r.jevMs), 0.5), jevP95Ms: percentile(list.filter(r => r.jevMs != null).map(r => r.jevMs), 0.95) });
+  const usage = list => list.reduce((u, r) => ({ requests: u.requests + (r.jevRequests || 0), inputTokens: u.inputTokens + ((r.usage && r.usage.inputTokens) || 0), outputTokens: u.outputTokens + ((r.usage && r.usage.outputTokens) || 0) }), { requests: 0, inputTokens: 0, outputTokens: 0 });
+  const d = lane('diagnose'), r = lane('repair'), g = lane('goal');
+  const confusion = {};
+  for (const row of d) { confusion[row.expected] = confusion[row.expected] || {}; confusion[row.expected][row.disposition] = (confusion[row.expected][row.disposition] || 0) + 1; }
+  const repairable = r.filter(x => x.expected === 'verified');
+  const verified = r.filter(x => x.verified);
+  return {
+    diagnose: { cases: d.length, correct: d.filter(x => x.correct).length, abstained: d.filter(x => x.disposition === 'unresolved').length, errors: d.filter(x => x.status === 'error').length, falseGreens: d.filter(x => x.falseGreen).length, confusion, ...timing(d), usage: usage(d) },
+    repair: { cases: r.length, verified: verified.length, verifiedCorrect: r.filter(x => x.verifiedCorrect).length, precision: verified.length ? r.filter(x => x.verifiedCorrect).length / verified.length : null, recovery: repairable.length ? repairable.filter(x => x.verifiedCorrect).length / repairable.length : null, falseGreens: r.filter(x => x.falseGreen).length, ...timing(r), usage: usage(r) },
+    goal: { cases: g.length, skipped: rows.filter(x => x.lane === 'goal' && x.skipped).length, goalStatusMatched: g.filter(x => x.goalCorrect).length, testVerdictMatched: g.filter(x => x.testCorrect).length, completedButFailed: g.filter(x => x.goal === 'completed' && x.test !== 'passed').length, falseGreens: g.filter(x => x.falseGreen).length, ...timing(g), usage: usage(g) },
+  };
+}
+
+function report(meta, rows, summary) {
+  const pct = v => v == null ? 'n/a' : `${Math.round(v * 100)}%`;
+  const lines = [`# Jev qualification — ${meta.mode}`, '', `- Date: ${meta.date}`, `- Revision: ${meta.revision}`, `- Corpus: ${meta.corpus} (held-out ${meta.heldout.slice(0, 12)})`, `- Partition: ${meta.partition} · repeats: ${meta.repeat} · images: ${meta.images}`, `- Model: ${meta.models.join(', ') || 'none (no provider calls)'}`, ''];
+  if (meta.mode !== 'jev') lines.push('**Policy/wiring evidence only.** No provider request was made; these results are not Jev quality measurements.', '');
+  if (meta.mode === 'validate') {
+    lines.push('| case | labels hold | evidence |', '|---|---|---|', ...rows.map(r => `| ${r.id} | ${r.ok ? 'yes' : '**no**'} | ${r.detail} |`));
+    return lines.join('\n') + '\n';
+  }
+  const s = summary;
+  lines.push('## Diagnosis', '', `${s.diagnose.correct}/${s.diagnose.cases} expected dispositions · ${s.diagnose.abstained} unresolved · ${s.diagnose.errors} errors · **${s.diagnose.falseGreens} false greens** · run p50/p95 ${s.diagnose.p50Ms}/${s.diagnose.p95Ms} ms · Jev p50/p95 ${s.diagnose.jevP50Ms ?? 'n/a'}/${s.diagnose.jevP95Ms ?? 'n/a'} ms · ${s.diagnose.usage.requests} requests`, '',
+    '| case | expected | disposition | family | conf. | status/reason |', '|---|---|---|---|---|---|',
+    ...rows.filter(r => r.lane === 'diagnose').map(r => `| ${r.id} | ${r.expected} | ${r.correct ? '' : '**'}${r.disposition}${r.correct ? '' : '**'} | ${r.family || ''} | ${r.confidence == null ? '' : r.confidence.toFixed(2)} | ${r.status}: ${r.reason} |`), '',
+    '## Repair', '', `${s.repair.verified} verified (${s.repair.verifiedCorrect} correct) · precision ${pct(s.repair.precision)} · recovery ${pct(s.repair.recovery)} · **${s.repair.falseGreens} false greens** · run p50/p95 ${s.repair.p50Ms}/${s.repair.p95Ms} ms · ${s.repair.usage.requests} requests`, '',
+    '| case | expected | state | stage | chosen | decision |', '|---|---|---|---|---|---|',
+    ...rows.filter(r => r.lane === 'repair').map(r => `| ${r.id} | ${r.expected}${r.expectedName ? ` (${r.expectedName})` : ''} | ${r.state} | ${r.stage} | ${r.chosen || ''} | ${r.decision ? `${r.decision}: ${r.decisionReason}` : ''} |`), '',
+    '## Goals', '', s.goal.cases ? `${s.goal.goalStatusMatched}/${s.goal.cases} goal statuses as labeled · ${s.goal.testVerdictMatched}/${s.goal.cases} test verdicts as labeled · ${s.goal.completedButFailed} completed-but-failed · **${s.goal.falseGreens} false greens** · run p50/p95 ${s.goal.p50Ms}/${s.goal.p95Ms} ms` : `Not run: ${s.goal.skipped} cases need a goal provider.`, '',
+    '| case | expected goal / test | goal | test | actions |', '|---|---|---|---|---|',
+    ...rows.filter(r => r.lane === 'goal').map(r => r.skipped ? `| ${r.id} | | skipped | | ${r.skipped} |` : `| ${r.id} | ${r.expectedGoal.join(' or ')} / ${r.expectedTest} | ${r.goal} | ${r.test} | ${r.actions} |`), '',
+    'A diagnosis never changes a result; goal completion is never a pass. False greens count any changed failed result, an assertion failure marked eligible for repair, a verified wrong or unlabeled repair, a modified source, or a passing test where the label requires a failure.');
+  return lines.join('\n') + '\n';
+}
+
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const manifest = loadManifest();
+  const cases = manifest.cases.filter(c => options.lanes.includes(c.lane) && (options.partition === 'all' || c.partition === options.partition));
+  if (options.mode === 'jev') {
+    const planned = plannedRequests(cases, options);
+    if (!process.env.TYPESAFE_API_KEY || !options.confirmPaid || options.maxRequests < planned) {
+      console.error(`Live qualification makes paid Jev requests: at most ${planned} for ${cases.length} cases × ${options.repeat}. Re-run with TYPESAFE_API_KEY in this process, --confirm-paid and --max-requests ${planned}. No request was made.`);
+      process.exitCode = 2;
+      return;
+    }
+  }
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, 'Z');
+  const out = path.join(root, '.context', 'jev-qualification', `${stamp}-${options.mode}`);
+  fs.mkdirSync(out, { recursive: true });
+  const binary = path.join(out, process.platform === 'win32' ? '9l.exe' : '9l');
+  const build = spawnSync('go', ['build', '-o', binary, './cmd/9l'], { cwd: root, encoding: 'utf8' });
+  if (build.status !== 0) throw new Error('go build failed: ' + build.stderr);
+  const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout.trim();
+  const receipts = path.join(out, 'receipts');
+  const rows = [];
+  for (let repeat = 0; repeat < options.repeat; repeat++) {
+    for (const c of cases) {
+      let row;
+      if (options.mode === 'validate') row = validateCase(binary, c, receipts);
+      else row = ({ diagnose: diagnoseCase, repair: repairCase, goal: goalCase })[c.lane](binary, c, options, receipts);
+      row.repeat = repeat + 1;
+      rows.push(row);
+      const flag = options.mode === 'validate' ? (row.ok ? 'ok' : 'LABEL FAILS') : row.skipped ? 'skipped' : row.falseGreen ? 'FALSE GREEN' : 'ok';
+      console.log(`${c.id.padEnd(34)} ${flag}`);
+    }
+  }
+  const summary = options.mode === 'validate' ? null : summarize(rows);
+  const models = [...new Set(rows.map(r => r.model).filter(Boolean))];
+  const meta = { version: '9l.jev-qualification/1', mode: options.mode, date: new Date().toISOString(), revision, corpus: manifest.version, heldout: manifest.heldoutSHA256, partition: options.partition, repeat: options.repeat, images: options.images, models, platform: `${process.platform}/${process.arch}` };
+  fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ meta, summary, rows }, null, 2) + '\n');
+  fs.writeFileSync(path.join(out, 'report.md'), report(meta, rows, summary));
+  console.log(`Report: ${path.relative(root, path.join(out, 'report.md'))}`);
+  const failed = options.mode === 'validate' ? rows.some(r => !r.ok) : rows.some(r => r.falseGreen);
+  if (failed) process.exitCode = 1;
+}
+
+module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile };
+if (require.main === module) {
+  try { main(); } catch (error) { console.error(error.message); process.exitCode = 2; }
+}
