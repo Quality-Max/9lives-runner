@@ -4,6 +4,52 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## 0.6.1 — 2026-11-18
+
+A patch on the 0.6.0 line from a second field report on the experimental
+Android target. Android specs see behavior changes: `fill` focuses the field
+(on a phone that opens the keyboard) and refuses a control that is not a text
+field, and actions wait within their bound for their control to appear. The
+target contract stays `9l.target/3`. Update the CLI and `@9l/playwright`
+together: a 0.6.0 CLI rejects the new `build-sdk` and `build-abi` setup
+reasons as invalid evidence.
+
+### Android (experimental)
+
+- `fill` focuses the field before setting its text, as a user's tap would.
+  Setting text alone never focused it, so checks an app runs when a field
+  gains or loses focus (an e-mail check, for example) never ran. On a phone
+  the keyboard now opens on `fill`; `hideKeyboard()` closes it. A `fill`
+  whose control is not a text field (an EditText class, or an input type
+  on that element) fails as `not_editable` before anything touches it, so
+  a selector that names a button never presses it.
+- `fill(value, {submit: true})` then presses the keyboard's action key in
+  the field: the input method's done action on Android, sent only while the
+  field reports focus, and Enter on the web. A driver whose handles cannot
+  press it refuses with `unsupported_operation` before filling.
+- On an owned emulator, an APK whose minimum SDK or native code the emulator
+  cannot run stops the test as `setup mismatch` (`build-sdk`, `build-abi`)
+  before install. A newer or differently signed build already in the AVD is
+  uninstalled and the declared APK installed fresh (the AVD is unchanged), so
+  a downgrade no longer fails with a generic install error. Other install
+  failures are named by adb's failure code. The `install-fail` smoke case is
+  now a `build-sdk` setup mismatch.
+- The biometric AVD preparation ships with `@9l/playwright` as
+  `npx 9l-prepare-biometric-avd --avd <dedicated AVD> --wipe`, so
+  `fingerprint()` can be used outside this repository;
+  `scripts/prepare-biometric-avd.cjs` runs the same code here. A missing AVD
+  is now a clear refusal instead of a file error.
+
+### Target contract
+
+- An action on a control (`tap`, `fill`, `scroll`, `bounds`) waits within its
+  own bound for the control to appear, then acts once, as Playwright's web
+  actions do. A `fill` right after a navigating tap failed with
+  `missing_test_id` and needed a `toBeVisible` first. Only the read-only
+  lookup repeats; ambiguity fails at once, and a control still absent when
+  the action's own bound runs out is `missing_test_id`, as before, rather
+  than a timeout. A wait cut short by Go's worker deadline is `deadline`.
+
 ## 0.6.0 — 2026-11-07
 
 The first stable release of the 0.6.0 line includes all changes from

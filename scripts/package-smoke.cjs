@@ -48,7 +48,7 @@ try {
   assert.equal(packed.length, 1);
   assert.equal(packed[0].name, manifest.name);
   assert.equal(packed[0].version, manifest.version);
-  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'target-setup', 'android', 'android-runtime', 'android-device', 'android-env'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
+  const expectedFiles = ['LICENSE', 'NOTICE', 'README.md', 'package.json', ...['index', 'goal', 'protocol', 'prove', 'reporter', 'targets', 'target-setup', 'android', 'android-runtime', 'android-device', 'android-env', 'prepare-biometric-avd', 'ios', 'ios-runtime'].flatMap(name => [`dist/${name}.js`, `dist/${name}.d.ts`])].sort();
   assert.deepEqual(packed[0].files.map(file => file.path).sort(), expectedFiles);
   const tarball = path.join(work, packed[0].filename);
   const packedManifest = JSON.parse(call('tar', ['-xOf', tarball, 'package/package.json']));
@@ -66,7 +66,7 @@ try {
   const installed = path.join(consumer, 'node_modules/@9l/playwright');
   assert(fs.realpathSync(installed).startsWith(`${fs.realpathSync(consumer)}${path.sep}`), 'consumer resolved a workspace SDK');
   assert.equal(JSON.parse(fs.readFileSync(path.join(installed, 'package.json'))).version, manifest.version);
-  stage = 'optional Android entry point';
+  stage = 'optional native entry points';
   call(process.execPath, ['-e', `const assert = require('node:assert/strict');
     const android = require('@9l/playwright/android');
     assert.equal(typeof android.androidTargetDriver, 'function');
@@ -74,9 +74,19 @@ try {
     const found = android.androidDefaults({env: {ANDROID_HOME: 'sdk-root', NINELIVES_ANDROID_TOOLS: 'android-tools'}});
     assert.equal(found.sdkSource, 'ANDROID_HOME');
     assert.equal(found.toolsSource, 'NINELIVES_ANDROID_TOOLS');
-    for (const name of ['appium', 'appium-uiautomator2-driver']) {
+    const ios = require('@9l/playwright/ios');
+    assert.equal(typeof ios.iosTargetDriver, 'function');
+    assert.equal(typeof ios.iosAppDigest, 'function');
+    for (const name of ['appium', 'appium-uiautomator2-driver', 'appium-xcuitest-driver']) {
       assert.throws(() => require.resolve(name), {code: 'MODULE_NOT_FOUND'});
     }`], consumer);
+  stage = 'biometric AVD command';
+  // The command ships with the SDK. Without --wipe it refuses before reading
+  // the SDK, the AVD or any device, so it runs safely here.
+  const prepare = spawnSync(path.join(consumer, 'node_modules', '.bin', process.platform === 'win32' ? '9l-prepare-biometric-avd.cmd' : '9l-prepare-biometric-avd'),
+    ['--avd', 'dedicated_avd'], {cwd: consumer, encoding: 'utf8', shell: process.platform === 'win32', timeout: 60000});
+  assert.equal(prepare.status, 2, 'the biometric AVD command refuses without --wipe');
+  assert.match(prepare.stderr, /Pass --wipe/);
   fs.writeFileSync(path.join(consumer, 'playwright.config.ts'), "import {defineConfig} from '@playwright/test';\nexport default defineConfig({testDir: './tests', workers: 1, retries: 0, timeout: 15000, use: {headless: true}});\n");
   const page = `<button onclick="document.querySelector('[role=status]').textContent='Order confirmed: 1 item'">Place order</button><p role="status">Cart: 1 item</p>`;
   for (const [name, content] of [['checkout', page], ['business-failure', page.replace("Order confirmed: 1 item", "Order missing")]]) {

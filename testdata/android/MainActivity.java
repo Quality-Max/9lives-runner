@@ -27,6 +27,7 @@ public class MainActivity extends Activity {
     }
     if (FixtureMode.VALUE.startsWith("semantics")) { semantics(); return; }
     if (FixtureMode.VALUE.equals("biometric")) { biometric(); return; }
+    if (FixtureMode.VALUE.equals("focus")) { focus(); return; }
     LinearLayout layout = new LinearLayout(this);
     layout.setOrientation(LinearLayout.VERTICAL);
     layout.setPadding(32, 80, 32, 32);
@@ -220,6 +221,46 @@ public class MainActivity extends Activity {
     });
     layout.addView(signIn);
     layout.addView(status);
+    setContentView(layout);
+  }
+
+  // Checks that run on a user's focus changes and keyboard action, as forms
+  // often do: the e-mail check runs when the field loses focus, and the name
+  // field submits on the keyboard's done action. Text set without focus
+  // triggers neither.
+  private void focus() {
+    LinearLayout layout = new LinearLayout(this);
+    layout.setOrientation(LinearLayout.VERTICAL);
+    layout.setPadding(32, 80, 32, 32);
+    final TextView checked = new TextView(this);
+    identify(checked, "focus.checked");
+    final TextView submitted = new TextView(this);
+    identify(submitted, "focus.submitted");
+    final EditText email = new EditText(this);
+    email.setHint("Email address");
+    email.setSingleLine(true);
+    identify(email, "email-field");
+    email.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+      @Override public void onFocusChange(View view, boolean hasFocus) {
+        if (!hasFocus) checked.setText(email.getText().toString().contains("@") ? "Checked: valid" : "Checked: invalid");
+      }
+    });
+    final EditText name = new EditText(this);
+    name.setHint("Name");
+    name.setSingleLine(true);
+    name.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+    identify(name, "name-field");
+    name.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+      @Override public boolean onEditorAction(TextView view, int action, android.view.KeyEvent event) {
+        if (action != android.view.inputmethod.EditorInfo.IME_ACTION_DONE) return false;
+        submitted.setText("Submitted: " + name.getText().toString());
+        return false;
+      }
+    });
+    layout.addView(email);
+    layout.addView(name);
+    layout.addView(checked);
+    layout.addView(submitted);
     setContentView(layout);
   }
 }

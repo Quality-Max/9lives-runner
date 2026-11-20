@@ -45,7 +45,11 @@ func TestOwnedCommandBoundsOutputHeldOutsideTheGroup(t *testing.T) {
 	}
 	shortenOutputDrain(t, 200*time.Millisecond)
 	var stdout bytes.Buffer
-	command := exec.Command("/bin/sh", "-c", `perl -MPOSIX -e 'POSIX::setsid(); print "$$\n"; STDOUT->flush; sleep 30' & sleep 0.3; echo leader`)
+	// The leader exits only once the escaped writer has flushed its line and
+	// left a marker: a fixed sleep let a slowly starting perl be stopped with
+	// the group before it printed, on loaded hosted runners (#232).
+	marker := filepath.Join(t.TempDir(), "written")
+	command := exec.Command("/bin/sh", "-c", `perl -MPOSIX -e 'POSIX::setsid(); print "$$\n"; STDOUT->flush; open(my $m, ">", $ARGV[0]) or die; close $m; sleep 30' "$1" & i=0; while [ ! -e "$1" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done; echo leader`, "sh", marker)
 	command.Stdout = &stdout
 	started := time.Now()
 	if err := RunOwnedCommand(context.Background(), command); err != nil {

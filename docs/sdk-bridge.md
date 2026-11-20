@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.6.0`, the same version as the CLI; releases use npm trusted publishing. The
+npm workspace at version `0.6.1`, the same version as the CLI; releases use npm trusted publishing. The
 qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.1. Node 22
 is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
 releases install; they and other browser engines remain unqualified.
@@ -210,3 +210,10 @@ deterministic operation outcomes and, from a native driver, at most one
 `target_setup` classification per attempt (`blocked`, `dirty`, `mismatch` or
 `unknown`, a closed reason, the stage and a recorded recovery), kept in the
 receipt as `targetSetup`. Ordinary SDK jobs retain the original handshake.
+
+The unreleased owned Simulator path adds a closed `ios_runtime` frame containing
+only the fields described in [iOS setup](ios-driver.md). It is accepted only for
+an active test on an `ios:` target, once per test attempt. A passing iOS test
+requires that frame and a successful target assertion. The receipt stores the
+record under `iosRuntimes`; neither runtime attribution nor a target assertion
+increments independent `verifiedAssertions`.
