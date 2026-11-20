@@ -802,14 +802,21 @@ func failureMessage(message string) string {
 
 // attachmentInProject keeps attachment references inside the project, also
 // through symlinked directories, so a report cannot point 9l at other files.
+// Playwright reports resolved paths, so a project reached through a symlink
+// (such as macOS /tmp or /var/folders) is compared by its resolved directory.
 func attachmentInProject(workDir, path string) bool {
-	if _, ok := withinDirectory(workDir, path); !ok {
+	realDir, dirErr := filepath.EvalSymlinks(workDir)
+	if dirErr != nil {
 		return false
 	}
-	realDir, dirErr := filepath.EvalSymlinks(workDir)
+	_, lexical := withinDirectory(workDir, path)
+	_, resolvedLexical := withinDirectory(realDir, path)
+	if !lexical && !resolvedLexical {
+		return false
+	}
 	realPath, pathErr := filepath.EvalSymlinks(path)
-	if dirErr != nil || pathErr != nil {
-		return pathErr != nil && os.IsNotExist(pathErr) // a missing file is only a reference
+	if pathErr != nil {
+		return os.IsNotExist(pathErr) // a missing file is only a reference
 	}
 	_, ok := withinDirectory(realDir, realPath)
 	return ok
