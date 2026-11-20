@@ -6,6 +6,7 @@ import {resolve} from 'node:path';
 // #244: a failed test must not donate its emulator or private app session to
 // the next test. Deliberately omit logout and explicit close in both bodies:
 // the real test-scoped fixture owns teardown, including the failure path.
+const defect = process.env.NINELIVES_ANDROID_CASE === 'isolation-defect';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, '../../../.context/android-fixture/isolation/build.json'), 'utf8'));
 const test = createTargetTest({native: target => {
   const driver = androidTargetDriver({
@@ -17,7 +18,7 @@ const test = createTargetTest({native: target => {
   });
   // Negative control: suppress data clearing. The second test must reject the
   // persisted login after terminate/activate proves it survived an app restart.
-  if (process.env.NINELIVES_ANDROID_CASE === 'isolation-defect') driver.reset = async () => {};
+  if (defect) driver.reset = async () => {};
   return driver;
 }}).extend({
   page: async () => { throw new Error('native requested a browser page'); },
@@ -45,5 +46,11 @@ test('native isolation: reset after the previous failure clears persisted login'
   await app.activate();
   await app.getByTestId('session.status').toHaveText('Signed in', 90000);
   await app.reset();
-  await app.getByTestId('session.status').toHaveText('Signed out', 90000);
+  // A real reset relaunches the app, so this read gets the cold-relaunch
+  // allowance. The negative control's reset does nothing: the app stays on
+  // screen, signed in, and this assertion can only fail. Polling it for the
+  // 90 s allowance ran into the 240 s test budget on a slow hosted emulator,
+  // where the steps before it had taken more than 150 s, so the test timed
+  // out instead of failing here (#278). It keeps the ordinary bound instead.
+  await app.getByTestId('session.status').toHaveText('Signed out', defect ? undefined : 90000);
 });

@@ -55,6 +55,7 @@ const (
 // separate so a launched process with missing evidence cannot be called green.
 type Receipt struct {
 	AndroidRuntimes []AndroidRuntime `json:"androidRuntimes,omitempty"`
+	IOSRuntimes     []IOSRuntime     `json:"iosRuntimes,omitempty"`
 	// TargetSetup lists the native target tests whose driver classified the
 	// device or app state before, or after a failed, application assertion:
 	// blocked (locked device), dirty (state left by a previous test),
@@ -491,4 +492,23 @@ type RunStatus struct {
 	Plan      *Plan          `json:"plan,omitempty"`
 	Result    *RunSummary    `json:"result,omitempty"`
 	LastEvent *ProgressEvent `json:"lastEvent,omitempty"`
+}
+
+// IOSRuntime is worker-reported attribution for an owned Simulator, not independent verification.
+type IOSRuntime struct {
+	TestID         string `json:"testId"`
+	BundleID       string `json:"bundleId"`
+	AppSHA256      string `json:"appSHA256"`
+	Version        string `json:"version"`
+	Build          string `json:"build"`
+	Runtime        string `json:"runtime"`
+	DeviceType     string `json:"deviceType"`
+	OS             string `json:"os"`
+	Architecture   string `json:"architecture"`
+	Xcode          string `json:"xcode"`
+	Appium         string `json:"appium"`
+	XCUITest       string `json:"xcuitest"`
+	Worker         string `json:"worker"`
+	ViewportWidth  string `json:"viewportWidth"`
+	ViewportHeight string `json:"viewportHeight"`
 }

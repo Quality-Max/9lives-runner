@@ -11,7 +11,7 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
 const biometric = mode.startsWith('biometric');
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed'].includes(mode) ? mode : 'healthy';
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed', 'focus'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -20,7 +20,7 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   toolsRoot: resolve(__dirname, mode === 'version' ? '../../../.context/android-bad-version' : '../../../tools/android'),
   ...(attachedSerial ? {deviceSerial: attachedSerial, apkSHA256: fixture.apkSHA256} : {
     avd: mode === 'unavailable' ? '9l_missing_avd' : biometric ? process.env.NINELIVES_ANDROID_BIOMETRIC_AVD! : process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35',
-    // A dedicated AVD prepared by scripts/prepare-biometric-avd.cjs.
+    // A dedicated AVD prepared by `npx 9l-prepare-biometric-avd`.
     ...(biometric ? {biometrics: {snapshot: process.env.NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT ?? '9l-biometric'}} : {}),
     apk: fixture.apk, apkSHA256: mode === 'digest' ? '0'.repeat(64) : fixture.apkSHA256,
   }),
@@ -47,6 +47,33 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   browser: async () => { throw new Error('native requested a browser'); },
 });
 
+// Qualification-only read facts per route: how many reads, how many did not
+// answer, the slowest, and for lookups how many matched nothing. No bodies.
+type ReadTiming = Record<string, {count: number; errors: number; maxMs: number; empty?: number}>;
+function observeRead(readTiming: ReadTiming, url: string, pending: Promise<Response>) {
+  const route = url.endsWith('/elements') ? 'find' : url.endsWith('/text') ? 'text' : url.endsWith('/displayed') ? 'visible' : /\/attribute\/(enabled|checked)$/.test(url) ? 'state' : '';
+  if (!route) return;
+  const timing = readTiming[route] ??= {count: 0, errors: 0, maxMs: 0, ...(route === 'find' ? {empty: 0} : {})};
+  const started = Date.now();
+  timing.count++;
+  void pending.then(async response => {
+    timing.maxMs = Math.max(timing.maxMs, Date.now() - started);
+    if (route !== 'find') return;
+    // Cloned before the driver reads the answer; only the match count is used.
+    try { const found = (await response.clone().json()).value; if (Array.isArray(found) && !found.length) timing.empty!++; } catch { /* no usable answer */ }
+  }, () => { timing.errors++; timing.maxMs = Math.max(timing.maxMs, Date.now() - started); });
+}
+// Which window had input focus when a case stopped: the app's own, another
+// one (a system dialog, the launcher) or unknown. A fixed word, never the
+// window's name or any device output.
+async function frontWindow(adb: string, serial: string, appPackage: string): Promise<'app' | 'other' | 'unknown'> {
+  try {
+    const {stdout} = await promisify(execFile)(adb, ['-s', serial, 'shell', 'dumpsys window | grep -m1 mCurrentFocus='], {timeout: 5000, maxBuffer: 4096});
+    const owner = /mCurrentFocus=Window\{\S+ \S+ ([^\s/}]+)/.exec(stdout)?.[1];
+    return owner === undefined ? 'unknown' : owner === appPackage ? 'app' : 'other';
+  } catch { return 'unknown'; }
+}
+
 // @9l-requirement QUA-2204
 test('native transfer has fresh exact text and state', async ({app}) => {
   // Qualification-only transport probe: no server bodies, hierarchy or device logs.
@@ -56,7 +83,18 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   const originalFetch = globalThis.fetch;
   let stopReason = '', driverReason = '';
   let serial = '', started = false, clickDispatches = 0;
-  const readTiming: Record<string, {count: number; errors: number; maxMs: number}> = {};
+  // #280: when the marker is not seen, these tell apart a click the device had
+  // not performed yet, one it performed that never ran the app's handler, and
+  // marker checks that were too slow or could not reach the app. `ack` is the
+  // held click request's real answer; `front` is read only without a marker.
+  const markerProbe = {checks: 0, missing: 0, timedOut: 0, unreachable: 0, seenMs: -1, checksAtStop: -1, stopMs: -1,
+    ack: 'none' as 'none' | 'answered' | 'refused' | 'failed', ackMs: -1, front: '' as 'app' | 'other' | 'unknown' | ''};
+  let dispatchedAt = 0;
+  // The send button's element references, from its own lookups: fill also
+  // taps the fields it focuses, and only a tap on send counts as the
+  // transfer's dispatch.
+  const sendRefs = new Set<string>();
+  const readTiming: ReadTiming = {};
   const sdk = androidDefaults().sdkRoot ?? '';
   const command = promisify(execFile);
   let probe: Promise<void> | undefined;
@@ -65,34 +103,46 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     if (url.endsWith('/session') && init?.method === 'POST') {
       serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
     }
-    const route = url.endsWith('/elements') ? 'find' : url.endsWith('/text') ? 'text' : url.endsWith('/displayed') ? 'visible' : /\/attribute\/(enabled|checked)$/.test(url) ? 'state' : '';
-    const requestStart = Date.now();
-    const pending = originalFetch(input, init);
-    if (route) {
-      const timing = readTiming[route] ??= {count: 0, errors: 0, maxMs: 0};
-      timing.count++;
-      const finished = (failed: boolean) => {
-        if (failed) timing.errors++;
-        timing.maxMs = Math.max(timing.maxMs, Date.now() - requestStart);
-      };
-      void pending.then(() => finished(false), () => finished(true));
+    let pending = originalFetch(input, init);
+    if (url.endsWith('/elements') && init?.method === 'POST' && String(init.body).includes('\\\\Qsend\\\\E')) {
+      pending = pending.then(async response => {
+        try {
+          const found = (await response.clone().json()).value;
+          if (Array.isArray(found)) for (const element of found) sendRefs.add(element['element-6066-11e4-a52e-4f735466cecf']);
+        } catch { /* a lookup that did not answer names no button */ }
+        return response;
+      });
     }
-    if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST') {
+    observeRead(readTiming, url, pending);
+    if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST' && sendRefs.has(/\/element\/([^/]+)\/click$/.exec(url)![1])) {
       clickDispatches++;
+      dispatchedAt = Date.now();
       if (mode === 'cancel' || mode === 'blocked') probe = (async () => {
         for (let i = 0; i < 80; i++) {
           try {
             await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'shell', 'run-as', fixture.appPackage, 'test', '-f', 'files/started'], {timeout: 1000, maxBuffer: 1024});
+            markerProbe.checks++;
+            markerProbe.seenMs = Date.now() - dispatchedAt;
             started = true;
             if (mode === 'cancel') app.cancel();
             return;
-          } catch { await delay(50); }
+          } catch (error) {
+            // Classified by how the check ended; its output is not kept. A
+            // plain exit 1 with no output is `test -f` not finding the file.
+            const e = error as {killed?: boolean; code?: unknown; stdout?: unknown; stderr?: unknown};
+            markerProbe.checks++;
+            if (e.killed) markerProbe.timedOut++;
+            else if (e.code === 1 && !String(e.stdout ?? '').trim() && !String(e.stderr ?? '').trim()) markerProbe.missing++;
+            else markerProbe.unreachable++;
+            await delay(50);
+          }
         }
       })();
       if (mode === 'cancel' || mode === 'blocked') {
         // Hold both acknowledgements and errors: this control specifically
         // injects an unresponsive transport after a real native dispatch.
-        void pending.catch(() => {});
+        void pending.then(response => { markerProbe.ack = response.ok ? 'answered' : 'refused'; markerProbe.ackMs = Date.now() - dispatchedAt; },
+          () => { if (markerProbe.ack === 'none') { markerProbe.ack = 'failed'; markerProbe.ackMs = Date.now() - dispatchedAt; } });
         const signal = init?.signal;
         await new Promise<never>((_, reject) => {
           const aborted = () => reject(new Error('synthetic stalled transport aborted'));
@@ -110,6 +160,8 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   if (!attachedSerial) await app.reset({timeoutMs: 30000});
   await app.getByTestId('recipient').fill('Ada', {timeoutMs: 20000});
   await app.getByTestId('amount').fill('5', {timeoutMs: 20000});
+  // A fill aimed at a button must fail without touching it: a tap would send.
+  if (mode === 'misfill') await app.getByTestId('send').fill('5', {timeoutMs: 20000});
   // Strict mutations must reject missing/ambiguous controls before dispatch.
   if (mode === 'missing' || mode === 'ambiguous') await app.getByTestId('send').tap();
   await app.getByTestId('send').toHaveState('enabled', true);
@@ -133,6 +185,12 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     throw error;
   } finally {
     globalThis.fetch = originalFetch;
+    // Closing stops the emulator, so only checks made before this point could
+    // have seen the marker.
+    if (probe) {
+      markerProbe.checksAtStop = markerProbe.checks; markerProbe.stopMs = Date.now() - dispatchedAt;
+      if (!started && serial) markerProbe.front = await frontWindow(resolve(sdk, 'platform-tools/adb'), serial, fixture.appPackage);
+    }
     await app.close();
     await probe;
     let deviceStopped = false;
@@ -142,7 +200,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     }
     // Only bounded synthetic probe facts; no serial/handles or device output.
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
-      JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming}));
+      JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming, ...(probe ? {markerProbe} : {})}));
   }
 });
 
@@ -176,8 +234,8 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     await app.getByTestId('list').scroll('down', {percent: 0.5});
     await app.getByTestId('status').toHaveText('scrolled');
     if (attachedSerial) {
-      // A phone keeps its own input method: touching the field shows it
-      // (fill sets the text without opening it), hiding closes it.
+      // A phone keeps its own input method: fill focuses the field like a
+      // touch, which shows it, and hiding closes it.
       await app.getByTestId('amount').fill('7');
       await app.getByTestId('amount').tap();
       await app.toHaveKeyboard(true);
@@ -230,10 +288,17 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
 // the error, so the invalid-state assertion must reject it.
 test('native semantics: bare ids, hints, merged labels and validation state', async ({app}) => {
   let stopReason = '', driverReason = '', serial = '';
+  // #281: a failed read is told apart by whether lookups matched nothing,
+  // reads did not answer, or another window was in front of the app.
+  const readTiming: ReadTiming = {};
+  let front: 'app' | 'other' | 'unknown' | '' = '';
+  const adb = resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb');
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
-    return originalFetch(input, init);
+    const pending = originalFetch(input, init);
+    observeRead(readTiming, String(input), pending);
+    return pending;
   };
   try {
     await app.open({timeoutMs: 180000});
@@ -261,17 +326,19 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
     const cause = e.cause?.message;
     if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    // Read while the emulator is still up; teardown follows.
+    if (serial) front = await frontWindow(adb, serial, fixture.appPackage);
     throw error;
   } finally {
     globalThis.fetch = originalFetch;
     await app.close();
     let deviceStopped = false;
     if (serial) {
-      try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      try { await promisify(execFile)(adb, ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
       catch { deviceStopped = true; }
     }
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
-      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming: {}}));
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming, ...(front ? {front} : {})}));
   }
 });
 
@@ -297,6 +364,44 @@ test('native biometrics: a fingerprint at the system prompt', async ({app}) => {
     // @9l-outcome biometric-sign-in
     await app.getByTestId('auth.status').toHaveText('Authenticated', mode === 'biometric-unenrolled' ? 3000 : 15000);
     if (await app.foreground() !== 'app') throw new Error('the app is not back in front');
+  } catch (error) {
+    const e = error as {reason?: unknown; cause?: {message?: unknown}};
+    if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
+    const cause = e.cause?.message;
+    if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+    let deviceStopped = false;
+    if (serial) {
+      try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+      catch { deviceStopped = true; }
+    }
+    if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming: {}}));
+  }
+});
+
+// Checks a form runs on a user's focus changes and keyboard action: fill
+// focuses the field, so moving to the next field runs the e-mail check, and
+// submit presses the done action in the name field.
+test('native focus: fill focuses the field and submit sends the done action', async ({app}) => {
+  let stopReason = '', driverReason = '', serial = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    return originalFetch(input, init);
+  };
+  try {
+    await app.open({timeoutMs: 180000});
+    await app.reset();
+    await app.getByTestId('email-field').fill('ada-at-example', {timeoutMs: 20000});
+    await app.getByTestId('name-field').fill('Ada', {timeoutMs: 20000, submit: true});
+    // @9l-outcome lose-focus-check-ran
+    await app.getByTestId('focus.checked').toHaveText('Checked: invalid', 15000);
+    // @9l-outcome done-action-submitted
+    await app.getByTestId('focus.submitted').toHaveText('Submitted: Ada', 15000);
   } catch (error) {
     const e = error as {reason?: unknown; cause?: {message?: unknown}};
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;

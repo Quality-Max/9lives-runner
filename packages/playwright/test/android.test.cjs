@@ -1163,3 +1163,205 @@ test('owned emulator rejects a locked or unenrolled biometric snapshot before an
     await fs.rm(dir, {recursive: true, force: true});
   }
 });
+
+// fill focuses the field with a touch before replacing its text, and submit
+// sends the done action only while that field reports focus.
+test('fill focuses the field and submit sends the done action only to the focused field', async () => {
+  const cp = require('node:child_process');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {randomUUID} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-fill-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR, tmpdir: process.env.TMPDIR};
+  const requests = [];
+  let focused = 'true', kind = 'android.widget.EditText', found = ['ref-0'], typed = ['ref-0'];
+  const serial = `test-${randomUUID()}`;
+  let driver;
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    process.env.TMPDIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      const command = args.slice(2);
+      const script = command[1] === 'sh' ? command[3] : '';
+      let result = '';
+      if (command[0] === 'get-state') result = 'device';
+      else if (command[1] === 'getprop') result = ({'ro.kernel.qemu': '', 'ro.build.version.sdk': '37', 'ro.build.version.release': '17', 'ro.product.cpu.abi': 'arm64-v8a'})[command[2]];
+      else if (command[1] === 'pm' && command[2] === 'path') result = 'package:/data/app/test/base.apk';
+      else if (script.includes('dumpsys window; dumpsys power')) result = 'showing=false\nmWakefulness=Awake';
+      else if (script.includes('dumpsys window windows')) result = '  Window #1 Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}:\n  mCurrentFocus=Window{4d5e6f u0 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity}\n9l-windows-end';
+      else if (script.includes('dumpsys input_method')) result = 'mInputShown=false';
+      else if (script.includes('pm path io.appium.settings') || script.includes('echo present')) result = 'absent';
+      else if (command[1] === 'sha256sum') result = `${'a'.repeat(64)}  /data/app/test/base.apk`;
+      else if (command[1] === 'settings') result = command[2] === 'get' ? '0' : '';
+      queueMicrotask(() => callback(null, result));
+      return new EventEmitter();
+    };
+    cp.spawn = () => {
+      const child = new EventEmitter(); child.pid = 123; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      return child;
+    };
+    global.fetch = async (input, init) => {
+      const url = String(input), body = init.body ? JSON.parse(init.body) : undefined;
+      let value = null;
+      if (url.endsWith('/status')) value = {ready: true};
+      else if (url.endsWith('/session')) value = {sessionId: 'owned-session', capabilities: {'appium:udid': serial}};
+      else if (url.endsWith('/elements')) value = (body.using === 'xpath' && body.value.endsWith('[@input-type and @input-type!="0"]') ? typed : found).map(ref => ({'element-6066-11e4-a52e-4f735466cecf': ref}));
+      else if (url.endsWith('/attribute/focused')) value = focused;
+      else if (url.endsWith('/attribute/class')) value = kind;
+      requests.push({path: url.replace(/^.*\/session\/owned-session/, ''), body});
+      return new Response(JSON.stringify({value}), {status: 200});
+    };
+    const {androidTargetDriver} = require('../dist/android');
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    driver = androidTargetDriver({appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'});
+    await driver.open(context());
+    const [field] = await driver.observeTestId('email-field', context());
+    requests.length = 0;
+    await field.fill('ada@example.test', context());
+    // A text field's class is read, then it is touched and its text replaced;
+    // the value never leaves the request body.
+    assert.deepEqual(requests.filter(r => !r.path.endsWith('/elements')).map(r => r.path), ['/element/ref-0/attribute/class', '/element/ref-0/click', '/element/ref-0/clear', '/element/ref-0/value']);
+    assert.deepEqual(requests.at(-1).body, {text: 'ada@example.test'});
+    // submit uses the element the fill resolved, without looking the alias
+    // up again: a text alias no longer matches after the fill.
+    requests.length = 0; found = [];
+    await field.submit(context());
+    assert(!requests.some(r => r.path.endsWith('/elements')), 'submit after fill does not look the control up again');
+    assert.deepEqual(requests.at(-1), {path: '/execute/sync', body: {script: 'mobile: performEditorAction', args: [{action: 'done'}]}});
+    found = ['ref-0'];
+    // A control that is not a text field is never touched: a tap on a button
+    // a selector wrongly named would run its action.
+    kind = 'android.widget.Button'; typed = [];
+    const [button] = await driver.observeTestId('send', context());
+    requests.length = 0;
+    await assert.rejects(button.fill('5', context()), /not_editable/);
+    assert(!requests.some(r => /\/(click|clear|value)$/.test(r.path)), 'no touch, clear or text on a non-editable control');
+    // A custom view that reports an input type on this element is a field;
+    // an input type on another element is not.
+    kind = 'com.example.CustomField'; typed = ['ref-0'];
+    await button.fill('5', context());
+    typed = ['ref-9'];
+    await assert.rejects(button.fill('5', context()), /not_editable/);
+    kind = 'android.widget.EditText'; typed = ['ref-0'];
+    for (const value of ['false', false, null, 'yes']) {
+      focused = value; requests.length = 0;
+      await assert.rejects(field.submit(context()), /field_not_focused/, String(value));
+      assert(!requests.some(r => r.path === '/execute/sync'), `${value}: no done action without focus`);
+    }
+  } finally {
+    await driver?.close();
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    if (original.tmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = original.tmpdir;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});
+
+// On an owned emulator, an APK the device cannot run is a setup mismatch
+// read from the APK before install; a build already in the AVD that blocks
+// an in-place update is uninstalled and the declared APK installed fresh;
+// any other install failure is named by adb's code only.
+test('owned emulator checks the APK against the device, replaces a blocking installed build and names install failures', {skip: process.platform === 'win32' && 'owned emulators use a Unix-socket console handshake; Windows hosts are unqualified'}, async () => {
+  const cp = require('node:child_process');
+  const net = require('node:net');
+  const {EventEmitter} = require('node:events');
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const os = require('node:os');
+  const {createHash} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), '9l-install-'));
+  const original = {execFile: cp.execFile, spawn: cp.spawn, fetch: global.fetch, scratch: process.env.NINELIVES_TARGET_SCRATCH_DIR};
+  const apk = path.join(dir, 'app.apk');
+  await fs.writeFile(apk, 'synthetic apk bytes');
+  const apkSHA256 = createHash('sha256').update('synthetic apk bytes').digest('hex');
+  let badging = '', installs = [], commands = [];
+  try {
+    for (const [name, version] of Object.entries({appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2})) {
+      await fs.mkdir(path.join(dir, 'node_modules', name), {recursive: true});
+      await fs.writeFile(path.join(dir, 'node_modules', name, 'package.json'), JSON.stringify({version}));
+    }
+    process.env.NINELIVES_TARGET_SCRATCH_DIR = dir;
+    cp.execFile = (file, args, options, callback) => {
+      commands.push(args.slice(2).join(' '));
+      let result = '', error = null, stderr = '';
+      if (/aapt2(\.exe)?$/.test(file)) result = badging;
+      else if (args.includes('sys.boot_completed')) result = '1';
+      else if (args.includes('ro.build.version.sdk')) result = '35';
+      else if (args.includes('ro.product.cpu.abilist')) result = 'arm64-v8a';
+      else if (args[2] === 'install') {
+        const next = installs.shift() ?? {ok: true};
+        if (next.ok) result = 'Success';
+        else { error = Object.assign(new Error('Command failed'), {code: 1}); result = next.stdout ?? ''; stderr = next.stderr ?? ''; }
+      } else if (args[2] === 'uninstall') result = 'Success';
+      queueMicrotask(() => callback(error, result, stderr));
+      return new EventEmitter();
+    };
+    cp.spawn = (file, args) => {
+      const child = new EventEmitter(); child.pid = 4321; child.exitCode = null; child.signalCode = null;
+      child.kill = signal => { child.signalCode = signal; queueMicrotask(() => child.emit('exit')); return true; };
+      const report = args.indexOf('-report-console');
+      if (report >= 0) setImmediate(() => { const socket = net.connect(args[report + 1].slice('unix:'.length), () => socket.end('5554')); });
+      return child;
+    };
+    global.fetch = async () => new Response(JSON.stringify({value: {ready: true}}), {status: 200});
+    const {androidTargetDriver} = require('../dist/android');
+    const options = {appId: 'own', sdkRoot: dir, toolsRoot: dir, avd: 'QualityMax_API_35', apk, apkSHA256, appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+    const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
+    const open = async () => { const driver = androidTargetDriver(options); try { await driver.open(context()); } finally { await driver.close(); } };
+    const base = "package: name='dev.ninelives.fixture' versionCode='7'\n";
+    const ran = name => commands.filter(command => command.startsWith(name)).length;
+    // A minimum SDK or native code the device lacks: classified before install.
+    for (const [label, apkBadging, reason] of [
+      ['min sdk', `${base}minSdkVersion:'99'\n`, 'build-sdk'],
+      ['min sdk, older aapt', `${base}sdkVersion:'99'\n`, 'build-sdk'],
+      ['abi', `${base}sdkVersion:'26'\nnative-code: 'x86' 'armeabi-v7a'\n`, 'build-abi'],
+    ]) {
+      badging = apkBadging; commands = []; installs = [];
+      await assert.rejects(open(), error => error.record?.classification === 'mismatch' && error.record?.reason === reason, label);
+      assert.equal(ran('install'), 0, `${label}: nothing installed`);
+    }
+    // An unreadable device API or ABI list decides nothing: the install runs.
+    badging = `${base}sdkVersion:'99'\nnative-code: 'x86'\n`; commands = []; installs = [{ok: true}];
+    const real = cp.execFile;
+    cp.execFile = (file, args, options, callback) => args.includes('ro.build.version.sdk') || args.includes('ro.product.cpu.abilist')
+      ? (queueMicrotask(() => callback(null, '', '')), new EventEmitter()) : real(file, args, options, callback);
+    await assert.rejects(open(), /open_failed_build_identity/);
+    cp.execFile = real;
+    assert.equal(ran('install'), 1, 'unreadable device facts: install attempted');
+    // A matching ABI among several, and no native code at all, both install.
+    for (const apkBadging of [`${base}sdkVersion:'26'\nnative-code: 'x86_64' 'arm64-v8a'\n`, `${base}sdkVersion:'26'\n`]) {
+      badging = apkBadging; commands = []; installs = [{ok: true}];
+      await assert.rejects(open(), /open_failed_build_identity/);
+      assert.equal(ran('install'), 1);
+    }
+    badging = `${base}sdkVersion:'26'\n`;
+    // A newer or differently signed build in the AVD: uninstall, then install once more.
+    for (const code of ['INSTALL_FAILED_VERSION_DOWNGRADE', 'INSTALL_FAILED_UPDATE_INCOMPATIBLE']) {
+      commands = []; installs = [{ok: false, stdout: `Performing Push Install\nFailure [${code}: Package dev.ninelives.fixture new version code 7 is older than installed 8]`}, {ok: true}];
+      await assert.rejects(open(), /open_failed_build_identity/, code);
+      assert.deepEqual(commands.filter(command => /^(install|uninstall) /.test(command)).map(command => command.split(' ')[0]), ['install', 'uninstall', 'install'], code);
+    }
+    // Still refused after the replacement: named, never retried again.
+    commands = []; installs = [{ok: false, stdout: 'Failure [INSTALL_FAILED_VERSION_DOWNGRADE]'}, {ok: false, stdout: 'Failure [INSTALL_FAILED_VERSION_DOWNGRADE]'}];
+    await assert.rejects(open(), /open_failed_apk_install_version_downgrade$/);
+    assert.equal(ran('install'), 2);
+    // Another failure is named by its code alone, without an uninstall.
+    commands = []; installs = [{ok: false, stderr: 'Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE: /data/app/private path]'}];
+    await assert.rejects(open(), error => /open_failed_apk_install_insufficient_storage$/.test(error.message) && !error.message.includes('/data'));
+    assert.equal(ran('uninstall'), 0);
+    // No code at all (a package manager exception): the generic stage.
+    commands = []; installs = [{ok: false, stderr: 'Exception occurred while executing install: java.lang.IllegalArgumentException'}];
+    await assert.rejects(open(), /open_failed_apk_install$/);
+  } finally {
+    cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;
+    if (original.scratch === undefined) delete process.env.NINELIVES_TARGET_SCRATCH_DIR; else process.env.NINELIVES_TARGET_SCRATCH_DIR = original.scratch;
+    await fs.rm(dir, {recursive: true, force: true});
+  }
+});
