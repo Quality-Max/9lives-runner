@@ -28,6 +28,8 @@ const matchers: readonly AndroidMatcher[] = ['text', 'accessibilityId', 'accessi
 /** Test IDs: an app resource entry name, which Android reports as
  * `<package>:id/<id>`, or an identifier a framework reports bare (Flutter's
  * `Semantics(identifier:)`), which may also contain `.` and `-`. */
+// Android's text-entry classes: a Flutter or Compose text field reports EditText.
+const editableClasses = ['android.widget.EditText', 'android.widget.AutoCompleteTextView', 'android.widget.MultiAutoCompleteTextView', 'android.widget.SearchView$SearchAutoComplete', 'android.inputmethodservice.ExtractEditText'];
 const testIdPattern = /^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$/;
 // UiAutomator2's selector parser unescapes only \" inside a string
 // argument; every other backslash reaches the matcher as written. Text and
@@ -82,7 +84,7 @@ export type AndroidTargetOptions = {
 } & ({
   avd: string; apk: string; headless?: boolean; deviceSerial?: never;
   /** Owned emulator only: boot the named snapshot of a dedicated AVD that
-   * scripts/prepare-biometric-avd.cjs prepared (a lock screen and an
+   * `npx 9l-prepare-biometric-avd` prepared (a lock screen and an
    * enrolled fingerprint, saved unlocked), still read-only, and offer
    * app.fingerprint(). The driver never sees, sets or enters a PIN; a
    * snapshot that boots locked or without an enrolled fingerprint is a
@@ -343,6 +345,17 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     return signer;
   };
   let versionCode = 'unknown', versionName = 'unknown', signer = 'unknown';
+  let apkNeeds: {minSdk: number; abis: string[]} | undefined;
+  // One `adb install` of the owned emulator's APK: undefined on success,
+  // else adb's INSTALL_FAILED_ code (or `unknown`). Its output stays in
+  // memory; only that fixed token is read from it.
+  const installOwned = (apk: string, c: TargetContext) => new Promise<string | undefined>((yes, no) => execFile(adb, ['-s', serial, 'install', '--no-streaming', '-r', apk], {
+    signal: c.signal, timeout: timeout(c), maxBuffer: 64 * 1024, env,
+  }, (error, stdout, stderr) => {
+    if (interrupted(c)) return no(failure('device_command_failed'));
+    if (!error) return yes(undefined);
+    yes(/\bINSTALL_FAILED_[A-Z_]{1,48}\b/.exec(`${stdout}\n${stderr}`)?.[0] ?? 'unknown');
+  }));
   // Version from the package manager; the signer from the local APK (owned
   // emulator) or, when declared, from the installed base APK pulled into the
   // attempt's private scratch directory and removed with it.
@@ -449,13 +462,37 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (result.length !== 1) throw failure(result.length ? 'ambiguous_resource_id' : 'missing_resource_id');
     return result[0];
   };
-  const handle = (id: string): TargetHandle => ({
+  // The element a fill resolved, kept for its submit: a text alias no longer
+  // matches once the fill replaced that text.
+  const handle = (id: string): TargetHandle => { let filledRef: string | undefined; return {
     tap: async c => { const ref = await resolveOne(id, c); await observeGesture(c); await endpoint(`/element/${ref}/click`, c, 'POST', {}); },
+    // A user's fill: a touch focuses the field (so checks an app runs on
+    // focus changes run), then its text is replaced. Setting text alone
+    // never focused it.
     fill: async (value, c) => {
       disarm();
+      filledRef = undefined;
       const ref = await resolveOne(id, c);
+      // Only a text field is tapped: a tap on a control a selector wrongly
+      // named (a button) would run its action before the fill could fail.
+      // A text field reports an EditText class, or an input type in the
+      // hierarchy (UiAutomator2 reads it only there) on this same element.
+      const kind = await endpoint(`/element/${ref}/attribute/class`, c);
+      if (!(typeof kind === 'string' && editableClasses.includes(kind)) &&
+          !elements(await endpoint('/elements', c, 'POST', {using: 'xpath', value: `${xpathOf(id)}[@input-type and @input-type!="0"]`})).includes(ref)) throw failure('not_editable');
+      await endpoint(`/element/${ref}/click`, c, 'POST', {});
       await endpoint(`/element/${ref}/clear`, c, 'POST', {});
       await endpoint(`/element/${ref}/value`, c, 'POST', {text: value});
+      filledRef = ref;
+    },
+    // The input method's done action goes to whichever field has focus, so
+    // it is sent only while this field reports focus, never to another one.
+    submit: async c => {
+      disarm();
+      const ref = filledRef ?? await resolveOne(id, c);
+      const focused = await endpoint(`/element/${ref}/attribute/focused`, c);
+      if (focused !== true && focused !== 'true') throw failure('field_not_focused');
+      await endpoint('/execute/sync', c, 'POST', {script: 'mobile: performEditorAction', args: [{action: 'done'}]});
     },
     // A control that vanished since it was observed is not visible; two
     // matches are still ambiguous.
@@ -501,7 +538,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       await endpoint('/execute/sync', c, 'POST', {script: 'mobile: scrollGesture', args: [{elementId: ref, direction, percent}]});
     },
     bounds: async c => { disarm(); return rect(await endpoint(`/element/${await resolveOne(id, c)}/rect`, c)); },
-  });
+  };}
   const pixel = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
   const offset = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= -65_535 && (value as number) <= 65_535;
   // Only finite numbers are rounded: a null or boolean field is a malformed
@@ -611,6 +648,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             await writeFile(installedAPK, apkBytes, {mode: 0o400});
             const badging = await command(sdkTools.aapt2, ['dump', 'badging', installedAPK], c, env);
             if (/^package: name='([^']+)'/.exec(badging)?.[1] !== options.appPackage) throw failure('apk_package_mismatch');
+            // What the device must offer: checked against it before install,
+            // so a build that cannot run there is a setup mismatch, not an
+            // install error.
+            // aapt2 prints `minSdkVersion:'N'`; older tools printed `sdkVersion:'N'`.
+            const minSdk = /^(?:minSdkVersion|sdkVersion):'([0-9]{1,3})'/m.exec(badging)?.[1];
+            apkNeeds = {minSdk: minSdk === undefined ? 1 : Number(minSdk),
+              abis: [...(/^native-code:(.*)$/m.exec(badging)?.[1] ?? '').matchAll(/'([a-z0-9_-]{1,32})'/g)].map(m => m[1])};
           }
           await writeFile(join(directory, 'package.json'), JSON.stringify({private: true, dependencies: {appium: androidVersions.appium, 'appium-uiautomator2-driver': androidVersions.uiautomator2}}));
           // The emulator atomically reserves its own available console port.
@@ -697,7 +741,27 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
             stage = 'displays';
             await readDisplays(c);
             stage = 'apk_install';
-            await adbRun(['install', '--no-streaming', '-r', installedAPK], c);
+            if (apkNeeds) {
+              // An unreadable property decides nothing; the install itself is the check then.
+              const sdk = await adbRun(['shell', 'getprop', 'ro.build.version.sdk'], c);
+              if (/^[0-9]{1,3}$/.test(sdk) && apkNeeds.minSdk > Number(sdk)) throw new TargetSetupError({classification: 'mismatch', reason: 'build-sdk', stage: 'open'});
+              const abis = (await adbRun(['shell', 'getprop', 'ro.product.cpu.abilist'], c)).split(',').map(abi => abi.trim()).filter(Boolean);
+              if (apkNeeds.abis.length > 0 && abis.length > 0 && !apkNeeds.abis.some(abi => abis.includes(abi))) throw new TargetSetupError({classification: 'mismatch', reason: 'build-abi', stage: 'open'});
+            }
+            // The AVD may already hold the package: a newer build (a
+            // downgrade) or one with another signer cannot be updated in
+            // place. On this read-only, discarded emulator it is uninstalled
+            // and the declared APK installed fresh; the AVD is unchanged.
+            let code = await installOwned(installedAPK, c);
+            if (code === 'INSTALL_FAILED_VERSION_DOWNGRADE' || code === 'INSTALL_FAILED_UPDATE_INCOMPATIBLE') {
+              await adbRun(['uninstall', options.appPackage], c);
+              code = await installOwned(installedAPK, c);
+            }
+            // Only adb's own failure code is named; nothing else it printed is kept.
+            if (code !== undefined) {
+              if (code !== 'unknown') stage = `apk_install_${code.slice('INSTALL_FAILED_'.length).toLowerCase()}`;
+              throw failure('apk_install_failed');
+            }
             stage = 'build_identity';
             await buildIdentity(c, installedAPK);
           }

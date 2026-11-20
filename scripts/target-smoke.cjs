@@ -196,6 +196,12 @@ assert.equal(fingerprint.summary.receipts[0].targetAssertions, 1, 'fingerprint: 
 const webFingerprint = invoke('fingerprint-web', {targets: ['web:finance'], grep: 'fingerprint signs in', file: operations, extra: ['--failure-details']});
 assert.notEqual(webFingerprint.code, 0);
 assert(webFingerprint.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'fingerprint-web: no sensor, a stable reason');
+const submitted = invoke('submit', {targets: ['web:finance'], grep: 'keyboard action', file: operations});
+assert.equal(submitted.code, 0, 'submit: the web presses Enter in the filled field');
+const noSubmit = invoke('submit-native', {targets: ['android-fake:finance'], grep: 'keyboard action', file: operations, extra: ['--failure-details']});
+assert.notEqual(noSubmit.code, 0);
+assert(noSubmit.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'submit-native: a handle without submit refuses');
+assert(!noSubmit.mutations.includes('mutation'), 'submit-native: nothing filled before the refusal');
 const unsupported = invoke('unsupported', {targets: ['web:finance'], grep: 'native only', file: operations, extra: ['--failure-details']});
 assert.notEqual(unsupported.code, 0);
 assert(unsupported.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'unsupported: stable capability error');

@@ -1,0 +1,9 @@
+{
+  "name": "9l-local-ios-tools",
+  "private": true,
+  "description": "Optional pinned owned iOS Simulator tooling; not shipped with the SDK",
+  "dependencies": {
+    "appium": "3.8.0",
+    "appium-xcuitest-driver": "10.43.1"
+  }
+}

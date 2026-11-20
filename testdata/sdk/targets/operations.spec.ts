@@ -16,6 +16,9 @@ const test = createTargetTest({
         document.addEventListener('click', event => { if (!(event.target as Element).closest('[data-testid=button]')) document.querySelector('[data-testid=status]')!.textContent = ''; });
         document.querySelector('[data-testid=list]')!.addEventListener('scroll', () => { document.querySelector('[data-testid=status]')!.textContent = 'scrolled'; });
         window.addEventListener('popstate', () => { document.querySelector('[data-testid=status]')!.textContent = 'back'; });
+        document.querySelector('[data-testid=email]')!.addEventListener('keydown', event => {
+          if ((event as KeyboardEvent).key === 'Enter') document.querySelector('[data-testid=status]')!.textContent = `submitted ${(event.target as HTMLInputElement).value}`;
+        });
         history.pushState(null, '', '#second');
       });
     },
@@ -141,4 +144,13 @@ test('a fingerprint signs in on the native target only', async ({app}) => {
   await app.fingerprint(1);
   // @9l-outcome fingerprint-sign-in
   await app.getByTestId('status').toHaveText('authenticated');
+});
+
+// submit presses the field's keyboard action after filling it. A driver whose
+// handles cannot press it refuses before filling anything.
+test('a field submits on the keyboard action', async ({app}) => {
+  await app.open();
+  await app.getByTestId('email').fill('ada@example.test', {submit: true});
+  // @9l-outcome field-submitted
+  await app.getByTestId('status').toHaveText('submitted ada@example.test');
 });
