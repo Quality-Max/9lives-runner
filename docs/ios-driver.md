@@ -1,9 +1,10 @@
-# iOS Simulator (experimental, unreleased)
+# iOS Simulator (experimental, beta)
 
-This source checkout adds a deterministic iOS driver. It is qualified from
-source on one host only; unit tests use a synthetic transport and do not
-establish iOS support by themselves. No published CLI or SDK version is changed
-by this work.
+A deterministic iOS driver, first released in 0.7.0-beta.1, a prerelease;
+0.6.x does not include it. It is qualified from a source checkout on one host
+only; unit tests use a synthetic transport and do not establish iOS support by
+themselves. The package ships the driver, but setup needs this repository's
+pinned tools (`tools/ios`) and `scripts/build-ios-wda.cjs`.
 
 | Qualified | Not qualified |
 | --- | --- |

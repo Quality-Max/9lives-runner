@@ -211,7 +211,7 @@ deterministic operation outcomes and, from a native driver, at most one
 `unknown`, a closed reason, the stage and a recorded recovery), kept in the
 receipt as `targetSetup`. Ordinary SDK jobs retain the original handshake.
 
-The unreleased owned Simulator path adds a closed `ios_runtime` frame containing
+The experimental owned Simulator path adds a closed `ios_runtime` frame containing
 only the fields described in [iOS setup](ios-driver.md). It is accepted only for
 an active test on an `ios:` target, once per test attempt. A passing iOS test
 requires that frame and a successful target assertion. The receipt stores the
