@@ -8,7 +8,8 @@ provider-free.
 
 The client is infrastructure for diagnosis, locator repair, semantic checks and
 goal adapters. Failed-step diagnosis (QUA-2229) is available as `9l diagnose` and grounded
-locator repair (QUA-2230) as `9l heal --jev`; the others are separate work.
+locator repair (QUA-2230) as `9l heal --jev`, and goal decisions (QUA-2232) as
+`9l run --sdk --goal-provider jev`. Visual semantic checks are separate work.
 There is no new SDK method or `run --provider jev` option. A schema-valid answer
 is an inference; by itself it cannot create a passing execution receipt or
 execute an action. Live accuracy and model availability have not been qualified here.
@@ -90,6 +91,31 @@ duplicate or missing candidates, a locator inside an assertion, and unclear
 answers. Jev Box localization is not used: Playwright's failure evidence carries
 no control geometry to match a box against. `--jev-images synthetic` also sends
 the failure screenshot of test-only data.
+
+## Bounded goal decisions
+
+```sh
+9l run tests/signup.spec.ts --sdk --goal-provider jev [--goal-model jev-1.14.0]
+```
+
+Jev is an experimental provider for the existing `n9l.goal` engine. The engine
+still builds the finite observed controls, and keeps every candidate limit,
+action/decision/token/time budget, cancellation, the destructive/outreach label
+policy, duplicate-control stops and unknown-effect handling. Jev answers one
+typed choice per decision among engine-built options: each allowed action on
+each observed control, plus `wait`, `complete` and `unresolved`. Options are
+referred to by id; observed labels and state stay in the observation data. A
+choice needs confidence and probability of at least 0.7, otherwise the
+decision is `unresolved`. For `fill` or `select` with several named parameters,
+a second typed question picks which parameter name; values never leave the
+browser worker. Jev never produces selectors, URLs, code or input values.
+
+The client is bound to each attempt (run, job, attempt) and to a digest of the
+planned specs' bytes, and is closed with the attempt. `complete` stays
+completed-but-unverified: the test's own assertions decide the result, and a
+goal that completes against a wrong business outcome still fails. The receipt
+records `jev` as the goal provider and each decision as usual. Cost is not
+estimated; use the engine's decision and token budgets.
 
 ## Configuration and API key
 

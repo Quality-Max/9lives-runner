@@ -27,6 +27,8 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/goals"
 	"github.com/Quality-Max/9lives-runner/internal/healing"
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/jev"
+	"github.com/Quality-Max/9lives-runner/internal/jevassist"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -663,7 +665,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
-	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic (API key), or claude, codex or opencode (the CLI's own login)")
+	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic (API key), claude, codex or opencode (the CLI's own login), or jev (TYPESAFE_API_KEY; experimental)")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
 	goalScript := fs.String("goal-script", "", "offline scripted goal decisions JSON (qualification only)")
 	goalLimits := goals.Defaults()
@@ -756,6 +758,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	var services runner.AttemptServiceFactory
+	var jevGoals *jevassist.GoalProvider
 	if *goalProvider != "" || *goalScript != "" {
 		factory := goals.Factory{Model: *goalModel, Limits: goalLimits, MaxCostMicros: *goalCost, InputMicrosPerMillion: *goalInputPrice, OutputMicrosPerMillion: *goalOutputPrice}
 		if !*sdk || (*goalProvider != "" && *goalScript != "") || factory.ValidateBudget() != nil {
@@ -793,8 +796,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 					return 2
 				}
 				provider = cli
+			case "jev":
+				config := jev.Config{Enabled: true, Model: firstNonEmptyString(*goalModel, jev.DefaultModel)}
+				if preflight, err := jev.CheckConfig(config); err != nil || preflight.Status != "configured" {
+					fmt.Fprintln(errOut, "9l: goal provider jev needs a valid --goal-model and "+jev.CredentialName+" in this process")
+					return 2
+				}
+				jevGoals = &jevassist.GoalProvider{New: newGoalDecider(config, timeout)}
+				provider = jevGoals
 			default:
-				fmt.Fprintln(errOut, "9l: goal provider must be openai, anthropic, claude, codex or opencode")
+				fmt.Fprintln(errOut, "9l: goal provider must be openai, anthropic, claude, codex, opencode or jev")
 				return 2
 			}
 		}
@@ -873,6 +884,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	visual.apply(&plan)
+	if jevGoals != nil {
+		// Jev decisions are bound to the exact spec bytes that run.
+		digest, err := planSourceDigest(plan)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: goal provider jev could not read the planned specs")
+			return 2
+		}
+		jevGoals.SourceSHA256 = digest
+		jevGoals.Revision, _ = sourceRevision(plan.Jobs[0].Spec, digest)
+	}
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}

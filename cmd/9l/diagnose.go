@@ -223,3 +223,40 @@ func firstNonEmptyString(values ...string) string {
 	}
 	return ""
 }
+
+// newGoalDecider builds the attempt-bound Jev client for goal decisions. The
+// engine's own decision budget stays authoritative; this caps Jev requests at
+// two per engine decision (next step, then a parameter when needed).
+var newGoalDecider = func(config jev.Config, timeout time.Duration) jevassist.NewDecider {
+	return func(ctx context.Context, identity runner.AttemptIdentity, revision, source string) (jevassist.Decider, func(), error) {
+		limits := jev.DefaultLimits()
+		limits.MaxRequests, limits.MaxQuestions, limits.MaxEvidenceAge = 48, 48, time.Minute
+		limits.Timeout = timeout
+		if limits.Timeout < time.Second || limits.Timeout > 10*time.Minute {
+			limits.Timeout = 10 * time.Minute
+		}
+		client, err := jev.New(ctx, config, identity, revision, source, limits)
+		if err != nil {
+			return nil, func() {}, err
+		}
+		return client, client.Close, nil
+	}
+}
+
+// planSourceDigest hashes every planned spec's bytes in plan order.
+func planSourceDigest(plan runner.Plan) (string, error) {
+	if len(plan.Jobs) == 0 {
+		return "", errors.New("empty plan")
+	}
+	h := sha256.New()
+	for _, job := range plan.Jobs {
+		raw, err := readSource(job.Spec)
+		if err != nil {
+			return "", err
+		}
+		sum := sha256.Sum256(raw)
+		h.Write([]byte(job.Spec + "\x00"))
+		h.Write(sum[:])
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
