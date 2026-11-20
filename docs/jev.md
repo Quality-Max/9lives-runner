@@ -117,6 +117,21 @@ goal that completes against a wrong business outcome still fails. The receipt
 records `jev` as the goal provider and each decision as usual. Cost is not
 estimated; use the engine's decision and token budgets.
 
+## Qualification
+
+`testdata/jev-corpus` is the frozen, labeled corpus (33 synthetic cases across
+diagnosis, repair and goals, half held out). `npm run qualify:jev -- --mode
+validate` proves the labels with real Chromium runs; `--mode offline` records
+the baseline without Jev; `--mode jev` is the only paid mode and needs
+`--confirm-paid` and a request cap. See `testdata/jev-corpus/README.md`.
+
+Offline baseline (20 November 2026, darwin): diagnosis reports facts only, so
+all 16 diagnosis cases are `unresolved`. Offline Tier 1 repair verifies 1 of 7
+repairable renames (recovery 14%, precision 100%). Goals need a provider and are
+not run. There were zero false greens. These are policy and wiring results,
+not Jev quality measurements; live results are recorded with model, date and
+request counts when they are run.
+
 ## Configuration and API key
 
 Construct `jev.Config` explicitly in Go: `Enabled` defaults to false, `Model`

@@ -1,0 +1,8 @@
+{
+  "name": "9lives-jev-corpus",
+  "private": true,
+  "devDependencies": {
+    "@9l/playwright": "0.6.1",
+    "@playwright/test": "1.61.1"
+  }
+}
