@@ -1,6 +1,6 @@
 {
   "name": "@9l/playwright",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Playwright fixtures and the versioned 9lives Go engine bridge",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Quality-Max/9lives-runner#local-playwright-sdk",
@@ -12,11 +12,13 @@
   "bugs": {"url": "https://github.com/Quality-Max/9lives-runner/issues"},
   "type": "commonjs",
   "main": "dist/index.js",
+  "bin": {"9l-prepare-biometric-avd": "dist/prepare-biometric-avd.js"},
   "types": "dist/index.d.ts",
   "exports": {
     ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},
     "./reporter": {"types": "./dist/reporter.d.ts", "default": "./dist/reporter.js"},
-    "./android": {"types": "./dist/android.d.ts", "default": "./dist/android.js"}
+    "./android": {"types": "./dist/android.d.ts", "default": "./dist/android.js"},
+    "./ios": {"types": "./dist/ios.d.ts", "default": "./dist/ios.js"}
   },
   "files": ["dist", "LICENSE", "NOTICE", "README.md"],
   "scripts": {"build": "tsc -p tsconfig.json"},
