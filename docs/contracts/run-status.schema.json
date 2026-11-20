@@ -825,6 +825,12 @@
         "targetAssertions": {
           "type": "integer"
         },
+        "targetCleanup": {
+          "items": {
+            "$ref": "#/$defs/TargetCleanup"
+          },
+          "type": "array"
+        },
         "targetDiagnostics": {
           "items": {
             "$ref": "#/$defs/TargetDiagnostic"
@@ -998,6 +1004,21 @@
       "required": [
         "input",
         "reason"
+      ],
+      "type": "object"
+    },
+    "TargetCleanup": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "outcome"
       ],
       "type": "object"
     },

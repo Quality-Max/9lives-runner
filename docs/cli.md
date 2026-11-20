@@ -114,6 +114,11 @@
   opt-in diagnostics, a failed operation also records `targetDiagnostics`
   (timing, requested point, viewport, window counts), printed as
   `diagnostic <operation>: ...`. See [Android](android-driver.md).
+- Native resources left by a stopped worker: a registered iOS Simulator
+  lives outside the worker's process tree. When a worker ends without
+  releasing one, the engine removes it and the receipt lists the result as
+  `targetCleanup` (`removed`, `absent` or `unconfirmed`). An attempt with an
+  unconfirmed entry cannot pass. See [iOS](ios-driver.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`

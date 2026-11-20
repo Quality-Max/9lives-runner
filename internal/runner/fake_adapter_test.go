@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -555,5 +556,99 @@ func TestNativeScratchRemovedAfterWorkerFailure(t *testing.T) {
 				t.Fatal("worker artifacts survived attempt cleanup")
 			}
 		})
+	}
+}
+
+// An adapter's own account of what a stopped worker left registered decides
+// whether the attempt may pass; a cancellation or proven failure keeps its status.
+type reclaimingAdapter struct {
+	channelAdapter
+	outcome string
+	seen    *string
+	until   time.Time
+}
+
+func (adapter reclaimingAdapter) ReclaimTarget(scratch string, env map[string]string) []TargetCleanup {
+	*adapter.seen = scratch
+	time.Sleep(time.Until(adapter.until))
+	if _, err := os.Stat(scratch); err != nil || env["NINELIVES_TARGET_SCRATCH_DIR"] != scratch {
+		return []TargetCleanup{{Kind: "fake-device", Outcome: "scratch was gone before reclaim"}}
+	}
+	if adapter.outcome == "" {
+		return nil
+	}
+	return []TargetCleanup{{Kind: "fake-device", Outcome: adapter.outcome}}
+}
+
+func TestUnreleasedNativeTargetCannotPass(t *testing.T) {
+	for _, test := range []struct {
+		mode, outcome string
+		want          ReceiptStatus
+		wantError     bool
+	}{
+		{"channel", "", StatusPassed, false},
+		{"channel", "removed", StatusPassed, false},
+		{"channel", "absent", StatusPassed, false},
+		{"channel", "unconfirmed", StatusError, true},
+		{"channel", "anything else", StatusError, true},
+		{"success", "removed", StatusError, false},
+		{"sleep", "removed", StatusTimedOut, false},
+		{"sleep", "unconfirmed", StatusTimedOut, true},
+	} {
+		t.Run(test.mode+"/"+test.outcome, func(t *testing.T) {
+			job, timeout := fakeJob("job-001", test.mode, 5000), 5*time.Second
+			if test.mode == "sleep" {
+				timeout = 200 * time.Millisecond
+			}
+			job.Target = "ios:finance"
+			seen := ""
+			plan := Plan{Version: 1, RunID: "run-reclaim", Jobs: []Job{job}}
+			summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: timeout, ReceiptDir: t.TempDir(),
+				Adapters: []Adapter{reclaimingAdapter{outcome: test.outcome, seen: &seen}}})
+			receipt := summary.Receipts[0]
+			unconfirmed := strings.Contains(receipt.Error, "could not be confirmed removed")
+			if receipt.Status != test.want || unconfirmed != test.wantError {
+				t.Fatalf("status %s error %q, want %s (unconfirmed=%v)", receipt.Status, receipt.Error, test.want, test.wantError)
+			}
+			if seen == "" {
+				t.Fatal("the adapter was never asked to reclaim")
+			}
+			if _, err := os.Stat(seen); !os.IsNotExist(err) {
+				t.Fatal("scratch survived the attempt")
+			}
+			want := []TargetCleanup(nil)
+			if test.outcome != "" {
+				want = []TargetCleanup{{Kind: "fake-device", Outcome: test.outcome}}
+			}
+			if !reflect.DeepEqual(receipt.TargetCleanup, want) {
+				t.Fatalf("receipt cleanup %+v, want %+v", receipt.TargetCleanup, want)
+			}
+			if test.wantError && summary.Outcome == OutcomePassed {
+				t.Fatal("a run with an unreleased target was classified passed")
+			}
+		})
+	}
+}
+
+// Removal can take long enough to cross the attempt deadline. An attempt whose
+// worker finished in time keeps its validated result instead of becoming a
+// timeout, and the time spent removing is still recorded.
+func TestSlowReclaimDoesNotTimeOutAFinishedAttempt(t *testing.T) {
+	job := fakeJob("job-001", "channel", 0)
+	job.Target = "ios:finance"
+	timeout, seen := 3*time.Second, ""
+	start := time.Now()
+	plan := Plan{Version: 1, RunID: "run-slow-reclaim", Jobs: []Job{job}}
+	summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: timeout, ReceiptDir: t.TempDir(),
+		Adapters: []Adapter{reclaimingAdapter{outcome: "removed", seen: &seen, until: start.Add(timeout + 500*time.Millisecond)}}})
+	receipt := summary.Receipts[0]
+	if !receipt.FinishedAt.After(start.Add(timeout)) {
+		t.Fatal("removal did not outlast the attempt deadline; the test proves nothing")
+	}
+	if receipt.Status != StatusPassed || !receipt.Validated || receipt.Termination != nil {
+		t.Fatalf("finished attempt reclassified: status %s validated %v termination %+v error %q", receipt.Status, receipt.Validated, receipt.Termination, receipt.Error)
+	}
+	if !reflect.DeepEqual(receipt.TargetCleanup, []TargetCleanup{{Kind: "fake-device", Outcome: "removed"}}) {
+		t.Fatalf("receipt cleanup %+v", receipt.TargetCleanup)
 	}
 }

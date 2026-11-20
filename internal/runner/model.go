@@ -64,6 +64,12 @@ type Receipt struct {
 	// whose recovery did not restore the baseline cannot pass; its failure is
 	// inconclusive setup evidence, not an application defect.
 	TargetSetup []TargetSetup `json:"targetSetup,omitempty"`
+	// TargetCleanup lists native resources the worker registered and had not
+	// released when its process tree stopped, with the engine's own account
+	// of removing each: removed, absent (already gone) or unconfirmed. It is
+	// engine-observed, never worker-reported. An unconfirmed entry means the
+	// resource may still exist, and such an attempt cannot pass.
+	TargetCleanup []TargetCleanup `json:"targetCleanup,omitempty"`
 	// TargetDiagnostics lists bounded, metadata-only records a native driver
 	// captured when a target operation failed and the test opted in: timing,
 	// requested coordinates, viewport and app window counts before and after.
@@ -172,6 +178,14 @@ type AndroidRuntime struct {
 	VersionCode string `json:"versionCode"`
 	VersionName string `json:"versionName"`
 	Signer      string `json:"signer"`
+}
+
+// TargetCleanup is one engine-observed removal of a native resource that
+// outlived its worker. Kind names the resource (ios-simulator). No device
+// identifier, name or path is recorded.
+type TargetCleanup struct {
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
 }
 
 // TargetSetup is one worker-reported setup classification of a native target

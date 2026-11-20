@@ -136,6 +136,15 @@ type EvidenceChannel interface {
 	EvidenceEnv() string
 }
 
+// TargetReclaimer adapters release native resources that live outside the
+// worker's process tree, such as a registered Simulator. ReclaimTarget runs
+// once the tree has stopped, with the attempt's private native scratch
+// directory and the environment the engine gave the worker. It returns one
+// record per resource the worker registered there and did not release.
+type TargetReclaimer interface {
+	ReclaimTarget(scratch string, env map[string]string) []TargetCleanup
+}
+
 // EvidenceSanitizer can omit unsafe worker payloads before the store receives
 // them. Validation is already complete; filtering cannot change the verdict.
 type EvidenceSanitizer interface {

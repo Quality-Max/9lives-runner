@@ -2,9 +2,13 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {spawnSync}=require('node:child_process');
+const {spawn,spawnSync}=require('node:child_process');
+const {setTimeout:delay}=require('node:timers/promises');
 const root=path.resolve(__dirname,'..');
-const modes=['healthy','defect','missing','ambiguous','label-only','digest','unavailable','cancel','blocked'];
+// The last three stop the worker from outside while it holds a booted device:
+// the engine is interrupted, the attempt times out, or the worker is killed.
+const stopped=['runner-cancel','attempt-timeout','worker-kill'];
+const modes=['healthy','defect','missing','ambiguous','label-only','digest','unavailable','cancel','blocked',...stopped];
 if(process.argv[2]==='--list') {console.log(modes.join('\n'));process.exit(0);}
 const selected=process.argv.slice(2).length?process.argv.slice(2):modes;
 assert(selected.every(mode=>modes.includes(mode)),'unknown iOS case');
@@ -51,19 +55,73 @@ const sentinel=command('/usr/bin/xcrun',['simctl','create',`9l-sentinel-${Date.n
 assert.equal(sentinel.status,0,'create unrelated sentinel');
 const sentinelId=sentinel.stdout.trim();assert.match(sentinelId,/^[A-Fa-f0-9-]{36}$/);
 const results=[];
+const engineArgs=(mode,timeout)=>['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
+  '--agent-provenance',provenance,'--timeout',timeout,'--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
+  '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,NINELIVES_IOS_OS,DEVELOPER_DIR'];
+const record=result=>{
+  results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
+  console.log(JSON.stringify(result));
+};
+// The worker's own teardown cannot run in these cases. The engine must remove
+// the exact device, its process tree and nothing else, and say so in the receipt.
+async function stoppedWorker(mode,before,probe,env) {
+  const child=spawn(engine,engineArgs(mode,mode==='attempt-timeout'?'2m':'8m'),{cwd:root,env,stdio:['ignore','pipe','ignore']});
+  let stdout='';child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{if(stdout.length<(4<<20)) stdout+=chunk;});
+  const exited=new Promise(resolve=>child.once('close',status=>resolve(status)));
+  let facts={},owner='',udid='',status;
+  try {
+    for(let i=0;i<1440&&!facts.deviceReady&&child.exitCode===null;i++) {
+      try {facts=JSON.parse(fs.readFileSync(probe,'utf8'));} catch {}
+      if(!facts.deviceReady) await delay(250);
+    }
+    assert.equal(facts.deviceReady,true,`${mode}: the worker never held a device; setup phase: ${facts.setupPhase||'unknown'}`);
+    const held=devices().filter(d=>/^9l-ios-/.test(d.name));
+    assert.equal(held.length,1,`${mode}: exactly one owned device while the worker runs`);
+    assert.equal(held[0].state,'Booted',`${mode}: the owned device is booted when the worker is stopped`);
+    owner=held[0].name;udid=held[0].udid;
+    if(mode==='runner-cancel') child.kill('SIGINT');
+    if(mode==='worker-kill') process.kill(facts.workerPid,'SIGKILL');
+    // Unreferenced timers: a bound that was not needed must not keep this script alive.
+    status=await Promise.race([exited,delay(360000,'engine did not exit',{ref:false})]);
+    assert.notEqual(status,'engine did not exit',`${mode}: the engine did not return after its worker was stopped`);
+  } finally {
+    // An assertion above must not leave the engine, its worker or the device behind.
+    if(child.exitCode===null&&child.signalCode===null) {child.kill('SIGINT');await Promise.race([exited,delay(180000,undefined,{ref:false})]);}
+  }
+  fs.writeFileSync(path.join(work,`${mode}.json`),stdout,{mode:0o600});
+  const data=JSON.parse(stdout),receipt=data.receipts[0];
+  assert.equal(data.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: a stopped attempt is not retried`);
+  // A canceled run cannot capture its final source snapshot; the engine
+  // reports that as unknown, never as matched or as an observed change.
+  assert.equal(receipt.agentProvenance.status,mode==='runner-cancel'?'unknown':'matched',mode);
+  assert.notEqual(status,0,mode);assert.notEqual(data.outcome,'passed',mode);
+  assert.equal(receipt.status,{'runner-cancel':'canceled','attempt-timeout':'timed_out','worker-kill':'failed'}[mode],`${mode}: receipt status`);
+  assert.deepEqual(receipt.targetCleanup,[{kind:'ios-simulator',outcome:'removed'}],`${mode}: the engine must remove the device its worker left`);
+  assert(!devices().some(d=>d.name===owner),`${mode}: owned device survived the worker`);
+  assert.equal(deviceSet(),before,`${mode}: simulator set/state changed`);
+  assert(devices().some(d=>d.udid===sentinelId),`${mode}: unrelated simulator lost`);
+  // The owner name is the private base path of this attempt's server, and the
+  // device identifier is the destination of its WebDriverAgent run.
+  for(const mark of [owner,udid]) assert.equal(spawnSync('/usr/bin/pgrep',['-f',mark],{encoding:'utf8',timeout:10000}).status,1,`${mode}: a process of the stopped worker survived`);
+  const raw=receipt.evidence.stdoutPath&&fs.existsSync(receipt.evidence.stdoutPath)?fs.readFileSync(receipt.evidence.stdoutPath,'utf8'):'';
+  assert(!['Sent $','Pending','hierarchy','Documents/started'].some(value=>raw.includes(value)),`${mode}: content leaked`);
+  const {workerPid,commands,...kept}=facts;
+  record({mode,qualified:true,outcome:data.outcome,status:receipt.status,validated:receipt.validated,simulatorSetPreserved:true,engineCleanup:receipt.targetCleanup,...kept,commands});
+}
+(async()=>{
 try {
   for(const mode of selected) {
     const before=deviceSet(),probe=path.join(work,`${mode}-probe.json`);
-    const run=command(engine,['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
-      '--agent-provenance',provenance,'--timeout','8m','--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
-      '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,NINELIVES_IOS_OS,DEVELOPER_DIR'],
-      {env:{...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe,NINELIVES_IOS_OS:os}});
+    const env={...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe,NINELIVES_IOS_OS:os};
+    if(stopped.includes(mode)) {await stoppedWorker(mode,before,probe,env);continue;}
+    const run=command(engine,engineArgs(mode,'8m'),{env});
     // Only sanitized engine receipts/protocol and bounded probe facts persist.
     fs.writeFileSync(path.join(work,`${mode}.json`),run.stdout,{mode:0o600});
     const data=JSON.parse(run.stdout),receipt=data.receipts[0];
     assert.equal(data.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: native mutations cannot retry`);
     assert.equal(receipt.agentProvenance.status,'matched',mode);
     assert.equal(receipt.validated,true,`${mode}: complete terminal evidence`);
+    assert.equal(receipt.targetCleanup,undefined,`${mode}: a worker that finishes releases its own device`);
     const facts=JSON.parse(fs.readFileSync(probe,'utf8'));
     assert.equal(deviceSet(),before,`${mode}: simulator set/state changed`);
     assert(devices().some(d=>d.udid===sentinelId),`${mode}: unrelated simulator lost`);
@@ -96,11 +154,11 @@ try {
       assert.equal(facts.stopReason,mode==='cancel'?'canceled':'operation_timeout');
       assert(frames.some(f=>f.operation==='tap'&&f.status==='failed'));
     }
-    const result={mode,qualified:true,outcome:data.outcome,validated:receipt.validated,simulatorSetPreserved:true,...facts};
-    results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
-    console.log(JSON.stringify(result));
+    const {workerPid,deviceReady,...kept}=facts;
+    record({mode,qualified:true,outcome:data.outcome,validated:receipt.validated,simulatorSetPreserved:true,...kept});
   }
 } finally {
   assert.equal(command('/usr/bin/xcrun',['simctl','delete',sentinelId]).status,0,'remove owned sentinel');
   fs.rmSync(engine,{force:true});
 }
+})().catch(error=>{console.error(error);process.exitCode=1;});

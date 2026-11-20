@@ -419,7 +419,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		job.Env = mergeMaps(job.Env, service.Environment())
 		withholdCredentials(job.Env, opts.Services.CredentialNames())
 	}
-	evidencePath, diagnosticsPath := "", ""
+	evidencePath, diagnosticsPath, nativeScratch := "", "", ""
 	if channel, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceChannel); ok {
 		directory, err := os.MkdirTemp("", "9lives-evidence-")
 		if err != nil {
@@ -438,6 +438,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				return infrastructureError("native scratch directory could not be created")
 			}
 			job.Env["NINELIVES_TARGET_SCRATCH_DIR"] = scratch
+			nativeScratch = scratch
 			job.Env["PLAYWRIGHT_NO_COPY_PROMPT"] = "1"
 			job.Command = append(job.Command, "--output="+filepath.Join(scratch, "playwright-output"))
 		}
@@ -449,8 +450,19 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		}
 	}
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
+	// Whether the attempt was canceled or ran out of time is decided by the
+	// moment its worker stopped. Releasing what the worker left behind can
+	// take long enough to cross the deadline, and must not turn an attempt
+	// that finished in time into a timeout or skip validating its report.
+	stopped := ctx.Err()
 	if service != nil {
 		receipt.Goals = service.Close()
+	}
+	// The worker's process tree has stopped, whether it finished, was
+	// canceled, timed out or died. Release what it registered outside that
+	// tree before the scratch that records it is removed.
+	if reclaimer, ok := adapterNamed(opts.Adapters, job.Adapter).(TargetReclaimer); ok && nativeScratch != "" {
+		receipt.TargetCleanup = reclaimer.ReclaimTarget(nativeScratch, job.Env)
 	}
 	if evidencePath != "" {
 		// Worker stdout is ordinary process output here; only the private
@@ -461,10 +473,10 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	// Keep actual cleanup attempts as local evidence even when the leader
 	// exited normally before its owned descendants were reaped.
 	receipt.Termination = output.Termination
-	if ctx.Err() != nil {
-		receipt.Status, receipt.Error = statusFor(ctx.Err()), ctx.Err().Error()
+	if stopped != nil {
+		receipt.Status, receipt.Error = statusFor(stopped), stopped.Error()
 		if receipt.Termination == nil {
-			receipt.Termination = terminationFor(ctx.Err())
+			receipt.Termination = terminationFor(stopped)
 		}
 	} else if output.Err != nil && output.ExitCode < 0 {
 		receipt.Status, receipt.Error = StatusError, output.Err.Error()
@@ -602,6 +614,17 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
 		output.Stdout, output.Stderr = sanitizer.SanitizeEvidence(output.Stdout, output.Stderr, receipt.Validated)
+	}
+	for _, cleanup := range receipt.TargetCleanup {
+		if cleanup.Outcome != "removed" && cleanup.Outcome != "absent" {
+			// The resource may still exist. Keep a cancellation, timeout or
+			// proven failure as it is, but never report such an attempt passed.
+			if receipt.Status == StatusPassed {
+				receipt.Status = StatusError
+			}
+			receipt.Error = joinError(receipt.Error, "an owned native target could not be confirmed removed")
+			break
+		}
 	}
 	receipt.FailureSummary = summarizeFailure(receipt, failedTests)
 	receipt = persistAttempt(receipt, store, output.Stdout, output.Stderr)
