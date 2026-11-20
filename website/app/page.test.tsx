@@ -15,6 +15,7 @@ it('introduces the framework and keeps recorded evidence and limits accessible',
   render(<Home />);
   expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Your agent writes code.Give it tests to trust.');
   expect(screen.getByRole('link', { name: /inspect a real test run/i }).getAttribute('href')).toBe('/demo.html#proof');
+  expect(screen.getByRole('link', { name: /play the great little hunt/i }).getAttribute('href')).toBe('/hunt.html');
   for (const chapter of ['locator', 'coverage', 'flow', 'live', 'proof']) {
     expect(screen.getAllByRole('link').some(link => link.getAttribute('href') === `/demo.html#${chapter}`)).toBe(true);
   }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwrightsdk"
 	"github.com/Quality-Max/9lives-runner/internal/browsercheck"
+	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/prove"
 )
 
@@ -26,15 +27,39 @@ func doctorCommand(args []string, out, errOut io.Writer) int {
 	sdk := fs.Bool("sdk", false, "require the optional @9l/playwright SDK; with a spec path, also check that spec for prove")
 	paths := fs.Bool("paths", false, "print executable and config paths for local use; never persisted")
 	android := fs.Bool("android", false, "also check the optional Android target: Java, SDK tools, AVDs, attached devices and the pinned Appium tooling")
+	jevEnabled := fs.Bool("jev", false, "check optional Jev configuration locally (no API request)")
+	jevModel := fs.String("jev-model", jev.DefaultModel, "explicit Jev model for local configuration preflight")
+	jevImages := fs.String("jev-images", "off", "explicit image-upload policy: off, synthetic or masked")
 	// Flags may follow the spec, as with run and prove.
-	if err := fs.Parse(flagsFirst(args, map[string]bool{"-format": true, "--format": true})); err != nil {
+	if err := fs.Parse(flagsFirst(args, map[string]bool{"-format": true, "--format": true, "-jev-model": true, "--jev-model": true, "-jev-images": true, "--jev-images": true})); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
 	}
+	jevMode, jevOptions := false, false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "jev" {
+			jevMode = true
+		}
+		if f.Name == "jev-model" || f.Name == "jev-images" {
+			jevOptions = true
+		}
+	})
+	// The Jev preflight is local-only and separate from the Node diagnostics.
+	if jevOptions && !jevMode {
+		fmt.Fprintln(errOut, "9l: --jev-model and --jev-images require --jev")
+		return 2
+	}
+	if jevMode {
+		if fs.NArg() != 0 || *sdk || *android || *paths || (*format != "text" && *format != "json") {
+			fmt.Fprintln(errOut, "9l: Jev preflight takes only --jev, --jev-model, --jev-images and --format text|json")
+			return 2
+		}
+		return jevPreflight(jev.Config{Enabled: *jevEnabled, Model: *jevModel, Images: *jevImages}, *format, out, errOut)
+	}
 	if fs.NArg() > 1 || (fs.NArg() == 1 && !*sdk) || (*format != "text" && *format != "json") {
-		fmt.Fprintln(errOut, "9l: doctor takes only --sdk [spec], --android, --paths and --format text|json")
+		fmt.Fprintln(errOut, "9l: doctor takes only --sdk [spec], --android, --paths and --format text|json, or --jev")
 		return 2
 	}
 	helperArgs := map[string]any{"cliVersion": version, "sdk": *sdk, "paths": *paths, "android": *android, "executable": executableFacts(*paths)}

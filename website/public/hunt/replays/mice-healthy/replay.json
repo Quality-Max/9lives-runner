@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "scenario": "mice",
+  "broken": false,
+  "recordedAt": "2026-10-24T20:23:39.131754Z",
+  "runId": "run-20261024T202334Z-3a99b03b6b29",
+  "outcome": "passed",
+  "fixtureSHA256": "8ed426d1090ca5be9255425fc11f752bd8688beb0156357bb2f444117b8ca59d",
+  "jev": {
+    "status": "answered",
+    "model": "jev-1.14.0",
+    "requestCount": 1,
+    "questionCount": 9,
+    "usage": {
+      "inputTokens": 3407,
+      "outputTokens": 157,
+      "available": true
+    }
+  },
+  "receipts": [
+    {
+      "status": "passed",
+      "validated": true,
+      "executedTests": 1,
+      "failureCount": 0,
+      "durationMs": 4508
+    }
+  ],
+  "steps": [
+    {
+      "stage": "looking",
+      "message": "Jev is choosing matching figures from the picture…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-0.png",
+      "target": null
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 2…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-1.png",
+      "target": {
+        "X": 76.00188131893383,
+        "Y": 46.5,
+        "Width": 3.1002340877757355,
+        "Height": 4.263997395833333
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 1: score 0 → 1. Checked!",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-2.png",
+      "target": {
+        "X": 76.00188131893383,
+        "Y": 46.5,
+        "Width": 3.1002340877757355,
+        "Height": 4.263997395833333
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 3…",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-3.png",
+      "target": {
+        "X": 26.612705006318933,
+        "Y": 46.5,
+        "Width": 2.495312859030331,
+        "Height": 3.432001749674479
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 2: score 1 → 2. Checked!",
+      "found": 2,
+      "checked": 2,
+      "image": "frame-4.png",
+      "target": {
+        "X": 26.612705006318933,
+        "Y": 46.5,
+        "Width": 2.495312859030331,
+        "Height": 3.432001749674479
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 5…",
+      "found": 2,
+      "checked": 2,
+      "image": "frame-5.png",
+      "target": {
+        "X": 84.00188131893383,
+        "Y": 69,
+        "Width": 3.1002340877757355,
+        "Height": 4.263997395833333
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 3: score 2 → 3. Checked!",
+      "found": 3,
+      "checked": 3,
+      "image": "frame-6.png",
+      "target": {
+        "X": 84.00188131893383,
+        "Y": 69,
+        "Width": 3.1002340877757355,
+        "Height": 4.263997395833333
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 6…",
+      "found": 3,
+      "checked": 3,
+      "image": "frame-7.png",
+      "target": {
+        "X": 11.42635300580193,
+        "Y": 69,
+        "Width": 2.759965784409467,
+        "Height": 3.7960001627604165
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 4: score 3 → 4. Checked!",
+      "found": 4,
+      "checked": 4,
+      "image": "frame-8.png",
+      "target": {
+        "X": 11.42635300580193,
+        "Y": 69,
+        "Width": 2.759965784409467,
+        "Height": 3.7960001627604165
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 7…",
+      "found": 4,
+      "checked": 4,
+      "image": "frame-9.png",
+      "target": {
+        "X": 34.444235409007355,
+        "Y": 83.66666666666667,
+        "Width": 3.8563914579503678,
+        "Height": 5.303995768229167
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 5: score 4 → 5. Checked!",
+      "found": 5,
+      "checked": 5,
+      "image": "frame-10.png",
+      "target": {
+        "X": 34.444235409007355,
+        "Y": 83.66666666666667,
+        "Width": 3.8563914579503678,
+        "Height": 5.303995768229167
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 9…",
+      "found": 5,
+      "checked": 5,
+      "image": "frame-11.png",
+      "target": {
+        "X": 53.53694063074448,
+        "Y": 69,
+        "Width": 2.9490033318014706,
+        "Height": 4.055999755859375
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 6: score 5 → 6. Checked!",
+      "found": 6,
+      "checked": 6,
+      "image": "frame-12.png",
+      "target": {
+        "X": 53.53694063074448,
+        "Y": 69,
+        "Width": 2.9490033318014706,
+        "Height": 4.055999755859375
+      }
+    },
+    {
+      "stage": "passed",
+      "message": "All 6 figures checked. 3 lookalikes left alone.",
+      "found": 6,
+      "checked": 6,
+      "image": "frame-13.png",
+      "target": null
+    }
+  ]
+}

@@ -65,6 +65,7 @@ export default function Home() {
           <p className="hero-copy">Run your Playwright tests, connect your coding agent, and inspect the evidence behind each result. Extend the framework to Android with experimental Appium support. Start locally or use 9lives in QualityMax Cloud.</p>
           <div className="actions"><a className="button primary" href="#start">Run it yourself <span aria-hidden="true">↓</span></a><a className="button secondary" href="/demo.html#proof">Inspect a real test run <span aria-hidden="true">↗</span></a></div>
           <p><a className="text-link" href="https://youtu.be/O5cpuKBSGsQ">Watch the 60-second launch film <span aria-hidden="true">↗</span></a></p>
+          <p><a className="text-link" href="/hunt.html">Play the great little hunt: Jev looks, 9lives checks <span aria-hidden="true">↗</span></a></p>
           <p className="small-note">No account needed · Apache-2.0 · macOS, Linux &amp; Windows</p>
         </div>
         <div className="evidence-card" aria-label="Recorded fix confirmation">

@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "scenario": "cats",
+  "broken": true,
+  "recordedAt": "2026-10-24T20:26:57.858295Z",
+  "runId": "run-20261024T202654Z-06b2e0057b65",
+  "outcome": "failed",
+  "fixtureSHA256": "5760126255b89987cd3c2be54ee3e3ba38b8686f3a836122b824dbdb9c465bec",
+  "jev": {
+    "status": "answered",
+    "model": "jev-1.14.0",
+    "requestCount": 1,
+    "questionCount": 9,
+    "usage": {
+      "inputTokens": 3524,
+      "outputTokens": 157,
+      "available": true
+    }
+  },
+  "receipts": [
+    {
+      "status": "failed",
+      "validated": true,
+      "executedTests": 1,
+      "failureCount": 1,
+      "durationMs": 3213
+    }
+  ],
+  "steps": [
+    {
+      "stage": "looking",
+      "message": "Jev is checking close-ups of nine hiding spots…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-0.png",
+      "target": null
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 1…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-1.png",
+      "target": {
+        "X": 15.176470588235293,
+        "Y": 18.333333333333332,
+        "Width": 5.576469870174632,
+        "Height": 8.125
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 1: score 0 → 1. Checked!",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-2.png",
+      "target": {
+        "X": 15.176470588235293,
+        "Y": 18.333333333333332,
+        "Width": 5.576469870174632,
+        "Height": 8.125
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 2…",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-3.png",
+      "target": {
+        "X": 77.41176470588235,
+        "Y": 31.666666666666668,
+        "Width": 6.0969381893382355,
+        "Height": 8.883333841959635
+      }
+    },
+    {
+      "stage": "failed",
+      "message": "Caught it! A correct click did not add one to the score.",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-4.png",
+      "target": {
+        "X": 77.41176470588235,
+        "Y": 31.666666666666668,
+        "Width": 6.0969381893382355,
+        "Height": 8.883333841959635
+      }
+    }
+  ]
+}
