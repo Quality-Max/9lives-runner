@@ -49,6 +49,10 @@ func (adapter Adapter) PlanTarget(path, input string, index int, target string) 
 	return job, nil
 }
 
+// IsolateOutput gives a job its own Playwright output directory, as the
+// plain Playwright adapter does.
+func (Adapter) IsolateOutput(job runner.Job) runner.Job { return playwright.IsolateOutput(job) }
+
 func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	// Resolve configuration separately from workspace-hoisted dependencies.
 	// A nested package manifest must not hide its owning Playwright config.

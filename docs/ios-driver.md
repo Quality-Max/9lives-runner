@@ -167,8 +167,10 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   result, which the receipt lists as `targetCleanup` with `removed`, `absent`
   or `unconfirmed`. An unconfirmed device may still exist; that attempt cannot
   pass, and a record the engine cannot trust is never acted on. Removal uses
-  the same per-command bounds, so a stopped attempt can take up to about 100
-  seconds longer to return when `simctl` hangs. Its status is decided when its
+  the same per-command bounds within a two-minute budget for all records, and
+  the engine stops waiting for a `simctl` that has not exited two seconds after
+  its bound (its device is then `unconfirmed`), so a stopped attempt can take up
+  to about two minutes longer to return when `simctl` hangs. Its status is decided when its
   worker stops, so that time never turns a finished attempt into a timeout. A
   scratch directory that cannot be read counts as unconfirmed.
 - The engine itself must survive to do this. If the `9l` process is killed

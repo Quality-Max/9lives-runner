@@ -187,6 +187,24 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	}, nil
 }
 
+// IsolateOutput gives a job its own Playwright output directory.
+func (Adapter) IsolateOutput(job runner.Job) runner.Job { return IsolateOutput(job) }
+
+// IsolateOutput points the job at test-results/9l-<job id> in its project.
+// Playwright clears outputDir when a run starts and keeps unfinished traces
+// there, so jobs sharing the project's directory delete each other's files:
+// a passing test then fails in teardown and passes on its retry. The
+// directory is per job, not per run, so the next run clears it as Playwright
+// clears its own. Android and iOS jobs are left alone; the engine gives each
+// of their attempts a private directory when it starts.
+func IsolateOutput(job runner.Job) runner.Job {
+	if strings.HasPrefix(job.Target, "android:") || strings.HasPrefix(job.Target, "ios:") {
+		return job
+	}
+	job.Command = append(append([]string{}, job.Command...), "--output="+filepath.Join(job.WorkDir, "test-results", "9l-"+job.ID))
+	return job
+}
+
 // SelectLine narrows a job to the test at line with Playwright's own
 // `file:line` filter.
 func (Adapter) SelectLine(job runner.Job, line int) (runner.Job, error) {

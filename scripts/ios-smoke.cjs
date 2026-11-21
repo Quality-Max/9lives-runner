@@ -65,6 +65,7 @@ const record=result=>{
 // The worker's own teardown cannot run in these cases. The engine must remove
 // the exact device, its process tree and nothing else, and say so in the receipt.
 async function stoppedWorker(mode,before,probe,env) {
+  const wallStarted=Date.now(),monotonicStarted=process.hrtime.bigint();
   const child=spawn(engine,engineArgs(mode,mode==='attempt-timeout'?'2m':'8m'),{cwd:root,env,stdio:['ignore','pipe','ignore']});
   let stdout='';child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{if(stdout.length<(4<<20)) stdout+=chunk;});
   const exited=new Promise(resolve=>child.once('close',status=>resolve(status)));
@@ -86,9 +87,16 @@ async function stoppedWorker(mode,before,probe,env) {
     assert.notEqual(status,'engine did not exit',`${mode}: the engine did not return after its worker was stopped`);
   } finally {
     // An assertion above must not leave the engine, its worker or the device behind.
-    if(child.exitCode===null&&child.signalCode===null) {child.kill('SIGINT');await Promise.race([exited,delay(180000,undefined,{ref:false})]);}
+    let interruptedAtMs;
+    if(child.exitCode===null&&child.signalCode===null) {interruptedAtMs=Date.now()-wallStarted;child.kill('SIGINT');await Promise.race([exited,delay(180000,undefined,{ref:false})]);}
+    // Kept even when an assertion above failed (#291): the engine's own
+    // output and fixed timings. Monotonic time pauses while the host sleeps,
+    // so a gap between the two clocks shows sleep rather than a slow step.
+    fs.writeFileSync(path.join(work,`${mode}.json`),stdout,{mode:0o600});
+    fs.writeFileSync(path.join(work,`${mode}-timing.json`),JSON.stringify({wallMs:Date.now()-wallStarted,
+      monotonicMs:Math.round(Number(process.hrtime.bigint()-monotonicStarted)/1e6),interruptedAtMs,
+      engineExited:child.exitCode!==null||child.signalCode!==null,engineStatus:child.exitCode??child.signalCode}),{mode:0o600});
   }
-  fs.writeFileSync(path.join(work,`${mode}.json`),stdout,{mode:0o600});
   const data=JSON.parse(stdout),receipt=data.receipts[0];
   assert.equal(data.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: a stopped attempt is not retried`);
   // A canceled run cannot capture its final source snapshot; the engine
