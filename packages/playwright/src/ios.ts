@@ -76,15 +76,21 @@ async function copyTree(source: string, destination: string, files: string[]) {
     await copyFile(join(source, file), dest); await chmod(dest, lstatSync(join(source, file)).mode & 0o777);
   }
 }
-export function iosAppDigest(directory: string): string {
+function treeDigest(directory: string, modes: boolean): string {
   const hash = createHash('sha256');
   for (const file of appFiles(directory)) {
     const full = join(directory, file), info = lstatSync(full), bytes = readFileSync(full);
     if (bytes.length !== info.size) throw fail('app_changed');
-    hash.update(JSON.stringify([file, info.mode & 0o111, bytes.length]) + '\n').update(bytes);
+    hash.update(JSON.stringify(modes ? [file, info.mode & 0o111, bytes.length] : [file, bytes.length]) + '\n').update(bytes);
   }
   return hash.digest('hex');
 }
+export function iosAppDigest(directory: string): string { return treeDigest(directory, true); }
+/** Names and bytes only. The Simulator installer rewrites file modes (every
+ * file but the main executable becomes 0644), so an installed tree is compared
+ * with the frozen copy it came from, never with the declared mode-bound digest.
+ * @internal */
+export function iosInstalledDigest(directory: string): string { return treeDigest(directory, false); }
 function command(file: string, args: string[], c: TargetContext, env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((yes, no) => execFile(file, args, {signal: c.signal, timeout: milliseconds(c), maxBuffer: 256 * 1024, env},
     (error, stdout) => error ? no(fail('device_command_failed')) : yes(stdout.trim())));
@@ -148,13 +154,16 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
   const appCommand = (name: 'terminateApp' | 'activateApp', c: TargetContext) =>
     endpoint('/execute/sync', c, 'POST', {script: `mobile: ${name}`, args: [{bundleId: options.bundleId}]});
   const install = async (c: TargetContext) => {
-    // Reverify the frozen copy before every install and the actual installed
-    // tree afterwards. A changed build never reaches a target assertion.
+    // Reverify the frozen copy against the declared digest before every
+    // install, and the installed tree against that copy's names and bytes
+    // afterwards (the installer rewrites modes). A changed build never reaches
+    // a target assertion.
     check(c);
     if (iosAppDigest(app) !== options.appSHA256) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
+    const frozen = iosInstalledDigest(app);
     await simctl(['install', udid, app], c);
     const installed = await simctl(['get_app_container', udid, options.bundleId, 'app'], c);
-    if (!isAbsolute(installed) || iosAppDigest(installed) !== options.appSHA256) throw fail('installed_build_mismatch');
+    if (!isAbsolute(installed) || iosInstalledDigest(installed) !== frozen) throw fail('installed_build_mismatch');
     check(c);
   };
   const find = async (id: string, c: TargetContext): Promise<string[]> => {

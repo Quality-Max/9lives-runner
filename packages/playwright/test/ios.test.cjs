@@ -51,6 +51,19 @@ test('iOS tree digest binds Unix executable modes and refuses links', {skip: pro
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
+test('iOS installed digest ignores the installer mode rewrite but binds names and bytes', {skip: process.platform === 'win32' ? 'requires Unix filesystem permissions' : false}, () => {
+  const {iosAppDigest, iosInstalledDigest} = require('../dist/ios');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-ios-installed-'));
+  try {
+    fs.writeFileSync(path.join(dir,'Info.plist'),'fixture');
+    fs.writeFileSync(path.join(dir,'Kit'),'framework',{mode:0o755});
+    const declared = iosAppDigest(dir), installed = iosInstalledDigest(dir);
+    fs.chmodSync(path.join(dir,'Kit'),0o644);
+    assert.notEqual(iosAppDigest(dir), declared); assert.equal(iosInstalledDigest(dir), installed);
+    fs.writeFileSync(path.join(dir,'Kit'),'frameworK',{mode:0o644}); assert.notEqual(iosInstalledDigest(dir), installed);
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
 // Synthetic transport coverage only. Real XCTest behavior is qualified by
 // scripts/ios-smoke.cjs on macOS, including a deliberately broken native app.
 test('owned iOS transport checks build/session identity, rejects ambiguous actions and cleans cancellation', async () => {
@@ -59,7 +72,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
-  let owned, staged, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
+  let owned, staged, installedApp, tamper=false, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
   const udid='12345678-1234-1234-1234-123456789abc';
   const c=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+10000});
   try {
@@ -70,6 +83,11 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       fs.writeFileSync(path.join(dir,'node_modules',name,'package.json'),JSON.stringify({version}));
     }
     const source=path.join(dir,'Fixture.app');fs.mkdirSync(source);fs.writeFileSync(path.join(source,'Info.plist'),'fixture');
+    // An app with an embedded framework and a private resource, as shipped apps have (#293).
+    fs.writeFileSync(path.join(source,'Fixture'),'main',{mode:0o755});
+    fs.mkdirSync(path.join(source,'Frameworks/Kit.framework'),{recursive:true});
+    fs.writeFileSync(path.join(source,'Frameworks/Kit.framework/Kit'),'framework',{mode:0o755});
+    fs.writeFileSync(path.join(source,'secret.dat'),'resource',{mode:0o600});
     const wdaProducts=path.join(dir,'Products'),wdaRunner='Debug-iphonesimulator/WebDriverAgentRunner-Runner.app';
     fs.mkdirSync(path.join(wdaProducts,wdaRunner),{recursive:true});fs.writeFileSync(path.join(wdaProducts,wdaRunner,'Info.plist'),'runner');
     fs.writeFileSync(path.join(wdaProducts,'WebDriverAgentRunner.xctestrun'),'run');
@@ -97,8 +115,18 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       else if (args[1]==='boot') owned.state='Booted';
       else if (args[1]==='getenv') {assert.deepEqual(args,['simctl','getenv',udid,'SIMULATOR_ARCHS']);output=architectures;}
       else if (args[1]==='spawn') throw Error('Simulator runtime has no uname executable');
-      else if (args[1]==='install') staged=args[3];
-      else if (args[1]==='get_app_container') output=staged;
+      else if (args[1]==='install') {
+        // Like the Simulator installer: same names and bytes in a container of
+        // its own, with every file but the main executable rewritten to 0644.
+        staged=args[3];installedApp=path.join(dir,'container',path.basename(path.dirname(staged)),'Fixture.app');
+        fs.rmSync(installedApp,{recursive:true,force:true});fs.cpSync(staged,installedApp,{recursive:true});
+        for (const file of fs.readdirSync(installedApp,{recursive:true})) {
+          const full=path.join(installedApp,file);
+          if (fs.statSync(full).isFile()) fs.chmodSync(full,file==='Fixture'?0o755:0o644);
+        }
+        if (tamper) fs.writeFileSync(path.join(installedApp,'Frameworks/Kit.framework/Kit'),'frameworK');
+      }
+      else if (args[1]==='get_app_container') output=installedApp;
       queueMicrotask(()=>callback(null,output));
       return new EventEmitter();
     };
@@ -161,6 +189,10 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       assert.equal(requests.filter(r=>r.pathname.endsWith('/session')).length,sessions);
     }
     architectures='arm64';
+    // The installer's mode rewrite is accepted above; changed bytes are not.
+    tamper=true;driver=iosTargetDriver(opts);
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_install');await driver.close();assert.equal(owned,undefined);
+    tamper=false;
     foreign=true;driver=iosTargetDriver(opts);
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_session');await driver.close();assert.equal(owned,undefined);
     foreign=false;shutdownFails=true;driver=iosTargetDriver(opts);
