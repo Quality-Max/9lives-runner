@@ -744,6 +744,10 @@ func validTargetSetup(s runner.TargetSetup) bool {
 var androidPackage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$`)
 var androidVersion = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$`)
 
+// iosAppVersion bounds CFBundleVersion and CFBundleShortVersionString: period-
+// separated integers of any practical length (CI build numbers, 20261121).
+var iosAppVersion = regexp.MustCompile(`^[0-9]{1,10}(\.[0-9]{1,10}){0,3}$`)
+
 func validAndroidRuntime(r runner.AndroidRuntime) bool {
 	return len(r.AppPackage) <= 200 && androidPackage.MatchString(r.AppPackage) && testID.MatchString(r.APKSHA256) && testID.MatchString(r.Worker) && r.TestID == "" &&
 		regexp.MustCompile(`^[0-9]{1,3}$`).MatchString(r.API) && androidVersion.MatchString(r.Release) &&
@@ -818,7 +822,7 @@ func Assertions(raw []byte) (AssertionFacts, error) {
 
 func validIOSRuntime(r runner.IOSRuntime) bool {
 	return r.TestID == "" && len(r.BundleID) <= 200 && regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$`).MatchString(r.BundleID) &&
-		testID.MatchString(r.AppSHA256) && testID.MatchString(r.Worker) && androidVersion.MatchString(r.Version) && androidVersion.MatchString(r.Build) && androidVersion.MatchString(r.OS) && androidVersion.MatchString(r.Xcode) &&
+		testID.MatchString(r.AppSHA256) && testID.MatchString(r.Worker) && iosAppVersion.MatchString(r.Version) && iosAppVersion.MatchString(r.Build) && androidVersion.MatchString(r.OS) && androidVersion.MatchString(r.Xcode) &&
 		regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$`).MatchString(r.Runtime) && r.Runtime == "com.apple.CoreSimulator.SimRuntime.iOS-"+strings.ReplaceAll(r.OS, ".", "-") &&
 		regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$`).MatchString(r.DeviceType) && oneOf(r.Architecture, "arm64", "x86_64") &&
 		r.Appium == "3.8.0" && r.XCUITest == "10.43.1" && regexp.MustCompile(`^[1-9][0-9]{0,4}$`).MatchString(r.ViewportWidth) && regexp.MustCompile(`^[1-9][0-9]{0,4}$`).MatchString(r.ViewportHeight)

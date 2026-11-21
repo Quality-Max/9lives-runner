@@ -16,6 +16,14 @@ test('iOS metadata is closed, pinned, content-free and runtime-bound', () => {
   for (const changes of [{os:'18.4'}, {screen:'private'}, {appium:'3.8.1'}, {xcuitest:'10.43.2'}, {viewportWidth:'0'}]) assert.equal(validIOSRuntime({...runtime,...changes}), false);
 });
 
+test('iOS metadata accepts real app version and build numbers', () => {
+  for (const value of ['1234', '20261121', '2026.11.0', '1.2.3.4', '4294967295'])
+    assert.equal(validIOSRuntime({...runtime, version:value, build:value}), true, value);
+  for (const value of ['', '1.2.3.4.5', '12345678901', '1a', '1..2', '1.0 (42)'])
+    assert.equal(validIOSRuntime({...runtime, build:value}), false, value);
+  assert.equal(validIOSRuntime({...runtime, os:'1800.5', runtime:'com.apple.CoreSimulator.SimRuntime.iOS-1800-5'}), false);
+});
+
 test('iOS tree digest binds names and contents', () => {
   const {iosAppDigest} = require('../dist/ios');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-ios-digest-'));
