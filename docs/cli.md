@@ -153,7 +153,12 @@
   outside the project are never referenced) and how many were copied as
   `retainedAttachments`; when retention was requested and the listed
   failures reference none, such as a `test.fail()` pin that passed, `9l run`
-  and `9l result` say so under the job. With `--sdk`
+  and `9l result` say so under the job. A run of one job writes to the
+  project's own Playwright `outputDir`. A run of several jobs gives each job
+  `test-results/9l-<job id>` in its project instead, because Playwright
+  clears its output directory when a run starts and jobs sharing one would
+  delete each other's traces; the planned command shows the `--output`
+  argument. With `--sdk`
   the engine protocol carries no titles or errors by design, so failures are
   reported only with `--failure-details`: Playwright's JSON reporter then
   writes a separate private report beside the evidence stream, which explains
