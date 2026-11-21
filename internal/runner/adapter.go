@@ -66,6 +66,15 @@ type AnnotationReporter interface {
 	Annotations(report []byte) []TestAnnotation
 }
 
+// TitleReporter adapters name tests of an engine stream, which carries only
+// digests, from the framework's own report: a map from test digest to title
+// for each test the report identifies unambiguously. It is consulted only
+// where FailureReporter is, so titles are kept only when the user asked for
+// failure details.
+type TitleReporter interface {
+	TestTitles(report []byte) map[string]string
+}
+
 // DiagnosticsChannel adapters write a separate per-attempt report for
 // FailureReporter beside the evidence stream, named by the returned
 // environment variable; an empty name disables it. The file never validates
@@ -114,6 +123,11 @@ type Validation struct {
 	// receipt's failure summary. Adapters without such evidence leave it
 	// nil and the summary uses the report's failures instead.
 	FailedTests []FailedTestSummary
+	// Tests is the terminal outcome of every test the evidence reported, in
+	// evidence order: ExecutedTests+SkippedTests entries, or none from an
+	// adapter that does not list them. The runner bounds the list before it
+	// reaches a receipt.
+	Tests       []TestOutcome
 	Description string
 }
 

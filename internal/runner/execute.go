@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -485,6 +486,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	// failedTests is the engine's own account of the failed tests, kept for
 	// the failure summary only when the evidence validated.
 	var failedTests []FailedTestSummary
+	var tests []TestOutcome
 	if receipt.Status == "" {
 		adapter := adapterNamed(opts.Adapters, job.Adapter)
 		if adapter == nil {
@@ -539,7 +541,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.RuntimeExpectedFailures = validation.RuntimeExpectedFailures
 				receipt.SkippedAfterAssertions = validation.SkippedAfterAssertions
 				receipt.Validation = validation.Description
-				failedTests = validation.FailedTests
+				failedTests, tests = validation.FailedTests, validation.Tests
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
 				} else if receipt.ExitCode != 0 && validation.FailureCount == 0 {
@@ -611,6 +613,14 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				}
 			}
 		}
+	}
+	// The test list belongs to validated evidence only: an attempt whose
+	// validation was withdrawn above reports no test outcomes.
+	if receipt.Validated && len(tests) > 0 {
+		if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(TitleReporter); ok && detailReport != nil {
+			tests = withTitles(tests, reporter.TestTitles(detailReport))
+		}
+		receipt.Tests, receipt.TestsTruncated = boundTestOutcomes(tests)
 	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
 		output.Stdout, output.Stderr = sanitizer.SanitizeEvidence(output.Stdout, output.Stderr, receipt.Validated)
@@ -715,7 +725,37 @@ func validateValidation(validation Validation) error {
 			return errors.New("structured report has a malformed failed test summary")
 		}
 	}
+	// An adapter that lists its tests lists every one: the list is what
+	// per-test reports are built from, so it must agree with the counts.
+	if len(validation.Tests) > 0 {
+		counts := map[string]int{}
+		for _, test := range validation.Tests {
+			if err := test.Validate(); err != nil {
+				return errors.New("structured report has a malformed test outcome")
+			}
+			counts[test.Status]++
+		}
+		if counts[TestFailed] != validation.FailureCount || counts[TestFlaky] != validation.FlakyTests || counts[TestSkipped] != validation.SkippedTests ||
+			len(validation.Tests) != validation.ExecutedTests+validation.SkippedTests {
+			return errors.New("structured report lists test outcomes that disagree with its counts")
+		}
+	}
 	return nil
+}
+
+// withTitles names the listed tests the framework's report identified by
+// digest. A test it did not identify keeps its digest only.
+func withTitles(tests []TestOutcome, titles map[string]string) []TestOutcome {
+	if len(titles) == 0 {
+		return tests
+	}
+	named := slices.Clone(tests)
+	for index, test := range named {
+		if title, ok := titles[test.TestID]; ok && test.TestID != "" {
+			named[index].Title = TestTitle(title)
+		}
+	}
+	return named
 }
 
 // statusFor distinguishes a per-job or run-wide deadline from a user

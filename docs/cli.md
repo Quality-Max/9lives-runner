@@ -190,6 +190,64 @@
   `9l run` and `9l result` print each entry, as `✗ test 1a2b3c4d5e6f
   [assertion] in assert-text: assertion_failed`. Each attempt has its own
   receipt directory, so a later run never overwrites an earlier summary.
+- Test list: a validated receipt lists each test's terminal outcome in
+  `tests`, at most 2000 entries (`testsTruncated` when the attempt had more;
+  failed tests are kept first). An entry has a `status` (`passed`, `failed`,
+  `skipped` or `flaky`: failed, then passed on a Playwright retry inside the
+  attempt, which counts as passed), the failure `class` of a failed test,
+  and, for a plain Playwright run, the `title` (describe path and name, with
+  the project in brackets; one line, redacted, at most 512 bytes) and
+  `durationMs` over all of the test's Playwright attempts. With `--sdk` the
+  engine stream carries digests and no timing, so an entry has the test's
+  SHA-256 `testId` and no duration; a `title` is added only with
+  `--failure-details`, and only for a test Playwright's own report
+  identifies by the same digest (a spec that ran in several projects in one
+  job keeps digests). An attempt that did not validate lists no tests. Go
+  validates the list as a closed record against the receipt's counts, and
+  `9l result` and `9l status` withhold a saved list that is not one.
+- JUnit report: `9l run <specs> --junit <file>` also writes a JUnit XML
+  report of the run, and `9l result <run-id> --junit <file>` rebuilds it
+  from a stored run. It is written atomically, readable by a CI uploader
+  (mode 0644), on every outcome of a run that started; a usage or setup
+  error (exit 2), `9l plan` and `--dry-run` write none. The path is checked
+  before any test process starts: one that names a directory, lies below a
+  file or cannot be written exits 2. Missing parent directories are
+  created. If the report cannot be written after the run, `9l` says so on
+  stderr and exits 3 where it would have exited 0; a non-zero exit code is
+  never changed. The document has one `<testsuite>` per job, from its final
+  attempt, with the run, job and attempt IDs, status and counts as
+  properties, and:
+
+  | Receipt | JUnit |
+  | --- | --- |
+  | Passed test | `<testcase>` |
+  | Flaky test (passed on a Playwright retry) | passing `<testcase>` with the property `flaky=true` |
+  | Skipped test | `<testcase>` with `<skipped>` |
+  | Failed test, class `assertion`, `timeout`, `action-timeout`, `unexpected-pass` or `other` | `<failure type="<class>">` |
+  | Failed test, class `setup` or `environment` | `<error type="<class>">`: the test could not reach the behavior |
+  | Failed test of a job whose only failures belong to a goal that did not complete | `<error type="goal_failed">` |
+  | Attempt that did not validate, or ended `canceled`, `timed_out` or `error` | one `<error>` whose `type` is the failure summary's `stop` token, and no other testcase |
+  | Input the plan skipped | `<error type="skipped_input">` in the suite `9l skipped inputs` |
+
+  A failure's `message` is the first line of the reported error when the
+  receipt has one (a plain run, or `--sdk` with `--failure-details`),
+  otherwise the class with the target operation, control and stop reason
+  from `failureSummary`; the element text adds the failing line and the
+  bounded error. A plain run names testcases by title and reports `time`.
+  An `--sdk` run names them `test <first 12 digits of the digest>`, with
+  the full digest as the property `testId`, and omits `time` on testcases
+  instead of inventing one; `--failure-details` adds titles as above. Tests
+  a truncated list left out, and the tests of a result written before
+  receipts listed them, are accounted for by one testcase per outcome, such
+  as `3 more failed test(s), not listed individually` (a `<failure>`), so a
+  long list cannot hide a failure. Whenever the run outcome is `incomplete`
+  the document contains at least one `<error>`, also when no receipt
+  explains why (a run interrupted after its last job, or a planned job
+  without a receipt), so a dashboard cannot show an incomplete run green.
+  All text is redacted again and stripped of terminal escapes and of
+  characters XML 1.0 forbids. The report holds what the receipts hold and
+  nothing more; it is not available through `9l mcp`, `prove`, `confirm` or
+  `heal`.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
