@@ -654,6 +654,14 @@ func decodeEvent(raw []byte) (event, error) {
 			return frame, fmt.Errorf("invalid setup")
 		}
 		keys := 3
+		if raw := setup["phase"]; raw != nil {
+			// Present means named: an empty phase is not the same as none.
+			var phase string
+			if json.Unmarshal(raw, &phase) != nil || phase == "" {
+				return frame, fmt.Errorf("invalid setup phase")
+			}
+			keys++
+		}
 		if recovery := setup["recovery"]; recovery != nil {
 			var fields map[string]json.RawMessage
 			if json.Unmarshal(recovery, &fields) != nil || len(fields) != 3 || fields["method"] == nil || fields["presses"] == nil || fields["restored"] == nil {
@@ -703,9 +711,10 @@ func decodeEvent(raw []byte) (event, error) {
 // setupReasons lists the closed reasons a driver may report per
 // classification. A reason outside its classification is invalid evidence.
 var setupReasons = map[string][]string{
-	runner.SetupBlocked:  {"device-locked", "screen-off"},
-	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
-	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable", "build-sdk", "build-abi"},
+	runner.SetupBlocked: {"device-locked", "screen-off"},
+	runner.SetupDirty:   {"extra-window", "foreign-focus", "ime-showing"},
+	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable", "build-sdk", "build-abi",
+		"build-installed", "build-tree", "build-platform", "runtime-metadata"},
 	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
 }
@@ -728,6 +737,9 @@ func nativeTarget(target string) bool {
 func validTargetSetup(s runner.TargetSetup) bool {
 	reasons, known := setupReasons[s.Classification]
 	if !known || !oneOf(s.Reason, reasons...) || !oneOf(s.Stage, runner.SetupStageOpen, runner.SetupStageRecheck) || s.TestID != "" {
+		return false
+	}
+	if s.Phase != "" && (s.Stage != runner.SetupStageOpen || s.Recovery != nil || !oneOf(s.Phase, runner.SetupPhases...)) {
 		return false
 	}
 	if s.Classification == runner.SetupObserver && s.Stage != runner.SetupStageRecheck {

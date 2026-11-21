@@ -87,6 +87,11 @@ func TestSetupClassificationIsClosed(t *testing.T) {
 		"unknown recovery":       {"classification": "dirty", "reason": "extra-window", "stage": "open", "recovery": map[string]any{"method": "clear-data", "presses": 1, "restored": true}},
 		"unbounded presses":      {"classification": "dirty", "reason": "extra-window", "stage": "open", "recovery": map[string]any{"method": "back", "presses": 17, "restored": true}},
 		"open recovery":          {"classification": "dirty", "reason": "extra-window", "stage": "open", "recovery": map[string]any{"method": "back", "presses": 1, "restored": true, "note": "x"}},
+		"unknown phase":          {"classification": "unknown", "reason": "device-state-unknown", "stage": "open", "phase": "open_install"},
+		"phase content":          {"classification": "unknown", "reason": "device-state-unknown", "stage": "open", "phase": "/Users/me/App.app"},
+		"empty phase":            {"classification": "unknown", "reason": "device-state-unknown", "stage": "open", "phase": ""},
+		"phase on recheck":       {"classification": "observer", "reason": "window-gone-element-displayed", "stage": "recheck", "phase": "session"},
+		"phase with recovery":    {"classification": "dirty", "reason": "extra-window", "stage": "open", "phase": "install", "recovery": map[string]any{"method": "back", "presses": 1, "restored": true}},
 	}
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -229,5 +234,28 @@ func TestSetupRecordsPerStage(t *testing.T) {
 	passing[5]["status"], passing[6]["status"], passing[7]["outcome"], passing[8]["status"] = "passed", "passed", "expected", "passed"
 	if _, err := New().ValidateAttempt(stream(passing), identity); err == nil {
 		t.Fatal("a recheck record cannot accompany a passed test")
+	}
+}
+
+// An open failure names its fixed phase, and a rejected app its closed
+// reason, so a receipt says which part of open failed (#289).
+func TestSetupOpenPhaseIsRecorded(t *testing.T) {
+	identity := owner
+	identity.Target = "ios:finance"
+	for _, setup := range []map[string]any{
+		{"classification": "mismatch", "reason": "build-installed", "stage": "open", "phase": "install"},
+		{"classification": "mismatch", "reason": "runtime-metadata", "stage": "open", "phase": "metadata"},
+		{"classification": "mismatch", "reason": "build-tree", "stage": "open", "phase": "artifact"},
+		{"classification": "mismatch", "reason": "build-platform", "stage": "open", "phase": "artifact"},
+		{"classification": "unknown", "reason": "device-state-unknown", "stage": "open", "phase": "session"},
+	} {
+		v, err := New().ValidateAttempt(stream(setupFrames("ios:finance", setup)), identity)
+		if err != nil || len(v.TargetSetup) != 1 || v.TargetSetup[0].Phase != setup["phase"] || v.TargetSetup[0].Reason != setup["reason"] || v.FailureCount != 1 {
+			t.Fatalf("%v: phase not recorded: %+v %v", setup, v.TargetSetup, err)
+		}
+	}
+	// A record without a phase (every driver before this one) stays valid.
+	if v, err := New().ValidateAttempt(stream(setupFrames("ios:finance", blocked())), identity); err != nil || v.TargetSetup[0].Phase != "" {
+		t.Fatalf("phase-less record rejected: %v", err)
 	}
 }
