@@ -33,6 +33,9 @@ npm ci --prefix tools/ios --ignore-scripts
 npm run smoke:ios
 ```
 
+The smoke records `9l provenance`, which needs a branch. A release tag checkout
+is a detached HEAD: run `git switch -c <name>` at the same commit first.
+
 Before any case the smoke compiles the pinned WebDriverAgent for the Simulator
 once (`scripts/build-ios-wda.cjs`, reused while the tools and Xcode are
 unchanged), outside every open bound. That took 20 seconds on the qualified

@@ -23,6 +23,10 @@ function command(file,args,options={}) {
   const result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:600000,maxBuffer:4<<20,...options});
   assert.ifError(result.error);return result;
 }
+// 9l provenance records the branch and refuses a detached HEAD. Say so before
+// the long WebDriverAgent build, not after it (a release tag checkout is detached).
+assert.equal(command('git',['symbolic-ref','-q','HEAD']).status,0,
+  'smoke:ios needs a branch: this checkout is a detached HEAD (e.g. a release tag). Run `git switch -c <name>` at the same commit first.');
 // The receipt must name the Xcode this host actually runs, queried here
 // independently of the driver, whichever supported Xcode is installed.
 const hostXcode=/^Xcode ([0-9.]+)\n/.exec(command('/usr/bin/xcodebuild',['-version']).stdout)?.[1];
@@ -43,7 +47,7 @@ function prepare(operation,file,args,timeout,stdio) {
 // Sessions start a prebuilt WebDriverAgent runner instead of compiling one.
 assert.notEqual(prepare('wda-build',process.execPath,['scripts/build-ios-wda.cjs'],1560000,['ignore','inherit','inherit']),undefined,'build WebDriverAgent');
 const spec=path.join(root,'testdata/sdk/ios/native.spec.ts');
-const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0);
+const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0,`9l provenance: ${creation.stderr.trim()}`);
 const provenance=path.join(work,'creation.json');fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
 function devices() {
   const result=command('/usr/bin/xcrun',['simctl','list','devices','-j']);assert.equal(result.status,0);
