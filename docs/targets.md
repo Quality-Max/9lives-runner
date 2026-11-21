@@ -103,7 +103,10 @@ stops the session with reason `setup_<classification>`, where the
 classification is `blocked` (a locked device), `dirty` (state a previous
 test left behind), `mismatch`, `observer` (the accessibility snapshot
 disagreed with the window manager) or `unknown`, and the reason is one of a
-closed list the engine checks. Two optional hooks complete it: `setup()` is
+closed list the engine checks. An `open` record may also name the fixed
+`phase` of open that failed (`tools`, `artifact`, `wda`, `runtime`, `create`,
+`boot`, `bootstatus`, `architecture`, `install`, `server`, `session` or
+`metadata`); the receipt keeps it, and `9l run` prints it. Two optional hooks complete it: `setup()` is
 read after a successful open and returns the record of a declared recovery
 that restored the baseline, so the receipt shows the test ran from it; and
 `recheck(context)` is called after a completed assertion failure while the
@@ -195,8 +198,8 @@ attempt and is kept as `targetDiagnostics`; a passed test cannot carry one.
 `observer` classification (`window-gone-element-displayed`) after a failed
 hidden assertion only.
 
-A `target_setup` frame carries the classification, reason, stage and, for a
-declared recovery, its method, press count and whether it restored the
+A `target_setup` frame carries the classification, reason, stage, an optional
+open phase (never with a recheck or a recovery) and, for a declared recovery, its method, press count and whether it restored the
 baseline; nothing else. Go accepts one per stage per attempt from a native
 target (a recovered baseline before the test and a recheck after a failed
 assertion can both be present), rejects a reason outside its classification,

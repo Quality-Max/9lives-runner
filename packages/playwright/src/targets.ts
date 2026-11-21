@@ -5,7 +5,7 @@ import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './p
 import {validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
 import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
-export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
+export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type SetupPhase, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',

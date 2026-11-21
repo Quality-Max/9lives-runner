@@ -812,6 +812,9 @@
         "classification": {
           "type": "string"
         },
+        "phase": {
+          "type": "string"
+        },
         "reason": {
           "type": "string"
         },
