@@ -158,6 +158,14 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   `create` returned, so a slow inventory cannot cost deletion its turn; an
   inventory locates the device only when that identifier was lost. A cleanup
   failure fails the test; it cannot produce a passing receipt.
+- A failed open records which phase failed in the receipt's `targetSetup`
+  (`phase`, e.g. `install` or `session`). A rejected app reads as `mismatch`
+  with a closed reason: `build-digest` (the copy differs from `appSHA256`),
+  `build-installed` (the installed tree's names or bytes differ from that
+  copy), `build-tree` (unsupported entries or over the 4,096-entry/256 MiB
+  limits), `build-platform` (wrong bundle identifier or not a Simulator build)
+  or `runtime-metadata` (version, build or runtime outside the recorded shape).
+  Anything else in open is `unknown` / `device-state-unknown` with its phase.
 - A Simulator is registered with CoreSimulator, outside the worker's process
   tree, so stopping the worker does not remove it. Before `simctl create` the
   driver writes a small ownership record (the unguessable device name, runtime
