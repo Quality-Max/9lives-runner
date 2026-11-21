@@ -48,6 +48,15 @@ type LineSelector interface {
 	SelectLine(job Job, line int) (Job, error)
 }
 
+// OutputIsolator adapters can give a job an artifact directory of its own.
+// BuildPlan asks for one whenever a plan holds more than one job: a framework
+// that clears its output directory when a run starts would otherwise delete
+// the files another job of the same run is still writing. The directory stays
+// inside the job's working directory so attachments remain reportable.
+type OutputIsolator interface {
+	IsolateOutput(job Job) Job
+}
+
 // TargetPlanner schedules a distinct owned job for each explicit SDK target.
 type TargetPlanner interface {
 	PlanTarget(path, input string, index int, target string) (Job, error)

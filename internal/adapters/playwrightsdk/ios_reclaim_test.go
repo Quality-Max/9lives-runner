@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -222,4 +225,58 @@ func TestReclaimTrustsOnlyClosedOwnershipRecords(t *testing.T) {
 			t.Fatalf("a missing scratch reported cleanup: %+v", got)
 		}
 	})
+}
+
+// A simctl that never returns, even after its bound (a process exec.Cmd.Wait
+// would wait for indefinitely), cannot hold the attempt: reclaim gives up
+// shortly after the bound and reports the device unconfirmed (#291).
+func TestReclaimStopsWaitingForASimctlThatIgnoresItsBound(t *testing.T) {
+	budget, grace := iosReclaimBudget, iosSimctlExitGrace
+	iosReclaimBudget, iosSimctlExitGrace = 300*time.Millisecond, 50*time.Millisecond
+	defer func() { iosReclaimBudget, iosSimctlExitGrace = budget, grace }()
+	release := make(chan struct{})
+	defer close(release)
+	stuck := func(context.Context, ...string) ([]byte, error) { <-release; return nil, nil }
+	scratch := t.TempDir()
+	writeOwnership(t, scratch, reclaimOwner+".owned.json", ownershipJSON(reclaimOwner, reclaimRuntime, reclaimType))
+	started := time.Now()
+	got := reclaimIOSSimulators(scratch, stuck)
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("reclaim waited %v for a simctl that never returns", elapsed)
+	}
+	if want := []runner.TargetCleanup{{Kind: "ios-simulator", Outcome: "unconfirmed"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+// Per-command bounds add up across records; the overall budget does not.
+// Every record past the budget is reported unconfirmed without a command.
+func TestReclaimBoundsAllRecordsTogether(t *testing.T) {
+	budget, grace := iosReclaimBudget, iosSimctlExitGrace
+	iosReclaimBudget, iosSimctlExitGrace = 300*time.Millisecond, 50*time.Millisecond
+	defer func() { iosReclaimBudget, iosSimctlExitGrace = budget, grace }()
+	var calls atomic.Int32
+	slow := func(ctx context.Context, _ ...string) ([]byte, error) {
+		calls.Add(1)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	scratch := t.TempDir()
+	for i := 0; i < maxIOSOwnershipFiles; i++ {
+		name := fmt.Sprintf("9l-ios-12345678-1234-1234-1234-1234567890%02x", i)
+		writeOwnership(t, scratch, name+".owned.json", ownershipJSON(name, reclaimRuntime, reclaimType))
+	}
+	started := time.Now()
+	got := reclaimIOSSimulators(scratch, slow)
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("reclaim of %d records took %v past its budget", maxIOSOwnershipFiles, elapsed)
+	}
+	if len(got) != maxIOSOwnershipFiles || calls.Load() != 1 {
+		t.Fatalf("got %d outcomes after %d commands, want %d after 1", len(got), calls.Load(), maxIOSOwnershipFiles)
+	}
+	for _, cleanup := range got {
+		if cleanup.Outcome != "unconfirmed" {
+			t.Fatalf("outcome %q past the budget", cleanup.Outcome)
+		}
+	}
 }

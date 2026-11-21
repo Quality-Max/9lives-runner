@@ -37,6 +37,18 @@ const (
 	iosCleanupUnconfirmed = "unconfirmed"
 )
 
+// Reclaim runs after the worker stopped and deliberately ignores cancellation,
+// so it needs its own ceiling. iosReclaimBudget bounds all records together:
+// per-command bounds alone add up across records. iosSimctlExitGrace is how
+// long to keep waiting for a simctl that outlives its own bound, which
+// exec.Cmd.Wait would otherwise wait for indefinitely (#291). Variables so
+// tests can shrink them.
+var (
+	iosReclaimBudget   = 2 * time.Minute
+	iosSimctlExitGrace = 2 * time.Second
+	errSimctlNoExit    = errors.New("simctl did not exit within its bound")
+)
+
 var (
 	iosOwnershipFile = regexp.MustCompile(`^(9l-ios-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})\.owned\.json$`)
 	iosRuntimeID     = regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$`)
@@ -68,6 +80,7 @@ func (Adapter) ReclaimTarget(scratch string, env map[string]string) []runner.Tar
 }
 
 func reclaimIOSSimulators(scratch string, simctl simctlFunc) []runner.TargetCleanup {
+	simctl = guardSimctl(simctl, time.Now().Add(iosReclaimBudget))
 	// A scratch directory that no longer exists holds no record. One that
 	// cannot be read may hold a record that was not seen, so that device may
 	// still exist: entries read before the failure are still acted on, and
@@ -98,6 +111,38 @@ func reclaimIOSSimulators(scratch string, simctl simctlFunc) []runner.TargetClea
 		cleanups = append(cleanups, runner.TargetCleanup{Kind: iosCleanupKind, Outcome: iosCleanupUnconfirmed})
 	}
 	return cleanups
+}
+
+// guardSimctl keeps every command inside the overall reclaim deadline and
+// stops waiting for one that has not returned shortly after its bound. Such a
+// command's device stays unconfirmed: the attempt cannot pass, but it returns.
+func guardSimctl(simctl simctlFunc, deadline time.Time) simctlFunc {
+	return func(ctx context.Context, args ...string) ([]byte, error) {
+		ctx, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		type result struct {
+			out []byte
+			err error
+		}
+		done := make(chan result, 1)
+		go func() { out, err := simctl(ctx, args...); done <- result{out, err} }()
+		select {
+		case r := <-done:
+			return r.out, r.err
+		case <-ctx.Done():
+		}
+		grace := time.NewTimer(iosSimctlExitGrace)
+		defer grace.Stop()
+		select {
+		case r := <-done:
+			return r.out, r.err
+		case <-grace.C:
+			return nil, errSimctlNoExit
+		}
+	}
 }
 
 // readIOSOwnership accepts only a small regular file holding exactly one JSON
