@@ -81,8 +81,23 @@ func TestValidateRejectsReportsWithoutCompletedTests(t *testing.T) {
 	}
 	// A spec that throws while loading is not blamed on the config.
 	_, err = New().Validate([]byte(`{"config":{},"suites":[],"errors":[{"message":"Error: import boom"},{"message":"Error: No tests found."}],"stats":{"duration":5.8}}`))
-	if err == nil || !strings.Contains(err.Error(), "fails to load") || strings.Contains(err.Error(), "testDir") || strings.Contains(err.Error(), "boom") {
-		t.Fatalf("a load error must be reported without its message and without the config hint: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "fails to load: Error: import boom; see") || strings.Contains(err.Error(), "testDir") {
+		t.Fatalf("a load error must be named, without the config hint: %v", err)
+	}
+	// Only the first line is kept: without the require stack or source
+	// frames after it, without terminal escapes, redacted and bounded.
+	long := strings.Repeat("é", 400)
+	for message, want := range map[string]string{
+		`Error: Cannot find module '@acme/helpers'\nRequire stack:\n- /project/tests/a.spec.ts`:              "fails to load: Error: Cannot find module '@acme/helpers'; see",
+		`\u001b[31mSyntaxError: Unexpected token (3:5)\u001b[39m\n\n  1 | const password = 'hunter2hunter2'`: "fails to load: SyntaxError: Unexpected token (3:5); see",
+		`Error: connect failed for https://user:hunter2hunter2@db.example.test/app`:                          "fails to load: Error: connect failed for https://user:[REDACTED]@db.example.test/app; see",
+		`\n\n`:           "fails to load; see",
+		"Error: " + long: "…; see",
+	} {
+		_, err = New().Validate([]byte(`{"config":{},"suites":[],"errors":[{"message":"` + message + `"},{"message":"Error: No tests found."}],"stats":{"duration":5.8}}`))
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "hunter2") || strings.Contains(err.Error(), "Require stack") || strings.Contains(err.Error(), "\x1b") || len(err.Error()) > 600 {
+			t.Fatalf("load error %q reported as: %v", message, err)
+		}
 	}
 }
 
