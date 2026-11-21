@@ -18,6 +18,7 @@
 | [QualityMax coding sessions](qualitymax-coding-sessions.md) | You want to know how QualityMax runs 9lives in hosted agent sessions and reads its receipts |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
 | [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |
+| [Verify](verify.md) | You want the engine to check a test's outcome itself, with HTTP postconditions declared outside the spec (experimental) |
 | [Confirm](confirm.md) | You want to know whether a reported finding's reproduction fails before a fix and passes after it (experimental) |
 | [Goals](goals.md) | You are configuring bounded observed-control execution |
 | [SDK bridge](sdk-bridge.md) | You need protocol, privacy and evidence boundaries |

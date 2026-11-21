@@ -418,3 +418,93 @@ func TestResultWithoutListsReportsDescribedFailuresAndCounts(t *testing.T) {
 		t.Fatalf("legacy receipt:\n%s", raw)
 	}
 }
+
+func check(id string, result runner.VerificationResult, reason string, status int) runner.Verification {
+	return runner.Verification{ID: id, OutcomeID: "order-stored", Method: "GET", Result: result, Reason: reason, HTTPStatus: status, ObservedBy: runner.VerificationObserver}
+}
+
+func caseNamed(t *testing.T, doc parsed, name string) parsedCase {
+	t.Helper()
+	for _, suite := range doc.Suites {
+		for _, each := range suite.Cases {
+			if each.Name == name {
+				return each
+			}
+		}
+	}
+	t.Fatalf("no testcase %q", name)
+	return parsedCase{}
+}
+
+func TestIndependentChecksAreTheirOwnTestcases(t *testing.T) {
+	passedTest := runner.TestOutcome{Title: "adds an item", Status: runner.TestPassed}
+
+	verified := validated(passedTest)
+	verified.Verifications = []runner.Verification{check("order-paid", runner.VerificationVerified, "", 200)}
+	doc, raw := render(t, run(runner.OutcomePassed, verified))
+	if doc.Tests != 2 || doc.Failures != 0 || doc.Errors != 0 {
+		t.Fatalf("a verified check is a passing testcase:\n%s", raw)
+	}
+	if each := caseNamed(t, doc, "verify order-paid"); !each.passed() || each.property("verification") != "verified" || each.property("observedBy") != "engine" || each.property("outcomeId") != "order-stored" || each.property("httpStatus") != "200" {
+		t.Fatalf("verified case: %+v", each)
+	}
+
+	// The worker reported its test passed; the engine's check is what fails.
+	contradicted := validated(passedTest)
+	contradicted.Status, contradicted.Error = runner.StatusFailed, "independent verification contradicted the result: order-paid"
+	contradicted.FailureSummary = &runner.FailureSummary{Stop: runner.StopVerificationContradicted}
+	contradicted.Verifications = []runner.Verification{check("order-paid", runner.VerificationContradicted, runner.VerificationReasonJSONValue, 200), check("stock-kept", runner.VerificationVerified, "", 200)}
+	doc, raw = render(t, run(runner.OutcomeFailed, contradicted))
+	if doc.Tests != 3 || doc.Failures != 1 || doc.Errors != 0 {
+		t.Fatalf("a contradicted check is exactly one failure:\n%s", raw)
+	}
+	each := caseNamed(t, doc, "verify order-paid")
+	if each.Failure == nil || each.Failure.Type != "verification_contradicted" || !strings.Contains(each.Failure.Message, "order-paid") || !strings.Contains(each.Failure.Message, "json_value") || !strings.Contains(each.Failure.Message, "HTTP 200") {
+		t.Fatalf("contradicted case: %+v", each)
+	}
+	if !caseNamed(t, doc, "adds an item").passed() || !caseNamed(t, doc, "verify stock-kept").passed() {
+		t.Fatalf("the test and the verified check keep their own outcome:\n%s", raw)
+	}
+
+	// The engine got no answer: the attempt is an error, and so is the check.
+	unreachable := validated(passedTest)
+	unreachable.Status, unreachable.Error = runner.StatusError, "independent verification could not be completed: order-paid"
+	unreachable.FailureSummary = &runner.FailureSummary{Stop: runner.StopVerificationIncomplete}
+	unreachable.Verifications = []runner.Verification{check("order-paid", runner.VerificationUnreachable, runner.VerificationReasonTimeout, 0), check("stock-kept", runner.VerificationNotRun, runner.VerificationReasonBudget, 0)}
+	doc, raw = render(t, run(runner.OutcomeIncomplete, unreachable))
+	if doc.Failures != 0 || doc.Errors != 3 || doc.Tests != 3 {
+		t.Fatalf("an unreachable check proves nothing and shows no passing testcase:\n%s", raw)
+	}
+	if each := caseNamed(t, doc, "verify order-paid"); each.Error == nil || each.Error.Type != "verification_unreachable" || !strings.Contains(each.Error.Message, "timeout") {
+		t.Fatalf("unreachable case: %+v", each)
+	}
+	if each := caseNamed(t, doc, "verify stock-kept"); each.Error == nil || each.Error.Type != "verification_not_run" {
+		t.Fatalf("not-run case: %+v", each)
+	}
+	if !strings.Contains(raw, `value="verification_incomplete"`) {
+		t.Fatalf("the suite names the stop reason:\n%s", raw)
+	}
+}
+
+// A stored result is untrusted: records that are not the closed form are one
+// error, and a receipt edited to "passed" beside an unverified check is not
+// rendered as a clean pass.
+func TestVerificationRecordsAreNotTrustedFromAStoredResult(t *testing.T) {
+	passedTest := runner.TestOutcome{Title: "adds an item", Status: runner.TestPassed}
+	malformed := validated(passedTest)
+	malformed.Verifications = []runner.Verification{{ID: "x\"/><failure", Method: "GET", Result: runner.VerificationVerified, HTTPStatus: 200, ObservedBy: "worker"}}
+	doc, raw := render(t, run(runner.OutcomeIncomplete, malformed))
+	if doc.Errors != 1 || strings.Contains(raw, "failure") && !strings.Contains(raw, `failures="0"`) {
+		t.Fatalf("malformed records:\n%s", raw)
+	}
+	if each := caseNamed(t, doc, "verify"); each.Error == nil || each.Error.Type != "verification_malformed" {
+		t.Fatalf("malformed case: %+v", each)
+	}
+
+	edited := validated(passedTest)
+	edited.Verifications = []runner.Verification{check("order-paid", runner.VerificationContradicted, runner.VerificationReasonStatus, 404)}
+	doc, raw = render(t, run(runner.OutcomePassed, edited))
+	if doc.Failures != 1 {
+		t.Fatalf("a contradicted check under an edited status must still fail:\n%s", raw)
+	}
+}

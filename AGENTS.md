@@ -30,8 +30,10 @@ goals, and replay verified actions without depending on a platform account.
   experimental and qualified only on the emulators and phone documented in
   `docs/android-driver.md`. iOS Simulator execution is experimental and
   qualified only on the one Mac documented in `docs/ios-driver.md`.
-  Independent behavioral verification, verified replay, iOS on hosted CI and
-  real iPhones, and broader device qualification are subsequent milestones. Claim support only after real runtime qualification;
+  Independent behavioral verification has an experimental first slice only:
+  engine-observed HTTP postconditions with `9l run --verify`
+  (`docs/verify.md`). Broader verification, verified replay, iOS on hosted CI
+  and real iPhones, and broader device qualification are subsequent milestones. Claim support only after real runtime qualification;
   deterministic synthetic results are not production benchmark results.
 - Natural-language goals use finite observed controls and typed actions; reuse
   the existing Go provider transports. Keep parameters in browser workers and

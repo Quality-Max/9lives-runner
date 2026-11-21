@@ -201,8 +201,11 @@ each run. See [Prove](prove.md).
 
 Real-browser smoke validates checkout assertions, a defective outcome and owned
 worker/browser cleanup on timeout and explicit cancellation. Protocol regressions
-cover malformed, duplicate, foreign, late and incomplete evidence. Live provider accuracy,
-verified replay and independent behavioral verification have separate milestones.
+cover malformed, duplicate, foreign, late and incomplete evidence. An
+experimental first slice of independent behavioral verification,
+[`9l run --verify`](verify.md), checks HTTP postconditions from the engine
+process and uses no part of this protocol. Live provider accuracy, verified
+replay and broader independent verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
 `9l.target/3`, a target identity digest, a declared test list, typed
@@ -216,4 +219,5 @@ only the fields described in [iOS setup](ios-driver.md). It is accepted only for
 an active test on an `ios:` target, once per test attempt. A passing iOS test
 requires that frame and a successful target assertion. The receipt stores the
 record under `iosRuntimes`; neither runtime attribution nor a target assertion
-increments independent `verifiedAssertions`.
+increments independent `verifiedAssertions`. Only a check the engine verified
+itself with [`--verify`](verify.md) does.

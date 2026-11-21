@@ -15,8 +15,9 @@ import (
 )
 
 var contractEnums = map[reflect.Type][]string{
-	reflect.TypeFor[runner.ReceiptStatus](): {"passed", "failed", "canceled", "timed_out", "error"},
-	reflect.TypeFor[runner.RunOutcome]():    {"passed", "failed", "incomplete"},
+	reflect.TypeFor[runner.ReceiptStatus]():      {"passed", "failed", "canceled", "timed_out", "error"},
+	reflect.TypeFor[runner.RunOutcome]():         {"passed", "failed", "incomplete"},
+	reflect.TypeFor[runner.VerificationResult](): {"verified", "contradicted", "unreachable", "not_run"},
 }
 
 var publishedContracts = []struct {

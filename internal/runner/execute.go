@@ -31,11 +31,16 @@ type ExecuteOptions struct {
 	// jobs are reported canceled or timed out as for any interrupted run.
 	BeforeJobs      func(context.Context) error
 	AgentProvenance *AgentProvenance
-	Workers         int
-	Timeout         time.Duration
-	RunDeadline     time.Duration
-	MaxAttempts     int
-	MaxOutputBytes  int
+	// Verifier performs independent postcondition checks after the attempt's
+	// process tree stopped. It requires exactly one planned job: a job
+	// running beside it could change the state the checks observe. Nothing
+	// about it reaches the worker's environment or arguments.
+	Verifier       PostconditionVerifier
+	Workers        int
+	Timeout        time.Duration
+	RunDeadline    time.Duration
+	MaxAttempts    int
+	MaxOutputBytes int
 	// PassEnv names caller variables forwarded to test processes in addition
 	// to the inherited runtime environment.
 	PassEnv []string
@@ -70,6 +75,16 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 		if _, err := ParseAgentProvenance(raw); err != nil || len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
 			summary.Complete = false
 			return summary, SetupError{errors.New("agent provenance requires one exact spec and a valid creation record")}
+		}
+	}
+	if opts.Verifier != nil {
+		if len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
+			summary.Complete = false
+			return summary, SetupError{errors.New("independent verification requires one exact spec planned as one job")}
+		}
+		if _, err := plannedVerifications(opts.Verifier, VerificationReasonNotValidated); err != nil {
+			summary.Complete = false
+			return summary, SetupError{err}
 		}
 	}
 	if plan.Limits.MaxJobs > 0 && len(plan.Jobs) > plan.Limits.MaxJobs {
@@ -349,7 +364,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 		receipt = executeAttempt(parent, runID, job, attempt, opts, store, executor)
 		// An interrupted goal may already have changed the application. Never
 		// replay the entire worker automatically after an uncertain effect.
-		if job.Target != "" || receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") {
+		if job.Target != "" || receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") || verificationDecided(receipt) {
 			break
 		}
 	}
@@ -589,6 +604,13 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			receipt.Error = "agent branch/source provenance changed or became unavailable during execution"
 		}
 	}
+	// Independent checks run last among the things that decide the status:
+	// the worker's tree has stopped, its evidence is validated or not, and
+	// provenance has been rechecked. They use the run's context, not the
+	// attempt's, so an attempt that finished in time is still checked.
+	if opts.Verifier != nil {
+		receipt = applyVerification(parent, receipt, opts.Verifier)
+	}
 	// Per-test details come from the framework's own report: the evidence
 	// itself, or a separate diagnostics report beside an engine stream.
 	detailReport := output.Stdout
@@ -673,6 +695,10 @@ func runnerErrorLine(stderr []byte) string {
 // failure is attributed to the goal. Other tests in the same file still count,
 // so one failed goal does not hide a proven defect beside it. A goal failure
 // the evidence cannot attribute to a test keeps the receipt incomplete.
+// An independent check the engine contradicted is also a proven failure, but
+// only for an attempt whose own evidence passed: there the mismatch is
+// demonstrated by the engine itself. A passed receipt with a check that is
+// not verified is never a pass.
 func classifyRun(summary RunSummary, interrupted bool) RunOutcome {
 	if interrupted || summary.PlannedJobs == 0 || summary.SkippedInputs > 0 || len(summary.Receipts) != summary.PlannedJobs {
 		return OutcomeIncomplete
@@ -686,8 +712,10 @@ func classifyRun(summary RunSummary, interrupted bool) RunOutcome {
 		switch {
 		case !receipt.Validated:
 			return OutcomeIncomplete
-		case receipt.Status == StatusFailed && failures > 0:
+		case receipt.Status == StatusFailed && (failures > 0 || contradictedPass(receipt)):
 			outcome = OutcomeFailed
+		case receipt.Status == StatusPassed && !verificationsHold(receipt):
+			return OutcomeIncomplete
 		case receipt.Status != StatusPassed:
 			return OutcomeIncomplete
 		}
@@ -934,6 +962,10 @@ func inherited(key string) bool {
 	}
 	return false
 }
+
+// InheritedByWorkers reports whether test processes receive the named
+// variable from the caller's environment without --pass-env.
+func InheritedByWorkers(name string) bool { return inherited(name) }
 
 // passedEnvironment reads the variables a caller explicitly forwarded. Values
 // stay in memory; Job.Env is never persisted in the plan or receipts.

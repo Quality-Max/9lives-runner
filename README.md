@@ -125,7 +125,8 @@ cloud-verified result are reported separately. See the
 - **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
 - **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](docs/android-driver.md).
 - **iOS Simulator (experimental, beta):** in the 0.7.0 beta releases, qualified from a source checkout on one Mac; see the [iOS driver guide](docs/ios-driver.md).
-- **Planned:** independent behavioral verification, verified replay, iOS qualification on hosted CI and real iPhones, and broader Android device qualification.
+- **Independent postcondition checks (experimental):** `9l run <spec> --verify <checks.json>` has the engine probe HTTP postconditions declared outside the spec after the test process has stopped; a contradicted check fails a test that reported itself passed. It covers only state reachable by HTTP `GET` or `HEAD`; see the [verify guide](docs/verify.md).
+- **Planned:** broader independent behavioral verification, verified replay, iOS qualification on hosted CI and real iPhones, and broader Android device qualification.
 
 ## Add the optional SDK
 
@@ -192,7 +193,10 @@ result. Receipts persist under `.9lives/receipts/`; inspect them with
 
 A passing execution means the test's assertions passed and its report was
 validated. It does not prove that the assertions fully cover the requirements.
-Independent behavioral verification remains planned.
+An experimental first slice of independent behavioral verification exists:
+`9l run --verify` checks HTTP postconditions declared outside the spec from
+the engine process (see [docs/verify.md](docs/verify.md)). Broader
+verification remains planned.
 
 Playwright's own verdict is not the evidence. Qualifying its modifiers for 9l
 found two upstream defects, reported as

@@ -101,7 +101,11 @@ type Receipt struct {
 	// FlakyTests counts executed tests that failed and then passed on a
 	// Playwright retry inside this attempt. They count as passed, so this is
 	// what tells a clean pass from one that needed a second try.
-	FlakyTests         int `json:"flakyTests,omitempty"`
+	FlakyTests int `json:"flakyTests,omitempty"`
+	// VerifiedAssertions counts the independent checks the engine verified
+	// (see Verifications), added to any count the adapter's evidence carries;
+	// the adapters in this repository report none. It is zero without
+	// `--verify` and says nothing about what the tests themselves assert.
 	VerifiedAssertions int `json:"verifiedAssertions"`
 	// TargetAssertions counts successful SDK-instrumented target checks the
 	// worker reported. It is not independent verification or coverage.
@@ -150,9 +154,19 @@ type Receipt struct {
 	// none: its tests have no outcome to report.
 	Tests          []TestOutcome `json:"tests,omitempty"`
 	TestsTruncated bool          `json:"testsTruncated,omitempty"`
-	Termination    *Termination  `json:"termination,omitempty"`
-	Evidence       Evidence      `json:"evidence"`
-	ReceiptPath    string        `json:"receiptPath,omitempty"`
+	// Verifications lists the independent postcondition checks of an attempt
+	// run with `--verify`, one closed record per check in checks-file order.
+	// Each is engine-observed, never worker-reported: the engine probes the
+	// application itself after the attempt's process tree stopped. A passed
+	// receipt lists only verified checks; a contradicted check fails the
+	// attempt and a check the engine could not complete leaves it an error.
+	// VerificationSHA256 is the digest of the checks file read before the
+	// worker started.
+	Verifications      []Verification `json:"verifications,omitempty"`
+	VerificationSHA256 string         `json:"verificationSha256,omitempty"`
+	Termination        *Termination   `json:"termination,omitempty"`
+	Evidence           Evidence       `json:"evidence"`
+	ReceiptPath        string         `json:"receiptPath,omitempty"`
 }
 
 // AndroidRuntime is sanitized, worker-reported app/build/runtime attribution.
@@ -386,7 +400,9 @@ type FailureSummary struct {
 	// Stop is why the attempt ended without a pass, one of the Stop*
 	// tokens: test_failed, goal_failed, deadline, canceled,
 	// invalid_evidence, evidence_truncated, exit_without_failure,
-	// provenance_changed, not_started or infrastructure.
+	// provenance_changed, verification_contradicted,
+	// verification_incomplete, verification_changed, not_started or
+	// infrastructure.
 	Stop string `json:"stop"`
 	// FailedTests counts the failed tests in validated evidence (zero when
 	// the evidence did not validate). Tests describes at most
@@ -454,6 +470,12 @@ const (
 	StopProvenanceChanged  = "provenance_changed"
 	StopNotStarted         = "not_started"
 	StopInfrastructure     = "infrastructure"
+	// An attempt whose own evidence passed and that the engine's independent
+	// checks contradicted, could not complete, or refused to run because the
+	// checks file changed during the attempt.
+	StopVerificationContradicted = "verification_contradicted"
+	StopVerificationIncomplete   = "verification_incomplete"
+	StopVerificationChanged      = "verification_changed"
 )
 
 type Termination struct {
@@ -515,7 +537,8 @@ const (
 	// OutcomePassed: every planned job has a validated passing receipt.
 	OutcomePassed RunOutcome = "passed"
 	// OutcomeFailed: every planned job ran to a validated receipt and at
-	// least one reported a test failure. The change broke something.
+	// least one reported a test failure, or passed by its own evidence and
+	// was contradicted by an independent check. The change broke something.
 	OutcomeFailed RunOutcome = "failed"
 	// OutcomeIncomplete: anything else (skipped inputs, cancellation,
 	// timeouts, infrastructure errors, missing or invalid evidence). The run

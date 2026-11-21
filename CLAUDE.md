@@ -24,10 +24,12 @@ and UiAutomator2, qualified only on the documented emulators and one phone
 `scripts/android-phone-smoke.cjs` are its qualification. iOS Simulator
 execution is experimental and in the 0.7.0 beta releases, qualified from a
 source checkout on one Mac only (see docs/ios-driver.md); `npm run smoke:ios`
-is its qualification and GitHub-hosted runners do not qualify it. Independent
-behavioral verification, verified replay, iOS on hosted CI and real iPhones,
-broader device qualification and production benchmark qualification remain
-roadmap work. Do not describe proposed capabilities as shipped. Reuse the platform's
+is its qualification and GitHub-hosted runners do not qualify it. An
+experimental first slice of independent behavioral verification exists:
+`9l run --verify` has the engine probe HTTP postconditions declared outside
+the spec (see docs/verify.md). Broader independent verification, verified
+replay, iOS on hosted CI and real iPhones, broader device qualification and
+production benchmark qualification remain roadmap work. Do not describe proposed capabilities as shipped. Reuse the platform's
 grounding, generation, healing and mobile contracts rather than rebuilding them.
 
 Deliver changes with observable execution evidence. Incomplete or unverified

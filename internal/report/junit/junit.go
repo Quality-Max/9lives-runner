@@ -206,6 +206,7 @@ func receiptSuite(receipt runner.Receipt) suite {
 			Name: spec, Classname: spec,
 			Error: &problem{Type: stop, Message: "no test outcome is reported: the attempt ended " + oneLine(string(receipt.Status), 32) + " (" + stop + ")", Body: body},
 		}}
+		result.Cases = append(result.Cases, verificationCases(receipt, spec)...)
 		return result
 	}
 	// The receipt's counts are the authority; the list may hold fewer.
@@ -308,6 +309,7 @@ func receiptSuite(receipt runner.Receipt) suite {
 		result.Cases = append(result.Cases, testcase{Classname: spec, Name: fmt.Sprintf("%d skipped test(s), not listed individually", skippedTests),
 			Skipped: &skipped{}, Properties: cleanProperties([]property{{"tests", strconv.Itoa(skippedTests)}})})
 	}
+	result.Cases = append(result.Cases, verificationCases(receipt, spec)...)
 	// A failed attempt without a failed test to show, such as one whose
 	// tests passed and whose goal did not complete, still did not pass.
 	unexplained := receipt.Status == runner.StatusFailed
@@ -320,6 +322,54 @@ func receiptSuite(receipt runner.Receipt) suite {
 	}
 	result.Properties = cleanProperties(items)
 	return result
+}
+
+// verificationCases reports each independent check of an attempt as its own
+// testcase: a verified check passes, a contradicted one is a <failure> (the
+// engine demonstrated the mismatch) and one the engine could not complete or
+// did not run is an <error>. Checks that did not run because the attempt
+// itself did not validate add nothing: the attempt's own <error> says why.
+// A list that is not the closed record the runner writes is one <error>,
+// never a set of passing cases.
+func verificationCases(receipt runner.Receipt, spec string) []testcase {
+	if len(receipt.Verifications) == 0 {
+		return nil
+	}
+	if !receipt.ValidVerifications() {
+		return []testcase{{Name: "verify", Classname: spec,
+			Error: &problem{Type: "verification_malformed", Message: "the receipt's verification records are malformed and prove nothing"}}}
+	}
+	cases := make([]testcase, 0, len(receipt.Verifications))
+	for _, record := range receipt.Verifications {
+		if record.Reason == runner.VerificationReasonNotValidated {
+			continue
+		}
+		own := []property{{"verification", string(record.Result)}, {"observedBy", record.ObservedBy}, {"method", record.Method}}
+		if record.OutcomeID != "" {
+			own = append(own, property{"outcomeId", record.OutcomeID})
+		}
+		if record.HTTPStatus != 0 {
+			own = append(own, property{"httpStatus", strconv.Itoa(record.HTTPStatus)})
+		}
+		each := testcase{Name: "verify " + record.ID, Classname: spec, Properties: cleanProperties(own)}
+		described := string(record.Result)
+		if record.Reason != "" {
+			described += " (" + record.Reason + ")"
+		}
+		if record.HTTPStatus != 0 {
+			described += ", HTTP " + strconv.Itoa(record.HTTPStatus)
+		}
+		detail := &problem{Type: "verification_" + string(record.Result), Message: oneLine("independent check "+record.ID+": "+described, maxMessageBytes)}
+		switch record.Result {
+		case runner.VerificationVerified:
+		case runner.VerificationContradicted:
+			each.Failure = detail
+		default:
+			each.Error = detail
+		}
+		cases = append(cases, each)
+	}
+	return cases
 }
 
 // stopReason is the receipt's failure summary stop token when it is a known

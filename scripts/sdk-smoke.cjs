@@ -154,6 +154,84 @@ async function interrupted(kind, webServer = false) {
   }
 }
 
+// A one-order shop in its own process: spawnSync blocks this one.
+async function shop(defect) {
+  const marker = path.join(work, `shop-${defect ? 'defect' : 'ok'}`);
+  const env = {NINELIVES_SMOKE_MARKER: marker, NINELIVES_SMOKE_DEFECT: defect ? '1' : '0'};
+  if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
+  const child = spawn(process.execPath, [path.join(root, 'testdata/sdk/tests/verify/server.cjs')], {env, stdio: 'ignore'});
+  const deadline = Date.now() + 10000;
+  while (!fs.existsSync(marker)) {
+    assert(child.exitCode === null && Date.now() < deadline, 'shop fixture did not start');
+    await sleep(20);
+  }
+  return {child, url: `http://127.0.0.1:${JSON.parse(fs.readFileSync(marker, 'utf8')).port}`};
+}
+// Engine-observed postconditions: the same green spec passes against a shop
+// that stored the order, and is not green against one that only said so.
+async function independentVerification() {
+  const spec = 'testdata/sdk/tests/verify/order.spec.ts';
+  for (const defect of [false, true]) {
+    const {child, url} = await shop(defect);
+    try {
+      const checks = path.join(work, `checks-${defect}.json`);
+      fs.writeFileSync(checks, JSON.stringify({version: 1, checks: [
+        {id: 'order-stored-confirmed', outcomeId: 'order-confirmed', method: 'GET', url: `${url}/api/orders/1?probe=SMOKE-QUERY`,
+          expectStatus: 200, jsonPointer: '/status', equals: 'confirmed', withinMs: 2000},
+        {id: 'order-kept-one-item', method: 'GET', url: `${url}/api/orders/1`, expectStatus: 200, jsonPointer: '/items', equals: 1},
+      ]}));
+      process.env.NINELIVES_SMOKE_SHOP_URL = url;
+      const pass = ['--pass-env', 'NINELIVES_SMOKE_SHOP_URL'];
+      // Without the checks the weak assertion is all there is: green either way.
+      const unchecked = invoke(spec, pass);
+      assert.equal(unchecked.code, 0);
+      assert.equal(unchecked.summary.receipts[0].verifiedAssertions, 0);
+      assert.equal(unchecked.summary.receipts[0].verifications, undefined);
+      const junit = path.join(work, `verify-${defect}.xml`);
+      const checked = invoke(spec, [...pass, '--verify', checks, '--junit', junit]);
+      smokeCase = `verify-${defect ? 'contradicted' : 'verified'}`;
+      const receipt = checked.summary.receipts[0];
+      const report = readJUnit(junit);
+      // The worker's own evidence is the same in both runs: one passed test.
+      assert.equal(receipt.validated, true);
+      assert.equal(receipt.failureCount, 0);
+      assert.equal(receipt.executedTests, 1);
+      assert.equal(receipt.assertionCoverage, 'unknown');
+      assert.match(receipt.verificationSha256, /^[a-f0-9]{64}$/);
+      assert.deepEqual(receipt.verifications.map(item => [item.id, item.observedBy, item.httpStatus]),
+        [['order-stored-confirmed', 'engine', 200], ['order-kept-one-item', 'engine', 200]]);
+      if (!defect) {
+        assert.equal(checked.code, 0);
+        assert.equal(checked.summary.outcome, 'passed');
+        assert.equal(receipt.status, 'passed');
+        assert.equal(receipt.verifiedAssertions, 2);
+        assert.deepEqual(receipt.verifications.map(item => item.result), ['verified', 'verified']);
+        assert.deepEqual([report.tests, report.failures, report.errors], [3, 0, 0]);
+      } else {
+        assert.equal(checked.code, 1);
+        assert.equal(checked.summary.outcome, 'failed');
+        assert.equal(checked.summary.complete, false);
+        assert.equal(receipt.status, 'failed');
+        assert.equal(receipt.verifiedAssertions, 1);
+        assert.equal(receipt.failureSummary.stop, 'verification_contradicted');
+        assert.deepEqual(receipt.verifications.map(item => [item.result, item.reason]), [['contradicted', 'json_value'], ['verified', undefined]]);
+        assert.deepEqual([report.tests, report.failures, report.errors], [3, 1, 0]);
+        assert(report.testcases.find(item => item.name === 'verify order-stored-confirmed').body.includes('<failure type="verification_contradicted"'));
+        const events = readEvents(receipt);
+        assert(events.some(event => event.type === 'test_end' && event.status === 'passed'), 'the worker still reported its test passed');
+      }
+      // Nothing the engine sent or compared is kept, and the worker saw none of it.
+      const directory = path.dirname(receipt.receiptPath);
+      const kept = fs.readdirSync(directory).map(name => fs.readFileSync(path.join(directory, name), 'utf8')).join('\n') + JSON.stringify(checked.summary) + report.raw;
+      for (const leaked of ['SMOKE-QUERY', '/api/orders', 'jsonPointer', 'checks-', '"confirmed"'])
+        assert(!kept.includes(leaked), `receipt evidence holds ${leaked}`);
+    } finally {
+      delete process.env.NINELIVES_SMOKE_SHOP_URL;
+      child.kill();
+    }
+  }
+  console.log('Independent verification: a green spec with a weak assertion is verified against a correct shop and fails, contradicted, against a defective one');
+}
 async function main() {
   assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
   const passing = invoke('testdata/sdk/tests/checkout.spec.ts');
@@ -418,6 +496,7 @@ async function main() {
     await browser.close();
   }
   console.log('Goals: real Chromium multi-step execution, delayed controls, style drift, policy rejection and state redaction verified');
+  await independentVerification();
   await interrupted('timeout');
   await interrupted('cancel');
   await interrupted('timeout', true);
