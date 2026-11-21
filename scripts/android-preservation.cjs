@@ -7,6 +7,8 @@ const {createHash} = require('node:crypto');
 const {spawnSync,execFile} = require('node:child_process');
 const {androidDefaults, androidTargetDriver} = require('../packages/playwright/dist/android');
 const root = path.resolve(__dirname, '..');
+const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
+requireBranch(root, 'android-preservation');
 const work = path.join(root, '.context/android-qualification', `preservation-${Date.now()}`);
 const avd = process.env.NINELIVES_ANDROID_AVD ?? 'QualityMax_API_35';
 const sdk = androidDefaults().sdkRoot;
@@ -34,7 +36,7 @@ function sync(file,args,options={}) {
     const engine = path.join(work,'9l');
     assert.equal(sync('go',['build','-o',engine,'./cmd/9l']).status,0);
     const spec = path.join(root,'testdata/sdk/android/native.spec.ts');
-    const creation = sync(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0);
+    const creation = sync(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0,provenanceFailure(creation));
     const provenance = path.join(work,'creation.json');await fs.writeFile(provenance,creation.stdout,{mode:0o600});
     const probe = path.join(work,'probe.json');
     let preexistingAlive = true;

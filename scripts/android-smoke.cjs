@@ -5,6 +5,8 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
+const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
+requireBranch(root, 'smoke:android');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
   'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus','misfill'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
@@ -39,7 +41,7 @@ for (const name of ['appium','appium-uiautomator2-driver']) {
 const provenances = new Map();
 for (const spec of [nativeSpec, isolationSpec]) {
   const creation = sync(engine,['provenance',spec,'--agent','codex']);
-  assert.equal(creation.status,0);
+  assert.equal(creation.status,0,provenanceFailure(creation));
   const provenance = path.join(work,`${path.basename(spec)}-creation.json`);
   fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
   provenances.set(spec, provenance);
