@@ -8,6 +8,16 @@ SDK versions.
 
 ### Fixed
 
+- `9l run` with more than one job gives each Playwright job its own output
+  directory, `test-results/9l-<job id>` in the job's project. The jobs used
+  to share the project's `outputDir`, which every Playwright process clears
+  when it starts, so a job starting later deleted the traces of one still
+  running: a passing test failed in teardown with `ENOENT`, passed on its
+  retry and was counted in `flakyTests`, or failed outright with
+  `retries: 0`. A run of one job keeps the project's own `outputDir`.
+  Android and iOS jobs already had a private directory. Collect traces from
+  `test-results/` as before, or use `--keep-attachments`
+  ([#268](https://github.com/Quality-Max/9lives-runner/issues/268)).
 - A spec that fails to load now names the error in the receipt and in the
   text output, for example `Error: Cannot find module '@acme/helpers'`.
   `9l run` used to say only that Playwright reported an error before finding
