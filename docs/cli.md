@@ -216,7 +216,9 @@
   stderr and exits 3 where it would have exited 0; a non-zero exit code is
   never changed. The document has one `<testsuite>` per job, from its final
   attempt, with the run, job and attempt IDs, status and counts as
-  properties, and:
+  properties. Suites and classnames are named by the spec, relative to the
+  working directory and with forward slashes when the spec is below it, so
+  the names are the same on every machine. Each test is reported as:
 
   | Receipt | JUnit |
   | --- | --- |

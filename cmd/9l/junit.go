@@ -65,6 +65,15 @@ func (report *junitReport) prepare() error {
 // write replaces the report atomically, readable by whatever uploads it. It
 // holds only what the receipts hold, redacted again on the way out.
 func (report *junitReport) write(summary runner.RunSummary) error {
+	// Suites and classnames are named by the spec. A path below the working
+	// directory is written relative to it and with forward slashes, so a
+	// dashboard sees the same name on every machine and no home directory.
+	receipts := make([]runner.Receipt, len(summary.Receipts))
+	for index, receipt := range summary.Receipts {
+		receipt.Spec = filepath.ToSlash(displayPath(receipt.Spec))
+		receipts[index] = receipt
+	}
+	summary.Receipts = receipts
 	content, err := junit.Render(summary)
 	if err != nil {
 		return err

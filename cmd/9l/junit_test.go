@@ -312,3 +312,31 @@ func TestResultJUnitDoesNotTrustAnEditedTestList(t *testing.T) {
 		t.Fatalf("an edited list hid the failure:\n%s", document)
 	}
 }
+
+// A dashboard keys a test's history on these names, and a report is often
+// published: the spec is named from the working directory, not from the
+// machine's root.
+func TestJUnitNamesSpecsRelativeToTheWorkingDirectory(t *testing.T) {
+	project := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(project); err == nil {
+		project = resolved
+	}
+	t.Chdir(project)
+	elsewhere := filepath.Join(t.TempDir(), "other", "b.spec.ts")
+	summary := runner.RunSummary{Outcome: runner.OutcomePassed, Complete: true, PlannedJobs: 2, Receipts: []runner.Receipt{
+		{JobID: "job-001", Attempt: 1, Spec: filepath.Join(project, "tests", "a.spec.ts"), Status: runner.StatusPassed, Executed: true, Validated: true, ExecutedTests: 1},
+		{JobID: "job-002", Attempt: 1, Spec: elsewhere, Status: runner.StatusPassed, Executed: true, Validated: true, ExecutedTests: 1},
+	}}
+	path := filepath.Join(project, "junit.xml")
+	if err := (&junitReport{path: path}).write(summary); err != nil {
+		t.Fatal(err)
+	}
+	_, raw := readJUnit(t, path)
+	if !strings.Contains(raw, `<testsuite name="tests/a.spec.ts"`) || !strings.Contains(raw, `classname="tests/a.spec.ts"`) || strings.Contains(raw, filepath.ToSlash(project)) {
+		t.Fatalf("a spec below the working directory must be named relative to it:\n%s", raw)
+	}
+	// A spec outside it keeps its full path, and the caller's result is untouched.
+	if !strings.Contains(raw, `<testsuite name="`+filepath.ToSlash(elsewhere)+`"`) || summary.Receipts[0].Spec != filepath.Join(project, "tests", "a.spec.ts") {
+		t.Fatalf("outside spec or the caller's result changed:\n%s", raw)
+	}
+}
