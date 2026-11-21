@@ -4,6 +4,21 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Fixed
+
+- `9l run` with more than one job gives each Playwright job its own output
+  directory, `test-results/9l-<job id>` in the job's project. The jobs used
+  to share the project's `outputDir`, which every Playwright process clears
+  when it starts, so a job starting later deleted the traces of one still
+  running: a passing test failed in teardown with `ENOENT`, passed on its
+  retry and was counted in `flakyTests`, or failed outright with
+  `retries: 0`. A run of one job keeps the project's own `outputDir`.
+  Android and iOS jobs already had a private directory. Collect traces from
+  `test-results/` as before, or use `--keep-attachments`
+  ([#268](https://github.com/Quality-Max/9lives-runner/issues/268)).
+
 ## 0.7.0-beta.1 — 2026-11-20
 
 The first beta of the 0.7.0 line adds an experimental iOS Simulator target.
