@@ -38,6 +38,17 @@ SDK versions.
   Android and iOS jobs already had a private directory. Collect traces from
   `test-results/` as before, or use `--keep-attachments`
   ([#268](https://github.com/Quality-Max/9lives-runner/issues/268)).
+- A spec that fails to load now names the error in the receipt and in the
+  text output, for example `Error: Cannot find module '@acme/helpers'`.
+  `9l run` used to say only that Playwright reported an error before finding
+  any test, and the cause had to be found in the attempt's `stdout.log`. Only
+  the first line is kept, without the require stack or source frames,
+  redacted and at most 300 bytes, as for a test runner that printed no
+  report. Runs with `--sdk` are unchanged: the engine protocol carries no
+  error text.
+- The text output of a failed assertion shows the `Received:` line. It
+  stopped after three lines, which for a matcher are the error, the locator
+  and the expected value.
 
 ## 0.7.0-beta.1 — 2026-11-20
 

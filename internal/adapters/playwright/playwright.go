@@ -278,7 +278,8 @@ type report struct {
 	} `json:"stats"`
 	Suites []suite `json:"suites"`
 	// Errors are reported outside any test, such as a spec that fails to load.
-	// Missing-browser errors produce sanitized guidance; raw messages are not retained.
+	// Missing-browser errors produce sanitized guidance. A load error is named
+	// by its first line only, redacted and bounded.
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
@@ -465,7 +466,11 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	if found == 0 {
 		for _, reported := range parsed.Errors {
 			if !strings.HasPrefix(reported.Message, "Error: No tests found") {
-				return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright reported an error before finding any test, such as a spec or import that fails to load; see the attempt's structured report")
+				reason := "Playwright report contains no completed tests: Playwright reported an error before finding any test, such as a spec or import that fails to load"
+				if line := loadErrorLine(reported.Message); line != "" {
+					reason += ": " + line
+				}
+				return runner.Validation{}, fmt.Errorf("%s; see the attempt's structured report", reason)
 			}
 		}
 		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright found no tests in this spec%s; check that the config includes it (testDir, testMatch, testIgnore), or choose another config or project with --config or --project", configSummary(parsed))
@@ -484,6 +489,23 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 		validation.Description += fmt.Sprintf("; %d test(s) expected to fail passed", unexpectedPasses)
 	}
 	return validation, nil
+}
+
+// maxLoadErrorBytes bounds the load error named in a validation error, as the
+// runner bounds the first error line of a test runner that printed no report.
+const maxLoadErrorBytes = 300
+
+// loadErrorLine is the first line of an error Playwright reported outside any
+// test, such as `Error: Cannot find module 'x'`, without terminal escapes,
+// redacted and bounded. The lines after it are a require stack or source
+// frames and are not kept.
+func loadErrorLine(message string) string {
+	for _, line := range strings.Split(runner.StripTerminalEscapes(message), "\n") {
+		if line = boundedText(line, maxLoadErrorBytes); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 // failureClass classifies an unexpected test as Failures does, from the
