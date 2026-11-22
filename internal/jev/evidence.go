@@ -150,7 +150,7 @@ func (o Observation) validate(expected Binding, now time.Time, maxAge time.Durat
 		return errors.New("missing, stale or foreign Jev observation")
 	}
 	switch o.FailureClass {
-	case "", runner.FailureAssertion, runner.FailureTimeout, runner.FailureActionTimeout, runner.FailureEnvironment, runner.FailureUnexpectedPass, runner.FailureOther:
+	case "", runner.FailureAssertion, runner.FailureTimeout, runner.FailureActionTimeout, runner.FailureEnvironment, runner.FailureUnexpectedPass, runner.FailureSetup, runner.FailureOther:
 	default:
 		return errors.New("invalid Jev failure class")
 	}
