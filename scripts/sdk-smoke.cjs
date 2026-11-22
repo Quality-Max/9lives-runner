@@ -206,6 +206,25 @@ async function main() {
     type: 'smoke-runtime',
     description: 'runtime annotation reaches receipts',
   }]);
+  // --show-output streams the worker's console to the CLI's stderr, redacted,
+  // while stdout stays the JSON result and the evidence stays the protocol.
+  // Under --sdk Playwright relays a spec's console only to a terminal
+  // reporter, so the documented form adds --reporter list.
+  smokeCase = 'show-output';
+  const shown = sync(engine, ['run', 'testdata/sdk/tests/console-output.spec.ts', '--sdk', '--reporter', 'list', '--format', 'json', '--receipt-dir', path.join(work, 'receipts'), '--show-output'], {env: {...process.env, CI: ''}});
+  assert.equal(shown.status, 0, shown.stderr);
+  const shownSummary = JSON.parse(shown.stdout);
+  assert.equal(shownSummary.outcome, 'passed');
+  assert.match(shown.stderr, /\[job-001 stdout\] [^\n]*show-output check: token=\[REDACTED\]/);
+  assert(!shown.stderr.includes('fixture-smoke-secret') && !shown.stdout.includes('fixture-smoke-secret'));
+  assert(!shown.stdout.includes('show-output check'));
+  const shownReceipt = shownSummary.receipts[0];
+  assert.equal(shownReceipt.validated, true);
+  assert.equal(shownReceipt.evidence.stderrPath, undefined);
+  const shownEvidence = fs.readFileSync(shownReceipt.evidence.stdoutPath, 'utf8');
+  assert(!shownEvidence.includes('show-output check') && !shownEvidence.includes('injecting env'));
+  readEvents(shownReceipt);
+  assert(!fs.readFileSync(shownReceipt.receiptPath, 'utf8').includes('show-output check'));
   const failingJUnit = path.join(work, 'failing.xml');
   const failing = invoke('testdata/sdk/tests/defect.spec.ts', ['--junit', failingJUnit]);
   assert.equal(failing.code, 1);

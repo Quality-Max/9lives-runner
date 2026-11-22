@@ -25,6 +25,17 @@ SDK versions.
   test's digest and outcome, without a duration; titles are added only with
   `--failure-details`. The field is additive, so the receipt version stays
   2.
+- `9l run --show-output` streams each test process's stdout and stderr,
+  such as a spec's `console.log`, to 9l's stderr while it runs, with or
+  without `--sdk` (#269). Lines are prefixed with job and stream, stripped
+  of terminal escapes and redacted best effort; `--format json` stdout is
+  unchanged. It is off by default, also in CI, and is never persisted:
+  receipts, logs, events, run results and MCP responses are the same with
+  and without it. A slow or failing stderr drops output with a marker and
+  never changes a result. Treat the stream as private. With `--sdk`, a
+  spec's `console.log` needs a terminal reporter:
+  `9l run <spec> --sdk --reporter list --show-output`. See
+  [docs/cli.md](docs/cli.md).
 
 ### Fixed
 
