@@ -100,8 +100,9 @@ Usage:
           [--failure-details]  # with --sdk, record failed test titles and errors
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
+          [--junit FILE]  # also write a JUnit XML report; an incomplete run is reported as errors
   9l status <run-id> [--receipt-dir DIR]
-  9l result <run-id> [--format text|json] [--receipt-dir DIR]
+  9l result <run-id> [--format text|json] [--receipt-dir DIR] [--junit FILE]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
@@ -670,6 +671,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	goalInputPrice := fs.Int64("goal-input-micros-per-million", 0, "explicit conservative input price, millionths of USD per million tokens")
 	goalOutputPrice := fs.Int64("goal-output-micros-per-million", 0, "explicit conservative output price, millionths of USD per million tokens")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for evidence receipts")
+	junitPath := fs.String("junit", "", "also write a JUnit XML report of the run to this file, for CI dashboards; an incomplete run is reported as errors, never as passed tests")
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	var skipPins skipPinList
@@ -690,7 +692,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-attempts": true, "--attempts": true, "-retries": true, "--retries": true,
 		"-wait-for": true, "--wait-for": true, "-wait-timeout": true, "--wait-timeout": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
-		"-receipt-dir": true, "--receipt-dir": true,
+		"-receipt-dir": true, "--receipt-dir": true, "-junit": true, "--junit": true,
 		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
 		"-goal-max-actions": true, "--goal-max-actions": true, "-goal-max-decisions": true, "--goal-max-decisions": true, "-goal-max-tokens": true, "--goal-max-tokens": true, "-goal-timeout-ms": true, "--goal-timeout-ms": true,
 		"-goal-max-cost-micros": true, "--goal-max-cost-micros": true, "-goal-input-micros-per-million": true, "--goal-input-micros-per-million": true, "-goal-output-micros-per-million": true, "--goal-output-micros-per-million": true,
@@ -712,6 +714,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	// Checked here so plan and --dry-run reject a path run would reject.
+	var report *junitReport
+	if flagWasSet(fs, "junit") {
+		checked, err := newJUnitReport(*junitPath)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return exitUsage
+		}
+		report = checked
 	}
 	// --wait-for is checked here so plan and --dry-run reject what run would.
 	if waitFor.invalid {
@@ -871,6 +883,12 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}
+	if report != nil {
+		if err := report.prepare(); err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return exitUsage
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -917,7 +935,15 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	} else {
 		printResult(out, result)
 	}
-	return runExitCode(result, executionFailed)
+	// Written on every outcome of a run that started, so CI shows a
+	// canceled or timed-out run instead of a missing report.
+	return report.finish(result, runExitCode(result, executionFailed), errOut)
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
 }
 
 // projectNames collects repeatable --project values: one Playwright project
@@ -989,7 +1015,13 @@ func stateCommand(command string, args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	format := fs.String("format", "json", "text or json")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory containing run state")
-	normalized := flagsFirst(args, map[string]bool{"-format": true, "--format": true, "-receipt-dir": true, "--receipt-dir": true})
+	valueFlags := map[string]bool{"-format": true, "--format": true, "-receipt-dir": true, "--receipt-dir": true}
+	junitPath := new(string)
+	if command == "result" {
+		junitPath = fs.String("junit", "", "also write a JUnit XML report of the saved result to this file")
+		valueFlags["-junit"], valueFlags["--junit"] = true, true
+	}
+	normalized := flagsFirst(args, valueFlags)
 	if err := fs.Parse(normalized); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -1026,6 +1058,18 @@ func stateCommand(command string, args []string, out, errOut io.Writer) int {
 		}
 		return 0
 	}
+	var report *junitReport
+	if flagWasSet(fs, "junit") {
+		checked, err := newJUnitReport(*junitPath)
+		if err == nil {
+			err = checked.prepare()
+		}
+		if err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return exitUsage
+		}
+		report = checked
+	}
 	result, err := runner.LoadResult(*receiptDir, runID)
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: result: %v\n", err)
@@ -1036,7 +1080,7 @@ func stateCommand(command string, args []string, out, errOut io.Writer) int {
 	} else {
 		printResult(out, result)
 	}
-	return 0
+	return report.finish(result, 0, errOut)
 }
 
 func printPlan(w io.Writer, plan runner.Plan, format string) int {

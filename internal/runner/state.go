@@ -161,6 +161,7 @@ func LoadStatus(root, runID string) (RunStatus, error) {
 	if err := readJSON(filepath.Join(directory, "result.json"), &result); err == nil {
 		upgradeResult(&result, plan)
 		dropMalformedFailureSummaries(&result)
+		dropMalformedTestLists(&result)
 		status.Result = &result
 		if result.Complete {
 			status.State = "completed"
@@ -221,6 +222,7 @@ func LoadResult(root, runID string) (RunSummary, error) {
 	}
 	if err == nil {
 		dropMalformedFailureSummaries(&result)
+		dropMalformedTestLists(&result)
 	}
 	return result, err
 }

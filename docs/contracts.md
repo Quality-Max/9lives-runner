@@ -71,7 +71,8 @@ Storage failures remain operational errors (exit 3).
 
 `9l plan` and `9l run --dry-run` exit 0 or 2. `9l status` and `9l result`
 exit 0 whenever they could read the run, whatever its outcome, and 2
-otherwise; read `outcome` from their JSON. `9l assess` exits 0 with advisory
+otherwise; read `outcome` from their JSON. `9l result --junit` exits 3 when
+it read the run and could not write the report. `9l assess` exits 0 with advisory
 findings and 2 when any input could not be assessed.
 
 ## Run result
@@ -93,6 +94,37 @@ findings and 2 when any input could not be assessed.
   setup classification, hashed test ID). It never holds titles or error
   text and is present without `--failure-details`; receipts written before
   it have none. See [cli.md](cli.md).
+
+- Each validated receipt lists its tests in `tests` (status, failure
+  class, and where available the hashed test ID, title and duration), at
+  most 2000 with `testsTruncated`. It is additive in receipt version 2;
+  receipts written before it, and attempts that did not validate, have
+  none. Hosts must read counts from `executedTests`, `failureCount`,
+  `skippedTests` and `flakyTests`, not from the length of the list. See
+  [cli.md](cli.md).
+
+## JUnit report
+
+`9l run --junit <file>` and `9l result <run-id> --junit <file>` write a JUnit
+XML document built only from the run result. It is for CI dashboards and is
+not a versioned contract: hosts that decide on a run should read `outcome`
+and the exit code. What a consumer can rely on:
+
+- `<failure>` is a failed test that reached the behavior, `<skipped>` a
+  skipped test, and `<error>` anything that left the result unproven: a
+  setup- or environment-classed failure, a goal that did not complete, an
+  attempt without validated evidence, a canceled or timed-out attempt, or
+  an input the plan skipped.
+- An attempt that did not validate contributes no passing testcase.
+- A run whose `outcome` is `incomplete` always contains at least one
+  `<error>`; a run whose `outcome` is `passed` contains none, and no
+  `<failure>`.
+- The file is replaced atomically. A path that cannot be used exits 2
+  before any test process starts. A report that cannot be written after the
+  run turns exit 0 into 3 and leaves exit 1, 2 and 3 as they are;
+  `9l result --junit` likewise exits 3 instead of 0.
+
+The mapping is in [cli.md](cli.md).
 
 ## Schemas and versioning
 
