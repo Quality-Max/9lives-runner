@@ -159,7 +159,8 @@ Every change listed should be in the changelog's Unreleased section.
   open it with a short summary that names any contract change and whether the
   CLI and SDK must be updated together. Released sections stay as tagged.
 - For a beta, the install example under [Beta releases](#beta-releases).
-  Update the README compatibility table when a qualified pairing changes.
+  Update [the compatibility page](compatibility.md), and the short table in
+  the README, when a qualified pairing changes.
 - Run `npm test` (it fails when the declared versions differ),
   `go test ./cmd/9l` and `go build -o /tmp/9l ./cmd/9l && /tmp/9l --version`.
 

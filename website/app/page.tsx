@@ -119,7 +119,7 @@ export default function Home() {
         <div className="section-heading"><p className="eyebrow">Before the reproduction</p><h2 id="page-checks-heading">Inspect the page. Find the next test.</h2><p>One Chromium load gives nine categories of observations. <code>inspect_page</code> ranks controls and locators; <code>generate_playwright_repro</code> writes a reviewable spec for a finding.</p></div>
         <div className="check-grid">{pageChecks.map(([name, copy]) => <article key={name}><h3>{name}</h3><p>{copy}</p></article>)}</div>
         <Command label="Scan a public page" value={scanCommand} />
-        <p className="section-note">Scans are observations, not test results. Load timings are from one cold visit; INP is not measured. Authenticated pages need explicit consent, and loopback targets need <code>--allow-private-network</code>. <a href={`${repository}#check-the-page-you-changed`}>Page-check guide →</a></p>
+        <p className="section-note">Scans are observations, not test results. Load timings are from one cold visit; INP is not measured. Authenticated pages need explicit consent, and loopback targets need <code>--allow-private-network</code>. <a href={`${repository}/blob/main/docs/scan.md`}>Page-check guide →</a></p>
       </section>
 
       <section className="section wrap" id="status" aria-labelledby="status-heading">
