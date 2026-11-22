@@ -1258,7 +1258,13 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 		if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "Call log:") {
 			continue
 		}
-		if shown == 3 {
+		// Three lines name the error. A matcher's message puts what it
+		// received on the fourth, after the locator and the expected value,
+		// so those two lines are shown wherever they come.
+		if shown >= 3 && !strings.HasPrefix(line, "Expected") && !strings.HasPrefix(line, "Received") {
+			continue
+		}
+		if shown == 6 {
 			break
 		}
 		fmt.Fprintf(w, "             %s\n", receiptReason(line))
