@@ -151,10 +151,13 @@ Every change listed should be in the changelog's Unreleased section.
 
 **2. Prepare the release in one pull request**, branched from `origin/main`:
 
-- `var version` in `cmd/9l/main.go`, `version` in
-  `packages/playwright/package.json` and `@9l/playwright` in
-  `testdata/sdk/package.json` set to `<version>`, then
-  `npm install --package-lock-only --ignore-scripts`.
+- `node scripts/release-version.cjs --set <version>`. It sets `var version`
+  in `cmd/9l/main.go`, `version` in `packages/playwright/package.json` and
+  `@9l/playwright` in `testdata/sdk/package.json`, then runs
+  `npm install --package-lock-only --ignore-scripts` for the lockfile. It
+  refuses a version that is not later than the current one or a tree whose
+  declarations already differ, and checks every file before writing any.
+  `node scripts/release-version.cjs` alone prints the current version.
 - `CHANGELOG.md`: rename `## Unreleased` to `## <version> — YYYY-MM-DD` and
   open it with a short summary that names any contract change and whether the
   CLI and SDK must be updated together. Released sections stay as tagged.
