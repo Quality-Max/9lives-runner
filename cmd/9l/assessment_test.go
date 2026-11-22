@@ -241,7 +241,7 @@ func TestAssessTextNamesFilesWithNoTestsAndCreditedAssertions(t *testing.T) {
 		t.Fatalf("suite failed: code=%d stderr=%q", code, stderr.String())
 	}
 	for _, want := range []string{
-		"test at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  recognized assertions: 2 (toBeDefined, toEqual)\n  analysis-limit/unresolved-helper [unsupported] at 4:22: ",
+		"test at 3:1\n  recognized assertions: 2 (toBeDefined, toEqual)\n  analysis-limit/unresolved-helper [unsupported] at 4:22: ",
 		"file \"helpers.ts\": no tests\n",
 		"Limit: " + assessment.NoTestsLimit + "\n",
 		"Summary: 2 files (1 assessed, 1 with no tests, 0 not assessed), 1 tests, 1 findings\n",
@@ -306,7 +306,7 @@ func TestAssessTextGroupsAnalysisLimitsPerFile(t *testing.T) {
 	for _, want := range []string{
 		"file \"tests/a.spec.ts\":\ntest at 3:1: ",
 		"  fixed-wait [demonstrated] at 7:9: A waitForTimeout call is present.\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nfile \"tests/b.spec.ts\":\n",
-		"test at 2:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=concern\nanalysis limits in this file: nested-function ×2 (--limits lists them)\nfile \"tests/c.spec.ts\": not assessed: syntax\n",
+		"test at 2:1: quality=concern\nanalysis limits in this file: nested-function ×2 (--limits lists them)\nfile \"tests/c.spec.ts\": not assessed: syntax\n",
 		"Summary: 3 files (2 assessed, 1 not assessed), 3 tests, 6 findings\n  analysis-limit/nested-function: 3\n  analysis-limit/unresolved-helper: 2\n  fixed-wait: 1\n",
 	} {
 		if !strings.Contains(grouped.String(), want) {
@@ -337,7 +337,7 @@ func TestAssessTextGroupsAnalysisLimitsPerFile(t *testing.T) {
 	// with its per-rule summary.
 	var single bytes.Buffer
 	writeAssessmentText(&single, *suite.Files[0].Report, false)
-	if want := "test at 6:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=concern\n  fixed-wait [demonstrated] at 7:9: A waitForTimeout call is present.\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 2 tests, 4 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n  fixed-wait: 1\n"; !strings.Contains(single.String(), want) {
+	if want := "test at 6:1: quality=concern\n  fixed-wait [demonstrated] at 7:9: A waitForTimeout call is present.\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 2 tests, 4 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n  fixed-wait: 1\n"; !strings.Contains(single.String(), want) {
 		t.Fatalf("single-file text lacks %q:\n%s", want, single.String())
 	}
 }
@@ -361,7 +361,7 @@ func TestAssessGroupedLimitsCountLikeTheSummaryWhateverTheirSites(t *testing.T) 
 	}
 	var single bytes.Buffer
 	writeAssessmentText(&single, report, false)
-	if want := "test at 9:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 3 tests, 3 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n"; !strings.Contains(single.String(), want) {
+	if want := "test at 9:1\nanalysis limits in this file: unresolved-helper ×2, nested-function ×1 (--limits lists them)\nSummary: 3 tests, 3 findings\n  analysis-limit/unresolved-helper: 2\n  analysis-limit/nested-function: 1\n"; !strings.Contains(single.String(), want) {
 		t.Fatalf("single-file text lacks %q:\n%s", want, single.String())
 	}
 	suite := assessment.SuiteReport{Version: 1, Files: []assessment.SuiteFile{{Path: "tests/a.spec.ts", Report: &report}}, Summary: assessment.SuiteSummary{Files: 1, Assessed: 1, Tests: 3, Findings: total, Rules: counts}}
@@ -424,7 +424,7 @@ func TestAssessLimitsFlagChangesTextOnly(t *testing.T) {
 		"  analysis-limit/unresolved-helper [unsupported] at 3:39: ",
 		"  analysis-limit/unresolved-helper [unsupported] at 4:39: ",
 		"  analysis-limit/nested-function [unsupported] at 4:64: ",
-		"file \"tests/b.spec.ts\":\ntest at 3:1: purpose=unknown alignment=unknown assertions=unknown runtime=unknown quality=unknown\n  recognized assertions: 1 (toBe)\n  analysis-limit/unresolved-helper [unsupported] at 3:41: ",
+		"file \"tests/b.spec.ts\":\ntest at 3:1\n  recognized assertions: 1 (toBe)\n  analysis-limit/unresolved-helper [unsupported] at 3:41: ",
 	} {
 		if !strings.Contains(listed, want) {
 			t.Fatalf("--limits suite text lacks %q:\n%s", want, listed)
@@ -439,5 +439,21 @@ func TestAssessLimitsFlagChangesTextOnly(t *testing.T) {
 	}
 	if single, withLimits := run("tests/a.spec.ts", "--format", "json"), run("tests/a.spec.ts", "--format", "json", "--limits"); single != withLimits {
 		t.Fatalf("single-file JSON differs with --limits:\n%s\n%s", single, withLimits)
+	}
+}
+
+// A test's dimensions are printed only when known: five unknowns per test
+// hid the findings. JSON output still carries every dimension.
+func TestAssessmentTextShowsOnlyKnownDimensions(t *testing.T) {
+	for dimensions, want := range map[[5]string]string{
+		{"unknown", "unknown", "unknown", "unknown", "unknown"}: "",
+		{"unknown", "unknown", "unknown", "unknown", "concern"}: ": quality=concern",
+		{"supported", "aligned", "adequate", "passed", "ok"}:    ": purpose=supported alignment=aligned assertions=adequate runtime=passed quality=ok",
+		{"", "unknown", "weak", "", ""}:                         ": assertions=weak",
+	} {
+		got := knownDimensions(map[string]string{"purpose": dimensions[0], "intentAlignment": dimensions[1], "assertionAdequacy": dimensions[2], "runtimeEvidence": dimensions[3], "engineeringQuality": dimensions[4]})
+		if got != want {
+			t.Fatalf("dimensions %v: got %q, want %q", dimensions, got, want)
+		}
 	}
 }

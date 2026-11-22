@@ -1,5 +1,24 @@
 # Architecture decisions
 
+## Overview
+
+```mermaid
+flowchart LR
+  Specs[Playwright specs and assertions] --> Go[Go CLI: plan, budgets, scheduling]
+  Go --> Worker[TypeScript SDK: fixtures and browser]
+  Worker --> Browser[Local Playwright / Chromium]
+  Browser --> Worker
+  Worker --> Go
+  Go --> Receipts[Validated terminal receipts]
+  Go -. optional goal decisions .-> Provider[Configured model provider]
+```
+
+Go owns execution identity, cancellation and completeness. TypeScript owns
+browser handles and fixtures. The bounded `9l.engine/1` protocol joins them.
+The sections below record the decisions behind that split. The
+[performance baseline](../benchmarks/BASELINE.md) separates runner overhead
+from Playwright and browser costs.
+
 ## Boundaries
 
 The CLI in `cmd/9l` is presentation only. `internal/runner` owns versioned
@@ -51,3 +70,18 @@ version-1 request/response seam and fixtures for selector repair, assertion
 refusal, and review/apply semantics. `9l heal` runs native healing and no longer
 delegates to the installed Python package; the Python CLI and its API consumers
 remain unchanged.
+
+## Process cleanup on Unix
+
+On Unix, the runner stops its process group and tracks descendants to clean up
+Playwright's detached `webServer` processes on exit, deadline or cancellation.
+This requires `ps` on `PATH`. During execution, observations run every 500 ms;
+cleanup uses a 50 ms interval. A missed periodic observation can recover on the
+next snapshot. Startup and cleanup require a successful snapshot within three
+attempts; otherwise the command remains unsuccessful. Snapshots contain only
+process IDs, relationships, status and start time. Tracking is sampled, so a
+process that detaches and loses
+its parent entirely between observations can escape tracking. This is not
+kernel process containment. Start times have one-second resolution. The detached
+server cleanup regression is runtime-qualified on macOS with Chromium; other
+Unix platforms need their own runtime qualification.

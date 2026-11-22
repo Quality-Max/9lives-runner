@@ -21,7 +21,7 @@ cannot corrupt it. The fixture requires a supported engine identity when
 ## Contract
 
 Matching CLI and SDK release versions are the qualified pairing; see the
-[compatibility table](../README.md#compatibility). Runtime admission checks
+[compatibility table](compatibility.md). Runtime admission checks
 the protocol and capabilities below, not npm/CLI package versions or a
 same-minor constraint. Different `0.4.x` package versions alone do not reject
 a run, but mixed release pairs are unqualified. Align versions first when
@@ -149,7 +149,7 @@ installed; the spec does not have to import it for the counts.
 ## Privacy and artifacts
 
 Test IDs and skip keys are SHA-256 hashes. Step labels, test titles, locators, URLs, page content,
-worker console output and raw error strings are omitted. Attachments record an
+worker console output and raw error strings are never persisted. Attachments record an
 opaque ID, coarse kind and `retained: false`; bodies, names and file paths are not
 copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
@@ -174,9 +174,16 @@ evidence.
 
 The runner persists validated bounded protocol output beside its local and
 canonical execution receipts and applies its existing output redaction. The
-worker's own stdout is not evidence and is not retained. Invalid/interrupted
+worker's own stdout is not evidence and is never persisted. Invalid/interrupted
 streams and arbitrary stderr are omitted before persistence; the receipt keeps
-the safe validation/termination reason. Core attempt progress remains in run events;
+the safe validation/termination reason. `9l run --sdk --reporter list --show-output`
+lets a person watch the worker's stdout and stderr, including a spec's
+`console.log`, on 9l's stderr while it runs (redacted best effort, see
+[the CLI reference](cli.md)). The engine reporter itself prints nothing, so a
+spec's console output reaches the stream only through a terminal reporter
+such as `list`; that view is never
+persisted, validated or returned in results, so receipts are the same with and
+without it. Core attempt progress remains in run events;
 step progress is in the attempt evidence stream after persistence.
 
 ## Prove channel
@@ -201,8 +208,11 @@ each run. See [Prove](prove.md).
 
 Real-browser smoke validates checkout assertions, a defective outcome and owned
 worker/browser cleanup on timeout and explicit cancellation. Protocol regressions
-cover malformed, duplicate, foreign, late and incomplete evidence. Live provider accuracy,
-verified replay and independent behavioral verification have separate milestones.
+cover malformed, duplicate, foreign, late and incomplete evidence. An
+experimental first slice of independent behavioral verification,
+[`9l run --verify`](verify.md), checks HTTP postconditions from the engine
+process and uses no part of this protocol. Live provider accuracy, verified
+replay and broader independent verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
 `9l.target/3`, a target identity digest, a declared test list, typed
@@ -216,4 +226,5 @@ only the fields described in [iOS setup](ios-driver.md). It is accepted only for
 an active test on an `ios:` target, once per test attempt. A passing iOS test
 requires that frame and a successful target assertion. The receipt stores the
 record under `iosRuntimes`; neither runtime attribution nor a target assertion
-increments independent `verifiedAssertions`.
+increments independent `verifiedAssertions`. Only a check the engine verified
+itself with [`--verify`](verify.md) does.

@@ -2,6 +2,8 @@
 package playwright
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -185,6 +187,24 @@ func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	}, nil
 }
 
+// IsolateOutput gives a job its own Playwright output directory.
+func (Adapter) IsolateOutput(job runner.Job) runner.Job { return IsolateOutput(job) }
+
+// IsolateOutput points the job at test-results/9l-<job id> in its project.
+// Playwright clears outputDir when a run starts and keeps unfinished traces
+// there, so jobs sharing the project's directory delete each other's files:
+// a passing test then fails in teardown and passes on its retry. The
+// directory is per job, not per run, so the next run clears it as Playwright
+// clears its own. Android and iOS jobs are left alone; the engine gives each
+// of their attempts a private directory when it starts.
+func IsolateOutput(job runner.Job) runner.Job {
+	if strings.HasPrefix(job.Target, "android:") || strings.HasPrefix(job.Target, "ios:") {
+		return job
+	}
+	job.Command = append(append([]string{}, job.Command...), "--output="+filepath.Join(job.WorkDir, "test-results", "9l-"+job.ID))
+	return job
+}
+
 // SelectLine narrows a job to the test at line with Playwright's own
 // `file:line` filter.
 func (Adapter) SelectLine(job runner.Job, line int) (runner.Job, error) {
@@ -258,7 +278,8 @@ type report struct {
 	} `json:"stats"`
 	Suites []suite `json:"suites"`
 	// Errors are reported outside any test, such as a spec that fails to load.
-	// Missing-browser errors produce sanitized guidance; raw messages are not retained.
+	// Missing-browser errors produce sanitized guidance. A load error is named
+	// by its first line only, redacted and bounded.
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
@@ -273,14 +294,17 @@ type report struct {
 	} `json:"config"`
 }
 type suite struct {
+	Title  string  `json:"title"`
 	Suites []suite `json:"suites"`
 	Specs  []struct {
+		Title string `json:"title"`
 		Tests []struct {
 			// Status is Playwright's per-test outcome after retries and
 			// test.fail() expectations: expected, unexpected, flaky, skipped.
 			Status string `json:"status"`
 			// ExpectedStatus is "failed" for a test.fail() test.
 			ExpectedStatus string       `json:"expectedStatus"`
+			ProjectName    string       `json:"projectName"`
 			Results        []testResult `json:"results"`
 		} `json:"tests"`
 	} `json:"specs"`
@@ -291,9 +315,11 @@ type reportError struct {
 }
 
 type testResult struct {
-	Status string        `json:"status"`
-	Error  reportError   `json:"error"`
-	Errors []reportError `json:"errors"`
+	Status string `json:"status"`
+	// Duration is the attempt's time in milliseconds.
+	Duration float64       `json:"duration"`
+	Error    reportError   `json:"error"`
+	Errors   []reportError `json:"errors"`
 }
 
 var browserBuild = regexp.MustCompile(`[/\\]((chromium(?:_headless_shell)?|firefox|webkit)-[0-9]{1,10})[/\\]`)
@@ -341,8 +367,8 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	// Kept apart from incomplete so a later test's generic reason cannot
 	// replace the build name and install command.
 	missingBrowser := ""
-	var walk func(suite)
-	walk = func(current suite) {
+	var walk func(suite, []string)
+	walk = func(current suite, titles []string) {
 		for _, spec := range current.Specs {
 			for _, test := range spec.Tests {
 				found++
@@ -370,6 +396,18 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 				if outcome == "" && len(test.Results) > 0 {
 					outcome = legacyOutcome(test.Results)
 				}
+				// The same title Failures reports, so a report can match the
+				// two; the time is the test's own, over all its attempts.
+				title := strings.Join(append(append([]string{}, titles...), spec.Title), " › ")
+				if test.ProjectName != "" {
+					title = "[" + test.ProjectName + "] " + title
+				}
+				listed := runner.TestOutcome{Title: runner.TestTitle(title)}
+				for _, result := range test.Results {
+					if result.Duration > 0 && result.Duration <= runner.MaxTestDurationMS {
+						listed.DurationMS = min(listed.DurationMS+int64(result.Duration), runner.MaxTestDurationMS)
+					}
+				}
 				switch outcome {
 				case "expected":
 					if !hasCompletedAttempt(test.Results) {
@@ -377,6 +415,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 						continue
 					}
 					validation.ExecutedTests++
+					listed.Status = runner.TestPassed
 				case "flaky":
 					if !hasCompletedAttempt(test.Results) {
 						incomplete = "Playwright report contains an executed test without a completed attempt"
@@ -384,6 +423,7 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 					}
 					validation.ExecutedTests++
 					flaky++
+					listed.Status = runner.TestFlaky
 				case "unexpected":
 					if !hasCompletedAttempt(test.Results) {
 						incomplete = "Playwright report contains an executed test without a completed attempt"
@@ -391,22 +431,27 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 					}
 					validation.ExecutedTests++
 					validation.FailureCount++
-					if lastCompletedStatus(test.Results) == "passed" && test.ExpectedStatus != "" && test.ExpectedStatus != "passed" {
+					listed.Status, listed.Class = runner.TestFailed, failureClass(test.Results, test.ExpectedStatus)
+					if listed.Class == runner.FailureUnexpectedPass {
 						unexpectedPasses++
 					}
 				case "skipped":
 					validation.SkippedTests++
+					listed.Status = runner.TestSkipped
 				default:
 					unsupported = "unsupported Playwright test outcome: " + outcome
+					continue
 				}
+				validation.Tests = append(validation.Tests, listed)
 			}
 		}
 		for _, child := range current.Suites {
-			walk(child)
+			walk(child, append(append([]string{}, titles...), child.Title))
 		}
 	}
+	// The top-level suite is the file; its title repeats the location.
 	for _, current := range parsed.Suites {
-		walk(current)
+		walk(current, nil)
 	}
 	if missingBrowser != "" {
 		return runner.Validation{}, fmt.Errorf("%s", missingBrowser)
@@ -421,7 +466,11 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	if found == 0 {
 		for _, reported := range parsed.Errors {
 			if !strings.HasPrefix(reported.Message, "Error: No tests found") {
-				return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright reported an error before finding any test, such as a spec or import that fails to load; see the attempt's structured report")
+				reason := "Playwright report contains no completed tests: Playwright reported an error before finding any test, such as a spec or import that fails to load"
+				if line := loadErrorLine(reported.Message); line != "" {
+					reason += ": " + line
+				}
+				return runner.Validation{}, fmt.Errorf("%s; see the attempt's structured report", reason)
 			}
 		}
 		return runner.Validation{}, fmt.Errorf("Playwright report contains no completed tests: Playwright found no tests in this spec%s; check that the config includes it (testDir, testMatch, testIgnore), or choose another config or project with --config or --project", configSummary(parsed))
@@ -442,17 +491,44 @@ func (Adapter) Validate(raw []byte) (runner.Validation, error) {
 	return validation, nil
 }
 
-// lastCompletedStatus is the status of the last attempt that ran to an end:
-// passed, failed or timedOut. Skipped and interrupted attempts are not
-// outcomes.
-func lastCompletedStatus(results []testResult) string {
-	for index := len(results) - 1; index >= 0; index-- {
-		switch results[index].Status {
-		case "passed", "failed", "timedOut":
-			return results[index].Status
+// maxLoadErrorBytes bounds the load error named in a validation error, as the
+// runner bounds the first error line of a test runner that printed no report.
+const maxLoadErrorBytes = 300
+
+// loadErrorLine is the first line of an error Playwright reported outside any
+// test, such as `Error: Cannot find module 'x'`, without terminal escapes,
+// redacted and bounded. The lines after it are a require stack or source
+// frames and are not kept.
+func loadErrorLine(message string) string {
+	for _, line := range strings.Split(runner.StripTerminalEscapes(message), "\n") {
+		if line = boundedText(line, maxLoadErrorBytes); line != "" {
+			return line
 		}
 	}
 	return ""
+}
+
+// failureClass classifies an unexpected test as Failures does, from the
+// status and the first error of its last completed attempt.
+func failureClass(results []testResult, expected string) string {
+	for index := len(results) - 1; index >= 0; index-- {
+		result := results[index]
+		switch result.Status {
+		case "passed":
+			if expected != "" && expected != "passed" {
+				return runner.FailureUnexpectedPass
+			}
+			return runner.FailureOther
+		case "timedOut":
+			return runner.FailureTimeout
+		case "failed":
+			if len(result.Errors) > 0 {
+				return classifyError(result.Errors[0].Message)
+			}
+			return runner.FailureOther
+		}
+	}
+	return runner.FailureOther
 }
 
 // configSummary names the config file and its projects' test directories,
@@ -558,6 +634,8 @@ type failureSuite struct {
 	Title  string         `json:"title"`
 	Suites []failureSuite `json:"suites"`
 	Specs  []struct {
+		// ID is Playwright's own test ID.
+		ID    string `json:"id"`
 		Title string `json:"title"`
 		File  string `json:"file"`
 		Line  int    `json:"line"`
@@ -589,6 +667,47 @@ type failureSuite struct {
 type reportAnnotation struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
+}
+
+// TestTitles maps the engine's digest of each test in a JSON report to its
+// title, as Failures composes it. The report carries Playwright's test ID on
+// the spec, and the engine's digest is its SHA-256. A spec that merged
+// several projects' tests carries one ID for all of them, so it names none.
+func TestTitles(raw []byte) map[string]string {
+	var parsed failureReport
+	if json.Unmarshal(raw, &parsed) != nil {
+		return nil
+	}
+	titles := map[string]string{}
+	ambiguous := map[string]bool{}
+	var walk func(failureSuite, []string)
+	walk = func(current failureSuite, path []string) {
+		for _, spec := range current.Specs {
+			if spec.ID == "" || len(spec.Tests) != 1 {
+				continue
+			}
+			sum := sha256.Sum256([]byte(spec.ID))
+			digest := hex.EncodeToString(sum[:])
+			title := strings.Join(append(append([]string{}, path...), spec.Title), " › ")
+			if name := spec.Tests[0].ProjectName; name != "" {
+				title = "[" + name + "] " + title
+			}
+			if _, seen := titles[digest]; seen {
+				ambiguous[digest] = true
+			}
+			titles[digest] = runner.TestTitle(title)
+		}
+		for _, child := range current.Suites {
+			walk(child, append(append([]string{}, path...), child.Title))
+		}
+	}
+	for _, file := range parsed.Suites {
+		walk(file, nil)
+	}
+	for digest := range ambiguous {
+		delete(titles, digest)
+	}
+	return titles
 }
 
 // Annotations lists every test's annotations from its last attempt, which

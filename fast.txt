@@ -1,0 +1,7 @@
+ambiguous
+cancel
+digest
+healthy
+install-fail
+misfill
+width-mismatch

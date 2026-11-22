@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -30,11 +31,16 @@ type ExecuteOptions struct {
 	// jobs are reported canceled or timed out as for any interrupted run.
 	BeforeJobs      func(context.Context) error
 	AgentProvenance *AgentProvenance
-	Workers         int
-	Timeout         time.Duration
-	RunDeadline     time.Duration
-	MaxAttempts     int
-	MaxOutputBytes  int
+	// Verifier performs independent postcondition checks after the attempt's
+	// process tree stopped. It requires exactly one planned job: a job
+	// running beside it could change the state the checks observe. Nothing
+	// about it reaches the worker's environment or arguments.
+	Verifier       PostconditionVerifier
+	Workers        int
+	Timeout        time.Duration
+	RunDeadline    time.Duration
+	MaxAttempts    int
+	MaxOutputBytes int
 	// PassEnv names caller variables forwarded to test processes in addition
 	// to the inherited runtime environment.
 	PassEnv []string
@@ -42,11 +48,20 @@ type ExecuteOptions struct {
 	// receipt directory. Without it they are only referenced, because they
 	// can hold page content.
 	KeepAttachments bool
-	ReceiptDir      string
-	Adapters        []Adapter
-	Store           Store
-	Executor        ProcessExecutor
-	Services        AttemptServiceFactory
+	// LiveOutput, when set, receives each worker's stdout and stderr while the
+	// attempt runs, line by line with a job and stream prefix, terminal escapes
+	// removed and best-effort redaction applied. It is a view for a person, not
+	// evidence: nothing written here is persisted or validated, a failing or
+	// stalled writer never changes an attempt's outcome, and an attempt's
+	// lines are written before it finishes unless the writer is too slow,
+	// when the rest are abandoned with a note. It applies only to the default
+	// executor.
+	LiveOutput io.Writer
+	ReceiptDir string
+	Adapters   []Adapter
+	Store      Store
+	Executor   ProcessExecutor
+	Services   AttemptServiceFactory
 }
 
 // SetupError is a plan or option problem found before any process starts.
@@ -69,6 +84,16 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 		if _, err := ParseAgentProvenance(raw); err != nil || len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
 			summary.Complete = false
 			return summary, SetupError{errors.New("agent provenance requires one exact spec and a valid creation record")}
+		}
+	}
+	if opts.Verifier != nil {
+		if len(plan.Jobs) != 1 || len(plan.Skipped) != 0 {
+			summary.Complete = false
+			return summary, SetupError{errors.New("independent verification requires one exact spec planned as one job")}
+		}
+		if _, err := plannedVerifications(opts.Verifier, VerificationReasonNotValidated); err != nil {
+			summary.Complete = false
+			return summary, SetupError{err}
 		}
 	}
 	if plan.Limits.MaxJobs > 0 && len(plan.Jobs) > plan.Limits.MaxJobs {
@@ -123,7 +148,11 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	executor := opts.Executor
 	if executor == nil {
-		executor = localProcessExecutor{}
+		local := localProcessExecutor{}
+		if opts.LiveOutput != nil {
+			local.live = newLiveSink(opts.LiveOutput)
+		}
+		executor = local
 	}
 	if err := store.Initialize(plan); err != nil {
 		return summary, err
@@ -348,7 +377,7 @@ func executeJob(parent context.Context, runID string, job Job, opts ExecuteOptio
 		receipt = executeAttempt(parent, runID, job, attempt, opts, store, executor)
 		// An interrupted goal may already have changed the application. Never
 		// replay the entire worker automatically after an uncertain effect.
-		if job.Target != "" || receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") {
+		if job.Target != "" || receipt.Status != StatusError || parent.Err() != nil || len(receipt.Goals) > 0 || receipt.GoalFailed || (receipt.AgentProvenance != nil && receipt.AgentProvenance.Status != "matched") || verificationDecided(receipt) {
 			break
 		}
 	}
@@ -485,6 +514,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 	// failedTests is the engine's own account of the failed tests, kept for
 	// the failure summary only when the evidence validated.
 	var failedTests []FailedTestSummary
+	var tests []TestOutcome
 	if receipt.Status == "" {
 		adapter := adapterNamed(opts.Adapters, job.Adapter)
 		if adapter == nil {
@@ -539,7 +569,7 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				receipt.RuntimeExpectedFailures = validation.RuntimeExpectedFailures
 				receipt.SkippedAfterAssertions = validation.SkippedAfterAssertions
 				receipt.Validation = validation.Description
-				failedTests = validation.FailedTests
+				failedTests, tests = validation.FailedTests, validation.Tests
 				if receipt.Executed && receipt.ExitCode == 0 && validation.FailureCount == 0 {
 					receipt.Status = StatusPassed
 				} else if receipt.ExitCode != 0 && validation.FailureCount == 0 {
@@ -587,6 +617,13 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			receipt.Error = "agent branch/source provenance changed or became unavailable during execution"
 		}
 	}
+	// Independent checks run last among the things that decide the status:
+	// the worker's tree has stopped, its evidence is validated or not, and
+	// provenance has been rechecked. They use the run's context, not the
+	// attempt's, so an attempt that finished in time is still checked.
+	if opts.Verifier != nil {
+		receipt = applyVerification(parent, receipt, opts.Verifier)
+	}
 	// Per-test details come from the framework's own report: the evidence
 	// itself, or a separate diagnostics report beside an engine stream.
 	detailReport := output.Stdout
@@ -611,6 +648,14 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 				}
 			}
 		}
+	}
+	// The test list belongs to validated evidence only: an attempt whose
+	// validation was withdrawn above reports no test outcomes.
+	if receipt.Validated && len(tests) > 0 {
+		if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(TitleReporter); ok && detailReport != nil {
+			tests = withTitles(tests, reporter.TestTitles(detailReport))
+		}
+		receipt.Tests, receipt.TestsTruncated = boundTestOutcomes(tests)
 	}
 	if sanitizer, ok := adapterNamed(opts.Adapters, job.Adapter).(EvidenceSanitizer); ok {
 		output.Stdout, output.Stderr = sanitizer.SanitizeEvidence(output.Stdout, output.Stderr, receipt.Validated)
@@ -663,6 +708,10 @@ func runnerErrorLine(stderr []byte) string {
 // failure is attributed to the goal. Other tests in the same file still count,
 // so one failed goal does not hide a proven defect beside it. A goal failure
 // the evidence cannot attribute to a test keeps the receipt incomplete.
+// An independent check the engine contradicted is also a proven failure, but
+// only for an attempt whose own evidence passed: there the mismatch is
+// demonstrated by the engine itself. A passed receipt with a check that is
+// not verified is never a pass.
 func classifyRun(summary RunSummary, interrupted bool) RunOutcome {
 	if interrupted || summary.PlannedJobs == 0 || summary.SkippedInputs > 0 || len(summary.Receipts) != summary.PlannedJobs {
 		return OutcomeIncomplete
@@ -676,8 +725,10 @@ func classifyRun(summary RunSummary, interrupted bool) RunOutcome {
 		switch {
 		case !receipt.Validated:
 			return OutcomeIncomplete
-		case receipt.Status == StatusFailed && failures > 0:
+		case receipt.Status == StatusFailed && (failures > 0 || contradictedPass(receipt)):
 			outcome = OutcomeFailed
+		case receipt.Status == StatusPassed && !verificationsHold(receipt):
+			return OutcomeIncomplete
 		case receipt.Status != StatusPassed:
 			return OutcomeIncomplete
 		}
@@ -715,7 +766,37 @@ func validateValidation(validation Validation) error {
 			return errors.New("structured report has a malformed failed test summary")
 		}
 	}
+	// An adapter that lists its tests lists every one: the list is what
+	// per-test reports are built from, so it must agree with the counts.
+	if len(validation.Tests) > 0 {
+		counts := map[string]int{}
+		for _, test := range validation.Tests {
+			if err := test.Validate(); err != nil {
+				return errors.New("structured report has a malformed test outcome")
+			}
+			counts[test.Status]++
+		}
+		if counts[TestFailed] != validation.FailureCount || counts[TestFlaky] != validation.FlakyTests || counts[TestSkipped] != validation.SkippedTests ||
+			len(validation.Tests) != validation.ExecutedTests+validation.SkippedTests {
+			return errors.New("structured report lists test outcomes that disagree with its counts")
+		}
+	}
 	return nil
+}
+
+// withTitles names the listed tests the framework's report identified by
+// digest. A test it did not identify keeps its digest only.
+func withTitles(tests []TestOutcome, titles map[string]string) []TestOutcome {
+	if len(titles) == 0 {
+		return tests
+	}
+	named := slices.Clone(tests)
+	for index, test := range named {
+		if title, ok := titles[test.TestID]; ok && test.TestID != "" {
+			named[index].Title = TestTitle(title)
+		}
+	}
+	return named
 }
 
 // statusFor distinguishes a per-job or run-wide deadline from a user
@@ -765,15 +846,24 @@ func joinError(left, right string) string {
 	return left + "; " + right
 }
 
-type localProcessExecutor struct{}
+// localProcessExecutor runs a job's command. With live set it also tees the
+// worker's streams into the run's live output view.
+type localProcessExecutor struct{ live *liveSink }
 
-func (localProcessExecutor) Run(ctx context.Context, job Job, outputLimit int) ProcessOutput {
+func (executor localProcessExecutor) Run(ctx context.Context, job Job, outputLimit int) ProcessOutput {
 	result := ProcessOutput{ExitCode: -1}
 	command := exec.Command(job.Command[0], job.Command[1:]...)
 	command.Dir = job.WorkDir
 	command.Env = controlledEnvironment(os.Environ(), job.Env)
 	stdout, stderr := newLimitedBuffer(outputLimit), newLimitedBuffer(outputLimit)
 	command.Stdout, command.Stderr = stdout, stderr
+	if executor.live != nil {
+		// The live writers never fail and never block, so the captured
+		// buffers and the command's result are the same as without them.
+		live := executor.live.startAttempt(job.ID)
+		command.Stdout, command.Stderr = io.MultiWriter(stdout, live.Stdout()), io.MultiWriter(stderr, live.Stderr())
+		defer live.close()
+	}
 	err, termination := startAndWait(ctx, command)
 	result.Executed = command.Process != nil
 	result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
@@ -894,6 +984,10 @@ func inherited(key string) bool {
 	}
 	return false
 }
+
+// InheritedByWorkers reports whether test processes receive the named
+// variable from the caller's environment without --pass-env.
+func InheritedByWorkers(name string) bool { return inherited(name) }
 
 // passedEnvironment reads the variables a caller explicitly forwarded. Values
 // stay in memory; Job.Env is never persisted in the plan or receipts.

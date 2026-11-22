@@ -363,6 +363,18 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				return invalid("inconsistent test outcome")
 			}
 			state.final = true
+			// One entry per test, in result order. The stream has digests
+			// and no timestamps: no title and no duration is recorded.
+			listed := runner.TestOutcome{TestID: frame.TestID, Status: runner.TestPassed}
+			switch frame.Outcome {
+			case "skipped":
+				listed.Status = runner.TestSkipped
+			case "flaky":
+				listed.Status = runner.TestFlaky
+			case "unexpected":
+				listed.Status, listed.Class = runner.TestFailed, failedTest(frame.TestID, state).Class
+			}
+			validation.Tests = append(validation.Tests, listed)
 			if frame.Outcome == "skipped" {
 				if !testID.MatchString(frame.SkipKey) {
 					return invalid("invalid skip key")

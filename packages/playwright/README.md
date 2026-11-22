@@ -56,7 +56,10 @@ Natural-language goals use finite observed controls and typed actions, with
 budgets and a conservative stop policy. See the
 [goal contract](https://github.com/Quality-Max/9lives-runner/blob/main/docs/goals.md)
 and [SDK bridge](https://github.com/Quality-Max/9lives-runner/blob/main/docs/sdk-bridge.md).
-Live provider accuracy, independent behavioral verification, verified replay,
+The CLI has an experimental first slice of independent behavioral
+verification, `9l run --verify`, which checks HTTP postconditions declared
+outside the spec from the engine process; this package takes no part in it.
+Live provider accuracy, broader independent verification, verified replay,
 iOS and Android devices beyond those listed below are not qualified features.
 
 ## iOS Simulator (experimental, beta)

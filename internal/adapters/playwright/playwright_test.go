@@ -2,6 +2,7 @@ package playwright
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -81,8 +82,23 @@ func TestValidateRejectsReportsWithoutCompletedTests(t *testing.T) {
 	}
 	// A spec that throws while loading is not blamed on the config.
 	_, err = New().Validate([]byte(`{"config":{},"suites":[],"errors":[{"message":"Error: import boom"},{"message":"Error: No tests found."}],"stats":{"duration":5.8}}`))
-	if err == nil || !strings.Contains(err.Error(), "fails to load") || strings.Contains(err.Error(), "testDir") || strings.Contains(err.Error(), "boom") {
-		t.Fatalf("a load error must be reported without its message and without the config hint: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "fails to load: Error: import boom; see") || strings.Contains(err.Error(), "testDir") {
+		t.Fatalf("a load error must be named, without the config hint: %v", err)
+	}
+	// Only the first line is kept: without the require stack or source
+	// frames after it, without terminal escapes, redacted and bounded.
+	long := strings.Repeat("é", 400)
+	for message, want := range map[string]string{
+		`Error: Cannot find module '@acme/helpers'\nRequire stack:\n- /project/tests/a.spec.ts`:              "fails to load: Error: Cannot find module '@acme/helpers'; see",
+		`\u001b[31mSyntaxError: Unexpected token (3:5)\u001b[39m\n\n  1 | const password = 'hunter2hunter2'`: "fails to load: SyntaxError: Unexpected token (3:5); see",
+		`Error: connect failed for https://user:hunter2hunter2@db.example.test/app`:                          "fails to load: Error: connect failed for https://user:[REDACTED]@db.example.test/app; see",
+		`\n\n`:           "fails to load; see",
+		"Error: " + long: "…; see",
+	} {
+		_, err = New().Validate([]byte(`{"config":{},"suites":[],"errors":[{"message":"` + message + `"},{"message":"Error: No tests found."}],"stats":{"duration":5.8}}`))
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "hunter2") || strings.Contains(err.Error(), "Require stack") || strings.Contains(err.Error(), "\x1b") || len(err.Error()) > 600 {
+			t.Fatalf("load error %q reported as: %v", message, err)
+		}
 	}
 }
 
@@ -224,7 +240,7 @@ func TestPlanSelectsALineAndPassesGrepThrough(t *testing.T) {
 	}
 	filter := TestFileFilter(project, filepath.Join("tests", "a.spec.ts"))
 	job := plan.Jobs[0]
-	if !slices.Contains(job.Command, filter+":12") || slices.Contains(job.Command, filter) || !slices.Equal(job.Command[len(job.Command)-2:], []string{"--grep", "login"}) || job.Selection != `line 12, --grep "login"` {
+	if !slices.Contains(job.Command, filter+":12") || slices.Contains(job.Command, filter) || !slices.Equal(job.Command[len(job.Command)-3:], []string{"--grep", "login", "--output=" + filepath.Join(project, "test-results", "9l-job-001")}) || job.Selection != `line 12, --grep "login"` {
 		t.Fatalf("job=%+v", job)
 	}
 	if !slices.Contains(plan.Jobs[1].Command, filter+":30") {
@@ -233,6 +249,58 @@ func TestPlanSelectsALineAndPassesGrepThrough(t *testing.T) {
 	plan, err = runner.BuildPlan([]string{spec}, runner.PlanOptions{Adapters: []runner.Adapter{New()}, Reporters: []string{"html"}})
 	if err != nil || len(plan.Jobs) != 1 || !slices.Contains(plan.Jobs[0].Command, "--reporter=json,html") {
 		t.Fatalf("reporters not added: %+v %v", plan, err)
+	}
+}
+
+// Playwright clears its output directory when a run starts. Jobs of one run
+// sharing the project's directory delete each other's traces, so a passing
+// test fails in teardown and is reported flaky after its retry.
+func TestPlanGivesEachJobOfASharedRunItsOwnOutputDirectory(t *testing.T) {
+	project := t.TempDir()
+	write(t, filepath.Join(project, "package.json"), `{"devDependencies":{"@playwright/test":"1.61.1"}}`, 0o600)
+	binary := filepath.Join(project, "node_modules", ".bin", "playwright")
+	if runtime.GOOS == "windows" {
+		binary += ".cmd"
+		write(t, filepath.Join(project, "node_modules", "@playwright", "test", "cli.js"), "placeholder", 0o600)
+	}
+	write(t, binary, "#!/bin/sh\n", 0o700)
+	first, second := filepath.Join(project, "tests", "a.spec.ts"), filepath.Join(project, "tests", "b.spec.ts")
+	write(t, first, "", 0o600)
+	write(t, second, "", 0o600)
+	outputs := func(job runner.Job) []string {
+		var found []string
+		for _, argument := range job.Command {
+			if strings.HasPrefix(argument, "--output") {
+				found = append(found, argument)
+			}
+		}
+		return found
+	}
+	plan, err := runner.BuildPlan([]string{first, second}, runner.PlanOptions{Adapters: []runner.Adapter{New()}})
+	if err != nil || len(plan.Jobs) != 2 {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	for index, job := range plan.Jobs {
+		want := "--output=" + filepath.Join(project, "test-results", fmt.Sprintf("9l-job-%03d", index+1))
+		if got := outputs(job); !slices.Equal(got, []string{want}) {
+			t.Fatalf("job %d output=%v want %s", index+1, got, want)
+		}
+	}
+	// A run of one job has nothing to collide with and keeps the project's
+	// own directory, where its CI already looks for traces.
+	plan, err = runner.BuildPlan([]string{first}, runner.PlanOptions{Adapters: []runner.Adapter{New()}})
+	if err != nil || len(plan.Jobs) != 1 || len(outputs(plan.Jobs[0])) != 0 {
+		t.Fatalf("single job was redirected: %+v %v", plan, err)
+	}
+	// Native attempts get a private directory from the engine instead.
+	for _, target := range []string{"android:shop", "ios:shop"} {
+		job := runner.Job{ID: "job-001", WorkDir: project, Target: target, Command: []string{"playwright", "test"}}
+		if got := IsolateOutput(job); len(outputs(got)) != 0 {
+			t.Fatalf("%s was redirected: %v", target, got.Command)
+		}
+	}
+	if got := IsolateOutput(runner.Job{ID: "job-002", WorkDir: project, Target: "web:shop", Command: []string{"playwright", "test"}}); len(outputs(got)) != 1 {
+		t.Fatalf("web target kept the shared directory: %v", got.Command)
 	}
 }
 
