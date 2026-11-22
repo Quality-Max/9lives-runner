@@ -56,7 +56,8 @@ phone, through Appium and UiAutomator2. It supports:
   and fold posture, and opt-in metadata-only gesture diagnostics.
 
 `9l doctor --android` checks Java, the SDK, AVDs, devices and the pinned
-Appium tooling. Every emulator case runs in CI on hosted Linux, and the
+Appium tooling. Every emulator case runs nightly in CI on hosted Linux, three
+times, with a pass rate per case; pull requests run a fast subset. The
 attached-device cases passed on one Android 17 foldable. Target assertions are
 reported by the worker and are not independently verified.
 

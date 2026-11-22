@@ -63,7 +63,8 @@ goals, and replay verified actions without depending on a platform account.
 - Follow the [release runbook](docs/releases.md#release-runbook) step by step.
   The CLI and `@9l/playwright` share one version; a beta is `X.Y.Z-beta.N`.
 - Tag only the merged release-preparation commit on `main`, after its CI (and
-  the Android workflow when it ran) passed, with a signed annotated tag:
+  the Android workflow when it ran) passed and the full Android matrix met the
+  runbook's pass-rate rule, with a signed annotated tag:
   `git tag -s v<version> -m "9lives <version>" <sha>`.
 - Never move, delete or reuse a pushed tag, never publish to npm by hand and
   never edit a published release's assets. A defective release is replaced
