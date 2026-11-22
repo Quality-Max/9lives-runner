@@ -47,9 +47,10 @@ type ExecuteOptions struct {
 	// attempt runs, line by line with a job and stream prefix, terminal escapes
 	// removed and best-effort redaction applied. It is a view for a person, not
 	// evidence: nothing written here is persisted or validated, a failing or
-	// stalled writer never changes an attempt's outcome, and the last line of
-	// an attempt is written before the attempt finishes. It applies only to
-	// the default executor.
+	// stalled writer never changes an attempt's outcome, and an attempt's
+	// lines are written before it finishes unless the writer is too slow,
+	// when the rest are abandoned with a note. It applies only to the default
+	// executor.
 	LiveOutput io.Writer
 	ReceiptDir string
 	Adapters   []Adapter

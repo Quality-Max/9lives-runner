@@ -33,7 +33,9 @@ func comparableReceipt(t *testing.T, receipt Receipt, receipts string) map[strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw = []byte(strings.ReplaceAll(string(raw), receipts, "RECEIPTS"))
+	// Paths inside JSON are escaped: on Windows every backslash is doubled.
+	escaped, _ := json.Marshal(receipts)
+	raw = []byte(strings.ReplaceAll(string(raw), strings.Trim(string(escaped), `"`), "RECEIPTS"))
 	var fields map[string]any
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)

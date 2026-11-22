@@ -29,17 +29,22 @@ const (
 )
 
 // liveCloseWait bounds how long an attempt waits for its queued lines to reach
-// the writer. A writer slower than that is disabled for the rest of the run.
-// It is a variable so tests can shorten it.
+// the writer. When it passes, the attempt's remaining lines are abandoned; a
+// writer stuck inside one write for that long is disabled for the rest of the
+// run, while one that is merely slow keeps serving later attempts. It is a
+// variable so tests can change it.
 var liveCloseWait = 2 * time.Second
 
 // liveSink is the caller's writer, shared by every attempt of a run. One mutex
-// orders whole lines from parallel workers. The first failed or stalled write
-// disables it, silently, for the rest of the run.
+// orders whole lines from parallel workers. The first failed write, or one
+// stuck for longer than liveCloseWait, disables it for the rest of the run.
 type liveSink struct {
 	mu       sync.Mutex
 	w        io.Writer
 	disabled atomic.Bool
+	// writing is when the write in progress started, in Unix nanoseconds, or
+	// zero; it tells a stuck writer from a slow one.
+	writing atomic.Int64
 }
 
 func newLiveSink(w io.Writer) *liveSink { return &liveSink{w: w} }
@@ -53,9 +58,18 @@ func (s *liveSink) writeLine(line []byte) {
 	if s.disabled.Load() {
 		return
 	}
-	if n, err := s.w.Write(line); err != nil || n != len(line) {
+	s.writing.Store(time.Now().UnixNano())
+	n, err := s.w.Write(line)
+	s.writing.Store(0)
+	if err != nil || n != len(line) {
 		s.disabled.Store(true)
 	}
+}
+
+// stuck reports whether a write has been in progress for at least d.
+func (s *liveSink) stuck(d time.Duration) bool {
+	started := s.writing.Load()
+	return started != 0 && time.Since(time.Unix(0, started)) >= d
 }
 
 type liveChunk struct {
@@ -72,8 +86,11 @@ type liveAttempt struct {
 	queued   atomic.Int64
 	dropped  atomic.Int64
 	stopped  atomic.Bool
-	stop     chan struct{}
-	done     chan struct{}
+	// abandoned is set when close gave up waiting: the drain discards the
+	// rest of this attempt's lines instead of writing them late.
+	abandoned atomic.Bool
+	stop      chan struct{}
+	done      chan struct{}
 	// pending holds each stream's unfinished line; only the drain uses it.
 	pending [2][]byte
 }
@@ -137,9 +154,11 @@ func (a *liveAttempt) run() {
 				case chunk := <-a.queue:
 					a.consume(chunk)
 				default:
-					a.flush(0)
-					a.flush(1)
-					a.reportDropped()
+					if !a.abandoned.Load() {
+						a.flush(0)
+						a.flush(1)
+						a.reportDropped()
+					}
 					return
 				}
 			}
@@ -149,6 +168,9 @@ func (a *liveAttempt) run() {
 
 func (a *liveAttempt) consume(chunk liveChunk) {
 	a.queued.Add(-int64(len(chunk.data)))
+	if a.abandoned.Load() {
+		return
+	}
 	buffer := append(a.pending[chunk.stream], chunk.data...)
 	for {
 		end := bytes.IndexByte(buffer, '\n')
@@ -187,7 +209,7 @@ func (a *liveAttempt) reportDropped() {
 
 // emit writes one line, at most liveLineLimit bytes per written line.
 func (a *liveAttempt) emit(stream int, line []byte) {
-	for {
+	for !a.abandoned.Load() {
 		piece := line
 		if len(piece) > liveLineLimit {
 			piece = piece[:runeBoundary(piece, liveLineLimit)]
@@ -202,7 +224,10 @@ func (a *liveAttempt) emit(stream int, line []byte) {
 
 // close stops the view after the worker's output has been drained: queued
 // lines and unfinished lines are written, then the goroutine exits. It waits
-// at most liveCloseWait; a writer that holds it longer is disabled.
+// at most liveCloseWait. Past that, the attempt's remaining lines are
+// abandoned and one line says so; the writer is disabled only when a single
+// write has been stuck for that long, so a slow terminal still shows the
+// attempts that follow.
 func (a *liveAttempt) close() {
 	if !a.stopped.CompareAndSwap(false, true) {
 		return
@@ -213,9 +238,29 @@ func (a *liveAttempt) close() {
 	select {
 	case <-a.done:
 	case <-timer.C:
-		a.sink.disabled.Store(true)
+		a.abandoned.Store(true)
+		// One line takes a working terminal far less than half the wait.
+		if a.sink.stuck(liveCloseWait / 2) {
+			a.sink.disabled.Store(true)
+			return
+		}
+		note := func() {
+			jobPrefix := strings.Replace(a.prefixes[0], " stdout] ", "] ", 1)
+			a.sink.writeLine([]byte(jobPrefix + "[9l: the rest of this attempt's output was not shown in time]\n"))
+		}
+		// The drain stops at its next line; give it a moment so the note
+		// normally precedes whatever the run prints next.
+		select {
+		case <-a.done:
+			note()
+		case <-time.After(liveAbandonWait):
+			go func() { <-a.done; note() }()
+		}
 	}
 }
+
+// liveAbandonWait bounds the extra wait for an abandoned drain to stop.
+const liveAbandonWait = 250 * time.Millisecond
 
 // runeBoundary returns a cut at or below limit that does not split a UTF-8
 // sequence, or limit when no boundary is near.

@@ -100,9 +100,13 @@
   longer than 16 KiB is split, which can also split a secret past redaction.
   The stream never holds a run back: when the terminal or pipe reading 9l's
   stderr falls behind, 9l drops output and prints
-  `[job-001] [9l: N bytes of output dropped]`, and a stderr that fails or
-  stalls for more than two seconds turns the stream off for the rest of the
-  run without changing any result. With `--sdk`, 9l's engine reporter keeps
+  `[job-001] [9l: N bytes of output dropped]`. When an attempt ends and its
+  queued lines have not reached stderr within two seconds, the rest of that
+  attempt's lines are skipped with
+  `[job-001] [9l: the rest of this attempt's output was not shown in time]`,
+  and later attempts still stream. A stderr that fails, or a single write to
+  it stuck for a second or more, turns the stream off for the rest of the
+  run. None of this changes any result. With `--sdk`, 9l's engine reporter keeps
   worker output out of Playwright's own printing, so a spec's `console.log`
   reaches the stream only through a terminal reporter (`list`, `line` or
   `dot`); output from the config, `globalSetup` and a `webServer` shows

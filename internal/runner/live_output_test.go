@@ -141,6 +141,11 @@ func (w *blockingWriter) Write(p []byte) (int, error) {
 var droppedMarker = regexp.MustCompile(`^\[job-001\] \[9l: (\d+) bytes of output dropped\]\n$`)
 
 func TestLiveOutputDropsWhatDoesNotFitAndCountsIt(t *testing.T) {
+	// This test counts bytes, so the drain must finish: a slow runner under
+	// the race detector can take longer than the normal close bound.
+	previous := liveCloseWait
+	liveCloseWait = time.Minute
+	t.Cleanup(func() { liveCloseWait = previous })
 	sink := &blockingWriter{release: make(chan struct{})}
 	attempt := newLiveSink(sink).startAttempt("job-001")
 	line := strings.Repeat("x", 999) + "\n"
@@ -257,5 +262,51 @@ func TestLiveOutputLeavesNoGoroutineBehind(t *testing.T) {
 	}
 	if got := strings.Count(out.text(), "[job-001 stdout] partial\n"); got != 50 {
 		t.Fatalf("flushed %d partial lines, want 50", got)
+	}
+}
+
+// slowWriter accepts every line, but slowly, like a terminal over a slow link.
+type slowWriter struct {
+	delay time.Duration
+	recordingWriter
+}
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	return w.recordingWriter.Write(p)
+}
+
+// A terminal that is slow but working loses the rest of one attempt that
+// printed too much, with a note, and keeps showing the attempts after it.
+func TestLiveOutputSlowWriterAbandonsOneAttemptButStaysEnabled(t *testing.T) {
+	previous := liveCloseWait
+	liveCloseWait = 200 * time.Millisecond
+	t.Cleanup(func() { liveCloseWait = previous })
+	sink := &slowWriter{delay: 5 * time.Millisecond}
+	live := newLiveSink(sink)
+	chatty := live.startAttempt("job-001")
+	for i := 0; i < 200; i++ { // about one second of writing at 5 ms a line
+		_, _ = chatty.Stdout().Write([]byte(fmt.Sprintf("line %d\n", i)))
+	}
+	started := time.Now()
+	chatty.close()
+	if elapsed := time.Since(started); elapsed > liveCloseWait+liveAbandonWait+time.Second {
+		t.Fatalf("close waited %s", elapsed)
+	}
+	if live.disabled.Load() {
+		t.Fatal("a slow but working writer was disabled")
+	}
+	next := live.startAttempt("job-002")
+	_, _ = next.Stdout().Write([]byte("after\n"))
+	next.close()
+	text := sink.text()
+	if !strings.Contains(text, "[job-002 stdout] after\n") {
+		t.Fatalf("the next attempt's output was not shown: %q", text[max(0, len(text)-300):])
+	}
+	if strings.Contains(text, "[job-001 stdout] line 199\n") {
+		t.Fatal("the abandoned attempt's last line was still written")
+	}
+	if !strings.Contains(text, "[job-001] [9l: the rest of this attempt's output was not shown in time]\n") {
+		t.Fatalf("no note for the abandoned lines: %q", text[max(0, len(text)-300):])
 	}
 }
