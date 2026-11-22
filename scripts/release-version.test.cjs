@@ -5,7 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
-const {semver, declaredVersions, releaseVersion, releaseChannel} = require('./release-version.cjs');
+const {semver, declaredVersions, releaseVersion, releaseChannel, setReleaseVersion} = require('./release-version.cjs');
 
 const root = path.resolve(__dirname, '..');
 
@@ -132,3 +132,87 @@ for (const [version, tags, allowed] of [
     });
   });
 }
+
+// --set moves every declaration and leaves the lockfile to npm.
+function versionTree(version, extra = {}) {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'release-set-'));
+  const files = {
+    'cmd/9l/main.go': `package main\n\n// version is set at release.\nvar version = "${version}"\n`,
+    'packages/playwright/package.json': `{\n  "name": "@9l/playwright",\n  "version": "${version}",\n  "license": "Apache-2.0"\n}\n`,
+    'testdata/sdk/package.json': `{\n  "private": true,\n  "devDependencies": {"@9l/playwright": "${version}", "@playwright/test": "1.61.1"}\n}\n`,
+    'package-lock.json': JSON.stringify({packages: {'packages/playwright': {version}}}),
+    ...extra,
+  };
+  for (const [file, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(copy, file)), {recursive: true});
+    fs.writeFileSync(path.join(copy, file), content);
+  }
+  return copy;
+}
+// Stands in for npm: the lockfile follows the SDK manifest.
+const fakeNpm = calls => root => {
+  calls.push(root);
+  const sdk = JSON.parse(fs.readFileSync(path.join(root, 'packages/playwright/package.json'), 'utf8'));
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({packages: {'packages/playwright': {version: sdk.version}}}));
+};
+
+test('--set moves every declaration, keeps the files otherwise unchanged and refreshes the lockfile', () => {
+  const copy = versionTree('0.7.0-beta.1');
+  try {
+    const calls = [];
+    const before = fs.readFileSync(path.join(copy, 'packages/playwright/package.json'), 'utf8');
+    const result = setReleaseVersion('0.7.0', {root: copy, refreshLockfile: fakeNpm(calls)});
+    assert.deepEqual([result.from, result.to], ['0.7.0-beta.1', '0.7.0']);
+    assert.equal(calls.length, 1);
+    assert.equal(releaseVersion(copy), '0.7.0');
+    assert.equal(fs.readFileSync(path.join(copy, 'packages/playwright/package.json'), 'utf8'), before.replace('0.7.0-beta.1', '0.7.0'));
+    assert.match(fs.readFileSync(path.join(copy, 'cmd/9l/main.go'), 'utf8'), /^\/\/ version is set at release\.\nvar version = "0\.7\.0"$/m);
+  } finally {
+    fs.rmSync(copy, {recursive: true, force: true});
+  }
+});
+
+test('--set refuses an older, equal or unsupported version, a drifted tree and an ambiguous declaration without writing', () => {
+  const refuse = (copy, version, pattern) => {
+    const calls = [];
+    const snapshot = ['cmd/9l/main.go', 'packages/playwright/package.json', 'testdata/sdk/package.json', 'package-lock.json'].map(file => fs.readFileSync(path.join(copy, file), 'utf8'));
+    assert.throws(() => setReleaseVersion(version, {root: copy, refreshLockfile: fakeNpm(calls)}), pattern);
+    assert.equal(calls.length, 0, 'npm must not run after a refusal');
+    assert.deepEqual(['cmd/9l/main.go', 'packages/playwright/package.json', 'testdata/sdk/package.json', 'package-lock.json'].map(file => fs.readFileSync(path.join(copy, file), 'utf8')), snapshot);
+  };
+  let copy = versionTree('0.7.0');
+  try {
+    refuse(copy, '0.7.0', /not later/);
+    refuse(copy, '0.7.0-beta.3', /not later/);
+    refuse(copy, '0.6.9', /not later/);
+    refuse(copy, 'v0.8.0', /unsupported/);
+  } finally {
+    fs.rmSync(copy, {recursive: true, force: true});
+  }
+  copy = versionTree('0.7.0', {'testdata/sdk/package.json': '{"devDependencies": {"@9l/playwright": "0.6.1"}}'});
+  try {
+    refuse(copy, '0.8.0', /release versions differ: .*fixture 0\.6\.1/);
+  } finally {
+    fs.rmSync(copy, {recursive: true, force: true});
+  }
+  // The same text twice, as in a comment, is not guessed at.
+  copy = versionTree('0.7.0', {'packages/playwright/package.json': '{"name": "@9l/playwright", "version": "0.7.0", "x": {"version": "0.7.0"}}'});
+  try {
+    refuse(copy, '0.8.0', /packages\/playwright\/package\.json: expected the version declaration "version": "0\.7\.0" exactly once, found 2/);
+  } finally {
+    fs.rmSync(copy, {recursive: true, force: true});
+  }
+});
+
+test('--set from the command line names what it changed and refuses misuse', () => {
+  const script = path.join(root, 'scripts', 'release-version.cjs');
+  const usage = spawnSync(process.execPath, [script, '--set'], {encoding: 'utf8'});
+  assert.equal(usage.status, 2);
+  assert.match(usage.stderr, /usage/);
+  const older = spawnSync(process.execPath, [script, '--set', '0.0.1'], {encoding: 'utf8', cwd: root});
+  assert.equal(older.status, 1);
+  assert.match(older.stderr, /not later than the current version/);
+  const print = spawnSync(process.execPath, [script], {encoding: 'utf8'});
+  assert.equal(print.status, 0);
+  assert.equal(print.stdout.trim(), releaseVersion());
+});

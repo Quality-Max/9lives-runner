@@ -381,5 +381,5 @@ function diagnose(args, root = process.cwd(), android) {
         ready: !checks.some(check => check.status === 'missing' || check.name.endsWith('/browser')), checks,
         unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login',
             ...(spec ? ['testDir and testMatch unless literal'] : []), ...(android?.unverified ?? [])],
-        next: 'Start your app, then run: 9l scan http://localhost:<port> --allow-private-network. No account is required.' };
+        next: "Next: 9l assess 'tests/**/*.spec.ts' reviews your specs without an app or a browser. Then start your app and run one spec: 9l run tests/<name>.spec.ts. No account is required." };
 }

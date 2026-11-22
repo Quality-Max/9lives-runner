@@ -43,11 +43,20 @@ type ExecuteOptions struct {
 	// receipt directory. Without it they are only referenced, because they
 	// can hold page content.
 	KeepAttachments bool
-	ReceiptDir      string
-	Adapters        []Adapter
-	Store           Store
-	Executor        ProcessExecutor
-	Services        AttemptServiceFactory
+	// LiveOutput, when set, receives each worker's stdout and stderr while the
+	// attempt runs, line by line with a job and stream prefix, terminal escapes
+	// removed and best-effort redaction applied. It is a view for a person, not
+	// evidence: nothing written here is persisted or validated, a failing or
+	// stalled writer never changes an attempt's outcome, and an attempt's
+	// lines are written before it finishes unless the writer is too slow,
+	// when the rest are abandoned with a note. It applies only to the default
+	// executor.
+	LiveOutput io.Writer
+	ReceiptDir string
+	Adapters   []Adapter
+	Store      Store
+	Executor   ProcessExecutor
+	Services   AttemptServiceFactory
 }
 
 // SetupError is a plan or option problem found before any process starts.
@@ -124,7 +133,11 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	executor := opts.Executor
 	if executor == nil {
-		executor = localProcessExecutor{}
+		local := localProcessExecutor{}
+		if opts.LiveOutput != nil {
+			local.live = newLiveSink(opts.LiveOutput)
+		}
+		executor = local
 	}
 	if err := store.Initialize(plan); err != nil {
 		return summary, err
@@ -805,15 +818,24 @@ func joinError(left, right string) string {
 	return left + "; " + right
 }
 
-type localProcessExecutor struct{}
+// localProcessExecutor runs a job's command. With live set it also tees the
+// worker's streams into the run's live output view.
+type localProcessExecutor struct{ live *liveSink }
 
-func (localProcessExecutor) Run(ctx context.Context, job Job, outputLimit int) ProcessOutput {
+func (executor localProcessExecutor) Run(ctx context.Context, job Job, outputLimit int) ProcessOutput {
 	result := ProcessOutput{ExitCode: -1}
 	command := exec.Command(job.Command[0], job.Command[1:]...)
 	command.Dir = job.WorkDir
 	command.Env = controlledEnvironment(os.Environ(), job.Env)
 	stdout, stderr := newLimitedBuffer(outputLimit), newLimitedBuffer(outputLimit)
 	command.Stdout, command.Stderr = stdout, stderr
+	if executor.live != nil {
+		// The live writers never fail and never block, so the captured
+		// buffers and the command's result are the same as without them.
+		live := executor.live.startAttempt(job.ID)
+		command.Stdout, command.Stderr = io.MultiWriter(stdout, live.Stdout()), io.MultiWriter(stderr, live.Stderr())
+		defer live.close()
+	}
 	err, termination := startAndWait(ctx, command)
 	result.Executed = command.Process != nil
 	result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()

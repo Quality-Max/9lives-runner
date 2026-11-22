@@ -1,8 +1,8 @@
-# Quickstart: run one existing Playwright spec
+# Quickstart: review and run your existing Playwright specs
 
-Start in your application's repository with a spec you already trust. Keep its
-imports, assertions, dependencies and Playwright configuration. The ordinary
-runner needs no SDK, model key or QualityMax account.
+Start in your application's repository. Review your specs first, then run one
+you already trust. Keep its imports, assertions, dependencies and Playwright
+configuration. Neither step needs the SDK, a model key or a QualityMax account.
 
 ## 1. Check prerequisites
 
@@ -31,7 +31,28 @@ Use the [Windows ZIP instructions](install.md#windows) on Windows. See
 also have the Python `9lives` package, invoke the native executable by its full
 path: the two packages share the `9l` command name.
 
-## 3. Plan, then run one spec
+## 3. Review your specs
+
+`9l assess` reads your specs without loading them, starting your app or
+launching a browser:
+
+```sh
+9l doctor
+9l assess 'tests/**/*.spec.ts'
+```
+
+`9l doctor` checks Node, Playwright and Chromium first. The assessment lists
+each test with what it found and ends with a per-rule summary. Read the rules
+that describe a weak test first: `fixed-wait`, `absence-after-wait`,
+`no-direct-assertion`, `unawaited-assertion`, `caught-assertion`,
+`disabled-test` and `conditional-skip`. Analysis limits say what the static
+reading could not see inside, such as an unresolved helper; they are not
+problems in the test. The assessment is advisory and exits zero; it does not
+run the spec or prove its assertions protect a requirement. See the
+[assessment guide](test-assessment.md) for every rule and for mapping tests to
+a requirements contract.
+
+## 4. Plan, then run one spec
 
 From your application's project root, replace `tests/checkout.spec.ts` with an
 existing spec path. These commands use ordinary Playwright, without `--sdk`:
@@ -61,9 +82,9 @@ model-provider credentials to browser workers. The CLI adds its JSON evidence
 reporter; configured reporters are replaced unless added with `--reporter`.
 Existing configuration settings for traces and screenshots still apply.
 
-## 4. Read the outcome
+## 5. Read the outcome
 
-A successful one-spec run exits zero and reports `outcome: "passed"`, `complete: true`, with a
+A successful one-spec run exits zero and reports `outcome: "passed"`, with a
 validated receipt whose `status` is `passed`. Check `executedTests` against what
 you expected to run. A spec can contain several tests; the ordinary adapter
 records test outcomes, not an inventory of individual assertions.
@@ -80,7 +101,7 @@ Missing tests, interrupted workers, or invalid evidence cannot establish a pass.
 Review skipped tests and annotations too: a passing test may not exercise every
 required behavior. See the [JSON and exit-code contract](contracts.md).
 
-## 5. Check that a failure is detectable
+## 6. Check that a failure is detectable
 
 Run a known business failure in a disposable local fixture and check that the
 expected assertion fails. A setup error or timeout does not demonstrate that
@@ -103,18 +124,8 @@ It uses synthetic data and makes no model calls.
 | Test failed | Inspect the failing assertion and receipt; preserve the intended behavior when fixing it. |
 | Run timed out or was interrupted | Inspect application state before rerunning a test that mutates data. Review both Playwright's timeout and the CLI budget. |
 
-On Unix, the runner stops its process group and tracks descendants to clean up
-Playwright's detached `webServer` processes on exit, deadline or cancellation.
-This requires `ps` on `PATH`. During execution, observations run every 500 ms;
-cleanup uses a 50 ms interval. A missed periodic observation can recover on the
-next snapshot. Startup and cleanup require a successful snapshot within three
-attempts; otherwise the command remains unsuccessful. Snapshots contain only
-process IDs, relationships, status and start time. Tracking is sampled, so a
-process that detaches and loses
-its parent entirely between observations can escape tracking. This is not
-kernel process containment. Start times have one-second resolution. The detached
-server cleanup regression is runtime-qualified on macOS with Chromium; other
-Unix platforms need their own runtime qualification.
+On Unix the runner needs `ps` on `PATH` to clean up Playwright's detached
+`webServer` processes; see [process cleanup](architecture.md#process-cleanup-on-unix).
 
 ## Optional next steps
 
