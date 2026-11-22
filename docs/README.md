@@ -25,6 +25,7 @@
 | [QualityMax coding sessions](qualitymax-coding-sessions.md) | You want to know how QualityMax runs 9lives in hosted agent sessions and reads its receipts |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
 | [Prove](prove.md) | You want to know whether a test's assertions fail when its requests fail (experimental) |
+| [Verify](verify.md) | You want the engine to check a test's outcome itself, with HTTP postconditions declared outside the spec (experimental) |
 | [Confirm](confirm.md) | You want to know whether a reported finding's reproduction fails before a fix and passes after it (experimental) |
 | [Goals](goals.md) | You are configuring bounded observed-control execution |
 | [SDK bridge](sdk-bridge.md) | You need protocol, privacy and evidence boundaries |
@@ -49,7 +50,8 @@ with a maintainer status note. They describe the release the reviewer used.
 - **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
 - **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](android-driver.md).
 - **iOS Simulator (experimental, beta):** in the 0.7.0 beta releases, qualified from a source checkout on one Mac; see the [iOS driver guide](ios-driver.md).
-- **Planned:** independent behavioral verification, verified replay, iOS qualification on hosted CI and real iPhones, and broader Android device qualification.
+- **Independent postcondition checks (experimental):** `9l run <spec> --verify <checks.json>` has the engine probe HTTP postconditions declared outside the spec after the test process has stopped; a contradicted check fails a test that reported itself passed. It covers only state reachable by HTTP `GET` or `HEAD`; see the [verify guide](verify.md).
+- **Planned:** broader independent behavioral verification, verified replay, iOS qualification on hosted CI and real iPhones, and broader Android device qualification.
 
 ## Capabilities and their boundaries
 

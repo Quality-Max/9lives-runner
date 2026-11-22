@@ -103,6 +103,8 @@ Usage:
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
           [--junit FILE]  # also write a JUnit XML report; an incomplete run is reported as errors
+          [--verify CHECKS.json]  # experimental, one spec: after the test process stops, 9l itself probes the declared
+                                  # HTTP GET/HEAD postconditions; a contradicted check fails the run (docs/verify.md)
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR] [--junit FILE]
   9l cancel <run-id> [--receipt-dir DIR]
@@ -702,6 +704,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	goalOutputPrice := fs.Int64("goal-output-micros-per-million", 0, "explicit conservative output price, millionths of USD per million tokens")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for evidence receipts")
 	junitPath := fs.String("junit", "", "also write a JUnit XML report of the run to this file, for CI dashboards; an incomplete run is reported as errors, never as passed tests")
+	verifyPath := fs.String("verify", "", "experimental: after the test process tree has stopped, probe the HTTP postconditions declared in this checks file from the 9l process; needs one exact spec, and a contradicted check fails the run")
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	var skipPins skipPinList
@@ -722,7 +725,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-attempts": true, "--attempts": true, "-retries": true, "--retries": true,
 		"-wait-for": true, "--wait-for": true, "-wait-timeout": true, "--wait-timeout": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
-		"-receipt-dir": true, "--receipt-dir": true, "-junit": true, "--junit": true,
+		"-receipt-dir": true, "--receipt-dir": true, "-junit": true, "--junit": true, "-verify": true, "--verify": true,
 		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
 		"-goal-max-actions": true, "--goal-max-actions": true, "-goal-max-decisions": true, "--goal-max-decisions": true, "-goal-max-tokens": true, "--goal-max-tokens": true, "-goal-timeout-ms": true, "--goal-timeout-ms": true,
 		"-goal-max-cost-micros": true, "--goal-max-cost-micros": true, "-goal-input-micros-per-million": true, "--goal-input-micros-per-million": true, "-goal-output-micros-per-million": true, "--goal-output-micros-per-million": true,
@@ -754,6 +757,17 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			return exitUsage
 		}
 		report = checked
+	}
+	// The checks file is read once, here, before any process starts: this
+	// content and its digest are what the attempt is held to.
+	var postconditions *verifier
+	if flagWasSet(fs, "verify") {
+		loaded, err := loadVerifier(*verifyPath, passEnv)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: --verify:", err)
+			return exitUsage
+		}
+		postconditions = loaded
 	}
 	// --wait-for is checked here so plan and --dry-run reject what run would.
 	if waitFor.invalid {
@@ -910,6 +924,12 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	visual.apply(&plan)
+	// Another job running beside the checked one could change the state the
+	// checks observe, so plan and --dry-run reject what run would.
+	if postconditions != nil && (len(plan.Jobs) != 1 || len(plan.Skipped) != 0) {
+		fmt.Fprintln(errOut, "9l: --verify: independent verification requires one exact spec planned as one job")
+		return exitUsage
+	}
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}
@@ -961,6 +981,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		},
 		BeforeJobs:      beforeJobs,
 		AgentProvenance: agentProvenance,
+		Verifier:        verifierOption(postconditions),
 		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, LiveOutput: liveOutput, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	// A setup error is found before any process starts: no run exists to
@@ -982,6 +1003,14 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	// Written on every outcome of a run that started, so CI shows a
 	// canceled or timed-out run instead of a missing report.
 	return report.finish(result, runExitCode(result, executionFailed), errOut)
+}
+
+// verifierOption keeps a nil *verifier from becoming a non-nil interface.
+func verifierOption(postconditions *verifier) runner.PostconditionVerifier {
+	if postconditions == nil {
+		return nil
+	}
+	return postconditions
 }
 
 func flagWasSet(fs *flag.FlagSet, name string) bool {
@@ -1183,6 +1212,7 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			printFailureSummary(w, *receipt.FailureSummary)
 		}
 		printAnnotations(w, receipt.Annotations)
+		printVerifications(w, receipt)
 		if receipt.FlakyTests > 0 {
 			fmt.Fprintf(w, "           %d test(s) passed only on a Playwright retry inside this attempt\n", receipt.FlakyTests)
 		}
@@ -1219,7 +1249,14 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	if clearable {
 		fmt.Fprintln(w, "  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.")
 	}
+	failedTests, contradicted := false, false
+	for _, receipt := range result.Receipts {
+		failedTests = failedTests || receipt.FailureCount > 0
+		contradicted = contradicted || receipt.VerificationContradicted()
+	}
 	switch {
+	case result.Outcome == runner.OutcomeFailed && contradicted && !failedTests:
+		fmt.Fprintln(w, "  FAILED: every planned job ran and an independent check contradicted the result")
 	case result.Outcome == runner.OutcomeFailed:
 		fmt.Fprintln(w, "  FAILED: every planned job ran and at least one test failed")
 	case !result.Complete && result.SkippedInputs > 0 && result.Passed == result.PlannedJobs && len(result.Receipts) == result.PlannedJobs:
@@ -1227,6 +1264,38 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
+}
+
+// printVerifications names each independent check and what the engine
+// established about it. The records hold identifiers, closed tokens and an
+// HTTP status only; a list that is not the closed record is withheld.
+func printVerifications(w io.Writer, receipt runner.Receipt) {
+	if len(receipt.Verifications) == 0 {
+		return
+	}
+	if !receipt.ValidVerifications() {
+		fmt.Fprintln(w, "           verify  the receipt's verification records are malformed and are not shown")
+		return
+	}
+	for _, record := range receipt.Verifications {
+		marker := map[runner.VerificationResult]string{runner.VerificationVerified: "✓", runner.VerificationContradicted: "✗"}[record.Result]
+		if marker == "" {
+			marker = "?"
+		}
+		line := fmt.Sprintf("%s verify %s: %s", marker, record.ID, record.Result)
+		if record.Reason != "" {
+			line += " (" + record.Reason + ")"
+		}
+		line += ", " + record.Method
+		if record.HTTPStatus != 0 {
+			line += fmt.Sprintf(" answered HTTP %d", record.HTTPStatus)
+		}
+		if record.OutcomeID != "" {
+			line += ", outcome " + record.OutcomeID
+		}
+		fmt.Fprintf(w, "           %s\n", receiptReason(line))
+	}
+	fmt.Fprintln(w, "           verify checks are engine-observed HTTP postconditions; they do not measure assertion coverage")
 }
 
 // builtinAnnotations are Playwright's own modifiers; a suite can hold many

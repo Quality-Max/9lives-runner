@@ -35,6 +35,19 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Independent postcondition checks (experimental): `9l run <one spec>
+  --verify <checks.json>` makes the `9l` process probe the HTTP
+  postconditions declared in a reviewed checks file, after the test process
+  tree has stopped, and record each as `verified`, `contradicted`,
+  `unreachable` or `not_run` in the receipt's `verifications`. Nothing about
+  the checks is passed to the test process. A test that reported itself
+  passed is `failed` (exit 1) when a check is contradicted and incomplete
+  (exit 3) when a check could not be completed or the checks file changed
+  during the attempt; a failing test stays failed. The run must plan exactly
+  one job, and a malformed checks file is a usage error (exit 2) before
+  anything runs. The text output names each check and its result. It covers
+  only state an HTTP `GET` or `HEAD` can reach; see [Verify](verify.md) for
+  the file format, bounds and limits.
 - Readiness: `--wait-for <url|host:port>` (repeatable) waits, inside the
   started run and before any test process starts, until an http(s) target
   answers without a server error (a status below 500 other than 429) or a
@@ -201,7 +214,9 @@
   `test_failed`, `goal_failed` (only a goal's own test failed), `deadline`,
   `canceled`, `invalid_evidence`, `evidence_truncated`,
   `exit_without_failure` (the process failed but no test did),
-  `provenance_changed`, `not_started` or `infrastructure`. `failedTests`
+  `provenance_changed`, `not_started` or `infrastructure`, and with
+  `--verify` also `verification_contradicted`, `verification_incomplete` or
+  `verification_changed` (see [Verify](verify.md)). `failedTests`
   counts the failed tests in validated evidence and `tests` describes up to
   20 of them (`testsTruncated` when more failed). With `--sdk` each entry
   has the engine's SHA-256 `testId` (the one `targetSetup`,
@@ -266,7 +281,10 @@
   | Failed test, class `assertion`, `timeout`, `action-timeout`, `unexpected-pass` or `other` | `<failure type="<class>">` |
   | Failed test, class `setup` or `environment` | `<error type="<class>">`: the test could not reach the behavior |
   | Failed test of a job whose only failures belong to a goal that did not complete | `<error type="goal_failed">` |
-  | Attempt that did not validate, or ended `canceled`, `timed_out` or `error` | one `<error>` whose `type` is the failure summary's `stop` token, and no other testcase |
+  | Attempt that did not validate, or ended `canceled`, `timed_out` or `error` | one `<error>` whose `type` is the failure summary's `stop` token, and no test's testcase |
+  | `--verify` check, verified | passing `<testcase>` named `verify <id>` with the properties `verification=verified` and `observedBy=engine` |
+  | `--verify` check, contradicted | `<failure type="verification_contradicted">` |
+  | `--verify` check, unreachable or not run in a validated attempt | `<error type="verification_unreachable">` or `<error type="verification_not_run">` |
   | Input the plan skipped | `<error type="skipped_input">` in the suite `9l skipped inputs` |
 
   A failure's `message` is the first line of the reported error when the

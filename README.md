@@ -95,6 +95,7 @@ shows recorded before/after receipts on one synthetic app.
 - Optional SDK steps and bounded goals: [SDK bridge](docs/sdk-bridge.md), [goals](docs/goals.md)
 - Locator healing verified in isolation: [Tier 1](docs/native-tier1.md), [Tier 2](docs/native-tier2.md)
 - Page checks, `9l scan` and `9l inspect`: [page checks](docs/scan.md)
+- Engine-observed HTTP postconditions, experimental `9l run --verify`: [verify](docs/verify.md)
 - Android (experimental): [Android driver](docs/android-driver.md); iOS Simulator (0.7.0 beta): [iOS driver](docs/ios-driver.md)
 - Hosted sessions in QualityMax Cloud: [integration contract](docs/qualitymax-coding-sessions.md)
 - What is shipped, experimental and planned: [documentation index](docs/README.md#what-is-available)

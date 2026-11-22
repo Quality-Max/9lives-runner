@@ -44,7 +44,9 @@ separate deployment; see [website documentation](../website.md).
 Confirmation and fault testing are experimental. The fix chapter qualifies
 seven Chromium executions on one synthetic profile app. A passing test is not
 independent requirement coverage; a caught fault means an assertion failed.
-Goal completion is unverified. Independent behavioral verification, verified
+Goal completion is unverified. An experimental first slice of independent
+behavioral verification exists (`9l run --verify`, engine-observed HTTP
+postconditions). Broader verification, verified
 replay, iOS, and broader Android device qualification remain planned. Android
 execution is experimental on the documented emulators and phone. Keep those limits
 consistent with the README, demo, and `AGENTS.md`.

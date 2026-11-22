@@ -103,6 +103,25 @@ findings and 2 when any input could not be assessed.
   `skippedTests` and `flakyTests`, not from the length of the list. See
   [cli.md](cli.md).
 
+- With `9l run --verify`, a receipt lists the engine's independent
+  postcondition checks in `verifications` (`id`, `outcomeId`, `method`,
+  `result`, `reason`, `httpStatus` and `observedBy`, always `engine`) and
+  the checks file's digest in `verificationSha256`. `result` is `verified`,
+  `contradicted`, `unreachable` or `not_run`. Both fields are additive in
+  receipt version 2 and absent without `--verify`. `verifiedAssertions`,
+  which was always 0, is then the number of verified checks;
+  `assertionCoverage` stays `unknown`. See [verify.md](verify.md).
+- `--verify` is opt-in and widens two meanings only for runs that use it. A
+  receipt with `status` `failed` may have `failureCount` 0 and no failed
+  goal: its `failureSummary.stop` is `verification_contradicted`, and the
+  run's `outcome` is `failed` (exit 1), because the engine observed an
+  answer that contradicts a declared postcondition of a test that reported
+  itself passed. A validated receipt may have `status` `error` with exit
+  code 0 and no failed test: its stop is `verification_incomplete` or
+  `verification_changed`, and the run is `incomplete` (exit 3). Hosts that
+  never pass `--verify` see no change, so the versions stay 2. A host that
+  passes it must not assume that `outcome` `failed` implies a failed test.
+
 ## JUnit report
 
 `9l run --junit <file>` and `9l result <run-id> --junit <file>` write a JUnit
@@ -116,6 +135,9 @@ and the exit code. What a consumer can rely on:
   attempt without validated evidence, a canceled or timed-out attempt, or
   an input the plan skipped.
 - An attempt that did not validate contributes no passing testcase.
+- With `--verify`, each independent check is a testcase named `verify <id>`:
+  passing when verified, `<failure>` when contradicted, `<error>` when
+  unreachable or not run.
 - A run whose `outcome` is `incomplete` always contains at least one
   `<error>`; a run whose `outcome` is `passed` contains none, and no
   `<failure>`.

@@ -8,6 +8,28 @@ SDK versions.
 
 ### Added
 
+- Experimental: `9l run <one spec> --verify <checks.json>` adds
+  engine-observed HTTP postconditions, a first slice of independent
+  behavioral verification. After the test process tree has stopped, the
+  `9l` process probes the `GET` or `HEAD` checks declared in a closed,
+  versioned checks file outside the spec (exact status, and optionally an
+  exact JSON value at a JSON Pointer, polled for at most `withinMs`) and
+  records each in the receipt's additive `verifications` as `verified`,
+  `contradicted`, `unreachable` or `not_run`, with `observedBy: engine`.
+  Nothing about the checks reaches the test process, redirects are not
+  followed, and no URL, header, expected value or response body is
+  persisted. A test that reported itself passed is `failed` (exit 1, stop
+  `verification_contradicted`) when a check is contradicted, and incomplete
+  (exit 3) when a check could not be completed or the checks file's digest
+  changed during the attempt; a failing test stays failed.
+  `verifiedAssertions` counts the verified checks and `assertionCoverage`
+  stays `unknown`. Text output, `9l result` and `--junit` name each check.
+  The run must plan exactly one job, and a malformed checks file exits 2
+  before anything runs. It covers only state reachable over HTTP, not UI-only
+  or native app state, state removed by teardown, requirement coverage or
+  whether the checks themselves are right. Without `--verify` nothing
+  changes; with it, `outcome` `failed` no longer implies a failed test. See
+  [docs/verify.md](docs/verify.md).
 - `9l run --junit <file>` writes a JUnit XML report of the run for CI
   dashboards, and `9l result <run-id> --junit <file>` rebuilds it from a
   stored run (#272). Failed tests are `<failure>`, skipped tests
