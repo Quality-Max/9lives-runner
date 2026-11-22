@@ -95,6 +95,8 @@ Usage:
           [--config FILE] [--project NAME]...  # Playwright config and projects to run with
           [--reporter html,...]  # also run project reporters beside the evidence reporter
           [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
+          [--show-output]  # stream test stdout/stderr to stderr while it runs; never saved, redaction best effort;
+          # with --sdk add --reporter list to see a spec's console.log
           [--sdk]  # opt-in @9l/playwright engine protocol
           [--target web:<app-alias>|android:<app-alias>|ios:<app-alias>|android-fake:<app-alias>]...  # with --sdk; one attempt per target project
           [--failure-details]  # with --sdk, record failed test titles and errors
@@ -341,6 +343,29 @@ func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	writeRuleCounts(out, counts)
 }
 
+// assessmentDimensions are the text names of a test's dimensions, in order.
+var assessmentDimensions = []struct{ key, label string }{
+	{"purpose", "purpose"}, {"intentAlignment", "alignment"}, {"assertionAdequacy", "assertions"},
+	{"runtimeEvidence", "runtime"}, {"engineeringQuality", "quality"},
+}
+
+// knownDimensions is ": label=value ..." for the dimensions the assessment
+// could judge, or "" when every one is unknown. Without a requirements
+// contract, provenance or a run, most are unknown for every test, and a line
+// of five unknowns per test hides the findings. JSON output keeps all five.
+func knownDimensions(dimensions map[string]string) string {
+	var known []string
+	for _, dimension := range assessmentDimensions {
+		if value := dimensions[dimension.key]; value != "" && value != "unknown" {
+			known = append(known, dimension.label+"="+value)
+		}
+	}
+	if len(known) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(known, " ")
+}
+
 // writeAssessmentTests lists each test with its findings. Analysis limits
 // repeat for every test that calls the same unresolved helper or passes the
 // same callback, so unless limits is set they are left out of the test lines
@@ -356,7 +381,7 @@ func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) 
 			// Quoting keeps control characters in source titles off the terminal.
 			title = " " + strconv.Quote(test.Title)
 		}
-		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+		fmt.Fprintf(out, "test at %d:%d%s%s\n", test.Line, test.Column, title, knownDimensions(test.Dimensions))
 		if test.Assertions.Count > 0 {
 			// What was recognized, beside any limit on what was not.
 			fmt.Fprintf(out, "  recognized assertions: %d (%s)\n", test.Assertions.Count, strings.Join(test.Assertions.Matchers, ", "))
@@ -658,6 +683,11 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	var targets projectNames
 	fs.Var(&targets, "target", "with --sdk, schedule one job per target project: web:<app-alias>, android:<app-alias>, ios:<app-alias> or android-fake:<app-alias> (repeatable; no automatic retries)")
+	// --show-output belongs to run alone; plan has nothing to show.
+	showOutput := new(bool)
+	if command == "run" {
+		fs.BoolVar(showOutput, "show-output", false, "stream each worker's stdout and stderr to stderr while it runs, prefixed by job and stream; never persisted, redaction is best effort, so do not publish it")
+	}
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
@@ -910,6 +940,20 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		}
 	}
 
+	// Live output goes to stderr, so --format json keeps stdout parseable.
+	var liveOutput io.Writer
+	if *showOutput {
+		liveOutput = errOut
+		if os.Getenv("CI") != "" {
+			fmt.Fprintln(errOut, "9l: --show-output streams test output into the CI log; redaction is best effort, so the log may hold secrets or application data")
+		}
+		// The engine reporter keeps worker output out of Playwright's own
+		// printing, so a spec's console reaches the stream only through a
+		// terminal reporter.
+		if *sdk && !printingReporter(extraReporters) {
+			fmt.Fprintln(errOut, "9l: with --sdk, a spec's console output reaches --show-output only through a terminal reporter; add --reporter list")
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// A target that never comes up is an environment failure, not a test
@@ -938,7 +982,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		BeforeJobs:      beforeJobs,
 		AgentProvenance: agentProvenance,
 		Verifier:        verifierOption(postconditions),
-		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
+		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, LiveOutput: liveOutput, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	// A setup error is found before any process starts: no run exists to
 	// report, cancel or retry, so it is a usage error without a result.
@@ -1014,6 +1058,17 @@ func reporterList(raw string) ([]string, error) {
 		return nil, errors.New("at most 8 reporters")
 	}
 	return names, nil
+}
+
+// printingReporter reports whether a Playwright terminal reporter, which
+// prints the tests' own stdout and stderr, is among the extra reporters.
+func printingReporter(names []string) bool {
+	for _, name := range names {
+		if name == "list" || name == "line" || name == "dot" {
+			return true
+		}
+	}
+	return false
 }
 
 // Exit codes of `9l run`, part of the host contract in docs/contracts.md.
@@ -1295,7 +1350,13 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 		if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "Call log:") {
 			continue
 		}
-		if shown == 3 {
+		// Three lines name the error. A matcher's message puts what it
+		// received on the fourth, after the locator and the expected value,
+		// so those two lines are shown wherever they come.
+		if shown >= 3 && !strings.HasPrefix(line, "Expected") && !strings.HasPrefix(line, "Received") {
+			continue
+		}
+		if shown == 6 {
 			break
 		}
 		fmt.Fprintf(w, "             %s\n", receiptReason(line))

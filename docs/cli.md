@@ -95,6 +95,39 @@
   evidence reporter, so the HTML report is still written; `json` is reserved.
   Traces and screenshots do not need this: they follow the config's `use`
   settings either way.
+- Live output: `9l run --show-output` streams each test process's stdout and
+  stderr (a spec's `console.log`, configuration and hook output, Playwright's
+  own reporter output) to 9l's stderr while it runs, with or without `--sdk`.
+  Each line is prefixed with its job and stream, such as
+  `[job-001 stdout] `, so parallel workers stay readable. stdout is untouched,
+  so `--format json` still prints only the result there. It is off by
+  default, also in CI; only the flag turns it on, and under `CI` 9l prints one
+  line saying the stream goes into the CI log. The stream is never persisted:
+  receipts, `stdout.log`, `stderr.log`, `events.jsonl`, run results and MCP
+  responses are the same with and without it, and it is never evidence.
+  Terminal escape sequences and control characters are removed and the
+  evidence redaction (tokens, passwords, authorization headers, URL
+  credentials) is applied to every line, but that redaction is best effort:
+  application data and secrets in other shapes pass through, so treat the
+  stream as private and do not publish it or paste it into an issue. A line
+  longer than 16 KiB is split, which can also split a secret past redaction.
+  The stream never holds a run back: when the terminal or pipe reading 9l's
+  stderr falls behind, 9l drops output and prints
+  `[job-001] [9l: N bytes of output dropped]`. When an attempt ends and its
+  queued lines have not reached stderr within two seconds, the rest of that
+  attempt's lines are skipped with
+  `[job-001] [9l: the rest of this attempt's output was not shown in time]`,
+  and later attempts still stream. A stderr that fails, or a single write to
+  it stuck for a second or more, turns the stream off for the rest of the
+  run. None of this changes any result. With `--sdk`, 9l's engine reporter keeps
+  worker output out of Playwright's own printing, so a spec's `console.log`
+  reaches the stream only through a terminal reporter (`list`, `line` or
+  `dot`); output from the config, `globalSetup` and a `webServer` shows
+  without one, and 9l prints a reminder when none is given. Use
+  `9l run tests/login.spec.ts --sdk --reporter list --show-output`, which
+  also shows Playwright's per-test lines. Plain runs show a spec's console
+  output without an extra reporter. Not available on `plan`, `prove`,
+  `confirm`, `heal` or MCP tools.
 - Test annotations: receipts carry each test's annotations from its last
   attempt (`annotations`: test title, type, description; up to 100 per job,
   descriptions capped at 256 bytes and redacted), including ones a test pushes

@@ -220,7 +220,7 @@ repeat these checks. The Python `9lives` distribution also installs `9l`.
 when no `9l` is on PATH, or when a relative PATH entry found it, and
 `--paths` prints both paths. It never runs the other binary.
 
-For SDK execution, use the [qualified CLI/SDK pair](../README.md#compatibility).
+For SDK execution, use the [qualified CLI/SDK pair](compatibility.md).
 The engine checks protocol and capabilities rather than package semver; a
 mixed pair that can handshake still has no release-pair qualification.
 

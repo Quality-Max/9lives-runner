@@ -21,7 +21,7 @@ cannot corrupt it. The fixture requires a supported engine identity when
 ## Contract
 
 Matching CLI and SDK release versions are the qualified pairing; see the
-[compatibility table](../README.md#compatibility). Runtime admission checks
+[compatibility table](compatibility.md). Runtime admission checks
 the protocol and capabilities below, not npm/CLI package versions or a
 same-minor constraint. Different `0.4.x` package versions alone do not reject
 a run, but mixed release pairs are unqualified. Align versions first when
@@ -149,7 +149,7 @@ installed; the spec does not have to import it for the counts.
 ## Privacy and artifacts
 
 Test IDs and skip keys are SHA-256 hashes. Step labels, test titles, locators, URLs, page content,
-worker console output and raw error strings are omitted. Attachments record an
+worker console output and raw error strings are never persisted. Attachments record an
 opaque ID, coarse kind and `retained: false`; bodies, names and file paths are not
 copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
@@ -174,9 +174,16 @@ evidence.
 
 The runner persists validated bounded protocol output beside its local and
 canonical execution receipts and applies its existing output redaction. The
-worker's own stdout is not evidence and is not retained. Invalid/interrupted
+worker's own stdout is not evidence and is never persisted. Invalid/interrupted
 streams and arbitrary stderr are omitted before persistence; the receipt keeps
-the safe validation/termination reason. Core attempt progress remains in run events;
+the safe validation/termination reason. `9l run --sdk --reporter list --show-output`
+lets a person watch the worker's stdout and stderr, including a spec's
+`console.log`, on 9l's stderr while it runs (redacted best effort, see
+[the CLI reference](cli.md)). The engine reporter itself prints nothing, so a
+spec's console output reaches the stream only through a terminal reporter
+such as `list`; that view is never
+persisted, validated or returned in results, so receipts are the same with and
+without it. Core attempt progress remains in run events;
 step progress is in the attempt evidence stream after persistence.
 
 ## Prove channel

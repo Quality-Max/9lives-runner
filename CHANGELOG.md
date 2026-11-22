@@ -47,6 +47,27 @@ SDK versions.
   test's digest and outcome, without a duration; titles are added only with
   `--failure-details`. The field is additive, so the receipt version stays
   2.
+- `9l run --show-output` streams each test process's stdout and stderr,
+  such as a spec's `console.log`, to 9l's stderr while it runs, with or
+  without `--sdk` (#269). Lines are prefixed with job and stream, stripped
+  of terminal escapes and redacted best effort; `--format json` stdout is
+  unchanged. It is off by default, also in CI, and is never persisted:
+  receipts, logs, events, run results and MCP responses are the same with
+  and without it. A slow or failing stderr drops output with a marker and
+  never changes a result. Treat the stream as private. With `--sdk`, a
+  spec's `console.log` needs a terminal reporter:
+  `9l run <spec> --sdk --reporter list --show-output`. See
+  [docs/cli.md](docs/cli.md).
+
+### Changed
+
+- `9l doctor` ends by suggesting `9l assess` on your specs, which needs no
+  app or browser, then one `9l run`, instead of `9l scan`. The quickstart
+  gains a step that reviews specs with `9l assess` before running one.
+- `9l assess` text output shows only the dimensions it could judge on each
+  test line. A test whose five dimensions were all `unknown`, the usual case
+  without a requirements contract, used to print them all; it now prints its
+  location alone. JSON output is unchanged.
 
 ### Fixed
 
@@ -60,6 +81,17 @@ SDK versions.
   Android and iOS jobs already had a private directory. Collect traces from
   `test-results/` as before, or use `--keep-attachments`
   ([#268](https://github.com/Quality-Max/9lives-runner/issues/268)).
+- A spec that fails to load now names the error in the receipt and in the
+  text output, for example `Error: Cannot find module '@acme/helpers'`.
+  `9l run` used to say only that Playwright reported an error before finding
+  any test, and the cause had to be found in the attempt's `stdout.log`. Only
+  the first line is kept, without the require stack or source frames,
+  redacted and at most 300 bytes, as for a test runner that printed no
+  report. Runs with `--sdk` are unchanged: the engine protocol carries no
+  error text.
+- The text output of a failed assertion shows the `Received:` line. It
+  stopped after three lines, which for a matcher are the error, the locator
+  and the expected value.
 
 ## 0.7.0-beta.1 — 2026-11-20
 
