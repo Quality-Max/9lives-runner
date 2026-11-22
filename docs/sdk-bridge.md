@@ -21,7 +21,7 @@ cannot corrupt it. The fixture requires a supported engine identity when
 ## Contract
 
 Matching CLI and SDK release versions are the qualified pairing; see the
-[compatibility table](../README.md#compatibility). Runtime admission checks
+[compatibility table](compatibility.md). Runtime admission checks
 the protocol and capabilities below, not npm/CLI package versions or a
 same-minor constraint. Different `0.4.x` package versions alone do not reject
 a run, but mixed release pairs are unqualified. Align versions first when

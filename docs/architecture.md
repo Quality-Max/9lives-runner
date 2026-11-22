@@ -1,5 +1,24 @@
 # Architecture decisions
 
+## Overview
+
+```mermaid
+flowchart LR
+  Specs[Playwright specs and assertions] --> Go[Go CLI: plan, budgets, scheduling]
+  Go --> Worker[TypeScript SDK: fixtures and browser]
+  Worker --> Browser[Local Playwright / Chromium]
+  Browser --> Worker
+  Worker --> Go
+  Go --> Receipts[Validated terminal receipts]
+  Go -. optional goal decisions .-> Provider[Configured model provider]
+```
+
+Go owns execution identity, cancellation and completeness. TypeScript owns
+browser handles and fixtures. The bounded `9l.engine/1` protocol joins them.
+The sections below record the decisions behind that split. The
+[performance baseline](../benchmarks/BASELINE.md) separates runner overhead
+from Playwright and browser costs.
+
 ## Boundaries
 
 The CLI in `cmd/9l` is presentation only. `internal/runner` owns versioned
