@@ -37,6 +37,16 @@ SDK versions.
   `9l run <spec> --sdk --reporter list --show-output`. See
   [docs/cli.md](docs/cli.md).
 
+### Changed
+
+- `9l doctor` ends by suggesting `9l assess` on your specs, which needs no
+  app or browser, then one `9l run`, instead of `9l scan`. The quickstart
+  gains a step that reviews specs with `9l assess` before running one.
+- `9l assess` text output shows only the dimensions it could judge on each
+  test line. A test whose five dimensions were all `unknown`, the usual case
+  without a requirements contract, used to print them all; it now prints its
+  location alone. JSON output is unchanged.
+
 ### Fixed
 
 - `9l run` with more than one job gives each Playwright job its own output

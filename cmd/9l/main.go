@@ -341,6 +341,29 @@ func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	writeRuleCounts(out, counts)
 }
 
+// assessmentDimensions are the text names of a test's dimensions, in order.
+var assessmentDimensions = []struct{ key, label string }{
+	{"purpose", "purpose"}, {"intentAlignment", "alignment"}, {"assertionAdequacy", "assertions"},
+	{"runtimeEvidence", "runtime"}, {"engineeringQuality", "quality"},
+}
+
+// knownDimensions is ": label=value ..." for the dimensions the assessment
+// could judge, or "" when every one is unknown. Without a requirements
+// contract, provenance or a run, most are unknown for every test, and a line
+// of five unknowns per test hides the findings. JSON output keeps all five.
+func knownDimensions(dimensions map[string]string) string {
+	var known []string
+	for _, dimension := range assessmentDimensions {
+		if value := dimensions[dimension.key]; value != "" && value != "unknown" {
+			known = append(known, dimension.label+"="+value)
+		}
+	}
+	if len(known) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(known, " ")
+}
+
 // writeAssessmentTests lists each test with its findings. Analysis limits
 // repeat for every test that calls the same unresolved helper or passes the
 // same callback, so unless limits is set they are left out of the test lines
@@ -356,7 +379,7 @@ func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) 
 			// Quoting keeps control characters in source titles off the terminal.
 			title = " " + strconv.Quote(test.Title)
 		}
-		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+		fmt.Fprintf(out, "test at %d:%d%s%s\n", test.Line, test.Column, title, knownDimensions(test.Dimensions))
 		if test.Assertions.Count > 0 {
 			// What was recognized, beside any limit on what was not.
 			fmt.Fprintf(out, "  recognized assertions: %d (%s)\n", test.Assertions.Count, strings.Join(test.Assertions.Matchers, ", "))
