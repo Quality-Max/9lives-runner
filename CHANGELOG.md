@@ -6,6 +6,26 @@ SDK versions.
 
 ## Unreleased
 
+### Added
+
+- `9l run --junit <file>` writes a JUnit XML report of the run for CI
+  dashboards, and `9l result <run-id> --junit <file>` rebuilds it from a
+  stored run (#272). Failed tests are `<failure>`, skipped tests
+  `<skipped>`, and everything that leaves a result unproven is `<error>`:
+  setup- and environment-classed failures, a goal that did not complete, an
+  attempt that did not validate or was canceled or timed out, and skipped
+  inputs. An incomplete run always contains an `<error>` and an attempt
+  without validated evidence shows no passing testcase. A bad path exits 2
+  before any test process starts; a report that cannot be written after the
+  run turns exit 0 into 3 and never changes a non-zero exit code. See
+  [docs/cli.md](docs/cli.md).
+- Validated receipts list each test's terminal outcome in `tests` (at most
+  2000, with `testsTruncated`): status, failure class, and for plain
+  Playwright runs the title and duration. With `--sdk` an entry is the
+  test's digest and outcome, without a duration; titles are added only with
+  `--failure-details`. The field is additive, so the receipt version stays
+  2.
+
 ### Fixed
 
 - `9l run` with more than one job gives each Playwright job its own output

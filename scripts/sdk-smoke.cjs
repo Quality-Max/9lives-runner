@@ -22,6 +22,17 @@ function invoke(spec, options = []) {
   const result = sync(engine, ['run', spec, '--sdk', '--format', 'json', '--receipt-dir', path.join(work, 'receipts'), ...options]);
   return {code: result.status, summary: JSON.parse(result.stdout)};
 }
+// The totals and testcases of a --junit report, as a CI dashboard reads them.
+function readJUnit(file) {
+  const raw = fs.readFileSync(file, 'utf8');
+  assert(raw.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
+  const totals = raw.match(/<testsuites name="9l run-[^"]+" tests="(\d+)" failures="(\d+)" errors="(\d+)" skipped="(\d+)"/);
+  assert(totals, 'JUnit report has run totals');
+  const testcases = [...raw.matchAll(/<testcase name="([^"]*)" classname="[^"]*"( time="[^"]*")?>([\s\S]*?)<\/testcase>/g)]
+    .map(([, name, time, body]) => ({name, timed: Boolean(time), body}));
+  assert.equal(testcases.length, Number(totals[1]), 'every testcase is counted');
+  return {raw, tests: Number(totals[1]), failures: Number(totals[2]), errors: Number(totals[3]), skipped: Number(totals[4]), testcases};
+}
 function readEvents(receipt) {
   const raw = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8');
   assert(!raw.includes('synthetic worker log'));
@@ -59,7 +70,8 @@ async function interrupted(kind, webServer = false) {
   const environment = {...process.env, NINELIVES_SMOKE_MARKER: marker, NINELIVES_SMOKE_PORT: port, NINELIVES_SMOKE_WAIT: '1'};
   const passedEnv = ['--pass-env', 'NINELIVES_SMOKE_MARKER', '--pass-env', 'NINELIVES_SMOKE_PORT', '--pass-env', 'NINELIVES_SMOKE_WAIT'];
   const budget = kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s';
-  const child = spawn(engine, ['run', spec, '--sdk', '--format', 'json', webServer ? '--deadline' : '--timeout', budget, ...selection, ...passedEnv, '--receipt-dir', receipts], {
+  const junit = path.join(work, `${smokeCase}.xml`);
+  const child = spawn(engine, ['run', spec, '--sdk', '--format', 'json', webServer ? '--deadline' : '--timeout', budget, ...selection, ...passedEnv, '--receipt-dir', receipts, '--junit', junit], {
     cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -110,6 +122,11 @@ async function interrupted(kind, webServer = false) {
     assert.equal(receipt.status, kind === 'cancel' ? 'canceled' : 'timed_out');
     assert.equal(receipt.validated, false);
     assert(receipt.termination && receipt.termination.signal === (process.platform === 'win32' ? 'TerminateJobObject' : 'SIGTERM'), 'cleanup recorded');
+    // An interrupted run still writes its report, as one error: a test the
+    // worker never finished is not shown as passed, failed or skipped.
+    const report = readJUnit(junit);
+    assert.deepEqual([report.tests, report.failures, report.errors, report.skipped], [1, 0, 1, 0]);
+    assert(report.testcases[0].body.includes(`<error type="${kind === 'cancel' ? 'canceled' : 'deadline'}"`), 'the error carries the stop reason');
     const deadline = Date.now() + 5000;
     while (true) {
       const live = processTable().filter(item => owned.some(original => original.pid === item.pid) && !item.state.startsWith('Z'));
@@ -165,16 +182,40 @@ async function main() {
   assert.equal(canonical.correlation.attempt_id, receipt.attemptId);
   assert.equal(canonical.counts.total, 1);
   assert.equal(canonical.counts.availability, 'available');
-  const annotated = invoke('testdata/sdk/tests/checkout.spec.ts', ['--failure-details']);
+  // The per-test list a JUnit report is built from: a digest and an outcome,
+  // with no title and no invented duration.
+  assert.equal(receipt.tests.length, 1);
+  assert.deepEqual(Object.keys(receipt.tests[0]).sort(), ['status', 'testId']);
+  assert.equal(receipt.tests[0].status, 'passed');
+  const passingJUnit = path.join(work, 'passing.xml');
+  assert.equal(invoke('testdata/sdk/tests/checkout.spec.ts', ['--junit', passingJUnit]).code, 0);
+  const passingReport = readJUnit(passingJUnit);
+  assert.deepEqual([passingReport.tests, passingReport.failures, passingReport.errors, passingReport.skipped], [1, 0, 0, 0]);
+  assert.match(passingReport.testcases[0].name, /^test [a-f0-9]{12}$/);
+  assert.equal(passingReport.testcases[0].timed, false, 'the engine measures no per-test duration');
+  assert(!passingReport.raw.includes('synthetic checkout'), 'no title without --failure-details');
+  const annotatedJUnit = path.join(work, 'annotated.xml');
+  const annotated = invoke('testdata/sdk/tests/checkout.spec.ts', ['--failure-details', '--junit', annotatedJUnit]);
   assert.equal(annotated.code, 0);
+  // With the opt-in, Playwright's report names the test the stream identified.
+  assert.equal(annotated.summary.receipts[0].tests[0].title, 'synthetic checkout confirms an order');
+  assert.equal(readJUnit(annotatedJUnit).testcases[0].name, 'synthetic checkout confirms an order');
   assert.equal(annotated.summary.receipts[0].status, 'passed');
   assert.deepEqual(annotated.summary.receipts[0].annotations, [{
     test: 'synthetic checkout confirms an order',
     type: 'smoke-runtime',
     description: 'runtime annotation reaches receipts',
   }]);
-  const failing = invoke('testdata/sdk/tests/defect.spec.ts');
+  const failingJUnit = path.join(work, 'failing.xml');
+  const failing = invoke('testdata/sdk/tests/defect.spec.ts', ['--junit', failingJUnit]);
   assert.equal(failing.code, 1);
+  // A defect is a <failure>, classed from the engine's own facts.
+  const failingReport = readJUnit(failingJUnit);
+  assert.deepEqual([failingReport.tests, failingReport.failures, failingReport.errors, failingReport.skipped], [1, 1, 0, 0]);
+  assert(failingReport.testcases[0].body.includes('<failure type="assertion" message="assertion: assertion step"'));
+  for (const leaked of ['business failure', 'Order rejected', 'toHaveText', 'getByRole']) {
+    assert(!failingReport.raw.includes(leaked), `JUnit report carries no ${leaked}`);
+  }
   assert.equal(failing.summary.outcome, 'failed');
   assert.equal(failing.summary.receipts[0].status, 'failed');
   assert.equal(failing.summary.receipts[0].failureCount, 1);
@@ -197,8 +238,16 @@ async function main() {
   assert.equal(receipt.failureSummary, undefined); // a passed receipt has none
   // Opt-in failure details come from Playwright's JSON reporter beside the
   // evidence stream; the validated stream itself still carries no titles.
-  const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details']);
+  const detailedJUnit = path.join(work, 'detailed.xml');
+  const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details', '--junit', detailedJUnit]);
   assert.equal(detailed.code, 1);
+  const detailedReport = readJUnit(detailedJUnit);
+  assert.equal(detailedReport.testcases[0].name, 'business failure remains a failure');
+  assert.match(detailedReport.testcases[0].body, /<failure type="assertion"[\s\S]*toHaveText/);
+  // `9l result --junit` rebuilds the same report from the stored run.
+  const rebuiltJUnit = path.join(work, 'rebuilt.xml');
+  assert.equal(sync(engine, ['result', detailed.summary.runId, '--receipt-dir', path.join(work, 'receipts'), '--junit', rebuiltJUnit]).status, 0);
+  assert.equal(fs.readFileSync(rebuiltJUnit, 'utf8'), detailedReport.raw);
   assert.equal(detailed.summary.receipts[0].status, 'failed');
   const [detail] = detailed.summary.receipts[0].failures;
   assert.deepEqual(detailed.summary.receipts[0].failureSummary.tests.map(({testId, ...rest}) => rest), [failedTest], 'the summary does not depend on --failure-details');
@@ -214,8 +263,11 @@ async function main() {
   assert.equal(skipped.summary.receipts[0].validated, false);
   assert.equal(skipped.summary.receipts[0].evidence.stdoutPath || '', '');
   // A declared pin accepts that skip; it stays counted as skipped, not executed.
-  const pinned = invoke('testdata/sdk/tests/skipped.spec.ts', ['--pin-skip', 'skipped.spec.ts › selected test has no execution evidence']);
+  const pinnedJUnit = path.join(work, 'pinned.xml');
+  const pinned = invoke('testdata/sdk/tests/skipped.spec.ts', ['--pin-skip', 'skipped.spec.ts › selected test has no execution evidence', '--junit', pinnedJUnit]);
   assert.equal(pinned.code, 0);
+  const pinnedReport = readJUnit(pinnedJUnit);
+  assert.deepEqual([pinnedReport.tests, pinnedReport.failures, pinnedReport.errors, pinnedReport.skipped], [2, 0, 0, 1]);
   assert.equal(pinned.summary.complete, true);
   assert.equal(pinned.summary.receipts[0].validated, true);
   assert.equal(pinned.summary.receipts[0].executedTests, 1);

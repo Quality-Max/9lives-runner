@@ -143,9 +143,16 @@ type Receipt struct {
 	// such receipt, with or without --failure-details. It holds closed
 	// tokens, counts and test digests only; see FailureSummary.
 	FailureSummary *FailureSummary `json:"failureSummary,omitempty"`
-	Termination    *Termination    `json:"termination,omitempty"`
-	Evidence       Evidence        `json:"evidence"`
-	ReceiptPath    string          `json:"receiptPath,omitempty"`
+	// Tests lists the terminal outcome of each test of a validated attempt,
+	// at most MaxReportedTests of them; TestsTruncated says that fewer are
+	// listed than the executed and skipped counts add up to. Reports such as
+	// `--junit` are built from it. An attempt that did not validate lists
+	// none: its tests have no outcome to report.
+	Tests          []TestOutcome `json:"tests,omitempty"`
+	TestsTruncated bool          `json:"testsTruncated,omitempty"`
+	Termination    *Termination  `json:"termination,omitempty"`
+	Evidence       Evidence      `json:"evidence"`
+	ReceiptPath    string        `json:"receiptPath,omitempty"`
 }
 
 // AndroidRuntime is sanitized, worker-reported app/build/runtime attribution.
@@ -328,6 +335,45 @@ type TestAttachment struct {
 const (
 	MaxReportedFailures    = 20
 	MaxFailureMessageBytes = 1 << 10
+)
+
+// TestOutcome is the terminal outcome of one test in validated evidence.
+type TestOutcome struct {
+	// TestID is the engine's SHA-256 test digest, as in FailedTestSummary. A
+	// plain Playwright report has none.
+	TestID string `json:"testId,omitempty"`
+	// Title is the test's describe path and name, prefixed by its project in
+	// brackets, as in TestFailure. It is kept wherever the receipt may
+	// already hold titles: for a plain run, and for an engine run only with
+	// --failure-details and only when Playwright's report identifies the
+	// test by the same digest. It is bounded, redacted and on one line.
+	Title string `json:"title,omitempty"`
+	// Status is passed, failed, skipped or flaky. A flaky test failed and
+	// then passed on a Playwright retry inside the attempt; it counts as
+	// passed. A test that failed as test.fail() expects is passed.
+	Status string `json:"status"`
+	// Class is the failure class of a failed test, one of the TestFailure
+	// classes, and empty otherwise.
+	Class string `json:"class,omitempty"`
+	// DurationMS is the time the framework reported for the test over all
+	// its Playwright attempts. The engine stream carries no timing, so an
+	// engine run leaves it out rather than estimating one.
+	DurationMS int64 `json:"durationMs,omitempty"`
+}
+
+// Test outcome statuses; see TestOutcome.Status.
+const (
+	TestPassed  = "passed"
+	TestFailed  = "failed"
+	TestSkipped = "skipped"
+	TestFlaky   = "flaky"
+)
+
+// Bounds of a receipt's test list.
+const (
+	MaxReportedTests  = 2000
+	MaxTestTitleBytes = 512
+	MaxTestDurationMS = 7 * 24 * 60 * 60 * 1000
 )
 
 // FailureSummary is the bounded, metadata-only account of an attempt that did

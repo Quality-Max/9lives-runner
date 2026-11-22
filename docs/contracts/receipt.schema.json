@@ -723,6 +723,29 @@
         "title"
       ],
       "type": "object"
+    },
+    "TestOutcome": {
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
     }
   },
   "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/receipt.schema.json",
@@ -887,6 +910,15 @@
     },
     "termination": {
       "$ref": "#/$defs/Termination"
+    },
+    "tests": {
+      "items": {
+        "$ref": "#/$defs/TestOutcome"
+      },
+      "type": "array"
+    },
+    "testsTruncated": {
+      "type": "boolean"
     },
     "validated": {
       "type": "boolean"

@@ -208,6 +208,12 @@ func (Adapter) Failures(report []byte, workDir string) []runner.TestFailure {
 	return playwright.New().Failures(report, workDir)
 }
 
+// TestTitles names the stream's test digests from Playwright's JSON report,
+// which exists only with failure details; see playwright.TestTitles.
+func (Adapter) TestTitles(report []byte) map[string]string {
+	return playwright.TestTitles(report)
+}
+
 func (Adapter) SanitizeEvidence(stdout, _ []byte, validated bool) ([]byte, []byte) {
 	if !validated {
 		// Invalid or interrupted streams may contain arbitrary worker payloads.
