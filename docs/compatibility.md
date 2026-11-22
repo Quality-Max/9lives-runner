@@ -5,7 +5,7 @@ experimental native targets. Update this page when a qualified pairing
 changes.
 
 The experimental Android target (Appium with UiAutomator2) ships since 0.6.0.
-Install the matching 0.6.1 CLI and SDK together; Android remains opt-in with
+Install the matching 0.7.0 CLI and SDK together; Android remains opt-in with
 the [setup and qualification limits](android-driver.md) below.
 
 | Component | Qualified | Boundary |
@@ -14,14 +14,13 @@ the [setup and qualification limits](android-driver.md) below.
 | `9l assess` matchers | Playwright 1.61.1 through 1.64.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.6.1 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.6.1, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.7.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.7.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
 | Android (experimental) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
-An experimental [iOS Simulator driver](ios-driver.md) ships in the 0.7.0
-beta releases (CLI `v0.7.0-beta.1` with `@9l/playwright@0.7.0-beta.1`). It is
-qualified from a source checkout on one Mac only and unqualified on hosted CI;
-it is not part of the stable support matrix above.
+An experimental [iOS Simulator driver](ios-driver.md) ships since 0.7.0
+(first in `v0.7.0-beta.1`). It is qualified from a source checkout on one Mac
+only and unqualified on hosted CI; it is not part of the support matrix above.
 
 Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,

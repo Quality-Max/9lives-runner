@@ -22,7 +22,7 @@ target fixture drives an owned emulator or an attached phone through Appium
 and UiAutomator2, qualified only on the documented emulators and one phone
 (see docs/android-driver.md); `npm run smoke:android` and
 `scripts/android-phone-smoke.cjs` are its qualification. iOS Simulator
-execution is experimental and in the 0.7.0 beta releases, qualified from a
+execution is experimental and ships since 0.7.0, qualified from a
 source checkout on one Mac only (see docs/ios-driver.md); `npm run smoke:ios`
 is its qualification and GitHub-hosted runners do not qualify it. An
 experimental first slice of independent behavioral verification exists:
