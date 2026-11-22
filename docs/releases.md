@@ -172,7 +172,23 @@ gh run list --commit <sha> --json name,status,conclusion
 ```
 
 Every run listed must be `completed` and `success`: at least `CI`, and
-`Android` when the change touched its paths.
+`Android` when the change touched its paths. On a push, `Android` runs only
+the fast subset of cases.
+
+Then check the full Android matrix, which runs nightly and repeated:
+
+```sh
+gh run list --workflow android.yml --event schedule --limit 1 --json databaseId,headSha,conclusion
+gh run view <run-id> --web   # the pass-rate table is in the run's summary
+```
+
+The latest nightly run must be on a commit that contains every Android change
+in the release, and its pass-rate summary must show every case qualified in at
+least two of its three runs. When a case is below that, or the nightly run is
+older than the release's Android changes, dispatch the full matrix on the
+release-preparation commit (`gh workflow run android.yml --ref main -f scope=full -f repeat=3`)
+and apply the same rule. A case that fails the rule is a defect to triage
+before tagging, not a run to repeat until green.
 
 **4. Re-check the state, then tag and push.**
 
