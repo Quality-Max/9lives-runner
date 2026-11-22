@@ -44,9 +44,11 @@ function processTable() {
   // Process identities/status only: never collect arguments or environment.
   if (process.platform === 'win32') {
     const result = sync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress']);
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,@{n='Started';e={if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { '' }}} | ConvertTo-Json -Compress"]);
     assert.equal(result.status, 0, 'process identity query failed');
-    return [].concat(JSON.parse(result.stdout)).map(item => ({pid: item.ProcessId, parent: item.ParentProcessId, group: 0, state: 'R', name: item.Name}));
+    // Windows reuses process IDs quickly, so a process is the same one only
+    // when its creation time matches too.
+    return [].concat(JSON.parse(result.stdout)).map(item => ({pid: item.ProcessId, parent: item.ParentProcessId, group: 0, state: 'R', name: item.Name, started: item.Started || ''}));
   }
   return sync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,comm=']).stdout.trim().split('\n').map(line => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
@@ -128,9 +130,18 @@ async function interrupted(kind, webServer = false) {
     assert.deepEqual([report.tests, report.failures, report.errors, report.skipped], [1, 0, 1, 0]);
     assert(report.testcases[0].body.includes(`<error type="${kind === 'cancel' ? 'canceled' : 'deadline'}"`), 'the error carries the stop reason');
     const deadline = Date.now() + 5000;
+    // Same process: same ID and, on Windows, which reuses IDs quickly, the
+    // same name and creation time, so a new process that took a freed ID is
+    // not reported as a survivor. Unix keeps the ID-only match.
+    const same = (item, original) => item.pid === original.pid &&
+      (process.platform !== 'win32' || (item.name === original.name && item.started === original.started));
     while (true) {
-      const live = processTable().filter(item => owned.some(original => original.pid === item.pid) && !item.state.startsWith('Z'));
+      const live = processTable().filter(item => owned.some(original => same(item, original)) && !item.state.startsWith('Z'));
       if (!live.length) break;
+      if (Date.now() >= deadline) {
+        // Identities only, never arguments or environment.
+        console.error(`${smokeCase} survivors: ${JSON.stringify(live.map(({pid, parent, name, started}) => ({pid, parent, name, started})))}`);
+      }
       assert(Date.now() < deadline, 'owned worker/browser processes survived cancellation');
       await sleep(100);
     }
