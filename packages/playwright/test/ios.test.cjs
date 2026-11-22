@@ -249,9 +249,17 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     assert.equal(fs.readFileSync(path.join(copied(),'WebDriverAgentRunner.xctestrun'),'utf8'),'run');
     const scratch=copied();await driver.close();assert.equal(owned,undefined);
     assert.equal(fs.existsSync(scratch),false);assert.equal(fs.existsSync(path.join(wdaProducts,wdaRunner,'Info.plist')),true);
-    wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaProducts});
+    const previousWdaBundle=wdaBundle;wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaProducts});
     await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.record.phase==='wda'&&e.cause?.message==='9lives iOS: open_wda');
     await driver.close();assert.equal(commands.some(args=>args[1]==='create'),false);
+    // A WebDriverAgent tree the driver refuses (here a symlink) is a WDA
+    // preparation failure, not a rejected app, although it raises the same
+    // tree code an app would.
+    wdaBundle=previousWdaBundle;commands.length=0;
+    const link=path.join(wdaProducts,'link');fs.symlinkSync(path.join(wdaProducts,wdaRunner),link);
+    driver=iosTargetDriver({...opts,wdaProducts});
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.record.reason==='device-state-unknown'&&e.record.phase==='wda'&&e.cause?.message==='9lives iOS: open_wda');
+    await driver.close();fs.rmSync(link);assert.equal(commands.some(args=>args[1]==='create'),false);
     assert.deepEqual(records(),[]);
     assert.throws(()=>iosTargetDriver({...opts,wdaProducts:'relative/Products'}),/invalid_options/);
   } finally {

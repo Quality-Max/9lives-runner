@@ -165,7 +165,10 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   copy), `build-tree` (unsupported entries or over the 4,096-entry/256 MiB
   limits), `build-platform` (wrong bundle identifier or not a Simulator build)
   or `runtime-metadata` (version, build or runtime outside the recorded shape).
-  Anything else in open is `unknown` / `device-state-unknown` with its phase.
+  These come only from the phases that handle the app (`artifact`, `install`,
+  `metadata`); the same tree limits on prebuilt WebDriverAgent products are a
+  `wda` failure, not a rejected app. Anything else in open is `unknown` /
+  `device-state-unknown` with its phase.
 - A Simulator is registered with CoreSimulator, outside the worker's process
   tree, so stopping the worker does not remove it. Before `simctl create` the
   driver writes a small ownership record (the unguessable device name, runtime
