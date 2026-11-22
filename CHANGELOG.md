@@ -4,6 +4,95 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Added
+
+- Experimental: `9l run <one spec> --verify <checks.json>` adds
+  engine-observed HTTP postconditions, a first slice of independent
+  behavioral verification. After the test process tree has stopped, the
+  `9l` process probes the `GET` or `HEAD` checks declared in a closed,
+  versioned checks file outside the spec (exact status, and optionally an
+  exact JSON value at a JSON Pointer, polled for at most `withinMs`) and
+  records each in the receipt's additive `verifications` as `verified`,
+  `contradicted`, `unreachable` or `not_run`, with `observedBy: engine`.
+  Nothing about the checks reaches the test process, redirects are not
+  followed, and no URL, header, expected value or response body is
+  persisted. A test that reported itself passed is `failed` (exit 1, stop
+  `verification_contradicted`) when a check is contradicted, and incomplete
+  (exit 3) when a check could not be completed or the checks file's digest
+  changed during the attempt; a failing test stays failed.
+  `verifiedAssertions` counts the verified checks and `assertionCoverage`
+  stays `unknown`. Text output, `9l result` and `--junit` name each check.
+  The run must plan exactly one job, and a malformed checks file exits 2
+  before anything runs. It covers only state reachable over HTTP, not UI-only
+  or native app state, state removed by teardown, requirement coverage or
+  whether the checks themselves are right. Without `--verify` nothing
+  changes; with it, `outcome` `failed` no longer implies a failed test. See
+  [docs/verify.md](docs/verify.md).
+- `9l run --junit <file>` writes a JUnit XML report of the run for CI
+  dashboards, and `9l result <run-id> --junit <file>` rebuilds it from a
+  stored run (#272). Failed tests are `<failure>`, skipped tests
+  `<skipped>`, and everything that leaves a result unproven is `<error>`:
+  setup- and environment-classed failures, a goal that did not complete, an
+  attempt that did not validate or was canceled or timed out, and skipped
+  inputs. An incomplete run always contains an `<error>` and an attempt
+  without validated evidence shows no passing testcase. A bad path exits 2
+  before any test process starts; a report that cannot be written after the
+  run turns exit 0 into 3 and never changes a non-zero exit code. See
+  [docs/cli.md](docs/cli.md).
+- Validated receipts list each test's terminal outcome in `tests` (at most
+  2000, with `testsTruncated`): status, failure class, and for plain
+  Playwright runs the title and duration. With `--sdk` an entry is the
+  test's digest and outcome, without a duration; titles are added only with
+  `--failure-details`. The field is additive, so the receipt version stays
+  2.
+- `9l run --show-output` streams each test process's stdout and stderr,
+  such as a spec's `console.log`, to 9l's stderr while it runs, with or
+  without `--sdk` (#269). Lines are prefixed with job and stream, stripped
+  of terminal escapes and redacted best effort; `--format json` stdout is
+  unchanged. It is off by default, also in CI, and is never persisted:
+  receipts, logs, events, run results and MCP responses are the same with
+  and without it. A slow or failing stderr drops output with a marker and
+  never changes a result. Treat the stream as private. With `--sdk`, a
+  spec's `console.log` needs a terminal reporter:
+  `9l run <spec> --sdk --reporter list --show-output`. See
+  [docs/cli.md](docs/cli.md).
+
+### Changed
+
+- `9l doctor` ends by suggesting `9l assess` on your specs, which needs no
+  app or browser, then one `9l run`, instead of `9l scan`. The quickstart
+  gains a step that reviews specs with `9l assess` before running one.
+- `9l assess` text output shows only the dimensions it could judge on each
+  test line. A test whose five dimensions were all `unknown`, the usual case
+  without a requirements contract, used to print them all; it now prints its
+  location alone. JSON output is unchanged.
+
+### Fixed
+
+- `9l run` with more than one job gives each Playwright job its own output
+  directory, `test-results/9l-<job id>` in the job's project. The jobs used
+  to share the project's `outputDir`, which every Playwright process clears
+  when it starts, so a job starting later deleted the traces of one still
+  running: a passing test failed in teardown with `ENOENT`, passed on its
+  retry and was counted in `flakyTests`, or failed outright with
+  `retries: 0`. A run of one job keeps the project's own `outputDir`.
+  Android and iOS jobs already had a private directory. Collect traces from
+  `test-results/` as before, or use `--keep-attachments`
+  ([#268](https://github.com/Quality-Max/9lives-runner/issues/268)).
+- A spec that fails to load now names the error in the receipt and in the
+  text output, for example `Error: Cannot find module '@acme/helpers'`.
+  `9l run` used to say only that Playwright reported an error before finding
+  any test, and the cause had to be found in the attempt's `stdout.log`. Only
+  the first line is kept, without the require stack or source frames,
+  redacted and at most 300 bytes, as for a test runner that printed no
+  report. Runs with `--sdk` are unchanged: the engine protocol carries no
+  error text.
+- The text output of a failed assertion shows the `Received:` line. It
+  stopped after three lines, which for a matcher are the error, the locator
+  and the expected value.
+
 ## 0.7.0-beta.1 — 2026-11-20
 
 The first beta of the 0.7.0 line adds an experimental iOS Simulator target.

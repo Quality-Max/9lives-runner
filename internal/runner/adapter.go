@@ -48,6 +48,15 @@ type LineSelector interface {
 	SelectLine(job Job, line int) (Job, error)
 }
 
+// OutputIsolator adapters can give a job an artifact directory of its own.
+// BuildPlan asks for one whenever a plan holds more than one job: a framework
+// that clears its output directory when a run starts would otherwise delete
+// the files another job of the same run is still writing. The directory stays
+// inside the job's working directory so attachments remain reportable.
+type OutputIsolator interface {
+	IsolateOutput(job Job) Job
+}
+
 // TargetPlanner schedules a distinct owned job for each explicit SDK target.
 type TargetPlanner interface {
 	PlanTarget(path, input string, index int, target string) (Job, error)
@@ -64,6 +73,15 @@ type FailureReporter interface {
 // that already validated.
 type AnnotationReporter interface {
 	Annotations(report []byte) []TestAnnotation
+}
+
+// TitleReporter adapters name tests of an engine stream, which carries only
+// digests, from the framework's own report: a map from test digest to title
+// for each test the report identifies unambiguously. It is consulted only
+// where FailureReporter is, so titles are kept only when the user asked for
+// failure details.
+type TitleReporter interface {
+	TestTitles(report []byte) map[string]string
 }
 
 // DiagnosticsChannel adapters write a separate per-attempt report for
@@ -114,6 +132,11 @@ type Validation struct {
 	// receipt's failure summary. Adapters without such evidence leave it
 	// nil and the summary uses the report's failures instead.
 	FailedTests []FailedTestSummary
+	// Tests is the terminal outcome of every test the evidence reported, in
+	// evidence order: ExecutedTests+SkippedTests entries, or none from an
+	// adapter that does not list them. The runner bounds the list before it
+	// reaches a receipt.
+	Tests       []TestOutcome
 	Description string
 }
 

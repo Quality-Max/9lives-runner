@@ -187,6 +187,15 @@ func BuildPlan(inputs []string, opts PlanOptions) (Plan, error) {
 			}
 		}
 	}
+	// One job keeps the project's own output directory. Several jobs would
+	// share it, in parallel or one after another, and each would clear it.
+	if len(plan.Jobs) > 1 {
+		for index, job := range plan.Jobs {
+			if isolator, ok := adapterNamed(opts.Adapters, job.Adapter).(OutputIsolator); ok {
+				plan.Jobs[index] = isolator.IsolateOutput(job)
+			}
+		}
+	}
 	return plan, nil
 }
 

@@ -95,13 +95,18 @@ Usage:
           [--config FILE] [--project NAME]...  # Playwright config and projects to run with
           [--reporter html,...]  # also run project reporters beside the evidence reporter
           [--keep-attachments]  # copy failed tests' error context, screenshots, traces into receipts
+          [--show-output]  # stream test stdout/stderr to stderr while it runs; never saved, redaction best effort;
+          # with --sdk add --reporter list to see a spec's console.log
           [--sdk]  # opt-in @9l/playwright engine protocol
           [--target web:<app-alias>|android:<app-alias>|ios:<app-alias>|android-fake:<app-alias>]...  # with --sdk; one attempt per target project
           [--failure-details]  # with --sdk, record failed test titles and errors
           [--pin-skip "<file> › <title>"]...  # with --sdk, accept a declared skip
           [--headed]  # show the browser, one job at a time unless --workers is set
+          [--junit FILE]  # also write a JUnit XML report; an incomplete run is reported as errors
+          [--verify CHECKS.json]  # experimental, one spec: after the test process stops, 9l itself probes the declared
+                                  # HTTP GET/HEAD postconditions; a contradicted check fails the run (docs/verify.md)
   9l status <run-id> [--receipt-dir DIR]
-  9l result <run-id> [--format text|json] [--receipt-dir DIR]
+  9l result <run-id> [--format text|json] [--receipt-dir DIR] [--junit FILE]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
@@ -338,6 +343,29 @@ func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	writeRuleCounts(out, counts)
 }
 
+// assessmentDimensions are the text names of a test's dimensions, in order.
+var assessmentDimensions = []struct{ key, label string }{
+	{"purpose", "purpose"}, {"intentAlignment", "alignment"}, {"assertionAdequacy", "assertions"},
+	{"runtimeEvidence", "runtime"}, {"engineeringQuality", "quality"},
+}
+
+// knownDimensions is ": label=value ..." for the dimensions the assessment
+// could judge, or "" when every one is unknown. Without a requirements
+// contract, provenance or a run, most are unknown for every test, and a line
+// of five unknowns per test hides the findings. JSON output keeps all five.
+func knownDimensions(dimensions map[string]string) string {
+	var known []string
+	for _, dimension := range assessmentDimensions {
+		if value := dimensions[dimension.key]; value != "" && value != "unknown" {
+			known = append(known, dimension.label+"="+value)
+		}
+	}
+	if len(known) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(known, " ")
+}
+
 // writeAssessmentTests lists each test with its findings. Analysis limits
 // repeat for every test that calls the same unresolved helper or passes the
 // same callback, so unless limits is set they are left out of the test lines
@@ -353,7 +381,7 @@ func writeAssessmentTests(out io.Writer, report assessment.Report, limits bool) 
 			// Quoting keeps control characters in source titles off the terminal.
 			title = " " + strconv.Quote(test.Title)
 		}
-		fmt.Fprintf(out, "test at %d:%d%s: purpose=%s alignment=%s assertions=%s runtime=%s quality=%s\n", test.Line, test.Column, title, test.Dimensions["purpose"], test.Dimensions["intentAlignment"], test.Dimensions["assertionAdequacy"], test.Dimensions["runtimeEvidence"], test.Dimensions["engineeringQuality"])
+		fmt.Fprintf(out, "test at %d:%d%s%s\n", test.Line, test.Column, title, knownDimensions(test.Dimensions))
 		if test.Assertions.Count > 0 {
 			// What was recognized, beside any limit on what was not.
 			fmt.Fprintf(out, "  recognized assertions: %d (%s)\n", test.Assertions.Count, strings.Join(test.Assertions.Matchers, ", "))
@@ -655,6 +683,11 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	sdk := fs.Bool("sdk", false, "use the installed @9l/playwright engine bridge")
 	var targets projectNames
 	fs.Var(&targets, "target", "with --sdk, schedule one job per target project: web:<app-alias>, android:<app-alias>, ios:<app-alias> or android-fake:<app-alias> (repeatable; no automatic retries)")
+	// --show-output belongs to run alone; plan has nothing to show.
+	showOutput := new(bool)
+	if command == "run" {
+		fs.BoolVar(showOutput, "show-output", false, "stream each worker's stdout and stderr to stderr while it runs, prefixed by job and stream; never persisted, redaction is best effort, so do not publish it")
+	}
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
@@ -670,6 +703,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	goalInputPrice := fs.Int64("goal-input-micros-per-million", 0, "explicit conservative input price, millionths of USD per million tokens")
 	goalOutputPrice := fs.Int64("goal-output-micros-per-million", 0, "explicit conservative output price, millionths of USD per million tokens")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory for evidence receipts")
+	junitPath := fs.String("junit", "", "also write a JUnit XML report of the run to this file, for CI dashboards; an incomplete run is reported as errors, never as passed tests")
+	verifyPath := fs.String("verify", "", "experimental: after the test process tree has stopped, probe the HTTP postconditions declared in this checks file from the 9l process; needs one exact spec, and a contradicted check fails the run")
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	var skipPins skipPinList
@@ -690,7 +725,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		"-attempts": true, "--attempts": true, "-retries": true, "--retries": true,
 		"-wait-for": true, "--wait-for": true, "-wait-timeout": true, "--wait-timeout": true,
 		"-max-output-bytes": true, "--max-output-bytes": true,
-		"-receipt-dir": true, "--receipt-dir": true,
+		"-receipt-dir": true, "--receipt-dir": true, "-junit": true, "--junit": true, "-verify": true, "--verify": true,
 		"-goal-provider": true, "--goal-provider": true, "-goal-model": true, "--goal-model": true, "-goal-script": true, "--goal-script": true,
 		"-goal-max-actions": true, "--goal-max-actions": true, "-goal-max-decisions": true, "--goal-max-decisions": true, "-goal-max-tokens": true, "--goal-max-tokens": true, "-goal-timeout-ms": true, "--goal-timeout-ms": true,
 		"-goal-max-cost-micros": true, "--goal-max-cost-micros": true, "-goal-input-micros-per-million": true, "--goal-input-micros-per-million": true, "-goal-output-micros-per-million": true, "--goal-output-micros-per-million": true,
@@ -712,6 +747,27 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	// Checked here so plan and --dry-run reject a path run would reject.
+	var report *junitReport
+	if flagWasSet(fs, "junit") {
+		checked, err := newJUnitReport(*junitPath)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return exitUsage
+		}
+		report = checked
+	}
+	// The checks file is read once, here, before any process starts: this
+	// content and its digest are what the attempt is held to.
+	var postconditions *verifier
+	if flagWasSet(fs, "verify") {
+		loaded, err := loadVerifier(*verifyPath, passEnv)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: --verify:", err)
+			return exitUsage
+		}
+		postconditions = loaded
 	}
 	// --wait-for is checked here so plan and --dry-run reject what run would.
 	if waitFor.invalid {
@@ -868,10 +924,36 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	visual.apply(&plan)
+	// Another job running beside the checked one could change the state the
+	// checks observe, so plan and --dry-run reject what run would.
+	if postconditions != nil && (len(plan.Jobs) != 1 || len(plan.Skipped) != 0) {
+		fmt.Fprintln(errOut, "9l: --verify: independent verification requires one exact spec planned as one job")
+		return exitUsage
+	}
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)
 	}
+	if report != nil {
+		if err := report.prepare(); err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return exitUsage
+		}
+	}
 
+	// Live output goes to stderr, so --format json keeps stdout parseable.
+	var liveOutput io.Writer
+	if *showOutput {
+		liveOutput = errOut
+		if os.Getenv("CI") != "" {
+			fmt.Fprintln(errOut, "9l: --show-output streams test output into the CI log; redaction is best effort, so the log may hold secrets or application data")
+		}
+		// The engine reporter keeps worker output out of Playwright's own
+		// printing, so a spec's console reaches the stream only through a
+		// terminal reporter.
+		if *sdk && !printingReporter(extraReporters) {
+			fmt.Fprintln(errOut, "9l: with --sdk, a spec's console output reaches --show-output only through a terminal reporter; add --reporter list")
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// A target that never comes up is an environment failure, not a test
@@ -899,7 +981,8 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		},
 		BeforeJobs:      beforeJobs,
 		AgentProvenance: agentProvenance,
-		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
+		Verifier:        verifierOption(postconditions),
+		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, LiveOutput: liveOutput, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 	})
 	// A setup error is found before any process starts: no run exists to
 	// report, cancel or retry, so it is a usage error without a result.
@@ -917,7 +1000,23 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	} else {
 		printResult(out, result)
 	}
-	return runExitCode(result, executionFailed)
+	// Written on every outcome of a run that started, so CI shows a
+	// canceled or timed-out run instead of a missing report.
+	return report.finish(result, runExitCode(result, executionFailed), errOut)
+}
+
+// verifierOption keeps a nil *verifier from becoming a non-nil interface.
+func verifierOption(postconditions *verifier) runner.PostconditionVerifier {
+	if postconditions == nil {
+		return nil
+	}
+	return postconditions
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
 }
 
 // projectNames collects repeatable --project values: one Playwright project
@@ -961,6 +1060,17 @@ func reporterList(raw string) ([]string, error) {
 	return names, nil
 }
 
+// printingReporter reports whether a Playwright terminal reporter, which
+// prints the tests' own stdout and stderr, is among the extra reporters.
+func printingReporter(names []string) bool {
+	for _, name := range names {
+		if name == "list" || name == "line" || name == "dot" {
+			return true
+		}
+	}
+	return false
+}
+
 // Exit codes of `9l run`, part of the host contract in docs/contracts.md.
 const (
 	exitPassed     = 0
@@ -989,7 +1099,13 @@ func stateCommand(command string, args []string, out, errOut io.Writer) int {
 	fs.SetOutput(errOut)
 	format := fs.String("format", "json", "text or json")
 	receiptDir := fs.String("receipt-dir", ".9lives/receipts", "directory containing run state")
-	normalized := flagsFirst(args, map[string]bool{"-format": true, "--format": true, "-receipt-dir": true, "--receipt-dir": true})
+	valueFlags := map[string]bool{"-format": true, "--format": true, "-receipt-dir": true, "--receipt-dir": true}
+	junitPath := new(string)
+	if command == "result" {
+		junitPath = fs.String("junit", "", "also write a JUnit XML report of the saved result to this file")
+		valueFlags["-junit"], valueFlags["--junit"] = true, true
+	}
+	normalized := flagsFirst(args, valueFlags)
 	if err := fs.Parse(normalized); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -1026,6 +1142,18 @@ func stateCommand(command string, args []string, out, errOut io.Writer) int {
 		}
 		return 0
 	}
+	var report *junitReport
+	if flagWasSet(fs, "junit") {
+		checked, err := newJUnitReport(*junitPath)
+		if err == nil {
+			err = checked.prepare()
+		}
+		if err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return exitUsage
+		}
+		report = checked
+	}
 	result, err := runner.LoadResult(*receiptDir, runID)
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: result: %v\n", err)
@@ -1036,7 +1164,7 @@ func stateCommand(command string, args []string, out, errOut io.Writer) int {
 	} else {
 		printResult(out, result)
 	}
-	return 0
+	return report.finish(result, 0, errOut)
 }
 
 func printPlan(w io.Writer, plan runner.Plan, format string) int {
@@ -1084,6 +1212,7 @@ func printResult(w io.Writer, result runner.RunSummary) {
 			printFailureSummary(w, *receipt.FailureSummary)
 		}
 		printAnnotations(w, receipt.Annotations)
+		printVerifications(w, receipt)
 		if receipt.FlakyTests > 0 {
 			fmt.Fprintf(w, "           %d test(s) passed only on a Playwright retry inside this attempt\n", receipt.FlakyTests)
 		}
@@ -1120,7 +1249,14 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	if clearable {
 		fmt.Fprintln(w, "  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.")
 	}
+	failedTests, contradicted := false, false
+	for _, receipt := range result.Receipts {
+		failedTests = failedTests || receipt.FailureCount > 0
+		contradicted = contradicted || receipt.VerificationContradicted()
+	}
 	switch {
+	case result.Outcome == runner.OutcomeFailed && contradicted && !failedTests:
+		fmt.Fprintln(w, "  FAILED: every planned job ran and an independent check contradicted the result")
 	case result.Outcome == runner.OutcomeFailed:
 		fmt.Fprintln(w, "  FAILED: every planned job ran and at least one test failed")
 	case !result.Complete && result.SkippedInputs > 0 && result.Passed == result.PlannedJobs && len(result.Receipts) == result.PlannedJobs:
@@ -1128,6 +1264,38 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	case !result.Complete:
 		fmt.Fprintln(w, "  INCOMPLETE: one or more planned jobs did not finish successfully")
 	}
+}
+
+// printVerifications names each independent check and what the engine
+// established about it. The records hold identifiers, closed tokens and an
+// HTTP status only; a list that is not the closed record is withheld.
+func printVerifications(w io.Writer, receipt runner.Receipt) {
+	if len(receipt.Verifications) == 0 {
+		return
+	}
+	if !receipt.ValidVerifications() {
+		fmt.Fprintln(w, "           verify  the receipt's verification records are malformed and are not shown")
+		return
+	}
+	for _, record := range receipt.Verifications {
+		marker := map[runner.VerificationResult]string{runner.VerificationVerified: "✓", runner.VerificationContradicted: "✗"}[record.Result]
+		if marker == "" {
+			marker = "?"
+		}
+		line := fmt.Sprintf("%s verify %s: %s", marker, record.ID, record.Result)
+		if record.Reason != "" {
+			line += " (" + record.Reason + ")"
+		}
+		line += ", " + record.Method
+		if record.HTTPStatus != 0 {
+			line += fmt.Sprintf(" answered HTTP %d", record.HTTPStatus)
+		}
+		if record.OutcomeID != "" {
+			line += ", outcome " + record.OutcomeID
+		}
+		fmt.Fprintf(w, "           %s\n", receiptReason(line))
+	}
+	fmt.Fprintln(w, "           verify checks are engine-observed HTTP postconditions; they do not measure assertion coverage")
 }
 
 // builtinAnnotations are Playwright's own modifiers; a suite can hold many
@@ -1182,7 +1350,13 @@ func printFailure(w io.Writer, failure runner.TestFailure) {
 		if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "Call log:") {
 			continue
 		}
-		if shown == 3 {
+		// Three lines name the error. A matcher's message puts what it
+		// received on the fourth, after the locator and the expected value,
+		// so those two lines are shown wherever they come.
+		if shown >= 3 && !strings.HasPrefix(line, "Expected") && !strings.HasPrefix(line, "Received") {
+			continue
+		}
+		if shown == 6 {
 			break
 		}
 		fmt.Fprintf(w, "             %s\n", receiptReason(line))

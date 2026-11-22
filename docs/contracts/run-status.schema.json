@@ -846,11 +846,29 @@
         "termination": {
           "$ref": "#/$defs/Termination"
         },
+        "tests": {
+          "items": {
+            "$ref": "#/$defs/TestOutcome"
+          },
+          "type": "array"
+        },
+        "testsTruncated": {
+          "type": "boolean"
+        },
         "validated": {
           "type": "boolean"
         },
         "validation": {
           "type": "string"
+        },
+        "verificationSha256": {
+          "type": "string"
+        },
+        "verifications": {
+          "items": {
+            "$ref": "#/$defs/Verification"
+          },
+          "type": "array"
         },
         "verifiedAssertions": {
           "type": "integer"
@@ -1204,6 +1222,67 @@
       },
       "required": [
         "title"
+      ],
+      "type": "object"
+    },
+    "TestOutcome": {
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "testId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "Verification": {
+      "properties": {
+        "httpStatus": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "observedBy": {
+          "type": "string"
+        },
+        "outcomeId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "verified",
+            "contradicted",
+            "unreachable",
+            "not_run"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "result",
+        "observedBy"
       ],
       "type": "object"
     }

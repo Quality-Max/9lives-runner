@@ -101,7 +101,11 @@ type Receipt struct {
 	// FlakyTests counts executed tests that failed and then passed on a
 	// Playwright retry inside this attempt. They count as passed, so this is
 	// what tells a clean pass from one that needed a second try.
-	FlakyTests         int `json:"flakyTests,omitempty"`
+	FlakyTests int `json:"flakyTests,omitempty"`
+	// VerifiedAssertions counts the independent checks the engine verified
+	// (see Verifications), added to any count the adapter's evidence carries;
+	// the adapters in this repository report none. It is zero without
+	// `--verify` and says nothing about what the tests themselves assert.
 	VerifiedAssertions int `json:"verifiedAssertions"`
 	// TargetAssertions counts successful SDK-instrumented target checks the
 	// worker reported. It is not independent verification or coverage.
@@ -143,9 +147,26 @@ type Receipt struct {
 	// such receipt, with or without --failure-details. It holds closed
 	// tokens, counts and test digests only; see FailureSummary.
 	FailureSummary *FailureSummary `json:"failureSummary,omitempty"`
-	Termination    *Termination    `json:"termination,omitempty"`
-	Evidence       Evidence        `json:"evidence"`
-	ReceiptPath    string          `json:"receiptPath,omitempty"`
+	// Tests lists the terminal outcome of each test of a validated attempt,
+	// at most MaxReportedTests of them; TestsTruncated says that fewer are
+	// listed than the executed and skipped counts add up to. Reports such as
+	// `--junit` are built from it. An attempt that did not validate lists
+	// none: its tests have no outcome to report.
+	Tests          []TestOutcome `json:"tests,omitempty"`
+	TestsTruncated bool          `json:"testsTruncated,omitempty"`
+	// Verifications lists the independent postcondition checks of an attempt
+	// run with `--verify`, one closed record per check in checks-file order.
+	// Each is engine-observed, never worker-reported: the engine probes the
+	// application itself after the attempt's process tree stopped. A passed
+	// receipt lists only verified checks; a contradicted check fails the
+	// attempt and a check the engine could not complete leaves it an error.
+	// VerificationSHA256 is the digest of the checks file read before the
+	// worker started.
+	Verifications      []Verification `json:"verifications,omitempty"`
+	VerificationSHA256 string         `json:"verificationSha256,omitempty"`
+	Termination        *Termination   `json:"termination,omitempty"`
+	Evidence           Evidence       `json:"evidence"`
+	ReceiptPath        string         `json:"receiptPath,omitempty"`
 }
 
 // AndroidRuntime is sanitized, worker-reported app/build/runtime attribution.
@@ -337,6 +358,45 @@ const (
 	MaxFailureMessageBytes = 1 << 10
 )
 
+// TestOutcome is the terminal outcome of one test in validated evidence.
+type TestOutcome struct {
+	// TestID is the engine's SHA-256 test digest, as in FailedTestSummary. A
+	// plain Playwright report has none.
+	TestID string `json:"testId,omitempty"`
+	// Title is the test's describe path and name, prefixed by its project in
+	// brackets, as in TestFailure. It is kept wherever the receipt may
+	// already hold titles: for a plain run, and for an engine run only with
+	// --failure-details and only when Playwright's report identifies the
+	// test by the same digest. It is bounded, redacted and on one line.
+	Title string `json:"title,omitempty"`
+	// Status is passed, failed, skipped or flaky. A flaky test failed and
+	// then passed on a Playwright retry inside the attempt; it counts as
+	// passed. A test that failed as test.fail() expects is passed.
+	Status string `json:"status"`
+	// Class is the failure class of a failed test, one of the TestFailure
+	// classes, and empty otherwise.
+	Class string `json:"class,omitempty"`
+	// DurationMS is the time the framework reported for the test over all
+	// its Playwright attempts. The engine stream carries no timing, so an
+	// engine run leaves it out rather than estimating one.
+	DurationMS int64 `json:"durationMs,omitempty"`
+}
+
+// Test outcome statuses; see TestOutcome.Status.
+const (
+	TestPassed  = "passed"
+	TestFailed  = "failed"
+	TestSkipped = "skipped"
+	TestFlaky   = "flaky"
+)
+
+// Bounds of a receipt's test list.
+const (
+	MaxReportedTests  = 2000
+	MaxTestTitleBytes = 512
+	MaxTestDurationMS = 7 * 24 * 60 * 60 * 1000
+)
+
 // FailureSummary is the bounded, metadata-only account of an attempt that did
 // not pass. It is built from the receipt's own status and from validated
 // structured evidence, never from message prose, so it carries no error
@@ -347,7 +407,9 @@ type FailureSummary struct {
 	// Stop is why the attempt ended without a pass, one of the Stop*
 	// tokens: test_failed, goal_failed, deadline, canceled,
 	// invalid_evidence, evidence_truncated, exit_without_failure,
-	// provenance_changed, not_started or infrastructure.
+	// provenance_changed, verification_contradicted,
+	// verification_incomplete, verification_changed, not_started or
+	// infrastructure.
 	Stop string `json:"stop"`
 	// FailedTests counts the failed tests in validated evidence (zero when
 	// the evidence did not validate). Tests describes at most
@@ -415,6 +477,12 @@ const (
 	StopProvenanceChanged  = "provenance_changed"
 	StopNotStarted         = "not_started"
 	StopInfrastructure     = "infrastructure"
+	// An attempt whose own evidence passed and that the engine's independent
+	// checks contradicted, could not complete, or refused to run because the
+	// checks file changed during the attempt.
+	StopVerificationContradicted = "verification_contradicted"
+	StopVerificationIncomplete   = "verification_incomplete"
+	StopVerificationChanged      = "verification_changed"
 )
 
 type Termination struct {
@@ -476,7 +544,8 @@ const (
 	// OutcomePassed: every planned job has a validated passing receipt.
 	OutcomePassed RunOutcome = "passed"
 	// OutcomeFailed: every planned job ran to a validated receipt and at
-	// least one reported a test failure. The change broke something.
+	// least one reported a test failure, or passed by its own evidence and
+	// was contradicted by an independent check. The change broke something.
 	OutcomeFailed RunOutcome = "failed"
 	// OutcomeIncomplete: anything else (skipped inputs, cancellation,
 	// timeouts, infrastructure errors, missing or invalid evidence). The run

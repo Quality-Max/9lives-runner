@@ -5,8 +5,9 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
-requireBranch(root, 'smoke:targets');
+// No branch is needed here: provenance is recorded in a throwaway repository
+// below, so this smoke also runs on a detached checkout such as CI's.
+const {provenanceFailure} = require('./smoke-branch.cjs');
 const work = path.join(root, '.context', 'target-contract', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
 const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');

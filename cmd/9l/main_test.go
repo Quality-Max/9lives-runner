@@ -199,7 +199,10 @@ func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 			Title: "login › renamed button", Location: "tests/login.spec.ts:9", Class: runner.FailureActionTimeout,
 			Message:     "TimeoutError: locator.click: Timeout 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Login' })\n  - second\n  - third",
 			Attachments: []runner.TestAttachment{{Name: "error-context", Path: errorContext}},
-		}, {Title: "login › other", Class: runner.FailureOther, Message: "Error: boom"}},
+		}, {Title: "login › other", Class: runner.FailureOther, Message: "Error: boom"}, {
+			Title: "cart › count", Class: runner.FailureAssertion,
+			Message: "Error: expect(locator).toHaveText(expected) failed\n\nLocator: getByRole('status')\nExpected: \"3 items\"\nReceived: \"2 items\"\nTimeout: 5000ms\n\nCall log:\n  - Expect \"toHaveText\" with timeout 5000ms\n  - waiting for getByRole('status')",
+		}},
 	}}})
 	want := "  FAILED   tests/login.spec.ts\n" +
 		"           ✗ login › renamed button  tests/login.spec.ts:9  [action-timeout]\n" +
@@ -209,6 +212,11 @@ func TestPrintResultNamesEachFailedTestAndItsContext(t *testing.T) {
 		"             context: " + displayPath(errorContext) + "\n" +
 		"           ✗ login › other\n" +
 		"             Error: boom\n" +
+		"           ✗ cart › count  [assertion]\n" +
+		"             Error: expect(locator).toHaveText(expected) failed\n" +
+		"             Locator: getByRole('status')\n" +
+		"             Expected: \"3 items\"\n" +
+		"             Received: \"2 items\"\n" +
 		"  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.\n"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("text summary:\n%s", out.String())

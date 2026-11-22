@@ -33,6 +33,10 @@ helper several tests call, count once, and an outcome unmapped in the file
 counts once per requirement and outcome. `--titles` adds literal test titles (first 200
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
+Each test's line shows only the dimensions the assessment could judge; one
+whose dimensions are all `unknown`, as they are without a requirements
+contract, provenance or a run, shows its location alone. The JSON report
+always carries all five.
 
 Analysis limits repeat for every test that calls the same unresolved helper
 or passes the same callback, so on a large suite they would crowd out the

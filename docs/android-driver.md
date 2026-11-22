@@ -198,6 +198,15 @@ The default suite can take several minutes because each case owns a cold
 emulator; selected cases can be run with
 `node scripts/android-smoke.cjs healthy defect` after `npm run build`.
 
+In CI, pull requests that touch the Android paths and pushes to `main` run a
+fast subset: `healthy`, `ambiguous`, `cancel`, `misfill`, `width-mismatch`,
+`digest` and `install-fail`. Every case runs nightly and on demand, three
+times by default, and the run's pass-rate job lists how often each case
+qualified and why it did not. The cases that have been intermittent on the
+hosted x86_64 emulator run only there, so they are measured rather than
+re-run until green. Dispatch the full matrix with
+`gh workflow run android.yml -f scope=full -f repeat=3`.
+
 `semantics-delayed` draws the synthetic semantics content eight seconds after
 launch. Its first visibility assertion uses the same 90-second cold-relaunch
 bound as the operations case; later assertions keep their ordinary bounds.

@@ -6,7 +6,6 @@ const {spawnSync} = require('node:child_process');
 const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
 const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
-requireBranch(root, 'smoke:android');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
   'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus','misfill'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
@@ -16,6 +15,8 @@ const allModes = ['healthy','defect','state-defect','missing','ambiguous','cance
 // they run only when requested and are not in the default list.
 const biometricModes = ['biometric', 'biometric-unenrolled'];
 if (process.argv[2] === '--list') { console.log(allModes.join('\n')); process.exit(0); }
+// Listing needs no branch; a run records provenance in this checkout and does.
+requireBranch(root, 'smoke:android');
 const unknownModes = process.argv.slice(2).filter(mode => !allModes.includes(mode) && !biometricModes.includes(mode));
 if (process.argv.slice(2).some(mode => biometricModes.includes(mode)) && !process.env.NINELIVES_ANDROID_BIOMETRIC_AVD) throw Error('biometric cases need NINELIVES_ANDROID_BIOMETRIC_AVD: run scripts/prepare-biometric-avd.cjs first');
 if (unknownModes.length) throw Error(`unknown cases: ${unknownModes.join(', ')}`);
