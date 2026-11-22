@@ -1505,12 +1505,17 @@ func setupSummary(setup runner.TargetSetup) string {
 	if setup.Stage == runner.SetupStageRecheck {
 		when = "rechecked after a failed assertion"
 	}
+	if setup.Phase != "" {
+		when += ", in the open phase " + setup.Phase
+	}
 	text := fmt.Sprintf("setup %s: %s (%s)", setup.Classification, setup.Reason, when)
 	switch {
 	case setup.Recovery != nil && setup.Recovery.Restored:
 		return text + fmt.Sprintf("; %s recovery restored the baseline after %d press(es), the test ran from it", setup.Recovery.Method, setup.Recovery.Presses)
 	case setup.Recovery != nil:
 		return text + fmt.Sprintf("; %s recovery did not restore the baseline after %d press(es); inconclusive, not an application failure", setup.Recovery.Method, setup.Recovery.Presses)
+	case setup.Classification == runner.SetupUnknown && setup.Phase != "":
+		return text + "; the driver could not complete this phase of open, so the failure is inconclusive"
 	case setup.Classification == runner.SetupUnknown:
 		return text + "; the device state could not be determined, so the failure is inconclusive"
 	case setup.Classification == runner.SetupObserver:

@@ -216,12 +216,19 @@ type TargetCleanup struct {
 // records a user-declared non-destructive step the driver took and whether
 // it restored the declared baseline.
 type TargetSetup struct {
-	TestID         string         `json:"testId"`
-	Classification string         `json:"classification"`
-	Reason         string         `json:"reason"`
-	Stage          string         `json:"stage"`
-	Recovery       *SetupRecovery `json:"recovery,omitempty"`
+	TestID         string `json:"testId"`
+	Classification string `json:"classification"`
+	Reason         string `json:"reason"`
+	Stage          string `json:"stage"`
+	// Phase names the fixed part of a driver's open that failed, such as
+	// install or session; see SetupPhases. Absent for a recheck and for
+	// drivers that do not report one.
+	Phase    string         `json:"phase,omitempty"`
+	Recovery *SetupRecovery `json:"recovery,omitempty"`
 }
+
+// SetupPhases is the closed set of open phases a driver may report.
+var SetupPhases = []string{"tools", "artifact", "wda", "runtime", "create", "boot", "bootstatus", "architecture", "install", "server", "session", "metadata"}
 
 // TargetDiagnostic is one opt-in failure diagnostic of a native target
 // operation; see Receipt.TargetDiagnostics. Windows and focus are the app's

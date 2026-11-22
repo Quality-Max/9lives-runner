@@ -7,7 +7,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {TargetSetupError, targetCapabilities, controlPattern, type TargetContext, type TargetDriver, type TargetHandle} from './targets';
+import {TargetSetupError, targetCapabilities, type SetupPhase, controlPattern, type TargetContext, type TargetDriver, type TargetHandle} from './targets';
 import {iosVersions, validIOSRuntime, type IOSRuntime} from './ios-runtime';
 export {iosVersions, validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 
@@ -29,6 +29,15 @@ export type IOSTargetOptions = {
   wdaProducts?: string;
 };
 const fail = (reason: string) => new Error(`9lives iOS: ${reason}`);
+// Local failure codes that mean the app itself was rejected, not the device.
+// The tree codes are shared with the WebDriverAgent products, so they name an
+// app rejection only in the phases that handle the app.
+const appRejections: Record<string, string> = {
+  installed_build_mismatch: 'build-installed', invalid_runtime_metadata: 'runtime-metadata',
+  invalid_app: 'build-tree', app_limit: 'build-tree', unsupported_app_tree: 'build-tree', app_changed: 'build-tree',
+  app_platform_or_bundle_mismatch: 'build-platform',
+};
+const appPhases: readonly SetupPhase[] = ['artifact', 'install', 'metadata'];
 const uuid = /^[A-Fa-f0-9]{8}(-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}$/;
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf';
 const wdaBundleId = 'com.facebook.WebDriverAgentRunner.xctrunner';
@@ -244,7 +253,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       if (opening || closed) return Promise.reject(fail('already_open_or_closed'));
       const c = {...context, signal: AbortSignal.any([context.signal, controller.signal])};
       opening = (async () => {
-        let phase = 'tools';
+        let phase: SetupPhase = 'tools';
         try {
           check(c);
           if (process.platform !== 'darwin') throw fail('requires_macos');
@@ -345,10 +354,14 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           if (!validIOSRuntime(evidence)) throw fail('invalid_runtime_metadata');
           check(c);
         } catch (error) {
-          if (error instanceof TargetSetupError) throw error;
-          // Keep a fixed local phase for diagnosis, never a provider payload,
-          // command output, path or application content. The receipt stays closed.
-          throw new TargetSetupError({classification: 'unknown', reason: 'device-state-unknown', stage: 'open'}, fail(`open_${phase}`));
+          // The receipt names the fixed phase and, for a rejected app, a closed
+          // reason; never a provider payload, command output, path or
+          // application content. The detailed local code stays in the cause.
+          if (error instanceof TargetSetupError) throw new TargetSetupError({...error.record, phase}, error.cause);
+          const code = error instanceof Error && error.message.startsWith('9lives iOS: ') ? error.message.slice(12) : '';
+          const rejected = appPhases.includes(phase) ? appRejections[code] : undefined;
+          throw new TargetSetupError(rejected ? {classification: 'mismatch', reason: rejected, stage: 'open', phase}
+            : {classification: 'unknown', reason: 'device-state-unknown', stage: 'open', phase}, fail(`open_${phase}`));
         }
       })();
       return opening;

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {validIOSRuntime, iosVersions} = require('../dist/ios-runtime');
+const {validTargetSetup} = require('../dist/target-setup');
 const runtime = {bundleId:'dev.ninelives.fixture',appSHA256:'a'.repeat(64),version:'1.0',build:'1',runtime:'com.apple.CoreSimulator.SimRuntime.iOS-18-5',deviceType:'com.apple.CoreSimulator.SimDeviceType.iPhone-16',os:'18.5',architecture:'arm64',xcode:'16.4',...iosVersions,worker:'b'.repeat(64),viewportWidth:'390',viewportHeight:'844'};
 
 test('iOS metadata is closed, pinned, content-free and runtime-bound', () => {
@@ -22,6 +23,15 @@ test('iOS metadata accepts real app version and build numbers', () => {
   for (const value of ['', '1.2.3.4.5', '12345678901', '1a', '1..2', '1.0 (42)'])
     assert.equal(validIOSRuntime({...runtime, build:value}), false, value);
   assert.equal(validIOSRuntime({...runtime, os:'1800.5', runtime:'com.apple.CoreSimulator.SimRuntime.iOS-1800-5'}), false);
+});
+
+test('a setup record names a closed open phase only', () => {
+  const record = {classification:'mismatch', reason:'build-installed', stage:'open', phase:'install'};
+  assert.equal(validTargetSetup(record), true);
+  assert.equal(validTargetSetup({classification:'unknown', reason:'device-state-unknown', stage:'open'}), true);
+  for (const changes of [{phase:'open_install'}, {phase:'/Users/me/App.app'}, {phase:''}, {stage:'recheck'},
+    {classification:'dirty', reason:'extra-window', recovery:{method:'back', presses:1, restored:true}}])
+    assert.equal(validTargetSetup({...record, ...changes}), false, JSON.stringify(changes));
 });
 
 test('iOS tree digest binds names and contents', () => {
@@ -72,7 +82,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
-  let owned, staged, installedApp, tamper=false, elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
+  let owned, staged, installedApp, tamper=false, bundleVersion='1', elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
   const udid='12345678-1234-1234-1234-123456789abc';
   const c=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+10000});
   try {
@@ -94,7 +104,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     cp.execFile=(file,args,opts,callback)=>{
       commands.push(args);
       let output='';
-      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaProducts,wdaRunner,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:'1'})[args[1].slice(7)];
+      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaProducts,wdaRunner,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:bundleVersion})[args[1].slice(7)];
       else if (file.endsWith('xcodebuild')) output='Xcode 16.4\nBuild version synthetic';
       else if (args[1]==='list'&&args[2]==='runtimes') output=JSON.stringify({runtimes:[{identifier:runtime.runtime,isAvailable:true,version:'18.5'}]});
       else if (args[1]==='create') { owned={name:args[2],udid,deviceTypeIdentifier:runtime.deviceType,state:'Shutdown'};output=createOutput??udid; }
@@ -177,24 +187,28 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     assert.equal(commands.some(args=>args.includes('all')),false);
     assert.equal(fs.existsSync(path.dirname(staged)),false);
     driver=iosTargetDriver({...opts,appSHA256:'0'.repeat(64)});
-    await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-digest');
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-digest'&&e.record.phase==='artifact'&&validTargetSetup(e.record));
     assert.deepEqual(records(),[]);await driver.close();
     architectures='x86_64';driver=iosTargetDriver(opts);
     await driver.open(c());assert.equal(driver.runtime().architecture,'x86_64');await driver.close();
     for (architectures of ['', 'unknown', 'arm64 unknown']) {
       const sessions=requests.filter(r=>r.pathname.endsWith('/session')).length;
       driver=iosTargetDriver(opts);
-      await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_architecture');
+      await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.record.phase==='architecture'&&e.cause?.message==='9lives iOS: open_architecture');
       await driver.close();assert.equal(owned,undefined);
       assert.equal(requests.filter(r=>r.pathname.endsWith('/session')).length,sessions);
     }
     architectures='arm64';
     // The installer's mode rewrite is accepted above; changed bytes are not.
     tamper=true;driver=iosTargetDriver(opts);
-    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_install');await driver.close();assert.equal(owned,undefined);
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='build-installed'&&e.record.phase==='install'&&e.cause?.message==='9lives iOS: open_install');await driver.close();assert.equal(owned,undefined);
     tamper=false;
+    // A build number outside the closed metadata shape rejects the app, not the device.
+    bundleVersion='1.0 (42)';driver=iosTargetDriver(opts);
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='mismatch'&&e.record.reason==='runtime-metadata'&&e.record.phase==='metadata'&&e.cause?.message==='9lives iOS: open_metadata');await driver.close();assert.equal(owned,undefined);
+    bundleVersion='1';
     foreign=true;driver=iosTargetDriver(opts);
-    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_session');await driver.close();assert.equal(owned,undefined);
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.record.reason==='device-state-unknown'&&e.record.phase==='session'&&e.cause?.message==='9lives iOS: open_session');await driver.close();assert.equal(owned,undefined);
     foreign=false;shutdownFails=true;driver=iosTargetDriver(opts);
     await driver.open(c());await driver.close();assert.equal(owned,undefined);
     deleteFails=true;driver=iosTargetDriver(opts);await driver.open(c());
@@ -235,9 +249,17 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     assert.equal(fs.readFileSync(path.join(copied(),'WebDriverAgentRunner.xctestrun'),'utf8'),'run');
     const scratch=copied();await driver.close();assert.equal(owned,undefined);
     assert.equal(fs.existsSync(scratch),false);assert.equal(fs.existsSync(path.join(wdaProducts,wdaRunner,'Info.plist')),true);
-    wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaProducts});
-    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.cause?.message==='9lives iOS: open_wda');
+    const previousWdaBundle=wdaBundle;wdaBundle='dev.example.other';commands.length=0;driver=iosTargetDriver({...opts,wdaProducts});
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.record.phase==='wda'&&e.cause?.message==='9lives iOS: open_wda');
     await driver.close();assert.equal(commands.some(args=>args[1]==='create'),false);
+    // A WebDriverAgent tree the driver refuses (here a symlink) is a WDA
+    // preparation failure, not a rejected app, although it raises the same
+    // tree code an app would.
+    wdaBundle=previousWdaBundle;commands.length=0;
+    const link=path.join(wdaProducts,'link');fs.symlinkSync(path.join(wdaProducts,wdaRunner),link);
+    driver=iosTargetDriver({...opts,wdaProducts});
+    await assert.rejects(driver.open(c()),e=>e.record?.classification==='unknown'&&e.record.reason==='device-state-unknown'&&e.record.phase==='wda'&&e.cause?.message==='9lives iOS: open_wda');
+    await driver.close();fs.rmSync(link);assert.equal(commands.some(args=>args[1]==='create'),false);
     assert.deepEqual(records(),[]);
     assert.throws(()=>iosTargetDriver({...opts,wdaProducts:'relative/Products'}),/invalid_options/);
   } finally {
