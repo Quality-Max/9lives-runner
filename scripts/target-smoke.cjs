@@ -5,6 +5,9 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+// No branch is needed here: provenance is recorded in a throwaway repository
+// below, so this smoke also runs on a detached checkout such as CI's.
+const {provenanceFailure} = require('./smoke-branch.cjs');
 const work = path.join(root, '.context', 'target-contract', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
 const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
@@ -32,7 +35,7 @@ const spec = path.join(project, 'targets/shared.spec.ts');
 const config = path.join(project, 'targets.config.ts');
 const provenance = path.join(work, 'creation.json');
 const creation = sync(engine, ['provenance', spec, '--agent', 'codex']);
-assert.equal(creation.status, 0);
+assert.equal(creation.status, 0, provenanceFailure(creation));
 fs.writeFileSync(provenance, creation.stdout, {mode: 0o600});
 const cases = [];
 function invoke(mode, {targets = ['android-fake:finance'], grep = 'one deterministic scenario', file = spec, extra = []} = {}) {

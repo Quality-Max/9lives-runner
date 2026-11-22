@@ -480,6 +480,14 @@ func TestPrintResultExplainsTargetSetupClassifications(t *testing.T) {
 	if got := setupSummary(runner.TargetSetup{Classification: runner.SetupUnknown, Reason: "device-state-unknown", Stage: runner.SetupStageRecheck}); got != "setup unknown: device-state-unknown (rechecked after a failed assertion); the device state could not be determined, so the failure is inconclusive" {
 		t.Fatalf("unexpected unknown summary: %s", got)
 	}
+	for setup, want := range map[runner.TargetSetup]string{
+		{Classification: runner.SetupUnknown, Reason: "device-state-unknown", Stage: runner.SetupStageOpen, Phase: "session"}: "setup unknown: device-state-unknown (before any application operation, in the open phase session); the driver could not complete this phase of open, so the failure is inconclusive",
+		{Classification: runner.SetupMismatch, Reason: "build-installed", Stage: runner.SetupStageOpen, Phase: "install"}:     "setup mismatch: build-installed (before any application operation, in the open phase install); inconclusive, not an application failure",
+	} {
+		if got := setupSummary(setup); got != want {
+			t.Fatalf("unexpected phase summary: %s", got)
+		}
+	}
 }
 
 func TestPrintResultExplainsObserverClassificationAndDiagnostics(t *testing.T) {

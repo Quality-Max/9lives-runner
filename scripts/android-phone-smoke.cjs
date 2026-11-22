@@ -11,6 +11,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
+requireBranch(root, 'android-phone-smoke');
 const serial = process.env.NINELIVES_ANDROID_SERIAL;
 if (!serial) throw Error('set NINELIVES_ANDROID_SERIAL to the authorized phone');
 // A selection is checked before anything touches the phone: a typo must not
@@ -81,7 +83,7 @@ const installed = () => shell('pm path dev.ninelives.fixture 2>/dev/null || true
     throw new assert.AssertionError({message: 'installation failed; the matrix did not run'});
   }
   const creation = sync(engine, ['provenance', spec, '--agent', 'codex']);
-  assert.equal(creation.status, 0);
+  assert.equal(creation.status, 0, provenanceFailure(creation));
   const provenance = path.join(work, 'creation.json'); fs.writeFileSync(provenance, creation.stdout, {mode: 0o600});
 
   // A dialog left open before the test: the app has two windows.

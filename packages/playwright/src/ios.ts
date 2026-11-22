@@ -7,7 +7,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {TargetSetupError, targetCapabilities, controlPattern, type TargetContext, type TargetDriver, type TargetHandle} from './targets';
+import {TargetSetupError, targetCapabilities, type SetupPhase, controlPattern, type TargetContext, type TargetDriver, type TargetHandle} from './targets';
 import {iosVersions, validIOSRuntime, type IOSRuntime} from './ios-runtime';
 export {iosVersions, validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 
@@ -29,6 +29,15 @@ export type IOSTargetOptions = {
   wdaProducts?: string;
 };
 const fail = (reason: string) => new Error(`9lives iOS: ${reason}`);
+// Local failure codes that mean the app itself was rejected, not the device.
+// The tree codes are shared with the WebDriverAgent products, so they name an
+// app rejection only in the phases that handle the app.
+const appRejections: Record<string, string> = {
+  installed_build_mismatch: 'build-installed', invalid_runtime_metadata: 'runtime-metadata',
+  invalid_app: 'build-tree', app_limit: 'build-tree', unsupported_app_tree: 'build-tree', app_changed: 'build-tree',
+  app_platform_or_bundle_mismatch: 'build-platform',
+};
+const appPhases: readonly SetupPhase[] = ['artifact', 'install', 'metadata'];
 const uuid = /^[A-Fa-f0-9]{8}(-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}$/;
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf';
 const wdaBundleId = 'com.facebook.WebDriverAgentRunner.xctrunner';
@@ -76,15 +85,24 @@ async function copyTree(source: string, destination: string, files: string[]) {
     await copyFile(join(source, file), dest); await chmod(dest, lstatSync(join(source, file)).mode & 0o777);
   }
 }
-export function iosAppDigest(directory: string): string {
-  const hash = createHash('sha256');
+// One pass yields both digests from the same file reads: the declared,
+// mode-bound digest and the names-and-bytes digest of exactly those bytes.
+function treeDigests(directory: string): {declared: string; content: string} {
+  const declared = createHash('sha256'), content = createHash('sha256');
   for (const file of appFiles(directory)) {
     const full = join(directory, file), info = lstatSync(full), bytes = readFileSync(full);
     if (bytes.length !== info.size) throw fail('app_changed');
-    hash.update(JSON.stringify([file, info.mode & 0o111, bytes.length]) + '\n').update(bytes);
+    declared.update(JSON.stringify([file, info.mode & 0o111, bytes.length]) + '\n').update(bytes);
+    content.update(JSON.stringify([file, bytes.length]) + '\n').update(bytes);
   }
-  return hash.digest('hex');
+  return {declared: declared.digest('hex'), content: content.digest('hex')};
 }
+export function iosAppDigest(directory: string): string { return treeDigests(directory).declared; }
+/** Names and bytes only. The Simulator installer rewrites file modes (every
+ * file but the main executable becomes 0644), so an installed tree is compared
+ * with the frozen copy it came from, never with the declared mode-bound digest.
+ * @internal */
+export function iosInstalledDigest(directory: string): string { return treeDigests(directory).content; }
 function command(file: string, args: string[], c: TargetContext, env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((yes, no) => execFile(file, args, {signal: c.signal, timeout: milliseconds(c), maxBuffer: 256 * 1024, env},
     (error, stdout) => error ? no(fail('device_command_failed')) : yes(stdout.trim())));
@@ -148,13 +166,18 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
   const appCommand = (name: 'terminateApp' | 'activateApp', c: TargetContext) =>
     endpoint('/execute/sync', c, 'POST', {script: `mobile: ${name}`, args: [{bundleId: options.bundleId}]});
   const install = async (c: TargetContext) => {
-    // Reverify the frozen copy before every install and the actual installed
-    // tree afterwards. A changed build never reaches a target assertion.
+    // Reverify the frozen copy against the declared digest before every
+    // install, and the installed tree against that copy's names and bytes
+    // afterwards (the installer rewrites modes). A changed build never reaches
+    // a target assertion.
     check(c);
-    if (iosAppDigest(app) !== options.appSHA256) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
+    // Both digests come from one read, so the baseline is exactly the bytes
+    // that matched appSHA256.
+    const frozen = treeDigests(app);
+    if (frozen.declared !== options.appSHA256) throw new TargetSetupError({classification: 'mismatch', reason: 'build-digest', stage: 'open'});
     await simctl(['install', udid, app], c);
     const installed = await simctl(['get_app_container', udid, options.bundleId, 'app'], c);
-    if (!isAbsolute(installed) || iosAppDigest(installed) !== options.appSHA256) throw fail('installed_build_mismatch');
+    if (!isAbsolute(installed) || iosInstalledDigest(installed) !== frozen.content) throw fail('installed_build_mismatch');
     check(c);
   };
   const find = async (id: string, c: TargetContext): Promise<string[]> => {
@@ -230,7 +253,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       if (opening || closed) return Promise.reject(fail('already_open_or_closed'));
       const c = {...context, signal: AbortSignal.any([context.signal, controller.signal])};
       opening = (async () => {
-        let phase = 'tools';
+        let phase: SetupPhase = 'tools';
         try {
           check(c);
           if (process.platform !== 'darwin') throw fail('requires_macos');
@@ -331,10 +354,14 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           if (!validIOSRuntime(evidence)) throw fail('invalid_runtime_metadata');
           check(c);
         } catch (error) {
-          if (error instanceof TargetSetupError) throw error;
-          // Keep a fixed local phase for diagnosis, never a provider payload,
-          // command output, path or application content. The receipt stays closed.
-          throw new TargetSetupError({classification: 'unknown', reason: 'device-state-unknown', stage: 'open'}, fail(`open_${phase}`));
+          // The receipt names the fixed phase and, for a rejected app, a closed
+          // reason; never a provider payload, command output, path or
+          // application content. The detailed local code stays in the cause.
+          if (error instanceof TargetSetupError) throw new TargetSetupError({...error.record, phase}, error.cause);
+          const code = error instanceof Error && error.message.startsWith('9lives iOS: ') ? error.message.slice(12) : '';
+          const rejected = appPhases.includes(phase) ? appRejections[code] : undefined;
+          throw new TargetSetupError(rejected ? {classification: 'mismatch', reason: rejected, stage: 'open', phase}
+            : {classification: 'unknown', reason: 'device-state-unknown', stage: 'open', phase}, fail(`open_${phase}`));
         }
       })();
       return opening;
