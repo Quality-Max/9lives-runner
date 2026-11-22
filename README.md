@@ -96,7 +96,7 @@ shows recorded before/after receipts on one synthetic app.
 - Locator healing verified in isolation: [Tier 1](docs/native-tier1.md), [Tier 2](docs/native-tier2.md)
 - Page checks, `9l scan` and `9l inspect`: [page checks](docs/scan.md)
 - Engine-observed HTTP postconditions, experimental `9l run --verify`: [verify](docs/verify.md)
-- Android (experimental): [Android driver](docs/android-driver.md); iOS Simulator (0.7.0 beta): [iOS driver](docs/ios-driver.md)
+- Android (experimental): [Android driver](docs/android-driver.md); iOS Simulator (experimental): [iOS driver](docs/ios-driver.md)
 - Hosted sessions in QualityMax Cloud: [integration contract](docs/qualitymax-coding-sessions.md)
 - What is shipped, experimental and planned: [documentation index](docs/README.md#what-is-available)
 
@@ -104,7 +104,7 @@ shows recorded before/after receipts on one synthetic app.
 
 | Component | Qualified |
 | --- | --- |
-| CLI and `@9l/playwright` | 0.6.1, released together; install matching versions |
+| CLI and `@9l/playwright` | 0.7.0, released together; install matching versions |
 | `@playwright/test` | 1.61.1 through 1.64.1 |
 | Browser | Chromium; other engines are unqualified |
 | Node | 24 (22 minimum) |

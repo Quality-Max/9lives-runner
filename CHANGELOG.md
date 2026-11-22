@@ -4,7 +4,41 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.7.0 — 2026-11-22
+
+The first stable release of the 0.7.0 line. It becomes GitHub's Latest
+release and npm `latest`, so installers and `9l update` select it. It
+includes the experimental iOS Simulator target first released in
+0.7.0-beta.1, and adds JUnit reports from validated receipts, a live view of
+test output, experimental engine-observed HTTP postconditions (`--verify`)
+and an assessment-first start. Receipts gain additive fields (`tests`,
+`testsTruncated`, `verifications`, `verificationSha256`, and `phase` with new
+`mismatch` reasons in iOS `targetSetup`); the receipt version stays 2 and the
+target contract stays `9l.target/3`. Update the CLI and `@9l/playwright`
+together: an older CLI rejects the new iOS setup fields and reasons as invalid
+evidence, and a 0.6.x CLI rejects `ios:` targets.
+
+### iOS Simulator (experimental)
+
+- `open` accepts real app version and build numbers, such as
+  `CFBundleVersion` 1234 or `2026.11.0`: up to four period-separated integers
+  of at most ten digits (#294).
+- An app that embeds frameworks or dylibs installs: the installed tree is
+  compared with the verified copy by names and bytes, because the Simulator
+  installer rewrites file modes. Both digests come from one read of each
+  file. Declared `appSHA256` values are unchanged (#293).
+- A failed `open` names its phase in the receipt's `targetSetup`, and a
+  rejected app reads as `mismatch` with a closed reason: `build-installed`,
+  `build-tree`, `build-platform` or `runtime-metadata`. A refused
+  WebDriverAgent tree is a `wda` failure, not a rejected app. Before this,
+  every open failure read `unknown`/`device-state-unknown` (#289).
+- Removing a Simulator left by a stopped worker has one two-minute budget for
+  every record and stops waiting for a `simctl` that does not return, so a
+  stuck CoreSimulator can no longer hold an attempt past its timeout,
+  deadline or interrupt. An unremoved device still fails the attempt (#291).
+- `npm run smoke:ios` and the Android smokes say that they need a branch
+  before any slow setup, instead of failing later on a detached checkout
+  such as a release tag (#290).
 
 ### Added
 

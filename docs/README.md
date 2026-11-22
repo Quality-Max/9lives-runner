@@ -14,7 +14,7 @@
 | [Compatibility](compatibility.md) | You need the qualified CLI, SDK, Playwright, Node and native-target pairings |
 | [Page checks](scan.md) | You want `9l scan` and `9l inspect`: nine observation categories from one page load and ranked locators |
 | [Shared targets](targets.md) | You want one deterministic scenario dispatched to web and native targets |
-| [iOS driver](ios-driver.md) | You want the experimental iOS Simulator target (0.7.0 beta) and its limits |
+| [iOS driver](ios-driver.md) | You want the experimental iOS Simulator target (since 0.7.0) and its limits |
 | [Setup diagnostics](setup-diagnostics.md) | You want `9l doctor` checks before the first run |
 | [Healing targets](healing-targets.md) | You are checking which locator repairs healing supports |
 | [Runner efficiency](runner-efficiency.md) | You want the runner's measured overhead and its limits |
@@ -49,7 +49,7 @@ with a maintainer status note. They describe the release the reviewer used.
 - **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
 - **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
 - **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](android-driver.md).
-- **iOS Simulator (experimental, beta):** in the 0.7.0 beta releases, qualified from a source checkout on one Mac; see the [iOS driver guide](ios-driver.md).
+- **iOS Simulator (experimental):** since 0.7.0, qualified from a source checkout on one Mac; see the [iOS driver guide](ios-driver.md).
 - **Independent postcondition checks (experimental):** `9l run <spec> --verify <checks.json>` has the engine probe HTTP postconditions declared outside the spec after the test process has stopped; a contradicted check fails a test that reported itself passed. It covers only state reachable by HTTP `GET` or `HEAD`; see the [verify guide](verify.md).
 - **Planned:** broader independent behavioral verification, verified replay, iOS qualification on hosted CI and real iPhones, and broader Android device qualification.
 
