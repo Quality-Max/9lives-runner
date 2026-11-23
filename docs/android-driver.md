@@ -289,7 +289,15 @@ a force-stop of the configured package (`am force-stop`, then a bounded wait unt
 (a force-stop that keeps the app's data, then a relaunch). The keyboard is
 read from `mInputShown` of `dumpsys input_method`; `hideKeyboard` presses
 Back only while it is shown and reads the result back, so the selected input
-method is never changed and no keyboard capability is set on a phone. An
+method is never changed and no keyboard capability is set on a phone. On an
+owned emulator the selected method is Appium's empty one
+(`io.appium.settings/.EmptyIME`), which draws no window: while a field has
+focus Android still reports it as shown, but nothing covers the app and a
+Back would reach the app instead of closing it. That method therefore reads
+as hidden: `toHaveKeyboard(false)` holds and `hideKeyboard()` sends nothing.
+The selected method is read from `mCurMethodId` (API 35) or
+`mSelectedMethodId` (API 36, where the field was renamed); the behaviour is
+qualified on the documented API 35 emulators. An
 unreadable keyboard state fails the operation rather than guessing. Nothing
 is retried.
 Open is bounded at 180 seconds; `reset`, `terminate` and `activate`

@@ -1195,3 +1195,90 @@ test('target provenance stays unknown when fixtures can be replaced out of sight
   const rejected = facts(`test('t', async ({app}) => { await expect(app.getByTestId('r').toHaveText('wanted')).rejects.toThrow(); });`);
   assert.deepEqual(rejected[0].assertions.map(a => [a.matcher, a.unawaited]), [['toThrow', false]]);
 });
+
+test('a fixture module reports whether its exported test is a createTargetTest fixture', () => {
+  const exported = source => analyze(source, {exports: true}).targetTest;
+  assert.deepEqual(exported(`import {createTargetTest} from '@9l/playwright';
+    export const test = createTargetTest({native: target => driver(target)});`), {app: true});
+  assert.deepEqual(exported(`import {createTargetTest as make} from '@9l/playwright';
+    const fixture = make({});
+    export {fixture as test};`), {app: true});
+  // An extension that may redefine app keeps the test, not the target app.
+  assert.deepEqual(exported(`import {createTargetTest} from '@9l/playwright';
+    export const test = createTargetTest({}).extend(fixtures);`), {app: false});
+  // A test.use that may set app, a plain Playwright test, a re-export from
+  // elsewhere, another export name or a factory from another module: none.
+  assert.deepEqual(exported(`import {createTargetTest} from '@9l/playwright';
+    export const test = createTargetTest({}); test.use(options);`), {app: false});
+  for (const source of [
+    `import {test} from '@playwright/test'; export {test};`,
+    `export {test} from './other';`,
+    `import {createTargetTest} from '@9l/playwright'; export const scenario = createTargetTest({});`,
+    `import {createTargetTest} from './local'; export const test = createTargetTest({});`,
+    `import {createTargetTest} from '@9l/playwright'; export let test = createTargetTest({});`,
+  ]) assert.equal(exported(source), undefined, source);
+});
+
+test('a test imported from a known target fixture module credits target assertions', () => {
+  const spec = `import {test} from './fixtures';
+    test('signs in', async ({app}) => {
+      await app.getByTestId('email').fill('x');
+      await app.getByTestId('home').toBeVisible();
+      await app.getByTestId('banner').toBeHidden();
+    });`;
+  // Without knowing the module, its test is an unrecognized import.
+  const unknown = analyze(spec);
+  assert.deepEqual(unknown.tests, []);
+  assert.deepEqual(unknown.unrecognizedTestImports, ['./fixtures']);
+  const known = analyze(spec, {targetModules: {'./fixtures': {app: true}}});
+  assert.deepEqual(known.tests.map(t => t.assertions.map(a => `${a.matcher}:${a.absence}`)), [['target:toBeVisible:false', 'target:toBeHidden:true']]);
+  assert.equal(known.unrecognizedTestImports, undefined);
+  // A module whose test may redefine app declares tests, without target credit.
+  const plain = analyze(spec, {targetModules: {'./fixtures': {app: false}}});
+  assert.deepEqual(plain.tests.map(t => t.assertions.length), [0]);
+  // Only the named module counts, and a spec's own test.use that may set app
+  // still withdraws the credit.
+  assert.deepEqual(analyze(spec, {targetModules: {'./other': {app: true}}}).tests, []);
+  const overridden = analyze(`import {test} from './fixtures'; test.use(options);\n${spec.split('\n').slice(1).join('\n')}`, {targetModules: {'./fixtures': {app: true}}});
+  assert.deepEqual(overridden.tests.map(t => t.assertions.length), [0]);
+});
+
+// A shared fixture can be overridden from any local module the spec loads, so
+// credit across a module boundary needs the spec and the fixture module to
+// load no other local code (adversarial review of the fixture-module change).
+test('an imported target fixture earns no credit when local code could override it', () => {
+  const body = `test('t', async ({app}) => { await app.toHaveKeyboard(true); });`;
+  const known = {targetModules: {'./fixtures': {app: true}}};
+  const credited = source => analyze(source, known).tests.map(t => t.assertions.length);
+  assert.deepEqual(credited(`import {test} from './fixtures';\n${body}`), [1]);
+  for (const source of [
+    // A namespace import reaches the same object under another name.
+    `import {test} from './fixtures'; import * as fx from './fixtures'; fx.test.use({app: fake});\n${body}`,
+    // A default import, a side-effect import and another relative module can each run test.use at load.
+    `import fixtures, {test} from './fixtures';\n${body}`,
+    `import {test} from './fixtures'; import './helpers';\n${body}`,
+    `import {test} from './fixtures'; import {login} from './helpers';\n${body}`,
+    `import {test} from './fixtures'; export {x} from './elsewhere';\n${body}`,
+    `import {test} from './fixtures'; const helpers = require('./helpers');\n${body}`,
+    `import {test} from './fixtures'; await import('./helpers');\n${body}`,
+    `import {test} from './fixtures'; const name = './helpers'; await import(name);\n${body}`,
+  ]) assert.deepEqual(credited(source), [0], source);
+  // Package imports load no local code and keep the credit.
+  assert.deepEqual(credited(`import {test} from './fixtures'; import {androidTargetDriver} from '@9l/playwright/android';\n${body}`), [1]);
+});
+
+test('a fixture module is trusted only when it loads no local code and exports its fixture only as test', () => {
+  const exported = source => analyze(source, {exports: true}).targetTest;
+  const head = `import {createTargetTest} from '@9l/playwright';\n`;
+  assert.deepEqual(exported(`${head}export const test = createTargetTest({});`), {app: true});
+  for (const source of [
+    // Exported again under another name: a spec could override it through that name.
+    `${head}export const test = createTargetTest({}); export {test as base};`,
+    `${head}const fixture = createTargetTest({}); export {fixture as test, fixture as base};`,
+    `${head}export const test = createTargetTest({}); export default test;`,
+    // Loads local code that could call test.use at load time.
+    `${head}import './setup';\nexport const test = createTargetTest({});`,
+    `${head}import {driver} from './driver';\nexport const test = createTargetTest({native: driver});`,
+    `${head}export * from './more';\nexport const test = createTargetTest({});`,
+  ]) assert.deepEqual(exported(source), {app: false}, source);
+});

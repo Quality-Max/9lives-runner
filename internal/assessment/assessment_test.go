@@ -2,6 +2,8 @@ package assessment
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1011,5 +1013,74 @@ func TestAssessCreditsTargetAssertionsWithoutClaimingVerification(t *testing.T) 
 	// Source recognition is not runtime evidence: nothing here is verified.
 	if data, err := json.Marshal(report); err != nil || strings.Contains(string(data), "verified") {
 		t.Fatalf("a source report claims verification: %v", err)
+	}
+}
+
+// A spec often imports its createTargetTest fixture from a module beside it,
+// so several specs share one driver configuration. The fixture module is read
+// and, when its exported test is a target fixture, the spec's target
+// assertions are credited as if it were declared in the spec.
+func TestAssessCreditsTargetAssertionsFromALocalFixtureModule(t *testing.T) {
+	requireNode(t)
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("fixtures/target.mjs", "import {createTargetTest} from '@9l/playwright';\n"+
+		"export const test = createTargetTest({native: target => driver(target)});\n")
+	write("fixtures/plain.ts", "import {test as base} from '@playwright/test';\nexport const test = base.extend({});\n")
+	spec := func(module string) []byte {
+		return []byte("import {test} from '" + module + "';\n" +
+			"test('signs in', async ({app}) => {\n" +
+			"  await app.getByTestId('email').fill('x');\n" +
+			"  await app.getByTestId('home').toBeVisible();\n" +
+			"});\n")
+	}
+	specPath := filepath.Join(dir, "specs", "login.spec.mjs")
+	report, err := Assess(context.Background(), spec("../fixtures/target.mjs"), nil, Options{Path: specPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 1 || strings.Join(report.Tests[0].Assertions.Matchers, ",") != "target:toBeVisible" {
+		t.Fatalf("target assertions from a fixture module not credited: %+v", report)
+	}
+	// The report names the module it read and its digest.
+	sum := sha256.Sum256([]byte("import {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({native: target => driver(target)});\n"))
+	if !strings.Contains(strings.Join(report.Limits, "\n"), "target-fixture-module ../fixtures/target.mjs: read "+filepath.ToSlash(filepath.Join(dir, "fixtures", "target.mjs"))+" (sha256 "+hex.EncodeToString(sum[:])+")") {
+		t.Fatalf("fixture module not recorded: %v", report.Limits)
+	}
+	// Resolved without an extension too, as a bundler would.
+	if report, err = Assess(context.Background(), spec("../fixtures/target"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 {
+		t.Fatalf("extensionless fixture import not resolved: %+v %v", report, err)
+	}
+	// TypeScript's ESM convention: './x.js' in source names x.ts on disk.
+	write("fixtures/typed.ts", "import {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({});\n")
+	if report, err = Assess(context.Background(), spec("../fixtures/typed.js"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 1 {
+		t.Fatalf("a .js import of a .ts fixture not resolved: %+v %v", report, err)
+	}
+	// A fixture module that loads other local code is read but earns no
+	// credit: that code could replace app when the module loads.
+	write("fixtures/loads.ts", "import './setup';\nimport {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({});\n")
+	if report, err = Assess(context.Background(), spec("../fixtures/loads"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 0 {
+		t.Fatalf("a fixture module loading local code was trusted: %+v %v", report, err)
+	}
+	// A module whose test is not a target fixture, a missing module, and a
+	// spec assessed without a path all keep the test import unrecognized.
+	for _, c := range []struct {
+		module string
+		path   string
+	}{{"../fixtures/plain", specPath}, {"../fixtures/missing", specPath}, {"../fixtures/target.mjs", ""}} {
+		report, err := Assess(context.Background(), spec(c.module), nil, Options{Path: c.path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Tests) != 0 || !strings.Contains(strings.Join(report.Limits, "\n"), c.module) {
+			t.Fatalf("%s (path %q) should stay unrecognized: tests %d, limits %v", c.module, c.path, len(report.Tests), report.Limits)
+		}
 	}
 }
