@@ -128,8 +128,10 @@ for (const mode of modes) {
     assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='operations') {
+    // Eight: six operations checks, plus the focused field still visible and
+    // no keyboard after hideKeyboard under the emulator's empty input method.
     assert.equal(r.status,0,'operations: native operations pass');assert.equal(run.outcome,'passed');
-    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,6);assert.equal(receipt.verifiedAssertions,0);
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8,'operations: target assertions');assert.equal(receipt.verifiedAssertions,0);
   } else {
     assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
     if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);

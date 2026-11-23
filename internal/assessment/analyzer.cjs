@@ -112,10 +112,55 @@ function createAnalyzer(ts) {
     // Target tests: a file-level `const test = createTargetTest(...)` from
     // @9l/playwright declares a test whose `app` fixture drives a target.
     const tests = new Set(), expects = new Set(), foreignTests = new Set(), factories = new Set(), targetTests = new Set();
+    const declaredTargets = new Set();
+    const targetModules = options.targetModules;
+    // Local code can replace a shared fixture's `app` out of sight: a
+    // top-level test.use in any module this file loads applies to this
+    // file's tests. So a fixture from another module, and a fixture module
+    // itself, are trusted only when the file loads no local module except
+    // through `import {…} from` a known fixture module: no namespace, default
+    // or side-effect import, no other relative import or re-export, and no
+    // dynamic import() or require() of a relative path.
+    const relative = specifier => specifier.startsWith('./') || specifier.startsWith('../');
+    const loadsOnlyKnownModules = (() => {
+      for (const statement of file.statements) {
+        if ((ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier
+          && ts.isStringLiteralLike(statement.moduleSpecifier) && relative(statement.moduleSpecifier.text)) {
+          if (ts.isExportDeclaration(statement)) return false;
+          const clause = statement.importClause;
+          if (!targetModules || !Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)) return false;
+          if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false;
+        }
+      }
+      let dynamic = false;
+      (function visit(node) {
+        if (dynamic) return;
+        if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+          || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
+          const target = node.arguments[0];
+          if (!target || !ts.isStringLiteralLike(target) || relative(target.text)) dynamic = true;
+        }
+        if (ts.isImportEqualsDeclaration(node)) dynamic = true;
+        ts.forEachChild(node, visit);
+      })(file);
+      return !dynamic;
+    })();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
       const bindings = statement.importClause?.namedBindings;
       if (!bindings || !ts.isNamedImports(bindings)) continue;
+      const targetModule = targetModules && Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)
+        ? targetModules[statement.moduleSpecifier.text] : undefined;
+      if (targetModule) {
+        // A local fixture module whose exported `test` the caller found to be
+        // a createTargetTest fixture: its `test` declares target tests here too.
+        for (const binding of bindings.elements) {
+          if ((binding.propertyName || binding.name).text !== 'test') continue;
+          tests.add(binding.name.text);
+          if (targetModule.app === true && loadsOnlyKnownModules) targetTests.add(binding.name.text);
+        }
+        continue;
+      }
       if (!['@playwright/test', '@9l/playwright'].includes(statement.moduleSpecifier.text)) {
         // A `test` from another module (a fixture package, another test runner) is
         // not assessed; only its module name, if package-like, is reported.
@@ -160,6 +205,7 @@ function createAnalyzer(ts) {
         const factory = declaration.initializer && targetFactory(declaration.initializer);
         if (!ts.isIdentifier(declaration.name) || !factory) continue;
         tests.add(declaration.name.text);
+        declaredTargets.add(declaration.name.text);
         if (factory.app) targetTests.add(declaration.name.text);
       }
     }
@@ -167,11 +213,12 @@ function createAnalyzer(ts) {
     // it. test.use(...) that may set `app` replaces the fixture for some of its
     // tests, and any other use (an alias, an element access such as
     // test['use'], an argument) lets it be overridden out of sight: in either
-    // case none of its tests is trusted.
+    // case none of its tests is trusted. Naming it in an export list cannot
+    // change it.
     (function references(node) {
       if (ts.isIdentifier(node) && targetTests.has(node.text) && !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)
         && !((ts.isPropertyAccessExpression(node.parent) || ts.isPropertyAssignment(node.parent)) && node.parent.name === node)
-        && !ts.isImportSpecifier(node.parent)) {
+        && !ts.isImportSpecifier(node.parent) && !ts.isExportSpecifier(node.parent)) {
         const parent = node.parent;
         const called = ts.isCallExpression(parent) && parent.expression === node;
         const read = ts.isPropertyAccessExpression(parent) && parent.expression === node;
@@ -181,6 +228,43 @@ function createAnalyzer(ts) {
       }
       ts.forEachChild(node, references);
     })(file);
+    // Exports mode: whether this module exports a `test` declared here with
+    // createTargetTest, so a spec importing it can be assessed as a target
+    // test. Only `export const test = ...` and `export {name as test}` of a
+    // const declared in this file are read; a re-export from elsewhere is not.
+    if (options.exports === true) {
+      // Every name each local binding is exported under, so a fixture exported
+      // as `test` and also under another name (or as default) is not trusted:
+      // a spec could reach it through the other name and override it.
+      const exportNames = new Map();
+      const exportAs = (local, name) => exportNames.set(local, [...(exportNames.get(local) || []), name]);
+      let wholesale = false;
+      for (const statement of file.statements) {
+        const exportedStatement = statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
+        if (ts.isVariableStatement(statement) && exportedStatement) {
+          for (const declaration of statement.declarationList.declarations) {
+            if (ts.isIdentifier(declaration.name)) exportAs(declaration.name.text, declaration.name.text);
+          }
+        }
+        if (ts.isExportDeclaration(statement)) {
+          if (statement.moduleSpecifier || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) wholesale = true;
+          else for (const element of statement.exportClause.elements) exportAs((element.propertyName || element.name).text, element.name.text);
+        }
+        if (ts.isExportAssignment(statement)) {
+          if (ts.isIdentifier(statement.expression)) exportAs(statement.expression.text, 'default');
+          else wholesale = true;
+        }
+      }
+      let exported = null;
+      for (const [local, names] of exportNames) {
+        if (!names.includes('test') || !declaredTargets.has(local)) continue;
+        // The module itself must load no local code, and its fixture must be
+        // reachable only as `test`; otherwise it declares tests without credit.
+        exported = { app: targetTests.has(local) && names.length === 1 && !wholesale && loadsOnlyKnownModules };
+      }
+      // Strict JSON on the Go side has no null: a module without one omits it.
+      return { version: 13, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };
+    }
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
       return { line: pos.line + 1, column: pos.character + 1 };
@@ -991,7 +1075,9 @@ async function main(parserPath = process.argv[1]) {
       chunks.push(chunk);
     }
     const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true, javascript: request.javascript === true })));
+    const targetModules = request.targetModules && typeof request.targetModules === 'object' ? request.targetModules : undefined;
+    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true, javascript: request.javascript === true,
+      exports: request.exports === true, targetModules })));
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
