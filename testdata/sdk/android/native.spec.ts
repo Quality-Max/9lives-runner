@@ -233,6 +233,9 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     if (await app.foreground() !== 'app') throw new Error('app not in front');
     await app.getByTestId('list').scroll('down', {percent: 0.5});
     await app.getByTestId('status').toHaveText('scrolled');
+    // A value read from the screen for a later step: UiAutomator2's text of
+    // the same control, returned to the spec and never recorded.
+    if (await app.getByTestId('status').text() !== 'scrolled') throw new Error('status text not read');
     if (attachedSerial) {
       // A phone keeps its own input method: fill focuses the field like a
       // touch, which shows it, and hiding closes it.

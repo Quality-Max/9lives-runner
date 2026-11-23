@@ -150,3 +150,42 @@ func TestTargetSkipFollowsSkipPins(t *testing.T) {
 		t.Fatalf("target skip did not reach skip accounting: %v", err)
 	}
 }
+
+// A text read (query-text) is an executed action, never an assertion: it adds
+// nothing to targetAssertions, cannot be filed as an assertion, and a failed
+// read names its control. Contract version 3, which has no such operation,
+// is rejected at the handshake.
+func TestTargetTextReadIsAnAction(t *testing.T) {
+	identity := owner
+	identity.Target = "web:finance"
+	withRead := func(category, status string) []map[string]any {
+		f := targetFrames()
+		read := map[string]any{"type": "step_end", "testId": testKey, "retry": 0, "stepId": "step-2", "category": category, "status": status, "operation": "query-text", "targetId": TargetID("web:finance")}
+		return append(f[:3], append([]map[string]any{read}, f[3:]...)...)
+	}
+	v, err := New().ValidateAttempt(stream(withRead("action", "passed")), identity)
+	if err != nil || v.ExecutedTests != 1 || v.TargetAssertions != 1 {
+		t.Fatalf("a text read beside one assertion: %+v %v", v, err)
+	}
+	if _, err := New().ValidateAttempt(stream(withRead("assertion", "passed")), identity); err == nil {
+		t.Fatal("a text read was accepted as an assertion")
+	}
+	if TargetVersion != "9l.target/4" {
+		t.Fatalf("target contract %s", TargetVersion)
+	}
+	old := targetFrames()
+	old[0]["targetVersion"] = "9l.target/3"
+	old[0]["capabilities"] = []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes", "9l.target/3"}
+	if _, err := New().ValidateAttempt(stream(old), identity); err == nil {
+		t.Fatal("a 9l.target/3 stream was accepted")
+	}
+	// A read that failed on an absent control names it, like other control operations.
+	failed := withRead("action", "failed")
+	failed[3]["control"], failed[3]["reason"] = "code", "missing_test_id"
+	failed[4]["status"], failed[5]["status"], failed[6]["outcome"], failed[7]["status"] = "skipped", "failed", "unexpected", "failed"
+	failed = append(failed[:4], failed[5:]...)
+	v, err = New().ValidateAttempt(stream(failed), identity)
+	if err != nil || v.FailureCount != 1 || len(v.FailedTests) != 1 || v.FailedTests[0].Operation != "query-text" || v.FailedTests[0].Control != "code" {
+		t.Fatalf("a failed text read is not attributed: %+v %v", v, err)
+	}
+}

@@ -154,9 +154,9 @@ for (const mode of modes) {
   }
   if (mode==='operations') {
     const ops=new Set(frames.filter(f=>f.operation).map(f=>f.operation));
-    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate','query-visible','foreground']) assert(ops.has(op),`operations: ${op} ran`);
+    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate','query-visible','query-text','foreground']) assert(ops.has(op),`operations: ${op} ran`);
     // Queries are executed actions, never assertions.
-    assert(frames.filter(f=>f.operation==='query-visible'||f.operation==='foreground').every(f=>f.category==='action'&&f.status==='passed'),'operations: queries are passed actions');
+    assert(frames.filter(f=>['query-visible','query-text','foreground'].includes(f.operation)).every(f=>f.category==='action'&&f.status==='passed'),'operations: queries are passed actions');
   }
   if (mode==='diagnostics') {
     // The hidden assertion against the open dialog fails as an assertion,

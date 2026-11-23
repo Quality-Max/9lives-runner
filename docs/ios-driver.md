@@ -210,6 +210,6 @@ The platform reference was assessed at commit
 `services/flutter_appium_runtime.py`. The useful contracts are finite grounded
 controls, exact unique matches, matching build/platform, and an owned loopback
 Appium session with cancellation and cleanup. This implementation applies those
-contracts to the existing `9l.target/3` fixtures and receipt validator. It does
+contracts to the existing `9l.target/4` fixtures and receipt validator. It does
 not duplicate the hosted mobile DSL, discovery/planning or provider engine, and
 does not require a platform account.

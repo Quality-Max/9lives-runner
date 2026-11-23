@@ -17,7 +17,7 @@ import (
 )
 
 const Version = "9l.engine/1"
-const TargetVersion = "9l.target/3"
+const TargetVersion = "9l.target/4"
 const maxFrameBytes = 16 * 1024
 const maxEvents = 10000
 const maxProtocolBytes = 4 << 20
@@ -470,7 +470,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		return invalid("missing terminal outcome")
 	}
 	if targeted {
-		validation.Description += "; 9l.target/3; required target tests; worker-reported target assertion count only"
+		validation.Description += "; 9l.target/4; required target tests; worker-reported target assertion count only"
 	}
 	return validation, nil
 }
@@ -513,15 +513,15 @@ func outcome(state *testState) string {
 	return "expected"
 }
 
-// The typed operations of the shared target fixture (9l.target/3). Queries
-// such as bounds, viewport, query-visible and foreground are actions:
+// The typed operations of the shared target fixture (9l.target/4). Queries
+// such as bounds, viewport, query-visible, query-text and foreground are actions:
 // executed, never assertions.
-var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground", "fingerprint"}
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "query-text", "foreground", "fingerprint"}
 var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
 
 // targetControlOperations address one control by test ID and may name it;
 // targetControl is the identifier shape a named control has.
-var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "assert-visible", "assert-hidden", "assert-text", "assert-state"}
+var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "query-text", "assert-visible", "assert-hidden", "assert-text", "assert-state"}
 var targetControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // Capabilities is the exact capability list a hello frame must carry. The
