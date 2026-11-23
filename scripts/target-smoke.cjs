@@ -185,8 +185,34 @@ for (const receipt of queries.summary.receipts) {
   const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse).filter(f => f.operation);
   const native = receipt.target.startsWith('android-fake:');
   assert.deepEqual(frames.map(f => `${f.operation}:${f.category}:${f.status}`), ['open:action:passed', 'query-visible:action:passed', 'query-visible:action:passed', 'bounds:action:passed', 'tap-at:action:passed', 'query-visible:action:passed',
-    ...(native ? ['foreground:action:passed'] : []), 'assert-text:assertion:passed'], receipt.target);
+    ...(native ? ['foreground:action:passed'] : []), 'query-text:action:passed', 'assert-text:assertion:passed'], receipt.target);
   assert.equal(receipt.targetAssertions, 1, `${receipt.target}: queries are not assertions`);
+  // Like other passing steps the text read carries no test ID, and the value
+  // it returned to the spec is nowhere in the evidence.
+  assert.equal(frames.find(f => f.operation === 'query-text').control, undefined, `${receipt.target}: a passing read names no control`);
+  for (const file of [receipt.evidence.stdoutPath, receipt.receiptPath]) {
+    assert(!fs.readFileSync(file, 'utf8').includes('tapped'), `${receipt.target}: the value read stays out of ${path.basename(file)}`);
+  }
+}
+// The web driver reads what a user sees, and refuses what a user cannot read.
+const readText = path.join(project, 'targets/read-text.spec.ts');
+const readsSeen = invoke('read-seen', {targets: ['web:finance'], grep: 'text reads what a user sees', file: readText});
+assert.equal(readsSeen.code, 0, 'read-seen: a field value, a chosen option and visible text are read');
+for (const [mode, grep, reason] of [['read-hidden', 'text of a hidden control', 'missing_test_id'],
+  ['read-password', 'text of a password field', 'unsupported_state'], ['read-long', 'text over the bound', 'invalid_property']]) {
+  const refused = invoke(mode, {targets: ['web:finance'], grep, file: readText, extra: ['--failure-details']});
+  assert.notEqual(refused.code, 0, mode);
+  const failed = refused.summary.receipts[0].failureSummary.tests[0];
+  assert.deepEqual([failed.operation, failed.reason], ['query-text', reason], mode);
+  // Nothing the page holds reaches the receipt or the failure details.
+  const written = fs.readFileSync(path.join(work, `${mode}.json`), 'utf8');
+  for (const value of ['hunter2', 'not shown', 'xxxxxxxxxx']) assert(!written.includes(value), `${mode}: page text in the result`);
+}
+const missingText = invoke('missing-text', {targets: ['web:finance', 'android-fake:finance'], grep: 'a text read needs its control', file: operations, extra: ['--failure-details']});
+assert.notEqual(missingText.code, 0, 'missing-text: reading an absent control fails');
+for (const receipt of missingText.summary.receipts) {
+  assert.equal(receipt.failureSummary.tests[0].operation, 'query-text', `${receipt.target}: the failed step is the text read`);
+  assert.equal(receipt.failureSummary.tests[0].reason, 'missing_test_id', `${receipt.target}: an absent control is missing, not empty text`);
 }
 const ambiguousQuery = invoke('ambiguous-query', {targets: ['android-fake:finance'], grep: 'queries', file: operations, extra: ['--failure-details']});
 assert.notEqual(ambiguousQuery.code, 0);

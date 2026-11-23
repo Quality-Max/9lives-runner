@@ -215,7 +215,7 @@ process and uses no part of this protocol. Live provider accuracy, verified
 replay and broader independent verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
-`9l.target/3`, a target identity digest, a declared test list, typed
+`9l.target/4`, a target identity digest, a declared test list, typed
 deterministic operation outcomes and, from a native driver, at most one
 `target_setup` classification per attempt (`blocked`, `dirty`, `mismatch` or
 `unknown`, a closed reason, the stage and a recorded recovery), kept in the

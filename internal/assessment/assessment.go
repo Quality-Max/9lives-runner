@@ -91,7 +91,7 @@ type Assertion struct {
 	Caught bool `json:"caught"`
 	// Matcher is a matcher name from the pinned Playwright API, "custom" for
 	// any other matcher, "assertion-helper" for a marked helper call, or
-	// "target:" and a @9l/playwright target assertion (9l.target/3).
+	// "target:" and a @9l/playwright target assertion (9l.target/4).
 	Matcher string `json:"matcher"`
 }
 type AnalysisLimit struct {

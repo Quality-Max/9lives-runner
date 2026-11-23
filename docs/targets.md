@@ -79,9 +79,25 @@ and a poll that Go's worker deadline cut short stops as `deadline` rather
 than answering `false`.
 `foreground()` reads which window has input focus: `app`, `foreign` (another
 package's window, such as a system dialog, permission prompt or Settings) or
-`none`; package scoping of every action is unchanged. Both are recorded as
-executed actions (`query-visible`, `foreground`), never as assertions, so a
-conditional spec still needs an assertion to protect its outcome.
+`none`; package scoping of every action is unchanged. Observed controls also
+expose `text({timeoutMs}?)`, which returns the text a user reads in a control,
+for a value a later step needs, such as a code the app shows. It waits within
+its bound, like an action, for the control to be shown: an absent or hidden
+control is `missing_test_id`, ambiguity fails, and the answer is a string of at
+most 4 KiB (longer is `invalid_property`). On the web it is a field's current
+value (not its default), a select's chosen option, or the element's visible
+text without scripts or hidden children, and a password field is refused as
+`unsupported_state`; `toHaveText` keeps comparing `textContent`. On Android it
+is UiAutomator2's text of the control, and on iOS WebDriverAgent's; the iOS
+path reuses the read `toHaveText` makes there and has not yet run on a
+Simulator for `text()`. 9lives never records the text in its evidence or the
+receipt, but the spec holds it: a value it puts into an error, including an
+assertion such as `expect(await control.text()).toBe(code)` whose failure
+prints the received value, is kept by `--failure-details`, and Playwright's
+own traces record what a web read returned when tracing is on. All three
+are recorded as executed actions (`query-visible`, `foreground`,
+`query-text`), never as assertions, so a spec still needs an assertion to
+protect its outcome.
 `deviceSerial()` returns the serial of the device the open session targets,
 for adb commands a spec issues itself; it is not a device operation, is not
 recorded and never enters a receipt, and those commands are outside the
@@ -123,7 +139,7 @@ ordinary Playwright owns the page. `native(target)` synchronously constructs a
 Native fixture resolution has no implicit browser, context or page dependency.
 `page` and ordinary `expect` remain available to existing web tests.
 
-Drivers declare `9l.target/3`, the selected kind/app alias, and the exact ordered
+Drivers declare `9l.target/4`, the selected kind/app alias, and the exact ordered
 `targetCapabilities`. They observe at most two handles for a test ID: zero is
 missing, two is ambiguous. Mutations require exactly one observed handle and
 never silently select the first match. An action on a control (`tap`, `fill`,
@@ -171,14 +187,17 @@ close promise.
 
 ## Evidence and limits
 
-The existing `9l.engine/1` stream negotiates the additional `9l.target/3`
+The existing `9l.engine/1` stream negotiates the additional `9l.target/4`
 capability. Version 2 (0.6.0-beta.2) added the native operations, the
 `target_setup` and `target_diagnostic` frames and the Android runtime's display,
 posture and build identity. Version 3 adds the `query-visible` and
 `foreground` operations, the `foreground` and `device-serial` driver
-capabilities and the `operation_timeout` stop reason. A driver or SDK that
-declares an earlier version is rejected at the handshake with the upgrade
-message, so the CLI and `@9l/playwright` are updated together. Every frame carries the selected target's SHA-256 ID (a fixed
+capabilities and the `operation_timeout` stop reason. Version 4 adds the
+`query-text` operation. A driver that declares another version is refused
+by the SDK when it opens. A CLI and SDK on different versions are caught when
+Go validates the run's evidence, after the tests ran, with the upgrade
+message: the run ends incomplete, never green, so the CLI and
+`@9l/playwright` are updated together. Every frame carries the selected target's SHA-256 ID (a fixed
 digest of the public target name, not a secret) alongside run/job/attempt
 identity. Before execution, the reporter declares each test ID it will run; Go
 checks every frame against that list and requires a single test attempt,

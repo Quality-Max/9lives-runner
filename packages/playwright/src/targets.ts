@@ -44,6 +44,11 @@ export interface TargetHandle {
   /** One bounded scroll gesture inside this element; percent of its size. */
   scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
   bounds?(context: TargetContext): Promise<TargetRect>;
+  /** What `text()` returns: the text a user reads in this control. A driver
+   * whose `text` already reads that (a native control's text) omits it; the
+   * web driver reads a field's current value and an element's visible text,
+   * where `text`, kept for toHaveText, reads textContent. */
+  readText?(context: TargetContext): Promise<unknown>;
 }
 export interface TargetDriver extends TargetIdentity {
   version: typeof targetVersion;
@@ -543,6 +548,26 @@ export class TargetApp {
           return result.held;
         }, bound);
       },
+      /** The control's text, read once after it appears, for a value a later
+       * step needs (a code shown on screen, a generated identifier). It waits
+       * within its bound like an action; absence is missing_test_id and
+       * ambiguity fails. Recorded as an executed action, never an assertion;
+       * the text is returned to the spec and never recorded, so a value a
+       * spec puts in its own error message is the spec's to keep private. */
+      text: (options: TargetOperationOptions = {}) => step('query-text', async context => {
+        // Waits like an action, but for a control that is shown: a hidden
+        // control is not one a user can read, and native drivers report
+        // off-screen nodes as absent, so every driver answers alike.
+        let found: TargetHandle | undefined;
+        const result = await this.poll(context, async context => {
+          found = await observe(context);
+          return found !== undefined && await visibility(found, context);
+        }, Math.max(1, context.deadlineMs - Date.now()), maxObservations, () => {}, true);
+        if (!result.held || !found) throw stopped(context.deadlineMs >= this.options.deadlineMs ? 'deadline' : 'missing_test_id');
+        const value: unknown = found.readText ? await found.readText(context) : await found.text(context);
+        if (!boundedText(value, 4096)) throw stopped('invalid_property');
+        return value;
+      }, options.timeoutMs),
       toBeVisible: (timeoutMs?: number) => assertion('assert-visible', async (handle, context) => await visibility(handle, context), timeoutMs),
       /** Passes when the control is absent or not displayed. */
       toBeHidden: (timeoutMs?: number) => assertion('assert-hidden', async (handle, context) => !await visibility(handle, context), timeoutMs, true),
@@ -593,6 +618,19 @@ function locatorHandle(locator: Locator): TargetHandle {
     submit: async context => { await locator.press('Enter', {timeout: remaining(context)}); },
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
+    // A field's current value (textContent is its default), a select's chosen
+    // option, and otherwise the visible text, without scripts or hidden
+    // children. A password field is refused rather than read.
+    readText: async context => {
+      const read = await locator.evaluate(element => {
+        if (element instanceof HTMLInputElement) return element.type === 'password' ? null : element.value;
+        if (element instanceof HTMLTextAreaElement) return element.value;
+        if (element instanceof HTMLSelectElement) return element.selectedOptions[0]?.text ?? '';
+        return element instanceof HTMLElement ? element.innerText : element.textContent ?? '';
+      }, undefined, {timeout: remaining(context)});
+      if (read === null) throw stopped('unsupported_state');
+      return read;
+    },
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),
     invalid: async context => locator.evaluate(element => {
       const aria = element.getAttribute('aria-invalid');

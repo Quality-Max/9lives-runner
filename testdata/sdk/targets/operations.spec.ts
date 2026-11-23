@@ -121,8 +121,18 @@ test('queries keep the session open', async ({app}) => {
   await app.tapAt({x: button.x + 10, y: button.y + 10});
   if (!await app.getByTestId('status').isVisible({timeoutMs: 2000})) throw new Error('status not shown after the tap');
   if (!web && await app.foreground() !== 'app') throw new Error('the app is not in front');
+  // A value read from the screen for a later step; it is not an assertion.
+  const status = await app.getByTestId('status').text();
+  if (status !== 'tapped') throw new Error('status text not read');
   // @9l-outcome tapped-after-optional-screen
   await app.getByTestId('status').toHaveText('tapped');
+});
+
+// A text read waits for its control like an action, and one that never
+// appears is missing, not an empty string.
+test('a text read needs its control', async ({app}) => {
+  await app.open();
+  await app.getByTestId('no-such-control').text({timeoutMs: 1000});
 });
 
 // A spec can tell that a system window is in front without acting on it.

@@ -6,6 +6,26 @@ SDK versions.
 
 ## Unreleased
 
+The shared target contract is `9l.target/4`. Update the CLI and
+`@9l/playwright` together: a run that mixes `9l.target/3` and `9l.target/4`
+is rejected when its evidence is validated after the run, with the upgrade
+message, so it ends incomplete, never green.
+
+### Added
+
+- Target controls gain `text({timeoutMs}?)`, which returns the text a user
+  reads in a control, for a value a later step needs, such as an activation
+  code the app shows. It waits for the control to be shown, like an action
+  (absent or hidden is `missing_test_id`, ambiguity fails), answers at most
+  4 KiB, and is recorded as the executed action `query-text`, never as an
+  assertion. On the web it reads a field's current value, a select's chosen
+  option or visible text, and refuses a password field; `toHaveText` is
+  unchanged. Qualified on the web and the documented Android emulator; the
+  iOS driver supports it through its existing text read, not yet run on a
+  Simulator. 9lives never records the text, but a spec that prints it, as a
+  failed `expect(text).toBe(...)` does, makes it part of
+  `--failure-details`.
+
 ### Fixed
 
 - Android: on an owned emulator, `hideKeyboard()` after `fill` no longer
