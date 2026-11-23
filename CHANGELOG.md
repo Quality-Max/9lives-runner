@@ -4,6 +4,24 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Fixed
+
+- Android: on an owned emulator, `hideKeyboard()` after `fill` no longer
+  sends Back to the app. The emulator runs Appium's empty input method, which
+  draws no window; with a field focused Android reports it as shown, so the
+  driver pressed Back, which nothing consumed, and the app left the screen.
+  That input method now always reads as hidden: `hideKeyboard()` sends
+  nothing and `toHaveKeyboard(false)` holds. Phones keep their own keyboard
+  and are unchanged.
+- `9l assess` recognizes target tests whose `test` is imported from a
+  relative fixture module that declares it with `createTargetTest`, as
+  `import {test} from './fixtures'`. It reads that module beside the spec and
+  credits the spec's target assertions; before, such a spec's tests were
+  reported as an unrecognized import unless the fixture was declared in the
+  spec itself.
+
 ## 0.7.0 — 2026-11-22
 
 The first stable release of the 0.7.0 line. It becomes GitHub's Latest

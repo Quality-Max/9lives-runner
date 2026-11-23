@@ -1195,3 +1195,50 @@ test('target provenance stays unknown when fixtures can be replaced out of sight
   const rejected = facts(`test('t', async ({app}) => { await expect(app.getByTestId('r').toHaveText('wanted')).rejects.toThrow(); });`);
   assert.deepEqual(rejected[0].assertions.map(a => [a.matcher, a.unawaited]), [['toThrow', false]]);
 });
+
+test('a fixture module reports whether its exported test is a createTargetTest fixture', () => {
+  const exported = source => analyze(source, {exports: true}).targetTest;
+  assert.deepEqual(exported(`import {createTargetTest} from '@9l/playwright';
+    export const test = createTargetTest({native: target => driver(target)});`), {app: true});
+  assert.deepEqual(exported(`import {createTargetTest as make} from '@9l/playwright';
+    const fixture = make({});
+    export {fixture as test};`), {app: true});
+  // An extension that may redefine app keeps the test, not the target app.
+  assert.deepEqual(exported(`import {createTargetTest} from '@9l/playwright';
+    export const test = createTargetTest({}).extend(fixtures);`), {app: false});
+  // A test.use that may set app, a plain Playwright test, a re-export from
+  // elsewhere, another export name or a factory from another module: none.
+  assert.deepEqual(exported(`import {createTargetTest} from '@9l/playwright';
+    export const test = createTargetTest({}); test.use(options);`), {app: false});
+  for (const source of [
+    `import {test} from '@playwright/test'; export {test};`,
+    `export {test} from './other';`,
+    `import {createTargetTest} from '@9l/playwright'; export const scenario = createTargetTest({});`,
+    `import {createTargetTest} from './local'; export const test = createTargetTest({});`,
+    `import {createTargetTest} from '@9l/playwright'; export let test = createTargetTest({});`,
+  ]) assert.equal(exported(source), undefined, source);
+});
+
+test('a test imported from a known target fixture module credits target assertions', () => {
+  const spec = `import {test} from './fixtures';
+    test('signs in', async ({app}) => {
+      await app.getByTestId('email').fill('x');
+      await app.getByTestId('home').toBeVisible();
+      await app.getByTestId('banner').toBeHidden();
+    });`;
+  // Without knowing the module, its test is an unrecognized import.
+  const unknown = analyze(spec);
+  assert.deepEqual(unknown.tests, []);
+  assert.deepEqual(unknown.unrecognizedTestImports, ['./fixtures']);
+  const known = analyze(spec, {targetModules: {'./fixtures': {app: true}}});
+  assert.deepEqual(known.tests.map(t => t.assertions.map(a => `${a.matcher}:${a.absence}`)), [['target:toBeVisible:false', 'target:toBeHidden:true']]);
+  assert.equal(known.unrecognizedTestImports, undefined);
+  // A module whose test may redefine app declares tests, without target credit.
+  const plain = analyze(spec, {targetModules: {'./fixtures': {app: false}}});
+  assert.deepEqual(plain.tests.map(t => t.assertions.length), [0]);
+  // Only the named module counts, and a spec's own test.use that may set app
+  // still withdraws the credit.
+  assert.deepEqual(analyze(spec, {targetModules: {'./other': {app: true}}}).tests, []);
+  const overridden = analyze(`import {test} from './fixtures'; test.use(options);\n${spec.split('\n').slice(1).join('\n')}`, {targetModules: {'./fixtures': {app: true}}});
+  assert.deepEqual(overridden.tests.map(t => t.assertions.length), [0]);
+});

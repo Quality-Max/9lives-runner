@@ -244,6 +244,15 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     } else {
       await app.toHaveKeyboard(false);
       await app.hideKeyboard();
+      // The owned emulator runs Appium's empty input method, which draws no
+      // window. With a field focused it is still the selected method, so a
+      // Back to close it would reach the app instead; hiding must leave the
+      // screen as it is.
+      await app.getByTestId('amount').fill('7');
+      await app.hideKeyboard();
+      await app.getByTestId('amount').toBeVisible();
+      if (await app.foreground() !== 'app') throw new Error('hideKeyboard left the app');
+      await app.toHaveKeyboard(false);
     }
     if (!attachedSerial) {
       // The spec's own adb, on the serial the driver booted, puts a system

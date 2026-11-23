@@ -246,7 +246,13 @@ with no recognized assertion still produces a suspected absence finding.
 
 Target tests are recognized too. A file-level `const` initialized with
 `createTargetTest(...)` imported from `@9l/playwright`, under any alias and
-optionally followed by `.extend(...)` calls, declares tests like `test`. In
+optionally followed by `.extend(...)` calls, declares tests like `test`. A
+spec may also import `test` from a relative module beside it (as
+`import {test} from './fixtures'`); `9l assess` then reads that module, and
+when it declares and exports `test` that way (`export const test = ...` or an
+export list naming such a `const`), the spec's tests are target tests too. The
+module is only read and analysed for its exports, within the source limit; one
+that cannot be resolved, read or recognized leaves the import unrecognized. In
 such a test the `app` fixture (also when renamed, as in `{app: phone}`) is the
 target app, and these calls are asynchronous assertions with the same await,
 catch, outcome and absence rules as a Playwright matcher: `toBeVisible`,

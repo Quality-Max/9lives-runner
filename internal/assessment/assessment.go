@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -306,24 +307,127 @@ func Assess(ctx context.Context, source, contract []byte, opts Options) (Report,
 
 func assessWithHelper(parent context.Context, source, contract []byte, c Contract, opts Options, parser string, timeout time.Duration) (Report, error) {
 	var empty Report
+	request := helperRequest{Source: string(source), Titles: opts.Titles, JavaScript: JavaScript(opts.Path)}
+	raw, err := runHelper(parent, request, parser, timeout)
+	if err != nil {
+		return empty, err
+	}
+	var facts Facts
+	if Decode(raw, &facts) != nil || !validFacts(facts, source, opts.Titles) {
+		return empty, diagnostic("invalid-evidence")
+	}
+	// A spec whose only `test` comes from a local module may import a
+	// createTargetTest fixture declared there. Read each such module beside
+	// the spec and, when it is one, assess the spec again knowing that.
+	if len(facts.UnrecognizedTestImports) > 0 && opts.Path != "" {
+		if modules := targetModules(parent, opts.Path, facts.UnrecognizedTestImports, parser, timeout); len(modules) > 0 {
+			request.TargetModules = modules
+			if raw, err = runHelper(parent, request, parser, timeout); err != nil {
+				return empty, err
+			}
+			facts = Facts{}
+			if Decode(raw, &facts) != nil || !validFacts(facts, source, opts.Titles) {
+				return empty, diagnostic("invalid-evidence")
+			}
+		}
+	}
+	return Build(source, contract, c, facts), nil
+}
+
+type helperRequest struct {
+	Source        string                  `json:"source"`
+	Titles        bool                    `json:"titles"`
+	JavaScript    bool                    `json:"javascript"`
+	Exports       bool                    `json:"exports,omitempty"`
+	TargetModules map[string]targetModule `json:"targetModules,omitempty"`
+}
+
+// targetModule is what a fixture module's exported `test` is: a
+// createTargetTest fixture, and whether its `app` is still the target app.
+type targetModule struct {
+	App bool `json:"app"`
+}
+
+// moduleExtensions are the files a relative import without an extension may
+// name, in the order they are tried, as a bundler resolving a spec would.
+var moduleExtensions = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx"}
+
+// targetModules reads the relative modules a spec imports `test` from and
+// returns those whose exported `test` is a createTargetTest fixture. Only a
+// regular file within the source limit is read, and only its exports are
+// analysed; a module that cannot be read or analysed is left out, so its
+// tests stay unrecognized as before.
+func targetModules(parent context.Context, specPath string, specifiers []string, parser string, timeout time.Duration) map[string]targetModule {
+	modules := map[string]targetModule{}
+	for _, specifier := range specifiers {
+		if !strings.HasPrefix(specifier, "./") && !strings.HasPrefix(specifier, "../") {
+			continue
+		}
+		path, source := readModule(filepath.Join(filepath.Dir(specPath), filepath.FromSlash(specifier)))
+		if source == nil {
+			continue
+		}
+		raw, err := runHelper(parent, helperRequest{Source: string(source), JavaScript: JavaScript(path), Exports: true}, parser, timeout)
+		if err != nil {
+			continue
+		}
+		var exported struct {
+			Version    int           `json:"version"`
+			Compiler   string        `json:"compiler"`
+			TargetTest *targetModule `json:"targetTest"`
+		}
+		if Decode(raw, &exported) != nil || exported.Version != helperVersion || exported.Compiler != parserVersion || exported.TargetTest == nil {
+			continue
+		}
+		modules[specifier] = *exported.TargetTest
+	}
+	return modules
+}
+
+// readModule resolves an import path to a regular file, trying it as given,
+// then with each module extension, then as a directory index.
+func readModule(base string) (string, []byte) {
+	candidates := []string{}
+	if slices.Contains(moduleExtensions, strings.ToLower(filepath.Ext(base))) {
+		candidates = append(candidates, base)
+	}
+	for _, extension := range moduleExtensions {
+		candidates = append(candidates, base+extension)
+	}
+	for _, extension := range moduleExtensions {
+		candidates = append(candidates, filepath.Join(base, "index"+extension))
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > MaxSource {
+			continue
+		}
+		source, err := os.ReadFile(candidate)
+		if err != nil || len(source) == 0 || len(source) > MaxSource || !utf8.Valid(source) {
+			return "", nil
+		}
+		return candidate, source
+	}
+	return "", nil
+}
+
+// runHelper runs the analyzer once on a request and returns its output, or
+// the diagnostic for why it produced none.
+func runHelper(parent context.Context, request helperRequest, parser string, timeout time.Duration) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	input, _ := json.Marshal(struct {
-		Source     string `json:"source"`
-		Titles     bool   `json:"titles"`
-		JavaScript bool   `json:"javascript"`
-	}{string(source), opts.Titles, JavaScript(opts.Path)})
+	input, _ := json.Marshal(request)
 	// Windows command lines are limited to 32,767 UTF-16 code units. Keep
 	// the embedded analyzer in an owned file instead of passing its source as
 	// a large -e argument; only trusted code is materialized or executed.
 	helperDir, err := os.MkdirTemp("", "9lives-assessment-helper-")
 	if err != nil {
-		return empty, diagnostic("parser-unavailable")
+		return nil, diagnostic("parser-unavailable")
 	}
 	defer os.RemoveAll(helperDir)
 	helper := filepath.Join(helperDir, "analyzer.cjs")
 	if err := os.WriteFile(helper, []byte(analyzer+"\nmain(process.argv[2]);"), 0600); err != nil {
-		return empty, diagnostic("parser-unavailable")
+		return nil, diagnostic("parser-unavailable")
 	}
 	command := exec.Command("node", helper, parser)
 	command.Env = []string{}
@@ -336,19 +440,19 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 	command.Stderr = io.Discard
 	err = runner.RunOwnedCommand(ctx, command)
 	if output.overflow {
-		return empty, diagnostic("output-limit")
+		return nil, diagnostic("output-limit")
 	}
 	if parent.Err() != nil {
 		if errors.Is(parent.Err(), context.DeadlineExceeded) {
-			return empty, diagnostic("timeout")
+			return nil, diagnostic("timeout")
 		}
-		return empty, diagnostic("cancelled")
+		return nil, diagnostic("cancelled")
 	}
 	if ctx.Err() != nil {
-		return empty, diagnostic("timeout")
+		return nil, diagnostic("timeout")
 	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return empty, diagnostic("node-unavailable")
+		return nil, diagnostic("node-unavailable")
 	}
 	if err != nil {
 		var failure struct {
@@ -358,16 +462,12 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 		if Decode(output.Bytes(), &failure) == nil && failure.Version == helperVersion {
 			switch failure.Error {
 			case "parser-unavailable", "syntax", "typescript-in-javascript", "annotation", "limit", "helper-failed":
-				return empty, diagnostic(failure.Error)
+				return nil, diagnostic(failure.Error)
 			}
 		}
-		return empty, diagnostic("helper-failed")
+		return nil, diagnostic("helper-failed")
 	}
-	var facts Facts
-	if Decode(output.Bytes(), &facts) != nil || !validFacts(facts, source, opts.Titles) {
-		return empty, diagnostic("invalid-evidence")
-	}
-	return Build(source, contract, c, facts), nil
+	return output.Bytes(), nil
 }
 
 type boundedOutput struct {
