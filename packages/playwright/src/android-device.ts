@@ -38,12 +38,14 @@ export const emptyIme = 'io.appium.settings/.EmptyIME';
 /** Software keyboard visibility from `dumpsys input_method`: `mInputShown`,
  * except that the empty input method is never a shown keyboard, even while a
  * field has focus and Android reports it as shown. */
-export const imePattern = 'mInputShown=|mCurMethodId=';
+// API 35 prints the selected method as mCurMethodId; API 36 moved it into a
+// per-user section as mSelectedMethodId. Either names the method in use.
+export const imePattern = 'mInputShown=|mCurMethodId=|mSelectedMethodId=';
 export type ImeState = 'shown' | 'hidden' | 'unknown';
 export function parseIme(text: string): ImeState {
   const value = /mInputShown=(true|false)/.exec(text)?.[1];
   if (value === undefined) return 'unknown';
-  if (/(?:^|\s)mCurMethodId=(\S+)/m.exec(text)?.[1] === emptyIme) return 'hidden';
+  if (/(?:^|\s)(?:mCurMethodId|mSelectedMethodId)=(\S+)/m.exec(text)?.[1] === emptyIme) return 'hidden';
   return value === 'true' ? 'shown' : 'hidden';
 }
 

@@ -1242,3 +1242,43 @@ test('a test imported from a known target fixture module credits target assertio
   const overridden = analyze(`import {test} from './fixtures'; test.use(options);\n${spec.split('\n').slice(1).join('\n')}`, {targetModules: {'./fixtures': {app: true}}});
   assert.deepEqual(overridden.tests.map(t => t.assertions.length), [0]);
 });
+
+// A shared fixture can be overridden from any local module the spec loads, so
+// credit across a module boundary needs the spec and the fixture module to
+// load no other local code (adversarial review of the fixture-module change).
+test('an imported target fixture earns no credit when local code could override it', () => {
+  const body = `test('t', async ({app}) => { await app.toHaveKeyboard(true); });`;
+  const known = {targetModules: {'./fixtures': {app: true}}};
+  const credited = source => analyze(source, known).tests.map(t => t.assertions.length);
+  assert.deepEqual(credited(`import {test} from './fixtures';\n${body}`), [1]);
+  for (const source of [
+    // A namespace import reaches the same object under another name.
+    `import {test} from './fixtures'; import * as fx from './fixtures'; fx.test.use({app: fake});\n${body}`,
+    // A default import, a side-effect import and another relative module can each run test.use at load.
+    `import fixtures, {test} from './fixtures';\n${body}`,
+    `import {test} from './fixtures'; import './helpers';\n${body}`,
+    `import {test} from './fixtures'; import {login} from './helpers';\n${body}`,
+    `import {test} from './fixtures'; export {x} from './elsewhere';\n${body}`,
+    `import {test} from './fixtures'; const helpers = require('./helpers');\n${body}`,
+    `import {test} from './fixtures'; await import('./helpers');\n${body}`,
+    `import {test} from './fixtures'; const name = './helpers'; await import(name);\n${body}`,
+  ]) assert.deepEqual(credited(source), [0], source);
+  // Package imports load no local code and keep the credit.
+  assert.deepEqual(credited(`import {test} from './fixtures'; import {androidTargetDriver} from '@9l/playwright/android';\n${body}`), [1]);
+});
+
+test('a fixture module is trusted only when it loads no local code and exports its fixture only as test', () => {
+  const exported = source => analyze(source, {exports: true}).targetTest;
+  const head = `import {createTargetTest} from '@9l/playwright';\n`;
+  assert.deepEqual(exported(`${head}export const test = createTargetTest({});`), {app: true});
+  for (const source of [
+    // Exported again under another name: a spec could override it through that name.
+    `${head}export const test = createTargetTest({}); export {test as base};`,
+    `${head}const fixture = createTargetTest({}); export {fixture as test, fixture as base};`,
+    `${head}export const test = createTargetTest({}); export default test;`,
+    // Loads local code that could call test.use at load time.
+    `${head}import './setup';\nexport const test = createTargetTest({});`,
+    `${head}import {driver} from './driver';\nexport const test = createTargetTest({native: driver});`,
+    `${head}export * from './more';\nexport const test = createTargetTest({});`,
+  ]) assert.deepEqual(exported(source), {app: false}, source);
+});

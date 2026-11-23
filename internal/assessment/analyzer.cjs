@@ -114,6 +114,37 @@ function createAnalyzer(ts) {
     const tests = new Set(), expects = new Set(), foreignTests = new Set(), factories = new Set(), targetTests = new Set();
     const declaredTargets = new Set();
     const targetModules = options.targetModules;
+    // Local code can replace a shared fixture's `app` out of sight: a
+    // top-level test.use in any module this file loads applies to this
+    // file's tests. So a fixture from another module, and a fixture module
+    // itself, are trusted only when the file loads no local module except
+    // through `import {…} from` a known fixture module: no namespace, default
+    // or side-effect import, no other relative import or re-export, and no
+    // dynamic import() or require() of a relative path.
+    const relative = specifier => specifier.startsWith('./') || specifier.startsWith('../');
+    const loadsOnlyKnownModules = (() => {
+      for (const statement of file.statements) {
+        if ((ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier
+          && ts.isStringLiteralLike(statement.moduleSpecifier) && relative(statement.moduleSpecifier.text)) {
+          if (ts.isExportDeclaration(statement)) return false;
+          const clause = statement.importClause;
+          if (!targetModules || !Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)) return false;
+          if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false;
+        }
+      }
+      let dynamic = false;
+      (function visit(node) {
+        if (dynamic) return;
+        if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+          || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
+          const target = node.arguments[0];
+          if (!target || !ts.isStringLiteralLike(target) || relative(target.text)) dynamic = true;
+        }
+        if (ts.isImportEqualsDeclaration(node)) dynamic = true;
+        ts.forEachChild(node, visit);
+      })(file);
+      return !dynamic;
+    })();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
       const bindings = statement.importClause?.namedBindings;
@@ -126,7 +157,7 @@ function createAnalyzer(ts) {
         for (const binding of bindings.elements) {
           if ((binding.propertyName || binding.name).text !== 'test') continue;
           tests.add(binding.name.text);
-          if (targetModule.app === true) targetTests.add(binding.name.text);
+          if (targetModule.app === true && loadsOnlyKnownModules) targetTests.add(binding.name.text);
         }
         continue;
       }
@@ -202,19 +233,34 @@ function createAnalyzer(ts) {
     // test. Only `export const test = ...` and `export {name as test}` of a
     // const declared in this file are read; a re-export from elsewhere is not.
     if (options.exports === true) {
-      let exported = null;
-      const target = name => declaredTargets.has(name) ? { app: targetTests.has(name) } : null;
+      // Every name each local binding is exported under, so a fixture exported
+      // as `test` and also under another name (or as default) is not trusted:
+      // a spec could reach it through the other name and override it.
+      const exportNames = new Map();
+      const exportAs = (local, name) => exportNames.set(local, [...(exportNames.get(local) || []), name]);
+      let wholesale = false;
       for (const statement of file.statements) {
-        if (ts.isVariableStatement(statement) && statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) {
+        const exportedStatement = statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
+        if (ts.isVariableStatement(statement) && exportedStatement) {
           for (const declaration of statement.declarationList.declarations) {
-            if (ts.isIdentifier(declaration.name) && declaration.name.text === 'test') exported = target('test');
+            if (ts.isIdentifier(declaration.name)) exportAs(declaration.name.text, declaration.name.text);
           }
         }
-        if (ts.isExportDeclaration(statement) && !statement.moduleSpecifier && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-          for (const element of statement.exportClause.elements) {
-            if (element.name.text === 'test') exported = target((element.propertyName || element.name).text);
-          }
+        if (ts.isExportDeclaration(statement)) {
+          if (statement.moduleSpecifier || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) wholesale = true;
+          else for (const element of statement.exportClause.elements) exportAs((element.propertyName || element.name).text, element.name.text);
         }
+        if (ts.isExportAssignment(statement)) {
+          if (ts.isIdentifier(statement.expression)) exportAs(statement.expression.text, 'default');
+          else wholesale = true;
+        }
+      }
+      let exported = null;
+      for (const [local, names] of exportNames) {
+        if (!names.includes('test') || !declaredTargets.has(local)) continue;
+        // The module itself must load no local code, and its fixture must be
+        // reachable only as `test`; otherwise it declares tests without credit.
+        exported = { app: targetTests.has(local) && names.length === 1 && !wholesale && loadsOnlyKnownModules };
       }
       // Strict JSON on the Go side has no null: a module without one omits it.
       return { version: 13, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };

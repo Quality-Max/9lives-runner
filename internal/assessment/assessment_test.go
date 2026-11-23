@@ -2,6 +2,8 @@ package assessment
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1047,9 +1049,25 @@ func TestAssessCreditsTargetAssertionsFromALocalFixtureModule(t *testing.T) {
 	if len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 1 || strings.Join(report.Tests[0].Assertions.Matchers, ",") != "target:toBeVisible" {
 		t.Fatalf("target assertions from a fixture module not credited: %+v", report)
 	}
+	// The report names the module it read and its digest.
+	sum := sha256.Sum256([]byte("import {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({native: target => driver(target)});\n"))
+	if !strings.Contains(strings.Join(report.Limits, "\n"), "target-fixture-module ../fixtures/target.mjs: read "+filepath.ToSlash(filepath.Join(dir, "fixtures", "target.mjs"))+" (sha256 "+hex.EncodeToString(sum[:])+")") {
+		t.Fatalf("fixture module not recorded: %v", report.Limits)
+	}
 	// Resolved without an extension too, as a bundler would.
 	if report, err = Assess(context.Background(), spec("../fixtures/target"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 {
 		t.Fatalf("extensionless fixture import not resolved: %+v %v", report, err)
+	}
+	// TypeScript's ESM convention: './x.js' in source names x.ts on disk.
+	write("fixtures/typed.ts", "import {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({});\n")
+	if report, err = Assess(context.Background(), spec("../fixtures/typed.js"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 1 {
+		t.Fatalf("a .js import of a .ts fixture not resolved: %+v %v", report, err)
+	}
+	// A fixture module that loads other local code is read but earns no
+	// credit: that code could replace app when the module loads.
+	write("fixtures/loads.ts", "import './setup';\nimport {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({});\n")
+	if report, err = Assess(context.Background(), spec("../fixtures/loads"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 0 {
+		t.Fatalf("a fixture module loading local code was trusted: %+v %v", report, err)
 	}
 	// A module whose test is not a target fixture, a missing module, and a
 	// spec assessed without a path all keep the test import unrecognized.

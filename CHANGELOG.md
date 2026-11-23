@@ -12,15 +12,18 @@ SDK versions.
   sends Back to the app. The emulator runs Appium's empty input method, which
   draws no window; with a field focused Android reports it as shown, so the
   driver pressed Back, which nothing consumed, and the app left the screen.
-  That input method now always reads as hidden: `hideKeyboard()` sends
-  nothing and `toHaveKeyboard(false)` holds. Phones keep their own keyboard
-  and are unchanged.
+  That input method now reads as hidden: `hideKeyboard()` sends nothing and
+  `toHaveKeyboard(false)` holds. Phones keep their own keyboard and are
+  unchanged. Qualified on the documented API 35 emulators; the renamed API 36
+  field is read too.
 - `9l assess` recognizes target tests whose `test` is imported from a
   relative fixture module that declares it with `createTargetTest`, as
-  `import {test} from './fixtures'`. It reads that module beside the spec and
-  credits the spec's target assertions; before, such a spec's tests were
-  reported as an unrecognized import unless the fixture was declared in the
-  spec itself.
+  `import {test} from './fixtures'`. It reads that module, credits the spec's
+  target assertions, and names the module and its SHA-256 in the report.
+  Before, such a spec's tests were an unrecognized import unless the fixture
+  was declared in the spec itself. The credit holds only while the spec loads
+  no other local code and the fixture module loads none and exports its
+  fixture only as `test`, since local code could replace `app`.
 
 ## 0.7.0 — 2026-11-22
 

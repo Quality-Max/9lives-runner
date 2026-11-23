@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -263,7 +264,9 @@ func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeT
 type Options struct {
 	// Titles includes literal test titles, which are source text, for local use.
 	Titles bool
-	// Path is the spec's file name; only its extension is read. A JavaScript
+	// Path is the spec's file name. Its extension decides the parse; its
+	// directory locates relative fixture modules a spec imports `test` from,
+	// which are read and analysed for their exports. A JavaScript
 	// extension (.js, .mjs, .cjs, .jsx) parses the source as Playwright loads
 	// it, where TypeScript-only syntax is a typescript-in-javascript failure.
 	// Any other extension, or no path, parses as TSX. Suites use each file's
@@ -307,8 +310,12 @@ func Assess(ctx context.Context, source, contract []byte, opts Options) (Report,
 
 func assessWithHelper(parent context.Context, source, contract []byte, c Contract, opts Options, parser string, timeout time.Duration) (Report, error) {
 	var empty Report
+	// One budget for the file, however many analyzer runs it takes: the
+	// spec, its fixture modules and the spec again.
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
 	request := helperRequest{Source: string(source), Titles: opts.Titles, JavaScript: JavaScript(opts.Path)}
-	raw, err := runHelper(parent, request, parser, timeout)
+	raw, err := runHelper(ctx, request, parser, timeout)
 	if err != nil {
 		return empty, err
 	}
@@ -319,10 +326,16 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 	// A spec whose only `test` comes from a local module may import a
 	// createTargetTest fixture declared there. Read each such module beside
 	// the spec and, when it is one, assess the spec again knowing that.
+	var read []readFixture
 	if len(facts.UnrecognizedTestImports) > 0 && opts.Path != "" {
-		if modules := targetModules(parent, opts.Path, facts.UnrecognizedTestImports, parser, timeout); len(modules) > 0 {
+		modules, fixtures, err := targetModules(ctx, opts.Path, facts.UnrecognizedTestImports, parser, timeout)
+		if err != nil {
+			return empty, err
+		}
+		if len(modules) > 0 {
+			read = fixtures
 			request.TargetModules = modules
-			if raw, err = runHelper(parent, request, parser, timeout); err != nil {
+			if raw, err = runHelper(ctx, request, parser, timeout); err != nil {
 				return empty, err
 			}
 			facts = Facts{}
@@ -331,7 +344,18 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 			}
 		}
 	}
-	return Build(source, contract, c, facts), nil
+	report := Build(source, contract, c, facts)
+	// The credit then depends on files beside the spec: name each and its
+	// digest, so the report says what it was computed from.
+	for _, fixture := range read {
+		report.Limits = append(report.Limits, fmt.Sprintf("target-fixture-module %s: read %s (sha256 %s); its tests are assessed as target tests only while this module and the spec load no other local code.", fixture.specifier, fixture.path, fixture.sha256))
+	}
+	return report, nil
+}
+
+// readFixture records a fixture module whose contents decided the credit.
+type readFixture struct {
+	specifier, path, sha256 string
 }
 
 type helperRequest struct {
@@ -353,12 +377,14 @@ type targetModule struct {
 var moduleExtensions = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx"}
 
 // targetModules reads the relative modules a spec imports `test` from and
-// returns those whose exported `test` is a createTargetTest fixture. Only a
-// regular file within the source limit is read, and only its exports are
-// analysed; a module that cannot be read or analysed is left out, so its
-// tests stay unrecognized as before.
-func targetModules(parent context.Context, specPath string, specifiers []string, parser string, timeout time.Duration) map[string]targetModule {
+// returns those whose exported `test` is a createTargetTest fixture, with the
+// file each was read from. Only a regular file within the source limit is
+// read, and only its exports are analysed; a module that cannot be read or
+// analysed is left out, so its tests stay unrecognized as before. A
+// cancellation or timeout is returned, never mistaken for an unknown module.
+func targetModules(ctx context.Context, specPath string, specifiers []string, parser string, timeout time.Duration) (map[string]targetModule, []readFixture, error) {
 	modules := map[string]targetModule{}
+	var read []readFixture
 	for _, specifier := range specifiers {
 		if !strings.HasPrefix(specifier, "./") && !strings.HasPrefix(specifier, "../") {
 			continue
@@ -367,7 +393,11 @@ func targetModules(parent context.Context, specPath string, specifiers []string,
 		if source == nil {
 			continue
 		}
-		raw, err := runHelper(parent, helperRequest{Source: string(source), JavaScript: JavaScript(path), Exports: true}, parser, timeout)
+		raw, err := runHelper(ctx, helperRequest{Source: string(source), JavaScript: JavaScript(path), Exports: true}, parser, timeout)
+		var failure *Error
+		if errors.As(err, &failure) && (failure.Code == "cancelled" || failure.Code == "timeout") {
+			return nil, nil, err
+		}
 		if err != nil {
 			continue
 		}
@@ -380,16 +410,26 @@ func targetModules(parent context.Context, specPath string, specifiers []string,
 			continue
 		}
 		modules[specifier] = *exported.TargetTest
+		read = append(read, readFixture{specifier: specifier, path: filepath.ToSlash(path), sha256: digest(source)})
 	}
-	return modules
+	return modules, read, nil
 }
 
 // readModule resolves an import path to a regular file, trying it as given,
-// then with each module extension, then as a directory index.
+// then a TypeScript source for a JavaScript-extension import (TypeScript's
+// ESM convention: './fixtures.js' names fixtures.ts), then with each module
+// extension, then as a directory index. The read is bounded and only a
+// regular file is read.
 func readModule(base string) (string, []byte) {
 	candidates := []string{}
-	if slices.Contains(moduleExtensions, strings.ToLower(filepath.Ext(base))) {
+	extension := strings.ToLower(filepath.Ext(base))
+	if slices.Contains(moduleExtensions, extension) {
 		candidates = append(candidates, base)
+	}
+	if typescript, ok := map[string][]string{".js": {".ts", ".tsx"}, ".jsx": {".tsx"}, ".mjs": {".mts"}, ".cjs": {".cts"}}[extension]; ok {
+		for _, replacement := range typescript {
+			candidates = append(candidates, strings.TrimSuffix(base, filepath.Ext(base))+replacement)
+		}
 	}
 	for _, extension := range moduleExtensions {
 		candidates = append(candidates, base+extension)
@@ -402,7 +442,16 @@ func readModule(base string) (string, []byte) {
 		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > MaxSource {
 			continue
 		}
-		source, err := os.ReadFile(candidate)
+		file, err := os.Open(candidate)
+		if err != nil {
+			return "", nil
+		}
+		opened, err := file.Stat()
+		var source []byte
+		if err == nil && opened.Mode().IsRegular() {
+			source, err = io.ReadAll(io.LimitReader(file, MaxSource+1))
+		}
+		file.Close()
 		if err != nil || len(source) == 0 || len(source) > MaxSource || !utf8.Valid(source) {
 			return "", nil
 		}
@@ -577,7 +626,7 @@ func Build(source, contract []byte, c Contract, facts Facts) Report {
 	}}
 	if len(facts.UnrecognizedTestImports) > 0 {
 		report.UnrecognizedTestImports = facts.UnrecognizedTestImports
-		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise (only @playwright/test and @9l/playwright), so its tests were not assessed.")
+		report.Limits = append(report.Limits, "unrecognized-test-import "+strings.Join(facts.UnrecognizedTestImports, ", ")+": this file imports `test` from a module assess does not recognise, so its tests were not assessed. assess recognises @playwright/test, @9l/playwright, and a relative module beside the spec that declares and exports `test` with createTargetTest while it and the spec load no other local code.")
 	}
 	if len(facts.Tests) == 0 && len(facts.UnrecognizedTestImports) == 0 {
 		report.Limits = append(report.Limits, NoTestsLimit)
