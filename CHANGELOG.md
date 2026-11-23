@@ -4,12 +4,17 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.7.1 — 2026-11-23
 
-The shared target contract is `9l.target/4`. Update the CLI and
-`@9l/playwright` together: a run that mixes `9l.target/3` and `9l.target/4`
-is rejected when its evidence is validated after the run, with the upgrade
-message, so it ends incomplete, never green.
+A patch on the 0.7.0 line from running a real Flutter app on the Android
+target. Target controls gain `text()` to read a value from the screen,
+`hideKeyboard()` on an owned emulator no longer sends Back to the app, and
+`9l assess` credits target tests whose fixture is imported from a local
+module. The shared target contract is `9l.target/4`; receipt, run result and
+run status stay version 2. Update the CLI and `@9l/playwright` together: a
+run that mixes 0.7.0 (`9l.target/3`) with 0.7.1 is rejected when its evidence
+is validated after the run, with the upgrade message, so it ends incomplete,
+never green.
 
 ### Added
 
