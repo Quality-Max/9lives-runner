@@ -24,6 +24,17 @@ SDK versions.
 - `9l mcp` gains `inspect_screen` (`platform: "android"` or `"ios"`), the
   same screen ranking for coding agents, with optional `serial`, `package`,
   `udid`, `format` and `timeout`. It taps and types nothing.
+- `9l assess` reports native locators tied to on-screen copy or position as
+  `fragile-selector` (suspected). A target test's `app.getByTestId(name)`
+  that resolves through an Android `controls` alias is `copy-alias` (exact
+  text, description or hint), `partial-copy-alias` (a description suffix or
+  substring) or `data-alias` (copy containing a number, such as a count,
+  date or position), whether the alias is declared in the spec or in the
+  fixture module it imports `test` from. `app.tapAt` with a literal `x` or
+  `y` is `literal-coordinates`; a point computed from a control's `bounds()`
+  is not reported. Findings are advisory and change no verdict. Policy
+  `assessment-source-v17`, analyzer helper version 14; report version 3 and
+  suite version 1 are unchanged.
 
 ## 0.7.1 — 2026-11-23
 

@@ -664,7 +664,7 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		got = append(got, strings.Join(rules, ","))
 	}
 	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v16" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v17" {
 		t.Fatalf("caught findings %q under %s", got, report.Policy)
 	}
 	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
@@ -839,7 +839,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v16" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v17" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -874,7 +874,7 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v16" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v17" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }
@@ -950,7 +950,7 @@ func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
 	}
 	// A value typed into a field and a key press are not selectors.
 	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v16" {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v17" {
 		t.Fatalf("hazard findings %q under %s", got, report.Policy)
 	}
 	counts, total := CountFindings(report)
@@ -1000,7 +1000,7 @@ func TestAssessCreditsTargetAssertionsWithoutClaimingVerification(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Tests) != 2 || report.Policy != "assessment-source-v16" || report.Execution != "not_run" {
+	if len(report.Tests) != 2 || report.Policy != "assessment-source-v17" || report.Execution != "not_run" {
 		t.Fatalf("target tests not assessed: %+v", report)
 	}
 	confirmed, actions := report.Tests[0], report.Tests[1]
@@ -1082,5 +1082,59 @@ func TestAssessCreditsTargetAssertionsFromALocalFixtureModule(t *testing.T) {
 		if len(report.Tests) != 0 || !strings.Contains(strings.Join(report.Limits, "\n"), c.module) {
 			t.Fatalf("%s (path %q) should stay unrecognized: tests %d, limits %v", c.module, c.path, len(report.Tests), report.Limits)
 		}
+	}
+}
+
+func TestAssessReportsNativeLocatorsTiedToCopyOrPosition(t *testing.T) {
+	requireNode(t)
+	dir := t.TempDir()
+	fixture := "import {createTargetTest} from '@9l/playwright';\n" +
+		"import {androidTargetDriver} from '@9l/playwright/android';\n" +
+		"export const test = createTargetTest({native: target => androidTargetDriver({appId: target.appId,\n" +
+		"  controls: {back: {accessibilityId: 'Zurück'}, tab: {accessibilityIdSuffix: 'Tab 2 von 4'}}})});\n"
+	if err := os.WriteFile(filepath.Join(dir, "fixtures.ts"), []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec := []byte("import {test} from './fixtures';\n" +
+		"test('opens sessions', async ({app}) => {\n" +
+		"  await app.getByTestId('back').tap();\n" +
+		"  await app.getByTestId('tab').tap();\n" +
+		"  await app.tapAt({x: 540, y: 2200});\n" +
+		"  await app.getByTestId('session_card').toBeVisible();\n" +
+		"});\n")
+	report, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "sessions.spec.ts")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		if f.Rule == "fragile-selector" {
+			got = append(got, fmt.Sprintf("%s/%s@%d", f.Classification, f.Code, f.Line))
+		}
+	}
+	want := "suspected/copy-alias@3 suspected/data-alias@4 suspected/literal-coordinates@5"
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v17" || report.Tests[0].Assertions.Count != 1 {
+		t.Fatalf("native hazards %q, policy %s, assertions %d", strings.Join(got, " "), report.Policy, report.Tests[0].Assertions.Count)
+	}
+}
+
+func TestFixtureModuleAliasesAreBounded(t *testing.T) {
+	if !validTargetModule(targetModule{App: true, Aliases: map[string]string{"save": "copy-alias", "tab": "partial-copy-alias", "n": "data-alias"}}) {
+		t.Fatal("valid aliases refused")
+	}
+	for _, m := range []targetModule{
+		{Aliases: map[string]string{"save": "xpath"}},
+		{Aliases: map[string]string{"../x": "copy-alias"}},
+	} {
+		if validTargetModule(m) {
+			t.Fatalf("accepted %+v", m)
+		}
+	}
+	many := map[string]string{}
+	for i := 0; i < 257; i++ {
+		many[fmt.Sprintf("a%d", i)] = "copy-alias"
+	}
+	if validTargetModule(targetModule{Aliases: many}) {
+		t.Fatal("accepted 257 aliases")
 	}
 }

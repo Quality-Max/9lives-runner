@@ -28,10 +28,10 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v16"
+const Policy = "assessment-source-v17"
 
 // helperVersion is the version of the analyzer's facts.
-const helperVersion = 13
+const helperVersion = 14
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -117,14 +117,20 @@ type Hazard struct {
 
 type hazardRule struct{ rule, classification, message, suggestion string }
 
+const nativeSuggestion = "Give the control a resource ID or accessibility identifier and use it with app.getByTestId; 9l inspect --android lists the controls on a screen that have none."
+
 const selectorSuggestion = "Prefer getByRole with a name, getByLabel or a test ID observed on the page, narrowed until it matches one element."
 
 var hazardRules = map[string]hazardRule{
-	"page-pause":         {"debugging-leftover", "demonstrated", "A page.pause() call is present; it stops a headed or debug run until someone resumes it.", "Remove the debugging pause before committing."},
-	"debugger-statement": {"debugging-leftover", "demonstrated", "A debugger statement is present; it stops the run whenever a debugger is attached.", "Remove the debugger statement before committing."},
-	"xpath":              {"fragile-selector", "suspected", "An XPath selector depends on document structure; markup changes can break it or make it match a different element.", selectorSuggestion},
-	"positional-css":     {"fragile-selector", "suspected", "A positional CSS selector, such as :nth-child, depends on element order; inserting or reordering elements can make it match a different element.", selectorSuggestion},
-	"position":           {"fragile-selector", "suspected", "A positional locator (first, last, nth or nth=) picks an element by order; it hides ambiguity and can act on a different element when the page changes.", selectorSuggestion},
+	"page-pause":          {"debugging-leftover", "demonstrated", "A page.pause() call is present; it stops a headed or debug run until someone resumes it.", "Remove the debugging pause before committing."},
+	"debugger-statement":  {"debugging-leftover", "demonstrated", "A debugger statement is present; it stops the run whenever a debugger is attached.", "Remove the debugger statement before committing."},
+	"xpath":               {"fragile-selector", "suspected", "An XPath selector depends on document structure; markup changes can break it or make it match a different element.", selectorSuggestion},
+	"positional-css":      {"fragile-selector", "suspected", "A positional CSS selector, such as :nth-child, depends on element order; inserting or reordering elements can make it match a different element.", selectorSuggestion},
+	"position":            {"fragile-selector", "suspected", "A positional locator (first, last, nth or nth=) picks an element by order; it hides ambiguity and can act on a different element when the page changes.", selectorSuggestion},
+	"copy-alias":          {"fragile-selector", "suspected", "This control is an Android controls alias matched by its exact text, description or hint; a copy edit or another device language makes it miss.", nativeSuggestion},
+	"partial-copy-alias":  {"fragile-selector", "suspected", "This control is an Android controls alias matched by part of a description; a merged label can change around the part, or the part can appear in another control.", nativeSuggestion},
+	"data-alias":          {"fragile-selector", "suspected", "This control is an Android controls alias whose copy contains a number, such as a count, date or position; it changes with the data on screen.", nativeSuggestion},
+	"literal-coordinates": {"fragile-selector", "suspected", "A tap at literal screen coordinates depends on layout, font size, screen size and fold posture; it can hit another control on another device.", "Tap the control through app.getByTestId, or compute the point from that control's bounds()."},
 }
 
 // ConditionalSkip is a suite modifier that may skip a test. Environment marks a
@@ -370,7 +376,25 @@ type helperRequest struct {
 // createTargetTest fixture, and whether its `app` is still the target app.
 type targetModule struct {
 	App bool `json:"app"`
+	// Aliases are the module's Android controls aliases tied to on-screen
+	// copy, by name, with the hazard code they carry.
+	Aliases map[string]string `json:"aliases,omitempty"`
 }
+
+// validTargetModule bounds what a fixture module may report back.
+func validTargetModule(m targetModule) bool {
+	if len(m.Aliases) > 256 {
+		return false
+	}
+	for name, code := range m.Aliases {
+		if !aliasName.MatchString(name) || (code != "copy-alias" && code != "partial-copy-alias" && code != "data-alias") {
+			return false
+		}
+	}
+	return true
+}
+
+var aliasName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 
 // moduleExtensions are the files a relative import without an extension may
 // name, in the order they are tried, as a bundler resolving a spec would.
@@ -406,7 +430,7 @@ func targetModules(ctx context.Context, specPath string, specifiers []string, pa
 			Compiler   string        `json:"compiler"`
 			TargetTest *targetModule `json:"targetTest"`
 		}
-		if Decode(raw, &exported) != nil || exported.Version != helperVersion || exported.Compiler != parserVersion || exported.TargetTest == nil {
+		if Decode(raw, &exported) != nil || exported.Version != helperVersion || exported.Compiler != parserVersion || exported.TargetTest == nil || !validTargetModule(*exported.TargetTest) {
 			continue
 		}
 		modules[specifier] = *exported.TargetTest

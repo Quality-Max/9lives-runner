@@ -974,7 +974,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 13);
+  assert.equal(facts.version, 14);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {
@@ -1061,7 +1061,7 @@ test('after-hook test.fail() modifiers are attributed to the suite as conditiona
   // A test.fail('title', ...) declaration is not in the inventory, as before.
   assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false], [2, true]], [[2, false], [2, true]], [[4, true], [5, true], [6, false]], []]);
   assert(facts.tests.every(t => !t.disabled && t.conditionalSkips.length === 0));
-  assert.equal(facts.version, 13);
+  assert.equal(facts.version, 14);
 });
 
 test('createTargetTest tests credit target assertions on the app fixture and its controls', () => {
@@ -1281,4 +1281,68 @@ test('a fixture module is trusted only when it loads no local code and exports i
     `${head}import {driver} from './driver';\nexport const test = createTargetTest({native: driver});`,
     `${head}export * from './more';\nexport const test = createTargetTest({});`,
   ]) assert.deepEqual(exported(source), {app: false}, source);
+});
+
+const nativeHead = `import {createTargetTest} from '@9l/playwright';
+import {androidTargetDriver as android} from '@9l/playwright/android';
+const controls = {
+  save: {text: 'Speichern', className: 'android.widget.Button'},
+  push: {accessibilityId: 'Push'},
+  tab: {accessibilityIdSuffix: ', Sitzungen'},
+  unread: {accessibilityIdContains: '3 ungelesen'},
+  email: {hint: 'E-Mail'},
+};
+const test = createTargetTest({native: target => android({appId: target.appId, ...(process.env.X ? {controls} : {controls: {extra: {text: 'Mehr'}}})})});
+`;
+
+test('controls aliases tied to copy and taps at literal coordinates are native hazards', () => {
+  const facts = analyze(`${nativeHead}
+    test('t', async ({app}) => {
+      await app.getByTestId('save').tap();
+      await app.getByTestId('push').toBeVisible();
+      await app.getByTestId('tab').tap();
+      await app.getByTestId('unread').toBeVisible();
+      await app.getByTestId('email').fill('a@b.c');
+      await app.getByTestId('extra').tap();
+      await app.getByTestId('session_join').tap();
+      await app.tapAt({x: 120, y: 840});
+      await app.tapAt({x: -1, y: point.y});
+      const open = await app.getByTestId('session_join').bounds();
+      await app.tapAt({x: open.x + 5, y: open.y + 5});
+      const tapCentre = target => app.tapAt({x: 10, y: 20});
+    });`);
+  // session_join is a resource ID, and a point from bounds() is not a literal.
+  assert.deepEqual(kinds(facts.tests[0]), ['copy-alias@13', 'copy-alias@14', 'partial-copy-alias@15', 'data-alias@16', 'copy-alias@17',
+    'copy-alias@18', 'literal-coordinates@20', 'literal-coordinates@21', 'literal-coordinates@24']);
+  assert.equal(facts.version, 14);
+});
+
+test('native hazards need the target app and the android driver', () => {
+  // A page or another object with the same method names, a driver from
+  // another module and aliases behind spreads or computed names are not read.
+  const facts = analyze(`import {createTargetTest} from '@9l/playwright';
+    import {androidTargetDriver} from './my-driver';
+    import {androidTargetDriver as real} from '@9l/playwright/android';
+    const test = createTargetTest({native: () => androidTargetDriver({controls: {save: {text: 'Save'}}})});
+    real({controls: {...shared, [key]: {text: 'X'}, ok: {className: 'android.widget.Button'}}});
+    test('t', async ({app, page}) => {
+      await page.getByTestId('save').click();
+      await app.getByTestId('save').tap();
+      await app.getByTestId('ok').tap();
+      await page.mouse.click(10, 20);
+      const other = {tapAt() {}}; other.tapAt({x: 1, y: 2});
+    });`);
+  assert.deepEqual(kinds(facts.tests[0]), []);
+});
+
+test('a fixture module exports its copy-bound aliases and a spec importing it reports them', () => {
+  const module = analyze(`${nativeHead}export {test};`, {exports: true}).targetTest;
+  assert.deepEqual(module, {app: true, aliases: {email: 'copy-alias', extra: 'copy-alias', push: 'copy-alias', save: 'copy-alias', tab: 'partial-copy-alias', unread: 'data-alias'}});
+  const facts = analyze(`import {test} from './fixtures';
+    test('t', async ({app}) => { await app.getByTestId('unread').toBeVisible(); await app.getByTestId('send').tap(); });`, {targetModules: {'./fixtures': module}});
+  assert.deepEqual(kinds(facts.tests[0]), ['data-alias@2']);
+  // Codes the analyzer does not know are ignored.
+  const forged = analyze(`import {test} from './fixtures';
+    test('t', async ({app}) => { await app.getByTestId('x').tap(); });`, {targetModules: {'./fixtures': {app: true, aliases: {x: 'rm -rf'}}}});
+  assert.deepEqual(kinds(forged.tests[0]), []);
 });

@@ -453,6 +453,19 @@ opening parentheses. CSS order pseudo-classes such as `:nth-child`,
 `:first-child` and `:last-of-type` are `positional-css`; `nth=`,
 `:nth-match()`, `first()`, `last()` and `nth()` with a literal index are
 `position`. Template selectors with substitutions are not checked.
+In target tests, four more codes mark native locators tied to on-screen copy
+or position. `app.getByTestId(name)` whose name is an Android `controls`
+alias (declared under an `androidTargetDriver` call from
+`@9l/playwright/android`, in the spec or in the fixture module it imports
+`test` from, directly or through a top-level const) is `copy-alias` for an
+exact `text`, `accessibilityId` or `hint`, `partial-copy-alias` for an
+`accessibilityIdSuffix` or `accessibilityIdContains`, and `data-alias` when
+the copy contains a digit, such as a count, date or tab position; an alias
+declared with several matchers carries the most fragile one. `app.tapAt` with
+a numeric literal `x` or `y` is `literal-coordinates`; a point computed from a
+control's `bounds()` is not. Aliases behind spreads or computed names, and a
+driver imported from elsewhere, are not read. `9l inspect --android` shows
+which controls on a screen lack a resource ID.
 Role locators without a `name` are not findings: the role can be unique by
 design. Debugging and selector findings have their own budget of 512 per file,
 separate from assertion and wait facts. Beyond it, the rest are dropped and the report
@@ -461,7 +474,11 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v16` recognizes
+inputs invalidate prior assessments. Policy `assessment-source-v17` adds the
+`copy-alias`, `partial-copy-alias`, `data-alias` and `literal-coordinates`
+codes of `fragile-selector` for target tests, and a fixture module's
+`aliases` in the analyzer's exports; the helper version is 14, report
+version 3 and suite version 1 are unchanged. Policy `assessment-source-v16` recognizes
 `createTargetTest` declarations and credits target assertions as
 `target:<matcher>`; the helper version is 13, report version 3 and suite
 version 1 are unchanged. Policy `assessment-source-v15` adds the

@@ -486,7 +486,9 @@ may not contain a backslash. A hint alias, typically a Flutter text field
 with no label, is found with one generated package-scoped XPath, since
 UiSelector has no hint matcher. Aliases remain package-scoped and must
 resolve uniquely before each operation. They do not perform semantic screen
-analysis.
+analysis. `9l assess` reports each use of such an alias as a suspected
+`fragile-selector` (`copy-alias`, `partial-copy-alias` or `data-alias`), and
+`9l inspect --android` lists the controls on a screen that lack a resource ID.
 
 `toHaveState('invalid', boolean)` reads the node's `content-invalid` flag,
 the accessibility error a validation failure reports (Flutter's field
