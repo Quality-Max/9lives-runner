@@ -1286,13 +1286,13 @@ test('a fixture module is trusted only when it loads no local code and exports i
 const nativeHead = `import {createTargetTest} from '@9l/playwright';
 import {androidTargetDriver as android} from '@9l/playwright/android';
 const controls = {
-  save: {text: 'Speichern', className: 'android.widget.Button'},
-  push: {accessibilityId: 'Push'},
-  tab: {accessibilityIdSuffix: ', Sitzungen'},
-  unread: {accessibilityIdContains: '3 ungelesen'},
-  email: {hint: 'E-Mail'},
+  save: {text: 'Save', className: 'android.widget.Button'},
+  push: {accessibilityId: 'Alerts'},
+  tab: {accessibilityIdSuffix: ', Bookings'},
+  unread: {accessibilityIdContains: '3 unread'},
+  email: {hint: 'Email'},
 };
-const test = createTargetTest({native: target => android({appId: target.appId, ...(process.env.X ? {controls} : {controls: {extra: {text: 'Mehr'}}})})});
+const test = createTargetTest({native: target => android({appId: target.appId, ...(process.env.X ? {controls} : {controls: {extra: {text: 'More'}}})})});
 `;
 
 test('controls aliases tied to copy and taps at literal coordinates are native hazards', () => {
@@ -1304,14 +1304,14 @@ test('controls aliases tied to copy and taps at literal coordinates are native h
       await app.getByTestId('unread').toBeVisible();
       await app.getByTestId('email').fill('a@b.c');
       await app.getByTestId('extra').tap();
-      await app.getByTestId('session_join').tap();
+      await app.getByTestId('booking_join').tap();
       await app.tapAt({x: 120, y: 840});
       await app.tapAt({x: -1, y: point.y});
-      const open = await app.getByTestId('session_join').bounds();
+      const open = await app.getByTestId('booking_join').bounds();
       await app.tapAt({x: open.x + 5, y: open.y + 5});
       const tapCentre = target => app.tapAt({x: 10, y: 20});
     });`);
-  // session_join is a resource ID, and a point from bounds() is not a literal.
+  // booking_join is a resource ID, and a point from bounds() is not a literal.
   assert.deepEqual(kinds(facts.tests[0]), ['copy-alias@13', 'copy-alias@14', 'partial-copy-alias@15', 'data-alias@16', 'copy-alias@17',
     'copy-alias@18', 'literal-coordinates@20', 'literal-coordinates@21', 'literal-coordinates@24']);
   assert.equal(facts.version, 14);

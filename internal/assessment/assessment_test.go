@@ -1091,7 +1091,7 @@ func TestAssessReportsNativeLocatorsTiedToCopyOrPosition(t *testing.T) {
 	fixture := "import {createTargetTest} from '@9l/playwright';\n" +
 		"import {androidTargetDriver} from '@9l/playwright/android';\n" +
 		"export const test = createTargetTest({native: target => androidTargetDriver({appId: target.appId,\n" +
-		"  controls: {back: {accessibilityId: 'Zurück'}, tab: {accessibilityIdSuffix: 'Tab 2 von 4'}}})});\n"
+		"  controls: {back: {accessibilityId: 'Back'}, tab: {accessibilityIdSuffix: 'Tab 2 of 4'}}})});\n"
 	if err := os.WriteFile(filepath.Join(dir, "fixtures.ts"), []byte(fixture), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1100,7 @@ func TestAssessReportsNativeLocatorsTiedToCopyOrPosition(t *testing.T) {
 		"  await app.getByTestId('back').tap();\n" +
 		"  await app.getByTestId('tab').tap();\n" +
 		"  await app.tapAt({x: 540, y: 2200});\n" +
-		"  await app.getByTestId('session_card').toBeVisible();\n" +
+		"  await app.getByTestId('booking_card').toBeVisible();\n" +
 		"});\n")
 	report, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "sessions.spec.ts")})
 	if err != nil {
