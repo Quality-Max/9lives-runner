@@ -228,6 +228,78 @@ function createAnalyzer(ts) {
       }
       ts.forEachChild(node, references);
     })(file);
+    // Android `controls` aliases declared in this file: an alias name that
+    // app.getByTestId(...) resolves through on-screen copy instead of a
+    // resource ID. Read from object literals under a call to androidTargetDriver
+    // imported from @9l/playwright/android, directly or through a top-level
+    // const; spreads and computed names are not read. The code is the most
+    // fragile matcher an alias is declared with.
+    const aliasRank = { 'copy-alias': 1, 'partial-copy-alias': 2, 'data-alias': 3 };
+    const aliases = new Map();
+    const declareAlias = (name, code) => {
+      if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(name)) return;
+      if ((aliasRank[code] || 0) <= (aliasRank[aliases.get(name)] || 0)) return;
+      if (!aliases.has(name) && aliases.size >= 256) return;
+      aliases.set(name, code);
+    };
+    const drivers = new Set();
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.text !== '@9l/playwright/android') continue;
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const binding of bindings.elements) if ((binding.propertyName || binding.name).text === 'androidTargetDriver') drivers.add(binding.name.text);
+      }
+    }
+    if (drivers.size) {
+      const constants = new Map();
+      for (const statement of file.statements) {
+        if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (ts.isIdentifier(declaration.name) && declaration.initializer) constants.set(declaration.name.text, declaration.initializer);
+        }
+      }
+      const literal = node => {
+        while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression?.(node))) node = node.expression;
+        if (node && ts.isIdentifier(node) && constants.has(node.text)) node = constants.get(node.text);
+        while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression?.(node))) node = node.expression;
+        return node && ts.isObjectLiteralExpression(node) ? node : null;
+      };
+      const propertyName = property => property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) ? property.name.text : null;
+      const readControls = object => {
+        for (const property of object.properties) {
+          const name = propertyName(property);
+          const matchers = ts.isPropertyAssignment(property) ? literal(property.initializer) : null;
+          if (!name || !matchers) continue;
+          for (const entry of matchers.properties) {
+            const matcher = propertyName(entry);
+            if (!ts.isPropertyAssignment(entry) || !['text', 'accessibilityId', 'accessibilityIdSuffix', 'accessibilityIdContains', 'hint'].includes(matcher)) continue;
+            const value = ts.isStringLiteralLike(entry.initializer) ? entry.initializer.text : null;
+            declareAlias(name, value !== null && /[0-9]/.test(value) ? 'data-alias'
+              : ['accessibilityIdSuffix', 'accessibilityIdContains'].includes(matcher) ? 'partial-copy-alias' : 'copy-alias');
+          }
+        }
+      };
+      (function findDrivers(node) {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && drivers.has(node.expression.text)) {
+          for (const argument of node.arguments) {
+            (function findControls(child) {
+              if ((ts.isPropertyAssignment(child) || ts.isShorthandPropertyAssignment(child)) && propertyName(child) === 'controls') {
+                const object = literal(ts.isPropertyAssignment(child) ? child.initializer : child.name);
+                if (object) readControls(object);
+              }
+              ts.forEachChild(child, findControls);
+            })(literal(argument) || argument);
+          }
+        }
+        ts.forEachChild(node, findDrivers);
+      })(file);
+    }
+    // Aliases a fixture module this spec imports its target test from declares.
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || !targetModules || !Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)) continue;
+      const declared = targetModules[statement.moduleSpecifier.text].aliases;
+      if (declared && typeof declared === 'object') for (const [name, code] of Object.entries(declared)) if (aliasRank[code]) declareAlias(name, code);
+    }
     // Exports mode: whether this module exports a `test` declared here with
     // createTargetTest, so a spec importing it can be assessed as a target
     // test. Only `export const test = ...` and `export {name as test}` of a
@@ -260,10 +332,11 @@ function createAnalyzer(ts) {
         if (!names.includes('test') || !declaredTargets.has(local)) continue;
         // The module itself must load no local code, and its fixture must be
         // reachable only as `test`; otherwise it declares tests without credit.
-        exported = { app: targetTests.has(local) && names.length === 1 && !wholesale && loadsOnlyKnownModules };
+        exported = { app: targetTests.has(local) && names.length === 1 && !wholesale && loadsOnlyKnownModules,
+          ...(aliases.size ? { aliases: Object.fromEntries([...aliases].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) } : {}) };
       }
       // Strict JSON on the Go side has no null: a module without one omits it.
-      return { version: 13, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };
+      return { version: 14, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };
     }
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
@@ -830,6 +903,20 @@ function createAnalyzer(ts) {
                 return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'getByTestId'
                   && targetKind(node.expression.expression) === 'app' ? 'control' : undefined;
               };
+              // Native locators tied to on-screen copy or position: a control
+              // reached through a `controls` alias, and a tap at literal
+              // coordinates. Coordinates computed from a control's bounds() are
+              // not literals and are not reported.
+              const targetHazards = child => {
+                if (!ts.isCallExpression(child) || !ts.isPropertyAccessExpression(child.expression)) return [];
+                const method = child.expression.name.text, first = child.arguments[0];
+                if (targetKind(child.expression.expression) !== 'app') return [];
+                if (method === 'getByTestId' && first && ts.isStringLiteralLike(first) && aliases.has(first.text)) return [{ node: first, kind: aliases.get(first.text) }];
+                if (method !== 'tapAt' || !first || !ts.isObjectLiteralExpression(first)) return [];
+                const numeric = node => ts.isNumericLiteral(node) || (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand));
+                return first.properties.some(property => ts.isPropertyAssignment(property) && ['x', 'y'].includes(property.name?.text) && numeric(property.initializer))
+                  ? [{ node: child.expression.name, kind: 'literal-coordinates' }] : [];
+              };
               // A target assertion's matcher, or null for any other call.
               const targetMatcher = call => {
                 if (!ts.isPropertyAccessExpression(call.expression)) return null;
@@ -880,7 +967,7 @@ function createAnalyzer(ts) {
                 // Hazards are present in source whether or not their code runs, so
                 // they do not make a nested function a limit. A location is
                 // reported once per test, at its first call site.
-                for (const hazard of hazards(child, roots)) {
+                for (const hazard of [...hazards(child, roots), ...targetHazards(child)]) {
                   const here = location(hazard.node);
                   if (fact.hazards.some(h => h.line === here.line && h.column === here.column)) continue;
                   if (hazardBudget.left === 0) { hazardBudget.truncated = true; continue; }
@@ -1056,7 +1143,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => [...f.conditionalSkips, ...f.afterHookFails].map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 13, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 14, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -1081,7 +1168,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 13, error: code }));
+    process.stdout.write(JSON.stringify({ version: 14, error: code }));
     process.exitCode = 2;
   }
 }
