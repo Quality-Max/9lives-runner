@@ -60,7 +60,14 @@ func TestRunRemovesTheHelperScratchEvenWhenTheHelperIsStopped(t *testing.T) {
 			value = "1"
 		}
 		t.Setenv("FAKE_HANG", value)
-		_, err := Run(context.Background(), Request{Tool: "inspect_ios"}, Options{Root: t.TempDir(), Timeout: 2 * time.Second, Env: []string{"FAKE_HANG"}})
+		// The answering helper gets a generous bound: on a loaded host
+		// materializing the helper and starting the shell can take seconds.
+		// The hanging one is stopped at a short bound on purpose.
+		timeout := time.Minute
+		if hang {
+			timeout = 2 * time.Second
+		}
+		_, err := Run(context.Background(), Request{Tool: "inspect_ios"}, Options{Root: t.TempDir(), Timeout: timeout, Env: []string{"FAKE_HANG"}})
 		if hang != errors.Is(err, ErrTimeout) || (!hang && err != nil) {
 			t.Fatalf("hang %v: %v", hang, err)
 		}
