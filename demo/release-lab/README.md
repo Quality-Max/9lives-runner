@@ -68,7 +68,7 @@ with Ctrl-C. Orders have no payment, persistence or real-world effect.
 | 5. Verified healing | Seed the old button name `Continue now`; the page says `Continue to review`. | Original fails; isolated candidate passes; exactly one locator literal changes; assertions and original source stay intact. |
 | 6. Fault proof | Break cart, orders and recommendations with abort, HTTP 500 and empty JSON. Add the recommendation assertion and repeat. | Weak test: 6 faults caught, 3 survive. Strong test: all 9 caught. Both baselines pass; all 20 receipts validate. |
 | 7. Fix confirmation | An order-count defect displays one item instead of two. Run the same test across the buggy and fixed commits. | `confirmed`: assertion failure before, pass after; both receipts validate. |
-| 8. Native MCP | Generate a support-link repro through the stdio server, inspect its assertion, then execute it before and after repairing the route. | All 7 tools discovered; generated test fails on 404 and passes on 200, with validated receipts. |
+| 8. Native MCP | Generate a support-link repro through the stdio server, inspect its assertion, then execute it before and after repairing the route. | All 8 tools discovered; generated test fails on 404 and passes on 200, with validated receipts. |
 
 For a short presentation, lead with chapter 6's **6 caught / 3 survived →
 9 caught / 0 survived** result. Show the two small checkout specs side by side.

@@ -105,7 +105,7 @@ async function mcpChapter(url) {
     await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: '9l-release-lab', version: '1'}});
     child.stdin.write(JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'}) + '\n');
     const tools = await request('tools/list', {});
-    assert.equal(tools.tools.length, 7);
+    assert.equal(tools.tools.length, 8);
     const generated = await call('generate_playwright_repro', {url, finding: {category: 'links', url: url + 'help', message: 'Support must be reachable'}, test_name: 'support link returns a successful response', output_path: 'tests/support-repro.spec.ts'});
     // Review the deterministic template before execution. Do not call generation a pass.
     assert(generated.code.includes('expect(response.status()).toBeLessThan(400)'));
@@ -281,7 +281,7 @@ async function main() {
   stage = 'MCP generated reproduction';
   const mcp = await mcpChapter(app.url);
   chapter('native MCP', 'Turn a scan finding into an executed repro', 'The real stdio MCP server generates a support-link assertion. We review its template, run it on the broken link, repair the local fixture, and rerun.',
-    'Seven tools discovered; generated repro failed, then passed after repair.', 'MCP: tools/list → generate_playwright_repro → run_test\nRepair local support route → run_test', [save('mcp.json', mcp), 'project/tests/support-repro.spec.ts']);
+    'Eight tools discovered; generated repro failed, then passed after repair.', 'MCP: tools/list → generate_playwright_repro → run_test\nRepair local support route → run_test', [save('mcp.json', mcp), 'project/tests/support-repro.spec.ts']);
   stage = 'report export';
   summary.status = 'passed';
   summary.finishedAt = new Date().toISOString();

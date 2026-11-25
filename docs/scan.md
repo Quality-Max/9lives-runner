@@ -77,8 +77,8 @@ screenshot of that screen. iOS is not supported yet.
 
 ## Agents
 
-Coding agents get the same checks from `9l mcp` as `scan_url` and
-`inspect_page`, plus `generate_playwright_repro`, which writes a spec for a
+Coding agents get the same checks from `9l mcp` as `scan_url`,
+`inspect_page` and `inspect_screen` (`platform: "android"`), plus `generate_playwright_repro`, which writes a spec for a
 finding that `run_test` executes and `confirm_finding` checks across a fix.
 These checks were previously the separate qmax-mcp npm server.
 
