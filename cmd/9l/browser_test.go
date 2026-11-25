@@ -309,7 +309,7 @@ func fakeAndroidSDK(t *testing.T) {
 		return `<node resource-id="" text="" content-desc="" class="android.view.View" package="com.example.app" clickable="true" ` + attributes + ` />`
 	}
 	xml := `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node class="android.widget.FrameLayout" package="com.example.app">` +
-		node(`resource-id="session_join" content-desc="Beitreten"`) + node(`class="android.widget.Switch" checkable="true" content-desc="Push"`) +
+		node(`resource-id="booking_join" content-desc="Join"`) + node(`class="android.widget.Switch" checkable="true" content-desc="Alerts"`) +
 		node(`bounds="[1,2][3,4]"`) + `</node></hierarchy>`
 	script := "#!/bin/sh\nif [ \"$1\" = devices ]; then printf 'List of devices attached\\nemulator-5554\\tdevice\\n'; exit 0; fi\n" +
 		"[ \"$2\" = emulator-5554 ] && [ \"$5\" = dump ] || exit 9\ncat <<'XML'\n" + xml + "UI hierchary dumped to: /dev/tty\nXML\n"
@@ -338,7 +338,7 @@ func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
 	if result.Testability.Controls != 3 || result.Testability.Stable != 1 || result.Testability.Copy != 1 || result.Testability.None != 1 || result.Testability.Score != 33 {
 		t.Fatalf("testability %+v", result.Testability)
 	}
-	if result.Controls[0].Stability != "none" || result.Controls[2].Locator != `app.getByTestId("session_join")` {
+	if result.Controls[0].Stability != "none" || result.Controls[2].Locator != `app.getByTestId("booking_join")` {
 		t.Fatalf("controls %+v", result.Controls)
 	}
 	out.Reset()

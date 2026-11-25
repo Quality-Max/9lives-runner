@@ -63,7 +63,7 @@ Each tappable, checkable or editable control gets the handle the
 | --- | --- |
 | 🟢 stable | A resource ID no other node has: `app.getByTestId("save")`. A Flutter `Semantics(identifier:)` is reported bare; `<package>:id/` is removed. |
 | 🟡 repeated ID | A resource ID other nodes on the screen share, such as one per list item. `getByTestId` fails as ambiguous while they are all shown. |
-| 🟠 copy only | No ID, but a unique text, description or hint, or that of a label inside the control. The report gives the `controls` alias that would reach it, such as `{accessibilityId: "Push", className: "android.widget.Switch"}`. A copy edit or another device language breaks it. |
+| 🟠 copy only | No ID, but a unique text, description or hint, or that of a label inside the control. The report gives the `controls` alias that would reach it, such as `{accessibilityId: "Alerts", className: "android.widget.Switch"}`. A copy edit or another device language breaks it. |
 | 🔴 none | No ID and no label that resolves to it alone, so only coordinates (`tapAt`) reach it. |
 
 The score is the share of controls with a stable ID, and the weakest
