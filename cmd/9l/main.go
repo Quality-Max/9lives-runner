@@ -115,6 +115,7 @@ Usage:
   9l scan <url> [--checks LIST] [--format markdown|json|issue] [--baseline FILE [--fail-on-new]] [--allow-private-network]
           # one Chromium page load: console, links, accessibility, vitals, SEO, headers, cookies, mixed content, weight
   9l inspect <url> [--format markdown|json] [--allow-private-network]  # ranked locators and testability
+  9l inspect --android [--serial SERIAL] [--package PKG] [--format markdown|json]  # test IDs on a device screen
           # scan and inspect: [--viewport WxH] [--storage-state FILE --acknowledge-private-content]
   9l tier1 --format json  # one offline version:1 JSON proposal request on stdin
   9l assess <spec|dir|'glob'>... [--requirements <contract.json>] [--format text|json] [--titles] [--limits]

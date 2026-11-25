@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -230,6 +231,10 @@ func TestScanAndInspectFlagsAreRefusedBeforeABrowserStarts(t *testing.T) {
 		{[]string{"scan", "https://example.com/", "--weight-budget", "total=1"}, "NAME=VALUE"},
 		{[]string{"scan", "https://example.com/", "--weight-budget", "total_bytes=0"}, "weight_budget"},
 		{[]string{"scan", "https://example.com/", "--fail-on-new"}, "needs --baseline"},
+		{[]string{"inspect", "--android", "https://example.com/"}, "takes no URL"},
+		{[]string{"inspect", "--android", "--viewport", "390x844"}, "--viewport: only for a URL"},
+		{[]string{"inspect", "--android", "--format", "issue"}, "markdown or json"},
+		{[]string{"inspect", "https://example.com/", "--serial", "emulator-5554"}, "only with --android"},
 	} {
 		var out, errOut bytes.Buffer
 		if code := run(tc.args, &out, &errOut); code != exitUsage || !strings.Contains(errOut.String(), tc.want) {
@@ -277,5 +282,60 @@ func TestScanNamesTheInstallCommandForAMissingBrowser(t *testing.T) {
 	code := run([]string{"inspect", browserServer(t), "--allow-private-network"}, &out, &errOut)
 	if code != exitIncomplete || (!strings.Contains(errOut.String(), "npx --yes playwright@") || !strings.Contains(errOut.String(), " install chromium")) || strings.Contains(errOut.String(), "╔") {
 		t.Fatalf("exit %d: %q", code, errOut.String())
+	}
+}
+
+// A fake adb on a fake SDK: one ready emulator whose active window has a
+// test ID, a copy-only switch and an unlabelled button.
+func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not installed")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb is a shell script")
+	}
+	sdk := t.TempDir()
+	tools := filepath.Join(sdk, "platform-tools")
+	if err := os.MkdirAll(tools, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	node := func(attributes string) string {
+		return `<node resource-id="" text="" content-desc="" class="android.view.View" package="com.example.app" clickable="true" ` + attributes + ` />`
+	}
+	xml := `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node class="android.widget.FrameLayout" package="com.example.app">` +
+		node(`resource-id="session_join" content-desc="Beitreten"`) + node(`class="android.widget.Switch" checkable="true" content-desc="Push"`) +
+		node(`bounds="[1,2][3,4]"`) + `</node></hierarchy>`
+	script := "#!/bin/sh\nif [ \"$1\" = devices ]; then printf 'List of devices attached\\nemulator-5554\\tdevice\\n'; exit 0; fi\n" +
+		"[ \"$2\" = emulator-5554 ] && [ \"$5\" = dump ] || exit 9\ncat <<'XML'\n" + xml + "UI hierchary dumped to: /dev/tty\nXML\n"
+	if err := os.WriteFile(filepath.Join(tools, "adb"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ANDROID_HOME", sdk)
+	t.Chdir(t.TempDir())
+	var out, errOut bytes.Buffer
+	if code := run([]string{"inspect", "--android", "--format", "json"}, &out, &errOut); code != exitPassed {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var result struct {
+		Controls []struct {
+			Stability, Locator string
+		}
+		Testability struct{ Controls, Stable, Copy, None, Score int }
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("%v: %s", err, out.String())
+	}
+	if result.Testability.Controls != 3 || result.Testability.Stable != 1 || result.Testability.Copy != 1 || result.Testability.None != 1 || result.Testability.Score != 33 {
+		t.Fatalf("testability %+v", result.Testability)
+	}
+	if result.Controls[0].Stability != "none" || result.Controls[2].Locator != `app.getByTestId("session_join")` {
+		t.Fatalf("controls %+v", result.Controls)
+	}
+	out.Reset()
+	if code := run([]string{"inspect", "--android", "--serial", "emulator-5554"}, &out, &errOut); code != exitPassed || !strings.Contains(out.String(), "Testability: 33 / 100") {
+		t.Fatalf("markdown exit %d: %s", code, out.String())
+	}
+	if code := run([]string{"inspect", "--android", "--serial", "other"}, &out, &errOut); code != exitIncomplete || !strings.Contains(errOut.String(), "no UI hierarchy") {
+		t.Fatalf("unknown serial exit %d: %s", code, errOut.String())
 	}
 }

@@ -8,12 +8,13 @@ import { scanUrl, type ScanUrlArgs } from './scan-url';
 import type { Severity } from './common';
 import { diagnose } from './doctor';
 import { androidChecks } from './android';
+import { inspectAndroid, renderAndroidInspectReport, type InspectAndroidArgs } from './inspect-android';
 
 export const HELPER_PROTOCOL_VERSION = 1;
 
 export type HelperRequest = {
   version: number;
-  tool: 'scan_url' | 'inspect_page' | 'doctor';
+  tool: 'scan_url' | 'inspect_page' | 'inspect_android' | 'doctor';
   args: Record<string, unknown>;
   format?: 'json' | 'markdown' | 'issue';
   minSeverity?: Severity;
@@ -39,6 +40,11 @@ export async function handleRequest(request: HelperRequest): Promise<HelperRespo
     if (request.tool === 'inspect_page') {
       const result = (await inspectPage(request.args as InspectPageArgs)) as InspectResult;
       if (request.format === 'markdown') return { version: HELPER_PROTOCOL_VERSION, result, text: renderInspectReport(result) };
+      return { version: HELPER_PROTOCOL_VERSION, result };
+    }
+    if (request.tool === 'inspect_android') {
+      const result = await inspectAndroid(request.args as InspectAndroidArgs);
+      if (request.format === 'markdown') return { version: HELPER_PROTOCOL_VERSION, result, text: renderAndroidInspectReport(result) };
       return { version: HELPER_PROTOCOL_VERSION, result };
     }
     return { version: HELPER_PROTOCOL_VERSION, error: 'unknown browser check' };

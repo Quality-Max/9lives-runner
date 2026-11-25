@@ -43,6 +43,40 @@ file and `--acknowledge-private-content`. Loopback targets need
 `--allow-private-network`; other private addresses stay blocked. Scans are
 observations from one cold page load, not test results.
 
+## Test IDs on an Android screen
+
+`9l inspect --android` asks the same question of a native screen: which
+controls a test can find by a test ID, and which only by their copy or
+their position. It reads the active window of an attached device or
+emulator with one `uiautomator dump` through adb. It installs nothing and
+does not tap, type or write to the device.
+
+```sh
+9l inspect --android                                    # the only attached device
+9l inspect --android --serial emulator-5554 --package com.example.app --format json
+```
+
+Each tappable, checkable or editable control gets the handle the
+[Android driver](android-driver.md) would use for it:
+
+| Handle | Meaning |
+| --- | --- |
+| 🟢 stable | A resource ID no other node has: `app.getByTestId("save")`. A Flutter `Semantics(identifier:)` is reported bare; `<package>:id/` is removed. |
+| 🟡 repeated ID | A resource ID other nodes on the screen share, such as one per list item. `getByTestId` fails as ambiguous while they are all shown. |
+| 🟠 copy only | No ID, but a unique text, description or hint, or that of a label inside the control. The report gives the `controls` alias that would reach it, such as `{accessibilityId: "Push", className: "android.widget.Switch"}`. A copy edit or another device language breaks it. |
+| 🔴 none | No ID and no label that resolves to it alone, so only coordinates (`tapAt`) reach it. |
+
+The score is the share of controls with a stable ID, and the weakest
+handles come first. Matching follows the driver: package-scoped, exact
+values, unique among all nodes. The dump covers only what is on screen; a
+list scrolled out of view or a screen that is still loading is not
+counted, and a screen that keeps animating can refuse the dump. The dump
+also fails while an Appium or UiAutomator2 session holds uiautomator, so run
+it between tests. The report quotes on-screen text; treat it like a
+screenshot of that screen. iOS is not supported yet.
+
+## Agents
+
 Coding agents get the same checks from `9l mcp` as `scan_url` and
 `inspect_page`, plus `generate_playwright_repro`, which writes a spec for a
 finding that `run_test` executes and `confirm_finding` checks across a fix.

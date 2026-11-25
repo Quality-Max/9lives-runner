@@ -4,6 +4,19 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Added
+
+- `9l inspect --android` reports which controls on an attached Android
+  device's screen have a unique test ID, which share one (and so fail
+  `getByTestId` as ambiguous), which are reachable only by their copy (with
+  the `controls` alias that would reach them) and which only by coordinates,
+  with a testability score. It reads the active window with one
+  `uiautomator dump` over adb and changes nothing on the device. Checked
+  against a Flutter app on a local API 35 emulator; iOS is not
+  supported.
+
 ## 0.7.1 — 2026-11-23
 
 A patch on the 0.7.0 line from running a real Flutter app on the Android
