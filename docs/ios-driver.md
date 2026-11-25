@@ -137,8 +137,10 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   files and physical-device builds are unsupported. The copied artifact and
   installed tree must match the declared digest, including after reset.
 - One newly created Simulator, Appium process group and private automation home
-  per driver. No attachment to an existing device, automatic permission grants,
-  onboarding recovery or reuse of another session. Reset uninstalls and installs
+  per driver. No attachment to an existing device, onboarding recovery or reuse
+  of another session, and no automatic permission grants except Face ID for
+  the app under test when `biometrics: {enrolled: true}` is declared (see
+  [biometrics](#biometrics-on-the-owned-simulator)). Reset uninstalls and installs
   the frozen build again; it does not preserve app data.
 - Tap, fill, visibility, text equality and `enabled` state through the shared
   target API. Each action re-observes its control and requires one match.
@@ -201,6 +203,49 @@ pass. These are worker-reported facts, not independent behavior verification.
 No app content, device UUID, Appium log, hierarchy or attachment body is retained
 by this driver. Provider credentials are not passed to the native server.
 
+## Biometrics on the owned simulator
+
+Apps that sign in with Face ID or Touch ID can be tested on the owned
+simulator. The policy:
+
+- **Opt-in.** The driver declares `biometrics: {enrolled: boolean}`; without
+  it nothing changes and `app.biometric()` fails as `unsupported_operation`.
+- **Set before the app runs, on that device only.** After the app is
+  installed and before the session launches it, and again after `reset()`
+  reinstalls it, the driver sets the simulator's biometric enrollment with
+  the notification Simulator's Features menu posts
+  (`com.apple.BiometricKit.enrollmentChanged`). When enrolled, it also
+  records Face ID permission for `bundleId` in that simulator's privacy
+  database (`kTCCServiceFaceID` in `Library/TCC/TCC.db`, read back before
+  the session starts) and restarts its privacy daemon, because
+  `simctl privacy` has no Face ID service and the first-use alert would
+  otherwise stand in front of the prompt. The simulator was created for
+  this test and is deleted after it; no other device is touched. A grant
+  that does not read back fails open in the `install` phase.
+- **Recorded, not hidden.** `app.biometric('match' | 'nomatch')` waits,
+  within its bound, until two display captures 250 ms apart are equal (a
+  prompt drops a presentation that arrives while it is still animating in;
+  each capture is hashed and deleted at once), then posts the Face ID and
+  the Touch ID match or non-match notification once; only the sensor the
+  device type has responds. It is recorded as an executed `biometric`
+  action, never as an assertion, so the sign-in still needs one.
+
+A face that is not enrolled does not end the request: as on a device, the
+system prompt offers another attempt, so the app's sign-in assertion fails
+on its bound rather than on an error.
+
+Three smoke cases qualify this on the host above, with an `iOS biometrics`
+test in the fixture app's `biometric` variant: `biometric` (the enrolled face
+signs in, two target assertions), `biometric-nomatch` and
+`biometric-unenrolled` (the sign-in assertion fails):
+
+```sh
+node scripts/ios-smoke.cjs biometric biometric-nomatch biometric-unenrolled
+```
+
+Real iPhones, passcode fallback and the first-use permission alert itself
+are not covered.
+
 ## Reuse assessment
 
 The platform reference was assessed at commit
@@ -210,6 +255,6 @@ The platform reference was assessed at commit
 `services/flutter_appium_runtime.py`. The useful contracts are finite grounded
 controls, exact unique matches, matching build/platform, and an owned loopback
 Appium session with cancellation and cleanup. This implementation applies those
-contracts to the existing `9l.target/4` fixtures and receipt validator. It does
+contracts to the existing `9l.target/5` fixtures and receipt validator. It does
 not duplicate the hosted mobile DSL, discovery/planning or provider engine, and
 does not require a platform account.

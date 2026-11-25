@@ -147,6 +147,16 @@ test('the foreground window is read, not acted on', async ({app}) => {
   await app.getByTestId('button').toBeVisible();
 });
 
+// A biometric is presented at a native prompt; the web has none and refuses
+// it with the same stable reason. A face that is not enrolled signs nobody in.
+test('a biometric signs in on the native target only', async ({app}) => {
+  await app.open();
+  await app.biometric('nomatch');
+  await app.biometric('match');
+  // @9l-outcome biometric-sign-in
+  await app.getByTestId('status').toHaveText('authenticated');
+});
+
 // A fingerprint touches a native sensor; the web has none and refuses it
 // before anything runs. The sign-in is still established by an assertion.
 test('a fingerprint signs in on the native target only', async ({app}) => {

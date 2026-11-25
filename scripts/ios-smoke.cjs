@@ -8,7 +8,10 @@ const root=path.resolve(__dirname,'..');
 // The last three stop the worker from outside while it holds a booted device:
 // the engine is interrupted, the attempt times out, or the worker is killed.
 const stopped=['runner-cancel','attempt-timeout','worker-kill'];
-const modes=['healthy','defect','missing','ambiguous','label-only','digest','unavailable','cancel','blocked',...stopped];
+// Face ID at the system prompt: the enrolled face signs in; a face that is
+// not enrolled, and a simulator without enrollment, must fail the assertion.
+const biometricModes=['biometric','biometric-nomatch','biometric-unenrolled'];
+const modes=['healthy','defect','missing','ambiguous','label-only','digest','unavailable','cancel','blocked',...biometricModes,...stopped];
 if(process.argv[2]==='--list') {console.log(modes.join('\n'));process.exit(0);}
 const selected=process.argv.slice(2).length?process.argv.slice(2):modes;
 assert(selected.every(mode=>modes.includes(mode)),'unknown iOS case');
@@ -59,6 +62,7 @@ assert.equal(sentinel.status,0,'create unrelated sentinel');
 const sentinelId=sentinel.stdout.trim();assert.match(sentinelId,/^[A-Fa-f0-9-]{36}$/);
 const results=[];
 const engineArgs=(mode,timeout)=>['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
+  '--grep',biometricModes.includes(mode)?'iOS biometrics':'iOS transfer',
   '--agent-provenance',provenance,'--timeout',timeout,'--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
   '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,NINELIVES_IOS_OS,DEVELOPER_DIR'];
 const record=result=>{
@@ -147,8 +151,20 @@ try {
       const fixture=JSON.parse(fs.readFileSync(path.join(root,'.context/ios-fixture/healthy/build.json'),'utf8'));
       assert.equal(rt.appSHA256,fixture.appSHA256);assert.equal(rt.bundleId,fixture.bundleId);
       assert.equal(rt.os,os);assert.equal(rt.runtime,runtime);assert.equal(rt.xcode,hostXcode);assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
-    } else {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
-    if(!['digest','unavailable'].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
+    } else if(mode!=='biometric') {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
+    if(!['digest','unavailable',...biometricModes].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
+    if(biometricModes.includes(mode)) {
+      // The presentation is an executed action, never an assertion; the
+      // sign-in is the one target assertion.
+      assert(frames.some(f=>f.operation==='biometric'&&f.status==='passed'),`${mode}: the biometric was presented once`);
+      if(mode==='biometric') {
+        assert.equal(run.status,0,`biometric: the enrolled face signs in; setup phase: ${facts.setupPhase||'unknown'}`);assert.equal(data.outcome,'passed');
+        assert.equal(receipt.targetAssertions,2,'biometric: the prompting and signed-in assertions');
+      } else {
+        assert.equal(facts.stopReason,'assertion_failed',`${mode}: the sign-in assertion fails`);
+        assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),`${mode}: sign-in assertion rejected`);
+      }
+    }
     if(mode==='defect') {
       assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),'defect must fail relevant assertion');
       assert.equal(facts.stopReason,'assertion_failed');assert.equal(facts.clickDispatches,1);

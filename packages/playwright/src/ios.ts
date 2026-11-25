@@ -7,7 +7,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {TargetSetupError, targetCapabilities, type SetupPhase, controlPattern, type TargetContext, type TargetDriver, type TargetHandle} from './targets';
+import {TargetSetupError, targetCapabilities, type SetupPhase, controlPattern, type TargetContext, type TargetDriver, type TargetHandle, type BiometricOutcome} from './targets';
 import {iosVersions, validIOSRuntime, type IOSRuntime} from './ios-runtime';
 export {iosVersions, validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 
@@ -27,6 +27,14 @@ export type IOSTargetOptions = {
    * WebDriverAgent is compiled inside open, which a cold host may not finish
    * within the open bound. */
   wdaProducts?: string;
+  /** Opt-in biometrics on the owned simulator. Before the app is first
+   * launched, and again after reset() reinstalls it, the driver sets the
+   * simulator's Face ID / Touch ID enrollment and, when enrolled, records
+   * Face ID permission for bundleId in that simulator's privacy database, so
+   * no permission alert stands between the prompt and the test. Offers
+   * app.biometric(). The simulator is created for the test and deleted
+   * after it; no other device is touched. */
+  biometrics?: {enrolled: boolean};
 };
 const fail = (reason: string) => new Error(`9lives iOS: ${reason}`);
 // Local failure codes that mean the app itself was rejected, not the device.
@@ -123,7 +131,9 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       !/^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$/.test(options.bundleId) || options.bundleId.length > 200 ||
       !/^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$/.test(options.runtime) ||
       !/^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$/.test(options.deviceType) ||
-      (options.wdaProducts !== undefined && (typeof options.wdaProducts !== 'string' || !isAbsolute(options.wdaProducts) || options.wdaProducts.length > 1024))) throw fail('invalid_options');
+      (options.wdaProducts !== undefined && (typeof options.wdaProducts !== 'string' || !isAbsolute(options.wdaProducts) || options.wdaProducts.length > 1024)) ||
+      (options.biometrics !== undefined && (typeof options.biometrics !== 'object' || options.biometrics === null ||
+        Object.keys(options.biometrics).join() !== 'enrolled' || typeof options.biometrics.enrolled !== 'boolean'))) throw fail('invalid_options');
   const owner = `9l-ios-${randomUUID()}`, controller = new AbortController();
   const tools = resolve(options.toolsRoot ?? join(homedir(), '.9l/ios-tools'));
   const env: NodeJS.ProcessEnv = {};
@@ -165,6 +175,35 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
   };
   const appCommand = (name: 'terminateApp' | 'activateApp', c: TargetContext) =>
     endpoint('/execute/sync', c, 'POST', {script: `mobile: ${name}`, args: [{bundleId: options.bundleId}]});
+  // The simulator's biometric state, set through the same notifications
+  // Simulator's Features menu posts, and Face ID permission for the app,
+  // which the simulator's privacy daemon reads from its TCC database.
+  // simctl privacy has no Face ID service. Every value is fixed or validated.
+  const notify = (args: string[], c: TargetContext) => simctl(['spawn', udid, 'notifyutil', ...args], c);
+  const prepareBiometrics = async (c: TargetContext) => {
+    if (!options.biometrics) return;
+    const enrolled = options.biometrics.enrolled ? '1' : '0';
+    await notify(['-s', 'com.apple.BiometricKit.enrollmentChanged', enrolled], c);
+    await notify(['-p', 'com.apple.BiometricKit.enrollmentChanged'], c);
+    if (!options.biometrics.enrolled) return;
+    const home = await simctl(['getenv', udid, 'HOME'], c);
+    if (!isAbsolute(home) || !home.includes(udid)) throw fail('invalid_device_home');
+    const database = join(home, 'Library/TCC/TCC.db');
+    await command('/usr/bin/sqlite3', [database, 'INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version) ' +
+      `VALUES ('kTCCServiceFaceID', '${options.bundleId}', 0, 2, 2, 1)`], c, env);
+    if (await command('/usr/bin/sqlite3', [database, `SELECT auth_value FROM access WHERE service = 'kTCCServiceFaceID' AND client = '${options.bundleId}' AND client_type = 0`], c, env) !== '2') throw fail('biometric_permission_failed');
+    // The privacy daemon caches decisions; launchd restarts it on next use.
+    await simctl(['spawn', udid, 'launchctl', 'stop', 'com.apple.tccd'], c);
+  };
+  // A digest of the simulator's display, read through a file in this
+  // driver's private directory and removed at once; the image is never kept.
+  const displayDigest = async (c: TargetContext) => {
+    const file = join(directory, `display-${randomUUID()}.png`);
+    try {
+      await simctl(['io', udid, 'screenshot', '--type=png', file], c);
+      return createHash('sha256').update(await readFile(file)).digest('hex');
+    } finally { await rm(file, {force: true}); }
+  };
   const install = async (c: TargetContext) => {
     // Reverify the frozen copy against the declared digest before every
     // install, and the installed tree against that copy's names and bytes
@@ -312,6 +351,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           const architecture = architectures.includes('arm64') ? 'arm64' : 'x86_64';
           phase = 'install';
           await install(c);
+          await prepareBiometrics(c);
           const appiumPort = await freePort(), wdaPort = await freePort(), mjpegPort = await freePort();
           check(c);
           phase = 'server';
@@ -371,6 +411,7 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       await appCommand('terminateApp', c);
       await simctl(['uninstall', udid, options.bundleId], c);
       await install(c);
+      await prepareBiometrics(c);
       await appCommand('activateApp', c);
     },
     async observeTestId(id, c) {
@@ -395,6 +436,25 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
         },
       }));
     },
+    // Present a face or finger at the system prompt. The prompt drops a
+    // presentation that arrives while it is still animating in, so wait,
+    // within the bound, until two captures 250 ms apart are equal. Both the
+    // Face ID and the Touch ID notification are posted; only the sensor the
+    // device type has responds. Sent once, never repeated.
+    ...(options.biometrics ? {biometric: async (outcome: BiometricOutcome, c: TargetContext) => {
+      check(c);
+      if (outcome !== 'match' && outcome !== 'nomatch') throw fail('invalid_value');
+      if (!session) throw fail('session_unavailable');
+      for (let previous = ''; ;) {
+        if (Date.now() + 1500 >= c.deadlineMs) throw fail('display_not_settled');
+        const current = await displayDigest(c);
+        if (current === previous) break;
+        previous = current;
+        await delay(250, undefined, {signal: c.signal});
+      }
+      await notify(['-p', `com.apple.BiometricKit_Sim.pearl.${outcome}`], c);
+      await notify(['-p', `com.apple.BiometricKit_Sim.fingerTouch.${outcome}`], c);
+    }} : {}),
     async close() {
       if (!closing) {
         closed = true; controller.abort();

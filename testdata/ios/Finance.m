@@ -1,10 +1,12 @@
 #import <UIKit/UIKit.h>
+#import <LocalAuthentication/LocalAuthentication.h>
 #ifndef FIXTURE_MODE
 #define FIXTURE_MODE @"healthy"
 #endif
 @interface Finance : UIViewController
 @property(nonatomic, strong) UITextField *amount;
 @property(nonatomic, strong) UILabel *receipt;
+@property(nonatomic, strong) UILabel *auth;
 @end
 @implementation Finance
 - (void)viewDidLoad {
@@ -25,6 +27,26 @@
   self.receipt = [[UILabel alloc] initWithFrame:CGRectMake(30,260,300,50)];
   self.receipt.accessibilityIdentifier = @"receipt"; self.receipt.text = @"Pending";
   [self.view addSubview:self.receipt];
+  if ([FIXTURE_MODE isEqual:@"biometric"]) {
+    // A sign-in behind the system Face ID / Touch ID prompt. The status says
+    // when the request starts, so a test can wait for it before presenting.
+    UIButton *signIn = [UIButton buttonWithType:UIButtonTypeSystem];
+    signIn.frame = CGRectMake(30,340,300,50); signIn.accessibilityIdentifier = @"sign-in";
+    [signIn setTitle:@"Sign in with biometrics" forState:UIControlStateNormal];
+    [signIn addTarget:self action:@selector(signIn:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:signIn];
+    self.auth = [[UILabel alloc] initWithFrame:CGRectMake(30,420,300,50)];
+    self.auth.accessibilityIdentifier = @"auth.status"; self.auth.text = @"Locked";
+    [self.view addSubview:self.auth];
+  }
+}
+- (void)signIn:(id)sender {
+  LAContext *context = [LAContext new]; NSError *error = nil;
+  if (![context canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&error]) { self.auth.text = @"Unavailable"; return; }
+  self.auth.text = @"Prompting";
+  [context evaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics localizedReason:@"Sign in" reply:^(BOOL success, NSError *failure) {
+    dispatch_async(dispatch_get_main_queue(), ^{ self.auth.text = success ? @"Authenticated" : @"Not recognized"; });
+  }];
 }
 - (void)send:(id)sender {
   NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject;

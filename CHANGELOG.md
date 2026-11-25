@@ -35,6 +35,26 @@ SDK versions.
   is not reported. Findings are advisory and change no verdict. Policy
   `assessment-source-v17`, analyzer helper version 14; report version 3 and
   suite version 1 are unchanged.
+- Biometric sign-in on an owned iOS Simulator (experimental). An iOS driver
+  that declares `biometrics: {enrolled: boolean}` sets the simulator's
+  Face ID / Touch ID enrollment and, when enrolled, allows Face ID for the
+  app under test before it is launched and again after `reset()`.
+  `app.biometric('match' | 'nomatch')` then presents the enrolled face or
+  finger, or one that is not enrolled, at the system prompt. It is
+  recorded as an executed action; the sign-in still needs an assertion.
+  Qualified on the iOS 18.6 iPhone 16 Simulator of the iOS host with the
+  `biometric`, `biometric-nomatch` and `biometric-unenrolled` smoke cases.
+- `app.biometric()` is portable: on an owned Android emulator with declared
+  biometrics it touches enrolled finger 1 or unenrolled finger 2, as
+  `fingerprint()` does; elsewhere, including the web, it fails as
+  `unsupported_operation`.
+
+### Changed
+
+- The shared target contract is `9l.target/5`, for the new `biometric`
+  action. Update the CLI and `@9l/playwright` together: a run that mixes
+  `9l.target/4` with `9l.target/5` is rejected when its evidence is
+  validated, so it ends incomplete, never green.
 
 ## 0.7.1 — 2026-11-23
 

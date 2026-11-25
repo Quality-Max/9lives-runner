@@ -14,7 +14,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     if (process.env.NINELIVES_TARGET_EFFECTS) appendFileSync(process.env.NINELIVES_TARGET_EFFECTS, event + '\n');
   };
   return {
-    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/4' : '9l.target/4',
+    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/5' : '9l.target/5',
     capabilities: mode === 'capabilities' ? [] : targetCapabilities,
     // Setup classifications a real device driver would make: a locked phone
     // before any operation, a leaked window recovered by a declared Back, and
@@ -48,6 +48,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     foreground: async () => mode === 'foreign' ? 'foreign' : 'app',
     // An emulator's virtual sensor: finger 1 is enrolled and signs in.
     fingerprint: async finger => { status = finger === 1 ? 'authenticated' : status; },
+    biometric: async outcome => { status = outcome === 'match' ? 'authenticated' : status; },
     terminate: async () => { running = false; status = ''; },
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },
     observeTestId: async (id: string) => {

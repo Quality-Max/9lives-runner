@@ -414,6 +414,10 @@ read-only and discards when the test closes, the policy is:
   `fingerprint` action, never as an assertion, so a biometric sign-in still
   needs an assertion to pass. On a phone, on the web, or without the opt-in
   it fails as `unsupported_operation` before touching anything.
+- **Portable form.** `app.biometric('match')` touches finger 1, the one the
+  snapshot enrolled, and `app.biometric('nomatch')` finger 2, through the
+  same touch, recorded as a `biometric` action. The same call presents a face
+  on an owned iOS Simulator.
 
 The system `BiometricPrompt` is another package's window, so
 `app.foreground()` reads `foreign` while it is in front and `app` after it
