@@ -49,7 +49,8 @@ const mcpInstructions = "9lives Go runner. run_test executes one Playwright spec
 	"and passed after, and even that does not show the spec tests the finding. scan_url loads a page once in Chromium and reports " +
 	"console, link, accessibility, Core Web Vitals, SEO, security-header, cookie, mixed-content and page-weight findings; " +
 	"inspect_page returns the page's structure and ranked role/name locators. Both are observations, not authorization to change " +
-	"a site; loopback targets need allow_private_network. generate_playwright_repro writes a deterministic spec for a finding, URL " +
+	"a site; loopback targets need allow_private_network. inspect_screen ranks the controls on an attached Android device's screen " +
+	"by their test IDs, read-only. generate_playwright_repro writes a deterministic spec for a finding, URL " +
 	"or goal and runs nothing; run it with run_test, or generate it with sdk true and use confirm_finding. Paths must be inside " +
 	"the server's working directory."
 
@@ -161,6 +162,24 @@ var mcpTools = []map[string]any{
 				"format":                     map[string]any{"type": "string", "enum": []string{"json", "markdown"}, "default": "json"},
 			}),
 			"required":             []string{"url"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		"name":        "inspect_screen",
+		"title":       "Inspect a device screen",
+		"description": "Read the active window of an attached Android device or emulator with one uiautomator dump over adb and rank each tappable, checkable or editable control by the handle the 9lives Android driver would find it with: stable (a unique resource ID, used with app.getByTestId), repeated (an ID other nodes share, which getByTestId refuses as ambiguous), copy (only a unique text, description or hint, with the controls alias that reaches it) or none (coordinates only), plus the share with a unique test ID. Installs nothing and does not tap, type or write to the device; the result quotes on-screen text. Fails while an Appium or UiAutomator2 session holds uiautomator.",
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"platform": map[string]any{"type": "string", "enum": []string{"android"}},
+				"serial":   map[string]any{"type": "string", "description": "adb serial; required when several devices are attached"},
+				"package":  map[string]any{"type": "string", "description": "Report only controls of this Android package"},
+				"format":   map[string]any{"type": "string", "enum": []string{"json", "markdown"}, "default": "json"},
+				"timeout":  map[string]any{"type": "integer", "minimum": 1, "description": "Seconds"},
+			},
+			"required":             []string{"platform"},
 			"additionalProperties": false,
 		},
 	},
@@ -596,7 +615,7 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 			spec: spec, unfixed: args.Unfixed, fixed: args.Fixed, finding: args.Finding, findingID: args.FindingID,
 			workers: 1, timeout: timeout, maxOutputBytes: 4 << 20, passEnv: s.passEnv, receiptDir: s.receiptDir,
 		})
-	case "scan_url", "inspect_page", "generate_playwright_repro":
+	case "scan_url", "inspect_page", "inspect_screen", "generate_playwright_repro":
 		return s.browserTool(ctx, name, raw)
 	default:
 		var args struct {

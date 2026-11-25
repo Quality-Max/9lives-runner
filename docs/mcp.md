@@ -36,7 +36,8 @@ In the host's MCP inspector, compare the `initialize` response's
 `9lives` and `serverInfo.title` is `9lives Go runner`. Then refresh its tool
 list (`tools/list`). Go runner releases from 0.4.0 expose these seven tools:
 `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`,
-`inspect_page`, `generate_playwright_repro`.
+`inspect_page`, `generate_playwright_repro`. The next release adds an eighth,
+`inspect_screen`.
 
 If only four appear, the host may still be running a Go release from before
 0.4.0 or displaying cached discovery. Recheck the configured absolute path,
@@ -57,6 +58,7 @@ selected or its tool cache.
 | `confirm_finding` | `spec`, `unfixed` (Git revision), optional `fixed` (default the working tree), `finding_id`, `finding`, `run_timeout` (seconds, per run) | The [confirmation](confirm.md) report under `report` and its `reportPath`; only `verdict` `confirmed` means the reproduction failed before and passed after |
 | `scan_url` | `url`, optional `checks`, `max_links` (0–250, default 50), `baseline` (a previous result or a path to one), `weight_budget`, `viewport`, `screenshot`, `allow_private_network`, `storage_state_path` with `acknowledge_private_content: true`, `format` (`json`, `markdown`, `issue`), `min_severity`, `timeout` (seconds) | The [scan](cli.md) result: `score` with `scoring` (scale, severity weights, grade thresholds and grade), `findings` with stable `id`s, reproduction steps and fixes, `metrics`, and with a baseline a `delta` of `new`, `fixed` and `unchanged`. `markdown` and `issue` return the rendered text instead of JSON |
 | `inspect_page` | `url`, optional `include_accessibility_tree`, `include_forms`, `viewport`, `allow_private_network`, `storage_state_path` with `acknowledge_private_content: true`, `format` (`json`, `markdown`), `timeout` | Title, headings, forms and `interactive` controls with ranked `recommendedLocator`, `stability` and the page testability verdict; optionally Chromium's accessibility tree |
+| `inspect_screen` | `platform` (`android`), optional `serial` (required when several devices are attached), `package`, `format` (`json`, `markdown`), `timeout` (seconds) | The attached device's active window from one read-only `uiautomator dump`: `controls` ranked by handle (`stable`, `repeated`, `copy` with the `controls` alias, `none`), `testability` with the share of controls that have a unique test ID, and `warnings`. See [page checks](scan.md#test-ids-on-an-android-screen) |
 | `generate_playwright_repro` | `url`, optional `goal`, `finding` (a `scan_url` finding), `test_name`, `output_path`, `overwrite`, `sdk` | `filePath` (relative), `code` and `assumptions`. Nothing is run |
 
 Each result is the JSON text content of the tool result, with `version: 1`.

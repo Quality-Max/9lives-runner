@@ -23,12 +23,12 @@ func TestMCPListsTheBrowserTools(t *testing.T) {
 		tool := tool.(map[string]any)
 		names[tool["name"].(string)] = tool
 	}
-	for _, name := range []string{"run_test", "heal_test", "assess_test", "confirm_finding", "scan_url", "inspect_page", "generate_playwright_repro"} {
+	for _, name := range []string{"run_test", "heal_test", "assess_test", "confirm_finding", "scan_url", "inspect_page", "inspect_screen", "generate_playwright_repro"} {
 		if names[name] == nil {
 			t.Fatalf("tools/list lacks %s", name)
 		}
 	}
-	if names["inspect_page"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["generate_playwright_repro"]["annotations"].(map[string]any)["destructiveHint"] != true {
+	if names["inspect_page"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["inspect_screen"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["generate_playwright_repro"]["annotations"].(map[string]any)["destructiveHint"] != true {
 		t.Fatal("browser tool annotations changed")
 	}
 }
@@ -67,6 +67,11 @@ func TestMCPBrowserToolArgumentsAreRefusedBeforeABrowserStarts(t *testing.T) {
 		{"inspect_page", map[string]any{"url": page, "storage_state_path": "missing.json", "acknowledge_private_content": true}, "existing file"},
 		{"inspect_page", map[string]any{"url": page, "viewport": map[string]any{"width": 100, "height": 800}}, "viewport width"},
 		{"inspect_page", map[string]any{"url": page, "format": "issue"}, "format must be json or markdown"},
+		{"inspect_screen", map[string]any{}, "platform must be android"},
+		{"inspect_screen", map[string]any{"platform": "ios"}, "platform must be android"},
+		{"inspect_screen", map[string]any{"platform": "android", "format": "issue"}, "format must be json or markdown"},
+		{"inspect_screen", map[string]any{"platform": "android", "timeout": 0}, "timeout must be at least 1 second"},
+		{"inspect_screen", map[string]any{"platform": "android", "url": page}, "invalid arguments for inspect_screen"},
 		{"generate_playwright_repro", map[string]any{"url": page, "output_path": "../x.spec.ts"}, "escapes the project root"},
 	} {
 		payload, isError := h.toolCall(t, i+1, call.name, call.args)
@@ -287,7 +292,8 @@ func TestScanNamesTheInstallCommandForAMissingBrowser(t *testing.T) {
 
 // A fake adb on a fake SDK: one ready emulator whose active window has a
 // test ID, a copy-only switch and an unlabelled button.
-func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
+func fakeAndroidSDK(t *testing.T) {
+	t.Helper()
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node is not installed")
 	}
@@ -311,6 +317,10 @@ func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ANDROID_HOME", sdk)
+}
+
+func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
+	fakeAndroidSDK(t)
 	t.Chdir(t.TempDir())
 	var out, errOut bytes.Buffer
 	if code := run([]string{"inspect", "--android", "--format", "json"}, &out, &errOut); code != exitPassed {
@@ -337,5 +347,22 @@ func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
 	}
 	if code := run([]string{"inspect", "--android", "--serial", "other"}, &out, &errOut); code != exitIncomplete || !strings.Contains(errOut.String(), "no UI hierarchy") {
 		t.Fatalf("unknown serial exit %d: %s", code, errOut.String())
+	}
+}
+
+func TestMCPInspectScreenRanksAnAttachedAndroidScreen(t *testing.T) {
+	fakeAndroidSDK(t)
+	h := startMCP(t, t.TempDir())
+	payload, isError := h.toolCall(t, 1, "inspect_screen", map[string]any{"platform": "android", "package": "com.example.app"})
+	if isError {
+		t.Fatalf("inspect_screen: %v", payload)
+	}
+	testability := payload["testability"].(map[string]any)
+	if payload["version"] != float64(1) || payload["platform"] != "android" || testability["score"] != float64(33) || testability["stable"] != float64(1) {
+		t.Fatalf("inspect_screen result %v", payload)
+	}
+	payload, isError = h.toolCall(t, 2, "inspect_screen", map[string]any{"platform": "android", "serial": "other"})
+	if !isError || !strings.Contains(payload["error"].(string), "no UI hierarchy") {
+		t.Fatalf("unknown serial: %v", payload)
 	}
 }

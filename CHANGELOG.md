@@ -16,6 +16,9 @@ SDK versions.
   `uiautomator dump` over adb and changes nothing on the device. Checked
   against a Flutter app on a local API 35 emulator; iOS is not
   supported.
+- `9l mcp` gains `inspect_screen` (`platform: "android"`), the same
+  read-only screen ranking for coding agents, with optional `serial`,
+  `package`, `format` and `timeout`.
 
 ## 0.7.1 — 2026-11-23
 

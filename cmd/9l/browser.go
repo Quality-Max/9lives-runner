@@ -484,17 +484,9 @@ func inspectAndroidCommand(fs *flag.FlagSet, serial, appPackage, format, outPath
 		fmt.Fprintln(errOut, "9l: inspect cannot resolve its working directory")
 		return exitUsage
 	}
-	args := map[string]any{"timeoutMs": timeout.Milliseconds()}
-	if serial != "" {
-		args["serial"] = serial
-	}
-	if appPackage != "" {
-		args["package"] = appPackage
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	request := browsercheck.Request{Tool: "inspect_android", Args: args, Format: format}
-	response, err := browsercheck.Run(ctx, request, browsercheck.Options{Root: root, Timeout: timeout + 5*time.Second, Env: androidEnv})
+	response, err := runScreenCheck(ctx, screenArguments{Platform: "android", Serial: serial, Package: appPackage, Format: format}, root, timeout)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", browserFailure(err))
 		return exitIncomplete
@@ -503,6 +495,40 @@ func inspectAndroidCommand(fs *flag.FlagSet, serial, appPackage, format, outPath
 		return exitIncomplete
 	}
 	return exitPassed
+}
+
+// screenArguments are the inspect_screen tool's arguments and the
+// `9l inspect --android` flags.
+type screenArguments struct {
+	Platform string `json:"platform"`
+	Serial   string `json:"serial"`
+	Package  string `json:"package"`
+	Format   string `json:"format"`
+	Timeout  *int   `json:"timeout"`
+}
+
+// runScreenCheck reads one device screen through the helper. The helper
+// bounds each adb call by the same timeout; Go's bound adds a margin for
+// node's start and stops the whole process tree.
+func runScreenCheck(ctx context.Context, a screenArguments, root string, timeout time.Duration) (browsercheck.Response, error) {
+	if a.Platform != "android" {
+		return browsercheck.Response{}, toolError{"platform must be android"}
+	}
+	if a.Format == "" {
+		a.Format = "json"
+	}
+	if a.Format != "json" && a.Format != "markdown" {
+		return browsercheck.Response{}, toolError{"format must be json or markdown"}
+	}
+	args := map[string]any{"timeoutMs": timeout.Milliseconds()}
+	if a.Serial != "" {
+		args["serial"] = a.Serial
+	}
+	if a.Package != "" {
+		args["package"] = a.Package
+	}
+	request := browsercheck.Request{Tool: "inspect_android", Args: args, Format: a.Format}
+	return browsercheck.Run(ctx, request, browsercheck.Options{Root: root, Timeout: timeout + 5*time.Second, Env: androidEnv})
 }
 
 func runBrowserCheck(request browsercheck.Request, root string, timeout time.Duration, errOut io.Writer) (browsercheck.Response, int) {
@@ -541,7 +567,7 @@ func writeReport(response browsercheck.Response, asJSON bool, outPath string, ou
 	return nil
 }
 
-// browserTool runs scan_url, inspect_page or generate_playwright_repro.
+// browserTool runs scan_url, inspect_page, inspect_screen or generate_playwright_repro.
 // Files they read or write stay inside the working directory, even with
 // NINELIVES_MCP_UNRESTRICTED=1, because the helper confines them there too.
 func (s *mcpServer) browserTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
@@ -571,6 +597,29 @@ func (s *mcpServer) browserTool(ctx context.Context, name string, raw json.RawMe
 			return nil, toolError{"reproduction could not be written"}
 		}
 		return map[string]any{"version": MCPToolResultVersion, "filePath": result.FilePath, "code": result.Code, "assumptions": result.Assumptions}, nil
+	}
+	if name == "inspect_screen" {
+		var args screenArguments
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
+		}
+		timeout, err := pageArguments{Timeout: args.Timeout}.timeout(s.runTimeout)
+		if err != nil {
+			return nil, err
+		}
+		response, err := runScreenCheck(ctx, args, root, timeout)
+		var refused toolError
+		switch {
+		case errors.As(err, &refused):
+			return nil, refused
+		case err != nil && ctx.Err() != nil:
+			return nil, ctx.Err()
+		case err != nil:
+			return nil, toolError{browserFailure(err)}
+		case args.Format == "markdown":
+			return textResult(response.Text), nil
+		}
+		return withVersion(response.Result), nil
 	}
 	var request browsercheck.Request
 	var timeout time.Duration

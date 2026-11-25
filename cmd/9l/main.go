@@ -111,7 +111,7 @@ Usage:
   9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
   9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding,
-          # scan_url, inspect_page, generate_playwright_repro
+          # scan_url, inspect_page, inspect_screen, generate_playwright_repro
   9l scan <url> [--checks LIST] [--format markdown|json|issue] [--baseline FILE [--fail-on-new]] [--allow-private-network]
           # one Chromium page load: console, links, accessibility, vitals, SEO, headers, cookies, mixed content, weight
   9l inspect <url> [--format markdown|json] [--allow-private-network]  # ranked locators and testability
