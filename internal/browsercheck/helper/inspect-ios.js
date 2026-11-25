@@ -5,6 +5,7 @@ exports.parseWdaSource = parseWdaSource;
 exports.inspectIosSource = inspectIosSource;
 exports.renderIosInspectReport = renderIosInspectReport;
 exports.bootedSimulators = bootedSimulators;
+exports.boundedBody = boundedBody;
 exports.inspectIos = inspectIos;
 // `9l inspect --ios`: how testable the foreground app on a booted iOS
 // Simulator is. It starts the pinned Appium/XCUITest server, opens a session
@@ -94,9 +95,10 @@ function inspectIosSource(xml) {
     for (const [index, element] of all.entries()) {
         if (!isControl(index))
             continue;
-        // A row or wrapper without a name of its own around other controls: the
-        // controls inside are what a test reaches, and they are ranked.
-        if (!element.name && !element.label && holdsControl(index))
+        // An unnamed list row around other controls: the controls inside are
+        // what a test reaches, and they are ranked. Fields and buttons are
+        // always ranked, even when they hold an accessory such as a clear button.
+        if (element.type === 'XCUIElementTypeCell' && !element.name && !element.label && holdsControl(index))
             continue;
         // Only the label, a field's placeholder or an inner static text: a
         // field's value is what was typed and is never read.
@@ -151,11 +153,35 @@ async function freePort() {
     await new Promise((yes, no) => server.close((error) => (error ? no(error) : yes())));
     return port;
 }
+/** A response body read in chunks and cancelled once it passes the size
+ * limit, counted in bytes, so an oversized page source is never held whole. */
+async function boundedBody(response, limit = maxSourceBytes) {
+    const reader = response.body?.getReader();
+    if (!reader)
+        return '';
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done)
+            break;
+        size += value.byteLength;
+        if (size > limit) {
+            await reader.cancel();
+            throw new Error(`the page source exceeds ${Math.round(limit / (1 << 20))} MiB`);
+        }
+        chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+}
 /** Read the page source of a booted simulator's foreground app through a
  * private Appium server. The server's process group is stopped and its
  * scratch directory removed on every path. */
 async function appiumSource(udid, tools, wdaProducts, deadline) {
-    const directory = await (0, promises_1.mkdtemp)((0, node_path_1.join)((0, node_os_1.tmpdir)(), '9l-inspect-ios-'));
+    // Beneath the directory the 9l binary owns and removes after it has stopped
+    // this process tree, so a cancellation that skips `finally` leaves nothing.
+    const owned = process.env.NINELIVES_HELPER_SCRATCH;
+    const directory = await (0, promises_1.mkdtemp)((0, node_path_1.join)(owned && (0, node_path_1.isAbsolute)(owned) ? owned : (0, node_os_1.tmpdir)(), '9l-inspect-ios-'));
     let server;
     let base = '', session = '';
     const remaining = () => {
@@ -167,9 +193,7 @@ async function appiumSource(udid, tools, wdaProducts, deadline) {
     const call = async (path, method = 'GET', body) => {
         const response = await fetch(base + path, { method, redirect: 'error', signal: AbortSignal.timeout(remaining()),
             headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-        const text = await response.text();
-        if (text.length > maxSourceBytes)
-            throw new Error('the page source exceeds 8 MiB');
+        const text = await boundedBody(response);
         const data = JSON.parse(text);
         if (!response.ok || data.value?.error)
             throw new Error(`Appium refused ${method} ${path.replace(/\/session\/[^/]+/, '/session')}: ${String(data.value?.message ?? response.status).split('\n')[0].slice(0, 300)}`);
@@ -221,9 +245,10 @@ async function appiumSource(udid, tools, wdaProducts, deadline) {
         return source;
     }
     finally {
+        // Bounded well inside the margin the 9l binary leaves after the deadline.
         if (session) {
             try {
-                await fetch(`${base}/session/${session}`, { method: 'DELETE', signal: AbortSignal.timeout(15_000) });
+                await fetch(`${base}/session/${session}`, { method: 'DELETE', signal: AbortSignal.timeout(2_000) });
             }
             catch { /* the server is stopped next */ }
         }

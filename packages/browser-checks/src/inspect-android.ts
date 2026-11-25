@@ -124,10 +124,11 @@ export function inspectAndroidHierarchy(xml: string, options: { package?: string
   const controls: AndroidControlReport[] = [];
   for (const [index, node] of all.entries()) {
     if (!interactive(node) || (options.package && node.package !== options.package)) continue;
-    // A wrapper without an ID or label of its own around other controls: the
-    // controls inside are what a test reaches, and they are ranked.
-    if (!node.resourceId && !node.text && !node.description && !node.hint && holdsControl(index)) continue;
     const inner = innerLabels(index);
+    // A wrapper with no ID, no label and no caption of its own around other
+    // controls: the controls inside are what a test reaches, and they are
+    // ranked. A row with a caption beside its switch is a control itself.
+    if (!node.resourceId && !node.text && !node.description && !node.hint && !inner.length && holdsControl(index)) continue;
     // A field's text is what was typed into it, possibly a password: never
     // a label, never reported.
     const ownText = editableClasses.has(node.className) || node.password ? '' : node.text;

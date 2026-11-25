@@ -140,3 +140,18 @@ test("a field's typed text is never a label or an alias, and long labels are not
   assert.deepEqual(result.controls.map(control => control.stability), ['none', 'none', 'copy']);
   assert.match(result.warnings.join(' '), /password field/);
 });
+
+test('a row with its own caption beside a switch is ranked with the switch; an uncaptioned wrapper is not', () => {
+  const result = inspectAndroidHierarchy(dump(
+    node({ clickable: 'true', class: 'android.widget.LinearLayout' }, [
+      node({ text: 'Push-Benachrichtigungen', class: 'android.widget.TextView' }),
+      node({ 'resource-id': 'push_switch', class: 'android.widget.Switch', checkable: 'true', clickable: 'true' }),
+    ]),
+    node({ clickable: 'true', class: 'android.widget.FrameLayout' }, [
+      node({ 'resource-id': 'save', class: 'android.widget.Button', clickable: 'true', text: 'Speichern' }),
+    ]),
+  ));
+  assert.deepEqual(result.controls.map(control => [control.stability, control.label]),
+    [['copy', 'Push-Benachrichtigungen'], ['stable', ''], ['stable', 'Speichern']]);
+  assert.equal(result.testability.score, 67);
+});

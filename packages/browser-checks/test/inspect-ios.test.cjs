@@ -111,3 +111,29 @@ test('inspectIos checks the platform, the device choice and the pinned tools bef
     fs.rmSync(tools, { recursive: true, force: true });
   }
 });
+
+test('a field holding a clear button is ranked; only an unnamed list row is skipped as a wrapper', () => {
+  const result = inspectIosSource(source(
+    element('SearchField', { placeholderValue: 'Suchen' }, [element('Button', { name: 'clear_search', label: 'Clear text' })]),
+    element('Cell', {}, [element('Button', { name: 'general', label: 'General' })]),
+  ));
+  assert.deepEqual(result.controls.map(control => [control.stability, control.className, control.label]), [
+    ['copy', 'XCUIElementTypeSearchField', 'Suchen'],
+    ['stable', 'XCUIElementTypeButton', 'Clear text'],
+    ['stable', 'XCUIElementTypeButton', 'General'],
+  ]);
+});
+
+test('a response body is counted in bytes and cancelled past its limit', async () => {
+  const { boundedBody } = require('../dist/inspect-ios.js');
+  let cancelled = false, pulls = 0;
+  const stream = () => new ReadableStream({
+    pull(controller) { pulls++; controller.enqueue(new TextEncoder().encode('é'.repeat(4))); if (pulls > 1000) controller.close(); },
+    cancel() { cancelled = true; },
+  });
+  // Four characters are eight bytes: past a six-byte limit on the first chunk.
+  await assert.rejects(boundedBody(new Response(stream()), 6), /exceeds/);
+  assert.equal(cancelled, true);
+  assert.ok(pulls < 5, `read ${pulls} chunks after the limit`);
+  assert.equal(await boundedBody(new Response('{"value":"é"}'), 64), '{"value":"é"}');
+});
