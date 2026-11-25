@@ -9,7 +9,7 @@ export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSe
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
-  'foreground', 'device-serial', 'fingerprint'] as const;
+  'foreground', 'device-serial', 'fingerprint', 'biometric'] as const;
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
 export type TargetPoint = {x: number; y: number};
@@ -21,6 +21,9 @@ export type TargetContext = {signal: AbortSignal; deadlineMs: number};
  * content-invalid; on the web aria-invalid or failed constraint validation). */
 export type TargetState = 'enabled' | 'checked' | 'invalid';
 export type TargetForeground = 'app' | 'foreign' | 'none';
+/** What a person presents at a biometric prompt: the enrolled face or
+ * finger, or one that is not enrolled. */
+export type BiometricOutcome = 'match' | 'nomatch';
 /** Per-call bound, capped by Go's worker deadline. */
 export type TargetOperationOptions = {timeoutMs?: number};
 
@@ -78,6 +81,10 @@ export interface TargetDriver extends TargetIdentity {
    * deliberately unenrolled) finger. Owned emulators with declared
    * biometrics only. */
   fingerprint?(finger: number, context: TargetContext): Promise<void>;
+  /** Present a matching or non-matching biometric at the system prompt:
+   * Face ID or Touch ID on an owned Simulator, enrolled finger 1 or
+   * unenrolled finger 2 on an owned emulator. Declared biometrics only. */
+  biometric?(outcome: BiometricOutcome, context: TargetContext): Promise<void>;
   /** SHA-256 of a screenshot of the target display, computed in memory. The
    * image itself is never returned, written or attached. */
   screenDigest?(context: TargetContext): Promise<string>;
@@ -379,7 +386,7 @@ export class TargetApp {
     }
   }
 
-  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint'>(name: K): NonNullable<TargetDriver[K]> {
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint' | 'biometric'>(name: K): NonNullable<TargetDriver[K]> {
     const method = this.driver[name];
     if (typeof method !== 'function') throw stopped('unsupported_operation');
     return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
@@ -450,6 +457,20 @@ export class TargetApp {
     return this.perform('fingerprint', async context => {
       if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw stopped('invalid_value');
       await this.optional('fingerprint')(finger, context);
+    }, options.timeoutMs);
+  }
+
+  /** Present the enrolled face or finger (`match`), or one that is not
+   * enrolled (`nomatch`), at the system's biometric prompt, as a person
+   * would. Face ID or Touch ID on an owned iOS Simulator and finger 1 or 2
+   * on an owned Android emulator, where the driver declares biometrics;
+   * elsewhere this fails as unsupported_operation before touching the
+   * device. Call it once the prompt is on screen. Recorded as an executed
+   * action, never an assertion: the sign-in it leads to still needs one. */
+  biometric(outcome: BiometricOutcome, options: TargetOperationOptions = {}) {
+    return this.perform('biometric', async context => {
+      if (outcome !== 'match' && outcome !== 'nomatch') throw stopped('invalid_value');
+      await this.optional('biometric')(outcome, context);
     }, options.timeoutMs);
   }
 

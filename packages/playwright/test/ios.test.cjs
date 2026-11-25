@@ -82,6 +82,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
+  let bio=false, grant='2', screens=['a','b','b'], screenCalls=0, grantSessions=[];
   let owned, staged, installedApp, tamper=false, bundleVersion='1', elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
   const udid='12345678-1234-1234-1234-123456789abc';
   const c=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+10000});
@@ -104,7 +105,12 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     cp.execFile=(file,args,opts,callback)=>{
       commands.push(args);
       let output='';
-      if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaProducts,wdaRunner,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:bundleVersion})[args[1].slice(7)];
+      if (file.endsWith('sqlite3')) {
+        assert.equal(args[0],path.join(dir,'devices',udid,'data','Library/TCC/TCC.db'));
+        if(args[1].startsWith('INSERT')) grantSessions.push(requests.filter(r=>r.pathname.endsWith('/session')).length);
+        output=args[1].startsWith('SELECT')?grant:'';
+      }
+      else if (file.endsWith('PlistBuddy')) output=({CFBundleIdentifier:args[2]===path.join(wdaProducts,wdaRunner,'Info.plist')?wdaBundle:runtime.bundleId,DTPlatformName:'iphonesimulator',CFBundleShortVersionString:'1.0',CFBundleVersion:bundleVersion})[args[1].slice(7)];
       else if (file.endsWith('xcodebuild')) output='Xcode 16.4\nBuild version synthetic';
       else if (args[1]==='list'&&args[2]==='runtimes') output=JSON.stringify({runtimes:[{identifier:runtime.runtime,isAvailable:true,version:'18.5'}]});
       else if (args[1]==='create') { owned={name:args[2],udid,deviceTypeIdentifier:runtime.deviceType,state:'Shutdown'};output=createOutput??udid; }
@@ -123,8 +129,14 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
         owned=undefined;
       }
       else if (args[1]==='boot') owned.state='Booted';
+      else if (args[1]==='getenv'&&bio&&args[3]==='HOME') output=path.join(dir,'devices',udid,'data');
       else if (args[1]==='getenv') {assert.deepEqual(args,['simctl','getenv',udid,'SIMULATOR_ARCHS']);output=architectures;}
+      else if (args[1]==='spawn'&&bio) assert.equal(args[2],udid);
       else if (args[1]==='spawn') throw Error('Simulator runtime has no uname executable');
+      else if (args[1]==='io') {
+        assert.deepEqual(args.slice(2,5),[udid,'screenshot','--type=png']);
+        fs.writeFileSync(args[5],screens[Math.min(screenCalls++,screens.length-1)]);
+      }
       else if (args[1]==='install') {
         // Like the Simulator installer: same names and bytes in a container of
         // its own, with every file but the main executable rewritten to 0644.
@@ -262,6 +274,43 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     await driver.close();fs.rmSync(link);assert.equal(commands.some(args=>args[1]==='create'),false);
     assert.deepEqual(records(),[]);
     assert.throws(()=>iosTargetDriver({...opts,wdaProducts:'relative/Products'}),/invalid_options/);
+    // Biometrics: enrollment and Face ID permission are set on the owned
+    // device after install and before the session launches the app, and
+    // again after reset reinstalls it; the face is presented once the
+    // display has settled, through both sensor notifications.
+    assert.equal(iosTargetDriver(opts).biometric,undefined,'no biometrics without the opt-in');
+    for (const biometrics of [{enrolled:'yes'},{enrolled:true,face:1},null,[]]) assert.throws(()=>iosTargetDriver({...opts,biometrics}),/invalid_options/);
+    bio=true;commands.length=0;grantSessions=[];
+    const notifications=()=>commands.filter(args=>args[1]==='spawn').map(args=>args.slice(3).join(' '));
+    const sessionsBefore=requests.filter(r=>r.pathname.endsWith('/session')).length;
+    driver=iosTargetDriver({...opts,biometrics:{enrolled:true}});await driver.open(c());
+    assert.deepEqual(notifications(),['notifyutil -s com.apple.BiometricKit.enrollmentChanged 1','notifyutil -p com.apple.BiometricKit.enrollmentChanged','launchctl stop com.apple.tccd']);
+    assert.deepEqual(grantSessions,[sessionsBefore],'permission granted before the session launched the app');
+    const insert=commands.find(args=>args[1]?.startsWith?.('INSERT'));
+    assert.match(insert[1],/VALUES \('kTCCServiceFaceID', 'dev\.ninelives\.fixture', 0, 2, 2, 1\)$/);
+    commands.length=0;
+    await driver.biometric('match',c());
+    assert.equal(screenCalls,3,'waited until two captures were equal');
+    assert.deepEqual(notifications(),['notifyutil -p com.apple.BiometricKit_Sim.pearl.match','notifyutil -p com.apple.BiometricKit_Sim.fingerTouch.match']);
+    assert.deepEqual(fs.readdirSync(path.dirname(sessionCaps()['appium:derivedDataPath'])).filter(name=>name.startsWith('display-')),[],'no capture is kept');
+    commands.length=0;screenCalls=0;await driver.biometric('nomatch',c());
+    assert.deepEqual(notifications().slice(-2),['notifyutil -p com.apple.BiometricKit_Sim.pearl.nomatch','notifyutil -p com.apple.BiometricKit_Sim.fingerTouch.nomatch']);
+    await assert.rejects(driver.biometric('maybe',c()),/invalid_value/);
+    // A display that never settles is refused within the bound; nothing is sent.
+    commands.length=0;screens=['a','b'];screenCalls=0;let flip=0;
+    const changing=screens;screens=new Proxy(changing,{get:(t,k)=>k==='length'?Infinity:typeof k==='string'&&/^\d+$/.test(k)?String(flip++):t[k]});
+    await assert.rejects(driver.biometric('match',{signal:new AbortController().signal,deadlineMs:Date.now()+2500}),/display_not_settled/);
+    assert.deepEqual(notifications(),[]);screens=['a','a'];
+    // reset reinstalls the app and grants again before activating it.
+    grantSessions=[];await driver.reset(c());assert.equal(grantSessions.length,1);
+    await driver.close();assert.equal(owned,undefined);
+    // Without enrollment, nothing is granted; a grant that does not read back fails open at install.
+    commands.length=0;driver=iosTargetDriver({...opts,biometrics:{enrolled:false}});await driver.open(c());
+    assert.deepEqual(notifications(),['notifyutil -s com.apple.BiometricKit.enrollmentChanged 0','notifyutil -p com.apple.BiometricKit.enrollmentChanged']);
+    assert.equal(commands.some(args=>String(args[1]).startsWith('INSERT')),false);await driver.close();
+    grant='0';driver=iosTargetDriver({...opts,biometrics:{enrolled:true}});
+    await assert.rejects(driver.open(c()),e=>e.record?.phase==='install'&&e.cause?.message==='9lives iOS: open_install');
+    await driver.close();assert.equal(owned,undefined);
   } finally {
     cp.execFile=original.execFile;cp.spawn=original.spawn;global.fetch=original.fetch;process.kill=original.kill;
     Object.defineProperty(process,'platform',original.platform);

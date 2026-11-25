@@ -222,6 +222,12 @@ assert.equal(foreign.code, 0, 'foreign: a system window in front is read, and th
 const fingerprint = invoke('fingerprint', {targets: ['android-fake:finance'], grep: 'fingerprint signs in', file: operations});
 assert.equal(fingerprint.code, 0, 'fingerprint: the enrolled finger signs in on the native target');
 assert.equal(fingerprint.summary.receipts[0].targetAssertions, 1, 'fingerprint: the touch is an action, the sign-in an assertion');
+const biometric = invoke('biometric', {targets: ['android-fake:finance'], grep: 'biometric signs in', file: operations});
+assert.equal(biometric.code, 0, 'biometric: the enrolled face or finger signs in on the native target');
+assert.equal(biometric.summary.receipts[0].targetAssertions, 1, 'biometric: the presentations are actions, the sign-in an assertion');
+const webBiometric = invoke('biometric-web', {targets: ['web:finance'], grep: 'biometric signs in', file: operations, extra: ['--failure-details']});
+assert.notEqual(webBiometric.code, 0, 'biometric-web: the web has no biometric prompt');
+assert(webBiometric.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'biometric-web: no prompt, a stable reason');
 const webFingerprint = invoke('fingerprint-web', {targets: ['web:finance'], grep: 'fingerprint signs in', file: operations, extra: ['--failure-details']});
 assert.notEqual(webFingerprint.code, 0);
 assert(webFingerprint.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'fingerprint-web: no sensor, a stable reason');

@@ -26,12 +26,12 @@ Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
 `artifact-metadata`, `terminal-outcomes`, `declared-outcomes` (in that order), then validates the
 execution evidence. It does not compare package versions or enforce a
-same-minor rule. The shared target contract is `9l.target/4`; older target
+same-minor rule. The shared target contract is `9l.target/5`; older target
 contracts are rejected at the handshake. Mixed package versions are unqualified even when
 their contracts match; update both distributions together before diagnosing
 a bridge failure. See the [SDK contract](sdk-bridge.md).
 
-An experimental [shared target contract](targets.md) (`9l.target/4`)
+An experimental [shared target contract](targets.md) (`9l.target/5`)
 dispatches one deterministic scenario to web and to native targets with the
 same `app` fixture. The experimental [Android target](android-driver.md)
 drives an owned local emulator, or an installed app on an explicitly selected
@@ -49,8 +49,10 @@ phone, through Appium and UiAutomator2. It supports:
   step, such as a code the app displays; recorded as an action, and the
   text is never recorded.
 - **Fingerprint sign-in (opt-in):** on an owned emulator booted from a
-  prepared snapshot, `fingerprint()` touches the virtual sensor; the driver
-  never sees a PIN, and phones have no such operation.
+  prepared snapshot, `fingerprint()` or the portable `biometric()` touches
+  the virtual sensor; the driver never sees a PIN, and phones have no such
+  operation. On an owned iOS Simulator, `biometric()` presents Face ID or
+  Touch ID ([iOS biometrics](ios-driver.md#biometrics-on-the-owned-simulator)).
 - **Setup classification:** a locked device, a screen that is off, state a
   previous test left behind, or a posture, width or build that doesn't match
   is reported as a setup problem, not an application failure.

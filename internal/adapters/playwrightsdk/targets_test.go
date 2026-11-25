@@ -170,14 +170,14 @@ func TestTargetTextReadIsAnAction(t *testing.T) {
 	if _, err := New().ValidateAttempt(stream(withRead("assertion", "passed")), identity); err == nil {
 		t.Fatal("a text read was accepted as an assertion")
 	}
-	if TargetVersion != "9l.target/4" {
+	if TargetVersion != "9l.target/5" {
 		t.Fatalf("target contract %s", TargetVersion)
 	}
 	old := targetFrames()
-	old[0]["targetVersion"] = "9l.target/3"
-	old[0]["capabilities"] = []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes", "9l.target/3"}
+	old[0]["targetVersion"] = "9l.target/4"
+	old[0]["capabilities"] = []string{"steps", "artifact-metadata", "terminal-outcomes", "declared-outcomes", "9l.target/4"}
 	if _, err := New().ValidateAttempt(stream(old), identity); err == nil {
-		t.Fatal("a 9l.target/3 stream was accepted")
+		t.Fatal("a 9l.target/4 stream was accepted")
 	}
 	// A read that failed on an absent control names it, like other control operations.
 	failed := withRead("action", "failed")

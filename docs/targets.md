@@ -68,6 +68,15 @@ which are portable, and the Android-only
 `fingerprint(finger, {timeoutMs}?)` (a touch of an owned emulator's virtual
 fingerprint sensor with finger 1-10, only where the driver declares
 biometrics; see [biometrics](android-driver.md#biometrics-on-an-owned-emulator)).
+`biometric('match' | 'nomatch', {timeoutMs}?)` is the portable form: it
+presents the enrolled face or finger, or one that is not enrolled, at the
+system's biometric prompt. It is offered where the driver declares
+biometrics, on an owned iOS Simulator (Face ID or Touch ID; see
+[iOS biometrics](ios-driver.md#biometrics-on-the-owned-simulator)) and on an
+owned Android emulator (finger 1 or 2), and fails as `unsupported_operation`
+elsewhere, including the web. Call it once the prompt is on screen. Both are
+recorded as executed actions, never as assertions, so a biometric sign-in
+still needs an assertion.
 Observed controls also expose `isVisible({timeoutMs}?)`, a query for a
 screen that may or may not appear (an onboarding sheet, a permission
 prompt): without `timeoutMs` it makes one observation, and with it it polls
@@ -139,7 +148,7 @@ ordinary Playwright owns the page. `native(target)` synchronously constructs a
 Native fixture resolution has no implicit browser, context or page dependency.
 `page` and ordinary `expect` remain available to existing web tests.
 
-Drivers declare `9l.target/4`, the selected kind/app alias, and the exact ordered
+Drivers declare `9l.target/5`, the selected kind/app alias, and the exact ordered
 `targetCapabilities`. They observe at most two handles for a test ID: zero is
 missing, two is ambiguous. Mutations require exactly one observed handle and
 never silently select the first match. An action on a control (`tap`, `fill`,
@@ -187,7 +196,7 @@ close promise.
 
 ## Evidence and limits
 
-The existing `9l.engine/1` stream negotiates the additional `9l.target/4`
+The existing `9l.engine/1` stream negotiates the additional `9l.target/5`
 capability. Version 2 (0.6.0-beta.2) added the native operations, the
 `target_setup` and `target_diagnostic` frames and the Android runtime's display,
 posture and build identity. Version 3 adds the `query-visible` and

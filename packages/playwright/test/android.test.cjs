@@ -1078,6 +1078,10 @@ test('biometrics are declared on an owned emulator only and offer the sensor onl
   assert.equal(typeof androidTargetDriver({...owned, biometrics: {snapshot: '9l-biometric'}}).fingerprint, 'function');
   assert.equal(androidTargetDriver(owned).fingerprint, undefined, 'no sensor without the opt-in');
   assert.equal(androidTargetDriver(phone).fingerprint, undefined, 'no sensor on a phone');
+  // The portable biometric() is offered exactly where the sensor is.
+  assert.equal(typeof androidTargetDriver({...owned, biometrics: {snapshot: '9l-biometric'}}).biometric, 'function');
+  assert.equal(androidTargetDriver(owned).biometric, undefined, 'no biometric without the opt-in');
+  assert.equal(androidTargetDriver(phone).biometric, undefined, 'no biometric on a phone');
   for (const biometrics of [{snapshot: ''}, {snapshot: 'a b'}, {snapshot: '../x'}, {snapshot: '..'}, {snapshot: '.'}, {snapshot: '-x'}, {snapshot: 'x'.repeat(65)}, {snapshot: '9l', pin: '1111'}, {}, true, null]) {
     assert.throws(() => androidTargetDriver({...owned, biometrics}), /invalid_configuration/, JSON.stringify(biometrics));
   }

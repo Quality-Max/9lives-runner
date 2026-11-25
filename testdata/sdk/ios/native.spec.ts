@@ -7,7 +7,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {resolve, join} from 'node:path';
 
 const mode = process.env.NINELIVES_IOS_CASE ?? 'healthy';
-const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : 'healthy';
+const biometric = ['biometric', 'biometric-nomatch', 'biometric-unenrolled'].includes(mode);
+const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : biometric ? 'biometric' : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/ios-fixture/${variant}/build.json`), 'utf8'));
 const wda = JSON.parse(readFileSync(resolve(__dirname, '../../../.context/ios-wda/build.json'), 'utf8'));
 // The smoke names one installed runtime explicitly; nothing selects "latest".
@@ -26,6 +27,7 @@ const test = createTargetTest({native: target => {
     runtime: mode === 'unavailable' ? 'com.apple.CoreSimulator.SimRuntime.iOS-0-0' : `com.apple.CoreSimulator.SimRuntime.iOS-${os.replaceAll('.', '-')}`,
     deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
     toolsRoot: resolve(__dirname, '../../../tools/ios'), wdaProducts: wda.products,
+    ...(biometric ? {biometrics: {enrolled: mode !== 'biometric-unenrolled'}} : {}),
   });
   const open = driver.open.bind(driver);
   driver.open = async context => {
@@ -137,5 +139,27 @@ test('iOS transfer checks the exact native receipt', async ({app}) => {
         facts.deviceStopped = !Object.values(devices).some(list => (list as {udid: string}[]).some(d => d.udid === udid));
       }
     } finally { childProcess.execFile = originalExecFile;persistProbe(); }
+  }
+});
+
+// A sign-in behind the system Face ID prompt on an owned simulator: the
+// driver enrolls Face ID and allows it for the app before launch, the test
+// presents the enrolled face and the app reports the sign-in.
+// biometric-nomatch presents a face that is not enrolled and
+// biometric-unenrolled runs without enrollment; both must fail the assertion.
+test('iOS biometrics: Face ID at the system prompt', async ({app}) => {
+  try {
+    await app.open({timeoutMs: 300000});
+    await app.getByTestId('sign-in').tap();
+    if (mode !== 'biometric-unenrolled') await app.getByTestId('auth.status').toHaveText('Prompting', 10000);
+    await app.biometric(mode === 'biometric-nomatch' ? 'nomatch' : 'match', {timeoutMs: 30000});
+    // @9l-outcome biometric-sign-in
+    await app.getByTestId('auth.status').toHaveText('Authenticated', mode === 'biometric' ? 15000 : 5000);
+  } catch (error) {
+    const reason = (error as {reason?: unknown}).reason;
+    if (typeof reason === 'string' && /^[a-z_]{1,64}$/.test(reason)) facts.stopReason = reason;
+    throw error;
+  } finally {
+    try { await app.close(); } finally { persistProbe(); }
   }
 });

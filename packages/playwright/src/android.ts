@@ -6,7 +6,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation} from './targets';
+import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation, type BiometricOutcome} from './targets';
 import {activeDisplay, deviceStatePattern, emulatorVersion, displayPattern, imePattern, packagePattern, parseDeviceState, parseDisplays, parseIme, parseLogicalDisplays, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
@@ -932,29 +932,33 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     // The emulator's virtual sensor through its console: a touch, a short
     // hold and a lift. Present only on an owned emulator with biometrics.
     // The console exits 0 even when it refuses a command and prints `KO`.
-    ...(biometrics && !physical ? {fingerprint: async (finger: number, c: TargetContext) => {
-      disarm();
-      check(c);
-      if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw failure('invalid_value');
-      // A prompt drops a touch that arrives while it is still animating in,
-      // though the sensor service already reports the session: wait, within
-      // the bound, until two captures 250 ms apart are equal. The touch is
-      // made once; it is never repeated.
-      for (let previous = ''; ;) {
-        if (Date.now() + 1500 >= c.deadlineMs) throw failure('display_not_settled');
-        const current = await screenDigest(c);
-        if (current === previous) break;
-        previous = current;
-        await delay(250, undefined, {signal: c.signal});
-      }
-      const sensor = async (action: 'touch' | 'remove') => {
-        if (/(^|\n)KO\b/.test(await command(adb, ['-s', serial, 'emu', 'finger', action, String(finger)], c, env, 'both'))) throw failure('fingerprint_failed');
+    ...(biometrics && !physical ? (() => {
+      const touch = async (finger: number, c: TargetContext) => {
+        disarm();
+        check(c);
+        if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw failure('invalid_value');
+        // A prompt drops a touch that arrives while it is still animating in,
+        // though the sensor service already reports the session: wait, within
+        // the bound, until two captures 250 ms apart are equal. The touch is
+        // made once; it is never repeated.
+        for (let previous = ''; ;) {
+          if (Date.now() + 1500 >= c.deadlineMs) throw failure('display_not_settled');
+          const current = await screenDigest(c);
+          if (current === previous) break;
+          previous = current;
+          await delay(250, undefined, {signal: c.signal});
+        }
+        const sensor = async (action: 'touch' | 'remove') => {
+          if (/(^|\n)KO\b/.test(await command(adb, ['-s', serial, 'emu', 'finger', action, String(finger)], c, env, 'both'))) throw failure('fingerprint_failed');
+        };
+        await sensor('touch');
+        // Held about as long as a person rests a finger on the sensor.
+        await delay(1000, undefined, {signal: c.signal});
+        await sensor('remove');
       };
-      await sensor('touch');
-      // Held about as long as a person rests a finger on the sensor.
-      await delay(1000, undefined, {signal: c.signal});
-      await sensor('remove');
-    }} : {}),
+      // Finger 1 is the one the prepared snapshot enrolled; finger 2 is not enrolled.
+      return {fingerprint: touch, biometric: (outcome: BiometricOutcome, c: TargetContext) => touch(outcome === 'match' ? 1 : 2, c)};
+    })() : {}),
     // After a completed assertion failure: did the phone become unavailable?
     // Read-only; an owned emulator cannot lock itself. With diagnostics, a
     // hidden assertion that failed although the app lost a window since the
