@@ -1,7 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.meter = meter;
 exports.renderIssues = renderIssues;
 exports.renderReport = renderReport;
+exports.cell = cell;
+exports.codeSpan = codeSpan;
 exports.renderInspectReport = renderInspectReport;
 const common_1 = require("./common");
 const signals_1 = require("./checks/signals");

@@ -388,6 +388,13 @@
   `--accessibility-tree` adds Chromium's accessibility tree. A control is
   quoted by its accessible name only; a `name` attribute is shown as
   `[name=…] (no accessible name)`.
+- `9l inspect --android [--serial SERIAL] [--package PKG]`: the controls
+  on the active window of an attached Android device, ranked by the handle
+  the Android driver would find them with (a unique resource ID, a shared
+  ID, a copy-only `controls` alias or coordinates only), and the share with
+  a unique test ID, from one read-only `uiautomator dump`. `--serial` is
+  required when several devices are attached; `--package` keeps one app's
+  controls. The page flags do not apply. See [page checks](scan.md#test-ids-on-an-android-screen).
 
 Both take `--viewport WIDTHxHEIGHT` (default 1366x900) and, for a page behind
 a login, `--storage-state <file>` with `--acknowledge-private-content`: the

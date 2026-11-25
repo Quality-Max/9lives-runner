@@ -404,10 +404,20 @@ func inspectCommand(args []string, out, errOut io.Writer) int {
 	format := fs.String("format", "markdown", "markdown or json")
 	outPath := fs.String("out", "", "write the report to this file instead of stdout")
 	tree := fs.Bool("accessibility-tree", false, "include Chromium's accessibility tree")
-	valued := map[string]bool{"--format": true, "--out": true}
+	android := fs.Bool("android", false, "inspect the screen of an attached Android device instead of a URL")
+	serial := fs.String("serial", "", "with --android, the adb serial of the device (required when several are attached)")
+	appPackage := fs.String("package", "", "with --android, report only controls of this package")
+	valued := map[string]bool{"--format": true, "--out": true, "--serial": true, "--package": true}
 	page := addPageFlags(fs, valued)
 	timeout := page.timeout
 	if fs.Parse(flagsFirst(args, valued)) != nil {
+		return exitUsage
+	}
+	if *android {
+		return inspectAndroidCommand(fs, *serial, *appPackage, *format, *outPath, *timeout, out, errOut)
+	}
+	if *serial != "" || *appPackage != "" {
+		fmt.Fprintln(errOut, "9l: --serial and --package apply only with --android")
 		return exitUsage
 	}
 	if fs.NArg() != 1 || *timeout <= 0 {
@@ -438,6 +448,58 @@ func inspectCommand(args []string, out, errOut io.Writer) int {
 		return code
 	}
 	if writeReport(response, *format == "json", *outPath, out, errOut) != nil {
+		return exitIncomplete
+	}
+	return exitPassed
+}
+
+// androidEnv names the variables the Android inspection needs to find adb
+// and its server, on top of the helper's own allowlist.
+var androidEnv = []string{"ANDROID_HOME", "ANDROID_SDK_ROOT", "HOMEBREW_PREFIX", "ANDROID_ADB_SERVER_PORT"}
+
+// inspectAndroidCommand ranks the controls of an attached Android device's
+// active window by one read-only uiautomator dump.
+func inspectAndroidCommand(fs *flag.FlagSet, serial, appPackage, format, outPath string, timeout time.Duration, out, errOut io.Writer) int {
+	if fs.NArg() != 0 || timeout <= 0 {
+		fmt.Fprintln(errOut, "9l: inspect --android takes no URL and a positive --timeout")
+		return exitUsage
+	}
+	var pageOnly []string
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "accessibility-tree", "allow-private-network", "storage-state", "acknowledge-private-content", "viewport":
+			pageOnly = append(pageOnly, "--"+f.Name)
+		}
+	})
+	if len(pageOnly) > 0 {
+		fmt.Fprintf(errOut, "9l: %s: only for a URL, not with --android\n", strings.Join(pageOnly, ", "))
+		return exitUsage
+	}
+	if format != "markdown" && format != "json" {
+		fmt.Fprintln(errOut, "9l: --format must be markdown or json")
+		return exitUsage
+	}
+	root, err := workingRoot()
+	if err != nil {
+		fmt.Fprintln(errOut, "9l: inspect cannot resolve its working directory")
+		return exitUsage
+	}
+	args := map[string]any{"timeoutMs": timeout.Milliseconds()}
+	if serial != "" {
+		args["serial"] = serial
+	}
+	if appPackage != "" {
+		args["package"] = appPackage
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	request := browsercheck.Request{Tool: "inspect_android", Args: args, Format: format}
+	response, err := browsercheck.Run(ctx, request, browsercheck.Options{Root: root, Timeout: timeout + 5*time.Second, Env: androidEnv})
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", browserFailure(err))
+		return exitIncomplete
+	}
+	if writeReport(response, format == "json", outPath, out, errOut) != nil {
 		return exitIncomplete
 	}
 	return exitPassed
