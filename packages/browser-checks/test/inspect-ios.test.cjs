@@ -20,16 +20,16 @@ test('the iOS tool pins match the iOS driver', () => {
 
 test('an identifier differing from the label is stable; an identifier equal to it, or none, is label only', () => {
   const result = inspectIosSource(source(
-    element('Button', { name: 'session_join', label: 'Beitreten' }),
-    element('Button', { name: 'Absagen', label: 'Absagen' }),
-    element('Switch', { name: '', label: 'Push', value: '1' }),
+    element('Button', { name: 'booking_join', label: 'Join' }),
+    element('Button', { name: 'Cancel', label: 'Cancel' }),
+    element('Switch', { name: '', label: 'Alerts', value: '1' }),
   ));
   assert.deepEqual(result.apps, ['Demo']);
-  assert.equal(byLabel(result, 'Beitreten').stability, 'stable');
-  assert.equal(byLabel(result, 'Beitreten').locator, 'app.getByTestId("session_join")');
-  assert.equal(byLabel(result, 'Absagen').stability, 'copy');
-  assert.match(byLabel(result, 'Absagen').note, /matches identifiers only/);
-  assert.equal(byLabel(result, 'Push').locator, undefined);
+  assert.equal(byLabel(result, 'Join').stability, 'stable');
+  assert.equal(byLabel(result, 'Join').locator, 'app.getByTestId("booking_join")');
+  assert.equal(byLabel(result, 'Cancel').stability, 'copy');
+  assert.match(byLabel(result, 'Cancel').note, /matches identifiers only/);
+  assert.equal(byLabel(result, 'Alerts').locator, undefined);
   assert.deepEqual(result.testability, {
     controls: 3, stable: 1, repeated: 0, copy: 2, none: 0, score: 33,
     note: '2 of 3 controls have no unique test ID: 2 have only a label, which the 9l iOS driver cannot match.',
@@ -37,10 +37,10 @@ test('an identifier differing from the label is stable; an identifier equal to i
 });
 
 test('an identifier on every list item is repeated', () => {
-  const card = title => element('Cell', { name: 'session_card', label: title }, [element('Button', { name: 'session_join', label: 'Beitreten' })]);
-  const result = inspectIosSource(source(card('Yoga'), card('Pilates')));
+  const card = title => element('Cell', { name: 'booking_card', label: title }, [element('Button', { name: 'booking_join', label: 'Join' })]);
+  const result = inspectIosSource(source(card('Morning'), card('Evening')));
   assert.deepEqual(result.controls.map(control => control.stability), ['repeated', 'repeated', 'repeated', 'repeated']);
-  assert.match(byLabel(result, 'Yoga').note, /2 elements share this identifier/);
+  assert.match(byLabel(result, 'Morning').note, /2 elements share this identifier/);
 });
 
 test('unnamed wrappers, hidden elements and keyboard keys are not counted; an unlabelled control is', () => {
@@ -57,19 +57,19 @@ test('unnamed wrappers, hidden elements and keyboard keys are not counted; an un
 
 test('a field is named by its label or placeholder, never by its typed value', () => {
   const result = inspectIosSource(source(
-    element('SecureTextField', { name: 'password', label: '', placeholderValue: 'Passwort', value: 'hunter2' }),
+    element('SecureTextField', { name: 'password', label: '', placeholderValue: 'Password', value: 'hunter2' }),
     element('TextField', { name: '', label: '', value: 'typed value' }),
-    element('Button', {}, [element('StaticText', { name: 'Weiter', label: 'Weiter' })]),
+    element('Button', {}, [element('StaticText', { name: 'Next', label: 'Next' })]),
   ));
   assert.equal(JSON.stringify(result).includes('hunter2') || JSON.stringify(result).includes('typed value'), false);
-  assert.equal(byLabel(result, 'Passwort').stability, 'stable');
-  assert.equal(byLabel(result, 'Weiter').stability, 'none');
+  assert.equal(byLabel(result, 'Password').stability, 'stable');
+  assert.equal(byLabel(result, 'Next').stability, 'none');
   assert.match(result.warnings.join(' '), /secure text field/);
 });
 
 test('escaped labels are decoded and a source without an app is refused', () => {
-  const [, , button] = parseWdaSource(source(element('Button', { name: 'save', label: 'Speichern &amp; &quot;weiter&quot;' })));
-  assert.equal(button.label, 'Speichern & "weiter"');
+  const [, , button] = parseWdaSource(source(element('Button', { name: 'save', label: 'Save &amp; &quot;next&quot;' })));
+  assert.equal(button.label, 'Save & "next"');
   assert.throws(() => parseWdaSource('<AppiumAUT/>'), /no app hierarchy/);
 });
 
@@ -114,11 +114,11 @@ test('inspectIos checks the platform, the device choice and the pinned tools bef
 
 test('a field holding a clear button is ranked; only an unnamed list row is skipped as a wrapper', () => {
   const result = inspectIosSource(source(
-    element('SearchField', { placeholderValue: 'Suchen' }, [element('Button', { name: 'clear_search', label: 'Clear text' })]),
+    element('SearchField', { placeholderValue: 'Search' }, [element('Button', { name: 'clear_search', label: 'Clear text' })]),
     element('Cell', {}, [element('Button', { name: 'general', label: 'General' })]),
   ));
   assert.deepEqual(result.controls.map(control => [control.stability, control.className, control.label]), [
-    ['copy', 'XCUIElementTypeSearchField', 'Suchen'],
+    ['copy', 'XCUIElementTypeSearchField', 'Search'],
     ['stable', 'XCUIElementTypeButton', 'Clear text'],
     ['stable', 'XCUIElementTypeButton', 'General'],
   ]);
