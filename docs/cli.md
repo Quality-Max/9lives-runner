@@ -388,6 +388,12 @@
   `--accessibility-tree` adds Chromium's accessibility tree. A control is
   quoted by its accessible name only; a `name` attribute is shown as
   `[name=…] (no accessible name)`.
+- `9l inspect --ios [--udid UDID] [--wda-products DIR]`: the same ranking
+  for the app in front on a booted iOS Simulator, by the identifiers the iOS
+  driver matches, through a private Appium session that names no app. Needs
+  the pinned iOS tools (`NINELIVES_IOS_TOOLS`); `--wda-products` (or
+  `NINELIVES_IOS_WDA_PRODUCTS`) skips compiling WebDriverAgent. See
+  [page checks](scan.md#test-ids-on-an-ios-simulator-screen).
 - `9l inspect --android [--serial SERIAL] [--package PKG]`: the controls
   on the active window of an attached Android device, ranked by the handle
   the Android driver would find them with (a unique resource ID, a shared

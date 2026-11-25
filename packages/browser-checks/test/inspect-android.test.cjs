@@ -80,7 +80,7 @@ test('matching is package-scoped and another package is filtered out on request'
     node({ 'resource-id': 'save', clickable: 'true', text: 'Allow', package: 'com.android.permissioncontroller' }),
   );
   const all = inspectAndroidHierarchy(xml);
-  assert.deepEqual(all.packages, ['com.android.permissioncontroller', pkg]);
+  assert.deepEqual(all.apps, ['com.android.permissioncontroller', pkg]);
   assert.ok(all.controls.every(control => control.stability === 'stable'));
   const only = inspectAndroidHierarchy(xml, { package: pkg });
   assert.equal(only.controls.length, 1);
