@@ -80,7 +80,7 @@ test('matching is package-scoped and another package is filtered out on request'
     node({ 'resource-id': 'save', clickable: 'true', text: 'Allow', package: 'com.android.permissioncontroller' }),
   );
   const all = inspectAndroidHierarchy(xml);
-  assert.deepEqual(all.packages, ['com.android.permissioncontroller', pkg]);
+  assert.deepEqual(all.apps, ['com.android.permissioncontroller', pkg]);
   assert.ok(all.controls.every(control => control.stability === 'stable'));
   const only = inspectAndroidHierarchy(xml, { package: pkg });
   assert.equal(only.controls.length, 1);
@@ -139,4 +139,19 @@ test("a field's typed text is never a label or an alias, and long labels are not
   assert.equal(byLabel(result, 'Password').locator, '{hint: "Password"}');
   assert.deepEqual(result.controls.map(control => control.stability), ['none', 'none', 'copy']);
   assert.match(result.warnings.join(' '), /password field/);
+});
+
+test('a row with its own caption beside a switch is ranked with the switch; an uncaptioned wrapper is not', () => {
+  const result = inspectAndroidHierarchy(dump(
+    node({ clickable: 'true', class: 'android.widget.LinearLayout' }, [
+      node({ text: 'Alerts', class: 'android.widget.TextView' }),
+      node({ 'resource-id': 'push_switch', class: 'android.widget.Switch', checkable: 'true', clickable: 'true' }),
+    ]),
+    node({ clickable: 'true', class: 'android.widget.FrameLayout' }, [
+      node({ 'resource-id': 'save', class: 'android.widget.Button', clickable: 'true', text: 'Save' }),
+    ]),
+  ));
+  assert.deepEqual(result.controls.map(control => [control.stability, control.label]),
+    [['copy', 'Alerts'], ['stable', ''], ['stable', 'Save']]);
+  assert.equal(result.testability.score, 67);
 });

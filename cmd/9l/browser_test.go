@@ -28,7 +28,7 @@ func TestMCPListsTheBrowserTools(t *testing.T) {
 			t.Fatalf("tools/list lacks %s", name)
 		}
 	}
-	if names["inspect_page"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["inspect_screen"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["generate_playwright_repro"]["annotations"].(map[string]any)["destructiveHint"] != true {
+	if names["inspect_page"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["inspect_screen"]["annotations"].(map[string]any)["destructiveHint"] != false || names["generate_playwright_repro"]["annotations"].(map[string]any)["destructiveHint"] != true {
 		t.Fatal("browser tool annotations changed")
 	}
 }
@@ -68,7 +68,10 @@ func TestMCPBrowserToolArgumentsAreRefusedBeforeABrowserStarts(t *testing.T) {
 		{"inspect_page", map[string]any{"url": page, "viewport": map[string]any{"width": 100, "height": 800}}, "viewport width"},
 		{"inspect_page", map[string]any{"url": page, "format": "issue"}, "format must be json or markdown"},
 		{"inspect_screen", map[string]any{}, "platform must be android"},
-		{"inspect_screen", map[string]any{"platform": "ios"}, "platform must be android"},
+		{"inspect_screen", map[string]any{"platform": "windows"}, "platform must be android or ios"},
+		{"inspect_screen", map[string]any{"platform": "ios", "serial": "emulator-5554"}, "apply only to platform android"},
+		{"inspect_screen", map[string]any{"platform": "android", "udid": "x"}, "applies only to platform ios"},
+		{"inspect_screen", map[string]any{"platform": "ios", "wda_products": "/tmp"}, "invalid arguments for inspect_screen"},
 		{"inspect_screen", map[string]any{"platform": "android", "format": "issue"}, "format must be json or markdown"},
 		{"inspect_screen", map[string]any{"platform": "android", "timeout": 0}, "timeout must be at least 1 second"},
 		{"inspect_screen", map[string]any{"platform": "android", "url": page}, "invalid arguments for inspect_screen"},
@@ -240,6 +243,10 @@ func TestScanAndInspectFlagsAreRefusedBeforeABrowserStarts(t *testing.T) {
 		{[]string{"inspect", "--android", "--viewport", "390x844"}, "--viewport: only for a URL"},
 		{[]string{"inspect", "--android", "--format", "issue"}, "markdown or json"},
 		{[]string{"inspect", "https://example.com/", "--serial", "emulator-5554"}, "only with --android"},
+		{[]string{"inspect", "--android", "--ios"}, "choose one of --android and --ios"},
+		{[]string{"inspect", "--android", "--udid", "x"}, "only with --ios"},
+		{[]string{"inspect", "--ios", "--package", "com.example.app"}, "only with --android"},
+		{[]string{"inspect", "--ios", "--allow-private-network"}, "--allow-private-network: only for a URL, not with --ios"},
 	} {
 		var out, errOut bytes.Buffer
 		if code := run(tc.args, &out, &errOut); code != exitUsage || !strings.Contains(errOut.String(), tc.want) {

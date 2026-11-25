@@ -49,8 +49,8 @@ const mcpInstructions = "9lives Go runner. run_test executes one Playwright spec
 	"and passed after, and even that does not show the spec tests the finding. scan_url loads a page once in Chromium and reports " +
 	"console, link, accessibility, Core Web Vitals, SEO, security-header, cookie, mixed-content and page-weight findings; " +
 	"inspect_page returns the page's structure and ranked role/name locators. Both are observations, not authorization to change " +
-	"a site; loopback targets need allow_private_network. inspect_screen ranks the controls on an attached Android device's screen " +
-	"by their test IDs, read-only. generate_playwright_repro writes a deterministic spec for a finding, URL " +
+	"a site; loopback targets need allow_private_network. inspect_screen ranks the controls on an attached Android device's or " +
+	"booted iOS Simulator's screen by their test IDs; it taps and types nothing. generate_playwright_repro writes a deterministic spec for a finding, URL " +
 	"or goal and runs nothing; run it with run_test, or generate it with sdk true and use confirm_finding. Paths must be inside " +
 	"the server's working directory."
 
@@ -168,14 +168,15 @@ var mcpTools = []map[string]any{
 	{
 		"name":        "inspect_screen",
 		"title":       "Inspect a device screen",
-		"description": "Read the active window of an attached Android device or emulator with one uiautomator dump over adb and rank each tappable, checkable or editable control by the handle the 9lives Android driver would find it with: stable (a unique resource ID, used with app.getByTestId), repeated (an ID other nodes share, which getByTestId refuses as ambiguous), copy (only a unique text, description or hint, with the controls alias that reaches it) or none (coordinates only), plus the share with a unique test ID. Installs nothing and does not tap, type or write to the device; the result quotes on-screen text. Fails while an Appium or UiAutomator2 session holds uiautomator.",
-		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+		"description": "Rank each control on a device screen by the handle the 9lives driver would find it with: stable (a unique test ID, used with app.getByTestId), repeated (an ID other elements share, which getByTestId refuses as ambiguous), copy (only its text or label; on Android with the controls alias that reaches it, on iOS unreachable for the 9lives driver) or none (coordinates only), plus the share with a unique test ID. android reads the active window of an attached device with one uiautomator dump over adb, installs nothing and fails while an Appium or UiAutomator2 session holds uiautomator. ios reads the foreground app of a booted Simulator through a private Appium session that names no app, so the app is not launched, reset or terminated; WebDriverAgent is installed on the simulator, needs the pinned iOS tools (NINELIVES_IOS_TOOLS) and starts in seconds with NINELIVES_IOS_WDA_PRODUCTS, minutes without. Nothing is tapped or typed; the result quotes on-screen text.",
+		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"platform": map[string]any{"type": "string", "enum": []string{"android"}},
-				"serial":   map[string]any{"type": "string", "description": "adb serial; required when several devices are attached"},
-				"package":  map[string]any{"type": "string", "description": "Report only controls of this Android package"},
+				"platform": map[string]any{"type": "string", "enum": []string{"android", "ios"}},
+				"serial":   map[string]any{"type": "string", "description": "Android: adb serial; required when several devices are attached"},
+				"package":  map[string]any{"type": "string", "description": "Android: report only controls of this package"},
+				"udid":     map[string]any{"type": "string", "description": "iOS: simulator UDID; required when several simulators are booted"},
 				"format":   map[string]any{"type": "string", "enum": []string{"json", "markdown"}, "default": "json"},
 				"timeout":  map[string]any{"type": "integer", "minimum": 1, "description": "Seconds"},
 			},

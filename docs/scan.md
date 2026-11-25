@@ -73,12 +73,49 @@ list scrolled out of view or a screen that is still loading is not
 counted, and a screen that keeps animating can refuse the dump. The dump
 also fails while an Appium or UiAutomator2 session holds uiautomator, so run
 it between tests. The report quotes on-screen text; treat it like a
-screenshot of that screen. iOS is not supported yet.
+screenshot of that screen.
+
+## Test IDs on an iOS Simulator screen
+
+`9l inspect --ios` does the same for the app in front on a booted iOS
+Simulator (experimental, checked on the iOS 18.6 iPhone 16 Simulator of the
+[qualified host](ios-driver.md)). It starts the pinned Appium and XCUITest
+driver privately, opens a session that names no app, reads one
+WebDriverAgent page source and ends the session. Your app is not launched,
+reset or terminated and nothing is tapped or typed, but WebDriverAgent is
+installed on the simulator and stays there, as after any Appium session.
+
+```sh
+npm ci --prefix tools/ios --ignore-scripts      # the pinned tools, in a 9lives checkout
+node scripts/build-ios-wda.cjs                  # WebDriverAgent once, about 30 s
+export NINELIVES_IOS_TOOLS="$PWD/tools/ios"
+9l inspect --ios --wda-products .context/ios-wda/derived/Build/Products
+9l inspect --ios --udid <UDID> --format json    # when several simulators are booted
+```
+
+With prebuilt WebDriverAgent the inspection took 9 to 14 seconds; without
+`--wda-products` (or `NINELIVES_IOS_WDA_PRODUCTS`) WebDriverAgent is
+compiled first, which can take minutes. Xcode must be selected
+(`DEVELOPER_DIR` or `xcode-select`).
+
+The handles follow the [iOS driver](ios-driver.md), which matches
+accessibility identifiers only (`name == id AND label != id`):
+
+| Handle | Meaning |
+| --- | --- |
+| 🟢 stable | An accessibility identifier no other element has: `app.getByTestId("save")`. |
+| 🟡 repeated ID | An identifier other elements share, such as one per list row. |
+| 🟠 label only | An accessibility label and no identifier, or an identifier equal to the label, which WebDriverAgent cannot tell apart. A 9l iOS test cannot reach it, and label-based locators in other tools break with copy or language. |
+| 🔴 none | No identifier and no label of its own. |
+
+A row or wrapper with no name of its own that holds other controls is not
+counted; the controls inside it are. Hidden elements and keyboard keys are
+skipped, and a field is named by its label or placeholder, never its value.
 
 ## Agents
 
 Coding agents get the same checks from `9l mcp` as `scan_url`,
-`inspect_page` and `inspect_screen` (`platform: "android"`), plus `generate_playwright_repro`, which writes a spec for a
+`inspect_page` and `inspect_screen` (`platform: "android"` or `"ios"`), plus `generate_playwright_repro`, which writes a spec for a
 finding that `run_test` executes and `confirm_finding` checks across a fix.
 These checks were previously the separate qmax-mcp npm server.
 

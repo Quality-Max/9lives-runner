@@ -11,7 +11,8 @@
 // all nodes, not only the tappable ones.
 import { spawn } from 'node:child_process';
 import { androidDefaults, androidToolPaths } from './android-env';
-import { cell, codeSpan, meter } from './report';
+import { rankControls, renderScreenInspectReport, shortLabel, testabilityOf, type ScreenControl, type ScreenResult } from './inspect-screen';
+export type { NativeStability } from './inspect-screen';
 
 export type InspectAndroidArgs = {
   /** adb serial; required when more than one device is attached. */
@@ -38,43 +39,18 @@ export type AndroidNode = {
   parent: number;
 };
 
-/** `stable`: a resource ID no other node has. `repeated`: a resource ID other
- * nodes share, so `getByTestId` fails as ambiguous while they are on screen.
- * `copy`: no usable ID, but a unique text, description or hint alias that
- * breaks when the copy or the device language changes. `none`: only
- * coordinates reach it. */
-export type NativeStability = 'stable' | 'repeated' | 'copy' | 'none';
-
-export type AndroidControlReport = {
-  className: string;
+export type AndroidControlReport = ScreenControl & {
   package: string;
-  /** What a user perceives: text, description or hint, bounded. Empty when it has none. */
-  label: string;
   resourceId?: string;
-  bounds: string;
-  stability: NativeStability;
-  /** The 9l handle: a getByTestId call, or a `controls` alias object. */
-  locator?: string;
-  note?: string;
 };
 
-export type AndroidTestability = {
-  controls: number; stable: number; repeated: number; copy: number; none: number; score: number; note?: string;
-};
-
-export type InspectAndroidResult = {
+export type InspectAndroidResult = ScreenResult & {
   platform: 'android';
-  packages: string[];
   nodeCount: number;
   controls: AndroidControlReport[];
-  truncated?: number;
-  testability: AndroidTestability;
-  warnings: string[];
 };
 
 const maxXmlBytes = 8 << 20;
-const maxControls = 300;
-const maxLabel = 80;
 const maxAliasValue = 200;
 const serialPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 const packagePattern = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
@@ -123,10 +99,6 @@ function testIdOf(node: AndroidNode): string | undefined {
   return id && testIdPattern.test(id) ? id : undefined;
 }
 
-const short = (value: string) => {
-  const flat = value.replace(/\s*\n\s*/g, ' ⏎ ').replace(/\s+/g, ' ').trim();
-  return flat.length > maxLabel ? `${flat.slice(0, maxLabel - 1)}…` : flat;
-};
 const literal = (value: string) => JSON.stringify(value);
 
 const idFix = 'Give it a test ID: Semantics(identifier:) in Flutter, Modifier.testTag with testTagsAsResourceId in Compose, android:id in Views.';
@@ -147,14 +119,20 @@ export function inspectAndroidHierarchy(xml: string, options: { package?: string
   const innerLabels = (index: number): AndroidNode[] => children[index].flatMap((child) =>
     interactive(all[child]) ? [] : [...((all[child].text || all[child].description) ? [all[child]] : []), ...innerLabels(child)]);
 
+  const holdsControl = (index: number): boolean => children[index].some((child) => interactive(all[child]) || holdsControl(child));
+
   const controls: AndroidControlReport[] = [];
   for (const [index, node] of all.entries()) {
     if (!interactive(node) || (options.package && node.package !== options.package)) continue;
     const inner = innerLabels(index);
+    // A wrapper with no ID, no label and no caption of its own around other
+    // controls: the controls inside are what a test reaches, and they are
+    // ranked. A row with a caption beside its switch is a control itself.
+    if (!node.resourceId && !node.text && !node.description && !node.hint && !inner.length && holdsControl(index)) continue;
     // A field's text is what was typed into it, possibly a password: never
     // a label, never reported.
     const ownText = editableClasses.has(node.className) || node.password ? '' : node.text;
-    const label = short(ownText || node.description || node.hint || inner.map((child) => child.text || child.description).join(' ⏎ '));
+    const label = shortLabel(ownText || node.description || node.hint || inner.map((child) => child.text || child.description).join(' ⏎ '));
     const base = { className: node.className, package: node.package, label, bounds: node.bounds };
     const id = testIdOf(node);
     if (id) {
@@ -193,32 +171,14 @@ export function inspectAndroidHierarchy(xml: string, options: { package?: string
     }
   }
 
-  const tally = (value: NativeStability) => controls.filter((control) => control.stability === value).length;
-  const testability: AndroidTestability = {
-    controls: controls.length, stable: tally('stable'), repeated: tally('repeated'), copy: tally('copy'), none: tally('none'),
-    score: controls.length === 0 ? 100 : Math.round((tally('stable') / controls.length) * 100),
-  };
-  const missing = controls.length - testability.stable;
-  if (missing > 0) {
-    testability.note = `${missing} of ${controls.length} controls have no unique test ID: ` +
-      [testability.repeated && `${testability.repeated} share an ID`, testability.copy && `${testability.copy} are reachable only by their copy`,
-        testability.none && `${testability.none} only by coordinates`].filter(Boolean).join(', ') + '.';
-  }
+  const testability = testabilityOf(controls, 'are reachable only by their copy');
 
   const warnings: string[] = [];
   if (options.package && nodes.length === 0) warnings.push(`No node of ${options.package} is on the active window; it shows ${packages.join(', ') || 'nothing'}.`);
   else if (controls.length === 0) warnings.push(`No tappable, checkable or editable controls in ${nodes.length} nodes. The screen may still be loading, or its controls may not be exposed to accessibility.`);
   if (nodes.some((node) => node.password)) warnings.push('A password field is on screen; its value is never reported.');
 
-  const order: Record<NativeStability, number> = { none: 0, copy: 1, repeated: 2, stable: 3 };
-  const ranked = controls.map((control, index) => ({ control, index }))
-    .sort((a, b) => order[a.control.stability] - order[b.control.stability] || a.index - b.index).map(({ control }) => control);
-  const shown = ranked.slice(0, maxControls);
-  return {
-    platform: 'android', packages, nodeCount: nodes.length, controls: shown,
-    ...(ranked.length > shown.length ? { truncated: ranked.length - shown.length } : {}),
-    testability, warnings,
-  };
+  return { platform: 'android', apps: packages, nodeCount: nodes.length, ...rankControls(controls), testability, warnings };
 }
 
 type Exec = (file: string, args: string[], timeoutMs: number) => Promise<{ status: number | null; stdout: string; stderr: string }>;
@@ -274,40 +234,6 @@ export async function inspectAndroid(args: InspectAndroidArgs, deps: { exec?: Ex
   return inspectAndroidHierarchy(xml, { package: args.package });
 }
 
-const badge: Record<NativeStability, string> = { stable: '🟢 stable', repeated: '🟡 repeated ID', copy: '🟠 copy only', none: '🔴 none' };
-
 export function renderAndroidInspectReport(result: InspectAndroidResult, opts: { now?: Date } = {}): string {
-  const date = (opts.now ?? new Date()).toISOString().slice(0, 10);
-  const t = result.testability;
-  const lines: string[] = [`# Screen Inspection — Android${result.packages.length ? ` · ${result.packages.join(', ')}` : ''}`, ''];
-  for (const warning of result.warnings) lines.push(`> ⚠️ ${warning}`, '');
-  const shares = [t.stable && `${t.stable} with a unique test ID`, t.repeated && `${t.repeated} with a shared ID`,
-    t.copy && `${t.copy} by copy only`, t.none && `${t.none} without a handle`].filter(Boolean);
-  lines.push(`**Testability: ${t.score} / 100**   ·   ${t.controls} ${t.controls === 1 ? 'control' : 'controls'}${shares.length ? `: ${shares.join(' · ')}` : ''}   ·   inspected ${date}`, '');
-  lines.push(`\`${meter(t.score, 100, 24)}\` ${t.score} / 100`, '');
-  if (t.note) lines.push(`_${t.note}_`, '');
-  if (result.controls.length) {
-    lines.push('## Controls, weakest handle first', '', '| Control | Class | Handle | 9l locator |', '|---------|-------|:------:|------------|');
-    for (const control of result.controls) {
-      const name = control.label || `(unlabelled, ${control.bounds})`;
-      lines.push(`| ${cell(name)} | ${cell(control.className.replace(/^android\.(widget|view)\./, ''))} | ${badge[control.stability]} | ${control.locator ? codeSpan(cell(control.locator)) : '—'} |`);
-    }
-    if (result.truncated) lines.push('', `…and ${result.truncated} more controls with stronger handles.`);
-    lines.push('');
-    const notes = new Map<string, string[]>();
-    for (const control of result.controls) {
-      if (!control.note) continue;
-      notes.set(control.note, [...(notes.get(control.note) ?? []), control.label || `(unlabelled, ${control.bounds})`]);
-    }
-    if (notes.size) {
-      lines.push('### What to fix', '');
-      for (const [note, labels] of notes) {
-        lines.push(`- **${cell(labels.slice(0, 5).join(', '))}${labels.length > 5 ? ` and ${labels.length - 5} more` : ''}** — ${note}`);
-      }
-      lines.push('');
-    }
-    lines.push('A copy-only control is used through the Android driver\'s `controls` option, for example `controls: {save: {text: "Save"}}` and then `app.getByTestId("save")`.', '');
-  }
-  lines.push('---', '', '_Inspected by **9lives** · `9l inspect --android` · one read-only uiautomator dump of the active window · local, no account_', '');
-  return lines.join('\n');
+  return renderScreenInspectReport(result, opts);
 }

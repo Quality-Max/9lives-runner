@@ -9,12 +9,13 @@ import type { Severity } from './common';
 import { diagnose } from './doctor';
 import { androidChecks } from './android';
 import { inspectAndroid, renderAndroidInspectReport, type InspectAndroidArgs } from './inspect-android';
+import { inspectIos, renderIosInspectReport, type InspectIosArgs } from './inspect-ios';
 
 export const HELPER_PROTOCOL_VERSION = 1;
 
 export type HelperRequest = {
   version: number;
-  tool: 'scan_url' | 'inspect_page' | 'inspect_android' | 'doctor';
+  tool: 'scan_url' | 'inspect_page' | 'inspect_android' | 'inspect_ios' | 'doctor';
   args: Record<string, unknown>;
   format?: 'json' | 'markdown' | 'issue';
   minSeverity?: Severity;
@@ -45,6 +46,11 @@ export async function handleRequest(request: HelperRequest): Promise<HelperRespo
     if (request.tool === 'inspect_android') {
       const result = await inspectAndroid(request.args as InspectAndroidArgs);
       if (request.format === 'markdown') return { version: HELPER_PROTOCOL_VERSION, result, text: renderAndroidInspectReport(result) };
+      return { version: HELPER_PROTOCOL_VERSION, result };
+    }
+    if (request.tool === 'inspect_ios') {
+      const result = await inspectIos(request.args as InspectIosArgs);
+      if (request.format === 'markdown') return { version: HELPER_PROTOCOL_VERSION, result, text: renderIosInspectReport(result) };
       return { version: HELPER_PROTOCOL_VERSION, result };
     }
     return { version: HELPER_PROTOCOL_VERSION, error: 'unknown browser check' };

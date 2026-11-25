@@ -14,11 +14,16 @@ SDK versions.
   the `controls` alias that would reach them) and which only by coordinates,
   with a testability score. It reads the active window with one
   `uiautomator dump` over adb and changes nothing on the device. Checked
-  against a Flutter app on a local API 35 emulator; iOS is not
-  supported.
-- `9l mcp` gains `inspect_screen` (`platform: "android"`), the same
-  read-only screen ranking for coding agents, with optional `serial`,
-  `package`, `format` and `timeout`.
+  against a Flutter app on a local API 35 emulator.
+- `9l inspect --ios` ranks the controls of the app in front on a booted iOS
+  Simulator by the accessibility identifiers the iOS driver matches
+  (experimental). It reads one WebDriverAgent page source through a private
+  Appium session that names no app, so the app is not launched, reset or
+  terminated; WebDriverAgent stays installed on the simulator. Checked on
+  the iOS 18.6 iPhone 16 Simulator of the qualified host.
+- `9l mcp` gains `inspect_screen` (`platform: "android"` or `"ios"`), the
+  same screen ranking for coding agents, with optional `serial`, `package`,
+  `udid`, `format` and `timeout`. It taps and types nothing.
 
 ## 0.7.1 — 2026-11-23
 
