@@ -19,53 +19,53 @@ const byLabel = (result, label) => result.controls.find(control => control.label
 test('a unique resource ID is stable, with the package prefix removed', () => {
   const result = inspectAndroidHierarchy(dump(
     node({ 'resource-id': `${pkg}:id/save`, clickable: 'true', text: 'Save' }),
-    node({ 'resource-id': 'session_join', clickable: 'true', 'content-desc': 'Beitreten' }),
+    node({ 'resource-id': 'booking_join', clickable: 'true', 'content-desc': 'Join' }),
   ));
   assert.equal(byLabel(result, 'Save').stability, 'stable');
   assert.equal(byLabel(result, 'Save').locator, 'app.getByTestId("save")');
-  assert.equal(byLabel(result, 'Beitreten').locator, 'app.getByTestId("session_join")');
+  assert.equal(byLabel(result, 'Join').locator, 'app.getByTestId("booking_join")');
   assert.deepEqual(result.testability, { controls: 2, stable: 2, repeated: 0, copy: 0, none: 0, score: 100 });
 });
 
 test('an ID that repeats per list item is reported as repeated, since getByTestId would be ambiguous', () => {
-  const card = title => node({ 'resource-id': 'session_card', clickable: 'true', 'content-desc': title }, [
-    node({ 'resource-id': 'session_join', clickable: 'true', 'content-desc': 'Beitreten' }),
+  const card = title => node({ 'resource-id': 'booking_card', clickable: 'true', 'content-desc': title }, [
+    node({ 'resource-id': 'booking_join', clickable: 'true', 'content-desc': 'Join' }),
   ]);
-  const result = inspectAndroidHierarchy(dump(card('Yoga'), card('Pilates')));
+  const result = inspectAndroidHierarchy(dump(card('Morning'), card('Evening')));
   assert.equal(result.testability.repeated, 4);
   assert.equal(result.testability.score, 0);
-  assert.match(byLabel(result, 'Yoga').note, /2 nodes on this screen share this ID/);
+  assert.match(byLabel(result, 'Morning').note, /2 nodes on this screen share this ID/);
 });
 
 test('copy-only controls get the narrowest controls alias that resolves uniquely', () => {
   const result = inspectAndroidHierarchy(dump(
-    node({ 'content-desc': 'Push', class: 'android.view.View' }),
-    node({ 'content-desc': 'Push', class: 'android.widget.Switch', checkable: 'true', clickable: 'true' }),
-    node({ text: 'Weiter', class: 'android.widget.Button', clickable: 'true' }),
-    node({ hint: 'E-Mail', class: 'android.widget.EditText' }),
+    node({ 'content-desc': 'Alerts', class: 'android.view.View' }),
+    node({ 'content-desc': 'Alerts', class: 'android.widget.Switch', checkable: 'true', clickable: 'true' }),
+    node({ text: 'Next', class: 'android.widget.Button', clickable: 'true' }),
+    node({ hint: 'Email', class: 'android.widget.EditText' }),
   ));
-  assert.equal(byLabel(result, 'Push').locator, '{accessibilityId: "Push", className: "android.widget.Switch"}');
-  assert.equal(byLabel(result, 'Weiter').locator, '{text: "Weiter"}');
-  assert.equal(byLabel(result, 'E-Mail').locator, '{hint: "E-Mail"}');
+  assert.equal(byLabel(result, 'Alerts').locator, '{accessibilityId: "Alerts", className: "android.widget.Switch"}');
+  assert.equal(byLabel(result, 'Next').locator, '{text: "Next"}');
+  assert.equal(byLabel(result, 'Email').locator, '{hint: "Email"}');
   assert.ok(result.controls.every(control => control.stability === 'copy'));
   assert.match(result.testability.note, /3 are reachable only by their copy/);
 });
 
 test('a label on a non-interactive child reaches its control', () => {
   const result = inspectAndroidHierarchy(dump(
-    node({ class: 'android.widget.FrameLayout', clickable: 'true' }, [node({ text: 'Abmelden', class: 'android.widget.TextView' })]),
+    node({ class: 'android.widget.FrameLayout', clickable: 'true' }, [node({ text: 'Sign out', class: 'android.widget.TextView' })]),
   ));
   assert.equal(result.controls[0].stability, 'copy');
-  assert.equal(result.controls[0].label, 'Abmelden');
-  assert.equal(result.controls[0].locator, '{text: "Abmelden"}');
+  assert.equal(result.controls[0].label, 'Sign out');
+  assert.equal(result.controls[0].locator, '{text: "Sign out"}');
 });
 
 test('a control with no handle or only a shared label is reachable by coordinates only, and ranks first', () => {
   const result = inspectAndroidHierarchy(dump(
     node({ 'resource-id': 'ok', clickable: 'true', text: 'OK' }),
     node({ clickable: 'true', bounds: '[1,2][3,4]' }),
-    node({ clickable: 'true', 'content-desc': 'Mehr' }),
-    node({ clickable: 'true', 'content-desc': 'Mehr' }),
+    node({ clickable: 'true', 'content-desc': 'More' }),
+    node({ clickable: 'true', 'content-desc': 'More' }),
   ));
   assert.deepEqual(result.controls.map(control => control.stability), ['none', 'none', 'none', 'stable']);
   assert.match(result.controls[0].note, /no ID, text, description or hint/);
@@ -88,16 +88,16 @@ test('matching is package-scoped and another package is filtered out on request'
 });
 
 test('escaped and multi-line labels are decoded, then flattened for display only', () => {
-  const [, , label] = parseUiHierarchy(dump(node({}, [node({ 'content-desc': 'Yoga&#10;18:00 &amp; &quot;Raum 2&quot;', clickable: 'true' })])));
-  assert.equal(label.description, 'Yoga\n18:00 & "Raum 2"');
-  const result = inspectAndroidHierarchy(dump(node({ 'content-desc': 'Yoga&#10;18:00', clickable: 'true' })));
-  assert.equal(result.controls[0].label, 'Yoga ⏎ 18:00');
-  assert.equal(result.controls[0].locator, '{accessibilityId: "Yoga\\n18:00"}');
+  const [, , label] = parseUiHierarchy(dump(node({}, [node({ 'content-desc': 'Morning&#10;18:00 &amp; &quot;Room 2&quot;', clickable: 'true' })])));
+  assert.equal(label.description, 'Morning\n18:00 & "Room 2"');
+  const result = inspectAndroidHierarchy(dump(node({ 'content-desc': 'Morning&#10;18:00', clickable: 'true' })));
+  assert.equal(result.controls[0].label, 'Morning ⏎ 18:00');
+  assert.equal(result.controls[0].locator, '{accessibilityId: "Morning\\n18:00"}');
   assert.throws(() => parseUiHierarchy('ERROR: null root node returned by UiTestAutomationBridge.'), /no UI hierarchy/);
 });
 
 test('an empty screen warns instead of scoring', () => {
-  const result = inspectAndroidHierarchy(dump(node({ text: 'Laden…' })));
+  const result = inspectAndroidHierarchy(dump(node({ text: 'Loading…' })));
   assert.equal(result.testability.controls, 0);
   assert.match(result.warnings[0], /No tappable, checkable or editable controls/);
 });
@@ -131,12 +131,12 @@ test('inspectAndroid refuses an ambiguous device choice and explains dump failur
 
 test("a field's typed text is never a label or an alias, and long labels are not quoted", () => {
   const result = inspectAndroidHierarchy(dump(
-    node({ class: 'android.widget.EditText', text: 'hunter2', password: 'true', hint: 'Passwort' }),
+    node({ class: 'android.widget.EditText', text: 'hunter2', password: 'true', hint: 'Password' }),
     node({ class: 'android.widget.EditText', text: 'typed value' }),
     node({ clickable: 'true', 'content-desc': 'x'.repeat(201) }),
   ));
   assert.equal(result.controls.some(control => JSON.stringify(control).includes('hunter2') || JSON.stringify(control).includes('typed value')), false);
-  assert.equal(byLabel(result, 'Passwort').locator, '{hint: "Passwort"}');
+  assert.equal(byLabel(result, 'Password').locator, '{hint: "Password"}');
   assert.deepEqual(result.controls.map(control => control.stability), ['none', 'none', 'copy']);
   assert.match(result.warnings.join(' '), /password field/);
 });
