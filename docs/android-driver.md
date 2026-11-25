@@ -12,7 +12,7 @@ uses. It is qualified on API 35 emulators and one Android 17 phone;
 [Set up a host](#set-up-a-host) has the details and
 [Run the opt-in qualification](#run-the-opt-in-qualification) the limits.
 
-1. Install the matching 0.7.1 CLI and `@9l/playwright` together (see
+1. Install the matching 0.7.2 CLI and `@9l/playwright` together (see
    [installation](install.md)), and the pinned automation
    tooling once, outside your project:
 

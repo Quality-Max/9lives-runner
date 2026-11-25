@@ -4,7 +4,20 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.7.2 — 2026-11-26
+
+A patch on the 0.7.x line with testability checks for native screens and
+biometric sign-in on the iOS Simulator. `9l inspect --android` and `--ios`
+rank the controls on a device screen by the test ID the driver would find
+them with, and `9l mcp` offers the same as `inspect_screen` for coding
+agents. `9l assess` reports native locators tied to on-screen copy or
+position (policy `assessment-source-v17`). An owned iOS Simulator can sign in
+with Face ID or Touch ID through the new portable `app.biometric()`. The new
+`biometric` action makes the shared target contract `9l.target/5`; receipt,
+run result and run status stay version 2. Update the CLI and `@9l/playwright`
+together: a run that mixes 0.7.1 or earlier (`9l.target/4`) with 0.7.2 is
+rejected when its evidence is validated after the run, so it ends
+incomplete, never green.
 
 ### Added
 
