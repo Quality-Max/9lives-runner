@@ -67,6 +67,23 @@ func TestCatCaptureRejectsAbsentAndInvalidTargetEvidence(t *testing.T) {
 	}
 }
 
+func TestFixturesWriteOnlyFixedScenarioNames(t *testing.T) {
+	for _, name := range []string{"cats", "cat-decoys", "dogs", "mice", "striped", "declined", "success"} {
+		page := string(fixtureHTML(name))
+		if !strings.Contains(page, `data-scenario="`+name+`"`) || strings.Count(page, "data-scenario=") != 1 {
+			t.Fatalf("%s: the page does not name its scenario exactly once", name)
+		}
+	}
+	if string(catFixture("cats")) != string(catRoom) {
+		t.Fatal("the default level page changed, so recorded fixture hashes would not match")
+	}
+	for _, hostile := range []string{`cats" onload="alert(1)`, `declined"><script>alert(1)</script>`, "", "Cats", "cats "} {
+		if catFixture(hostile) != nil || fixtureHTML(hostile) != nil {
+			t.Fatalf("%q: an unknown scenario produced a page", hostile)
+		}
+	}
+}
+
 func TestCatRoutesAndImageGate(t *testing.T) {
 	calls := 0
 	s := testDemoServer(t, true, func(_ context.Context, c jev.Config, scenario string) (string, report, error) {

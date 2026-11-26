@@ -31,7 +31,13 @@ func isCatScenario(s string) bool {
 }
 func validScenario(s string) bool { return s == "declined" || s == "success" || isCatScenario(s) }
 
+// catFixture names the scenario in the room page. It writes only the fixed
+// level names and returns nil for anything else, so a caller that skips
+// validation cannot place markup in a served or captured page.
 func catFixture(scenario string) []byte {
+	if !isCatScenario(scenario) {
+		return nil
+	}
 	return bytes.Replace(catRoom, []byte(`data-scenario="cats"`), []byte(`data-scenario="`+scenario+`"`), 1)
 }
 

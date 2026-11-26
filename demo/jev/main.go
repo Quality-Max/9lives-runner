@@ -283,9 +283,14 @@ func writeReport(dir string, r report) error {
 	return t.Execute(f, r)
 }
 
+// fixtureHTML is the page for a fixed scenario name, or nil for any other
+// value, so no caller can place markup in the data-scenario attribute.
 func fixtureHTML(scenario string) []byte {
 	if isCatScenario(scenario) {
 		return catFixture(scenario)
+	}
+	if !validScenario(scenario) {
+		return nil
 	}
 	return bytes.Replace(checkout, []byte(`data-scenario="declined"`), []byte(`data-scenario="`+scenario+`"`), 1)
 }
