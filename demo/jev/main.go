@@ -127,6 +127,7 @@ func executeDemo(ctx context.Context, config jev.Config, scenario string) (strin
 		return "", report{}, errors.New("Cat scenes require --images for live Jev requests.")
 	}
 	revisionCmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	revisionCmd.Env = demoEnvironment() // never the provider credential
 	revision, err := revisionCmd.Output()
 	if err != nil {
 		return "", report{}, errors.New("Run this demo from the repository root with Git available.")
