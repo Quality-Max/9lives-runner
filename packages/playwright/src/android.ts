@@ -6,7 +6,7 @@ import {homedir} from 'node:os';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
-import {targetCapabilities, TargetSetupError, type TargetContext, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation, type BiometricOutcome} from './targets';
+import {targetCapabilities, failureCaptureLimits, TargetSetupError, type TargetContext, type TargetFailureCapture, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation, type BiometricOutcome} from './targets';
 import {activeDisplay, deviceStatePattern, emulatorVersion, displayPattern, imePattern, packagePattern, parseDeviceState, parseDisplays, parseIme, parseLogicalDisplays, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
@@ -75,8 +75,16 @@ export type AndroidTargetOptions = {
    * record (timing, requested point, viewport, windows) is attached to the
    * failed test. With it, a hidden-assertion failure whose window the window
    * manager no longer lists is classified as observer staleness. No
-   * screenshot, hierarchy, text or log is captured. */
-  diagnostics?: {gestures: boolean};
+   * screenshot, hierarchy, text or log is captured.
+   *
+   * `failureCapture`: after a test that failed, and only then, the SDK asks
+   * once, before the driver closes, for a PNG of the target display and the
+   * UiAutomator2 view hierarchy (page source XML), and attaches them as
+   * Playwright attachments. They show the whole display, not only the app,
+   * and can hold personal data or credentials on screen. Bounded by
+   * failureCaptureLimits; a capture that fails, times out or is too large is
+   * skipped. Off by default, on owned emulators and attached phones alike. */
+  diagnostics?: {gestures?: boolean; failureCapture?: boolean};
   /** What the spec needs from the device: a fold posture and/or a minimum
    * active-display width in dp. Another posture or a narrower display is
    * reported as a setup mismatch before any application operation. */
@@ -204,8 +212,12 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
   if ((options.baseline !== undefined && (Object.keys(options.baseline).some(k => k !== 'windows') || !Number.isInteger(expectedWindows) || expectedWindows < 1 || expectedWindows > 16)) ||
       (options.recovery !== undefined && (Object.keys(options.recovery).some(k => k !== 'back') || !Number.isInteger(backPresses) || backPresses < 1 || backPresses > 16)) ||
       ((options.baseline !== undefined || options.recovery !== undefined) && !physical) ||
-      (options.diagnostics !== undefined && (Object.keys(options.diagnostics).some(k => k !== 'gestures') || typeof options.diagnostics.gestures !== 'boolean'))) throw failure('invalid_configuration');
+      (options.diagnostics !== undefined && (!options.diagnostics || typeof options.diagnostics !== 'object' || Array.isArray(options.diagnostics) ||
+        Object.keys(options.diagnostics).length === 0 || Object.keys(options.diagnostics).some(k => k !== 'gestures' && k !== 'failureCapture') ||
+        (options.diagnostics.gestures !== undefined && typeof options.diagnostics.gestures !== 'boolean') ||
+        (options.diagnostics.failureCapture !== undefined && typeof options.diagnostics.failureCapture !== 'boolean')))) throw failure('invalid_configuration');
   const diagnostics = options.diagnostics?.gestures === true;
+  const failureCapture = options.diagnostics?.failureCapture === true;
   const biometrics = options.biometrics;
   if (biometrics !== undefined && (physical || !biometrics || typeof biometrics !== 'object' || Object.keys(biometrics).some(k => k !== 'snapshot') ||
       typeof biometrics.snapshot !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(biometrics.snapshot))) throw failure('invalid_configuration');
@@ -318,14 +330,16 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (requires?.posture !== undefined && posture !== requires.posture) throw new TargetSetupError({classification: 'mismatch', reason: 'posture', stage: 'open'});
     if (requires?.minWidthDp !== undefined && (!display || Math.floor(display.width * 160 / display.density) < requires.minWidthDp)) throw new TargetSetupError({classification: 'mismatch', reason: 'display-width', stage: 'open'});
   };
-  // The PNG stays in memory and leaves only as a digest.
+  // A PNG of the targeted display, in memory; output over maxBytes fails.
   // Closing the driver cancels a pending capture, as it does a request.
-  const screenDigest = (c: TargetContext) => new Promise<string>((yes, no) => execFile(adb, ['-s', serial, 'exec-out', 'screencap', '-p', ...(display ? ['-d', display.id] : [])], {
-    signal: AbortSignal.any([c.signal, controller.signal]), timeout: timeout(c), maxBuffer: 64 * 1024 * 1024, env, encoding: 'buffer',
+  const screencap = (c: TargetContext, maxBytes: number) => new Promise<Buffer>((yes, no) => execFile(adb, ['-s', serial, 'exec-out', 'screencap', '-p', ...(display ? ['-d', display.id] : [])], {
+    signal: AbortSignal.any([c.signal, controller.signal]), timeout: timeout(c), maxBuffer: maxBytes, env, encoding: 'buffer',
   }, (error, stdout) => {
-    if (error || !Buffer.isBuffer(stdout) || stdout.length < 8 || stdout.subarray(0, 8).toString('latin1') !== '\x89PNG\r\n\x1a\n') return no(failure('screenshot_failed'));
-    yes(createHash('sha256').update(stdout).digest('hex'));
+    if (error || !Buffer.isBuffer(stdout) || stdout.length <= 8 || stdout.length > maxBytes || stdout.subarray(0, 8).toString('latin1') !== '\x89PNG\r\n\x1a\n') return no(failure('screenshot_failed'));
+    yes(stdout);
   }));
+  // The digest's PNG stays in memory and leaves only as its SHA-256.
+  const screenDigest = async (c: TargetContext) => createHash('sha256').update(await screencap(c, 64 * 1024 * 1024)).digest('hex');
   const installedPath = async (c: TargetContext) => {
     const path = await adbRun(['shell', 'pm', 'path', options.appPackage], c);
     // Split builds require a digest of the entire installation; fail closed.
@@ -379,7 +393,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (closed || children().some(child => child.exitCode !== null || child.signalCode !== null)) throw failure('runtime_unavailable');
   };
   const adbRun = (args: string[], c: TargetContext) => command(adb, ['-s', serial, ...args], c, env);
-  const request = async (path: string, c: TargetContext, method = 'GET', body?: unknown): Promise<any> => {
+  const request = async (path: string, c: TargetContext, method = 'GET', body?: unknown, limit = 64 * 1024): Promise<any> => {
     check(c);
     const signal = AbortSignal.any([c.signal, controller.signal, AbortSignal.timeout(timeout(c))]);
     let response: Response;
@@ -395,7 +409,7 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       const {done, value} = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > 64 * 1024) { await reader.cancel(); throw failure(`response_limit_${route}`); }
+      if (size > limit) { await reader.cancel(); throw failure(`response_limit_${route}`); }
       chunks.push(value);
     }
     let data: any;
@@ -408,9 +422,16 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     check(c);
     return data.value;
   };
-  const endpoint = (path: string, c: TargetContext, method = 'GET', body?: unknown) => {
+  const endpoint = (path: string, c: TargetContext, method = 'GET', body?: unknown, limit?: number) => {
     if (!session) throw failure('session_unavailable');
-    return request(`/session/${session}${path}`, c, method, body);
+    return request(`/session/${session}${path}`, c, method, body, limit);
+  };
+  // UiAutomator2's page source: the whole display's hierarchy as XML. Read
+  // only for an opted-in failure capture; JSON escaping can double its size.
+  const viewTree = async (c: TargetContext) => {
+    const value = await endpoint('/source', c, 'GET', undefined, 2 * failureCaptureLimits.viewTreeBytes + 1024);
+    if (typeof value !== 'string' || Buffer.byteLength(value) > failureCaptureLimits.viewTreeBytes || !/^\s*</.test(value)) throw failure('invalid_view_tree');
+    return value;
   };
   // The control as one generated, package-scoped XPath. It finds hint
   // aliases (UiSelector has no hint matcher) and reads content-invalid,
@@ -1004,6 +1025,16 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
         if (r.width > 0 && r.height > 0) { record.viewportWidth = r.width; record.viewportHeight = r.height; }
       } catch { /* partial record */ }
       return record;
+    },
+    // Opt-in only. Each item is read once, in memory, within the SDK's
+    // bound; one that fails, times out or is too large is left out. Nothing
+    // is written here: the SDK attaches what it validates.
+    async captureFailure(c) {
+      if (!failureCapture || closed || !session) return undefined;
+      const capture: TargetFailureCapture = {};
+      try { capture.screenshot = await screencap(c, failureCaptureLimits.screenshotBytes); } catch { /* skipped */ }
+      try { capture.viewTree = await viewTree(c); } catch { /* skipped */ }
+      return capture;
     },
     close,
   };

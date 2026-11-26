@@ -5,6 +5,7 @@ defect
 diagnostics
 digest
 disconnect
+failure-capture
 focus
 healthy
 install-fail

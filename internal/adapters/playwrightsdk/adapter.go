@@ -208,6 +208,12 @@ func (Adapter) Failures(report []byte, workDir string) []runner.TestFailure {
 	return playwright.New().Failures(report, workDir)
 }
 
+// FailuresWithin also reports attachments under roots, such as a native
+// target's private Playwright output; see runner.AttachmentRootReporter.
+func (Adapter) FailuresWithin(report []byte, workDir string, roots []string) []runner.TestFailure {
+	return playwright.New().FailuresWithin(report, workDir, roots)
+}
+
 // TestTitles names the stream's test digests from Playwright's JSON report,
 // which exists only with failure details; see playwright.TestTitles.
 func (Adapter) TestTitles(report []byte) map[string]string {

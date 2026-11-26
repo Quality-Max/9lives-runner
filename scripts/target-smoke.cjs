@@ -279,6 +279,56 @@ assert.equal(stalled.code, 1);
 assert.equal(stalled.summary.receipts[0].status, 'failed', 'stalled-diagnose: a worker-side failure, not the engine deadline');
 assert(stalled.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'stalled-diagnose: plain assertion failure');
 assert.equal(stalled.summary.receipts[0].targetDiagnostics, undefined);
+// Opt-in failure capture (a driver option; the fake opts in by mode): a failed
+// test attaches one PNG and one view tree. Without --keep-attachments they are
+// Playwright's own files, only referenced; with it they are copied into the
+// receipt directory, the view tree redacted. The receipt itself never holds
+// the image or the XML, and the evidence stream only counts them.
+const captureNames = ['9l.failure-screenshot', '9l.failure-view-tree'];
+const captured = receipt => (receipt.failures?.[0]?.attachments ?? []).filter(a => captureNames.includes(a.name));
+const noCaptureContent = (receipt, label) => {
+  for (const file of [receipt.receiptPath, receipt.evidence.stdoutPath]) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const leaked of ['synthetic fake screen', 'synthetic view tree', 'synthetic-capture-secret', '<hierarchy']) assert(!text.includes(leaked), `${label}: ${path.basename(file)} carries ${leaked}`);
+  }
+};
+const captureKept = invoke('capture', {extra: ['--failure-details', '--keep-attachments']});
+assert.equal(captureKept.code, 1, 'capture: the test still fails');
+assert.deepEqual(captureKept.mutations, ['mutation', 'capture'], 'capture: asked once, after the test');
+{
+  const receipt = captureKept.summary.receipts[0];
+  assert.equal(receipt.status, 'failed');
+  assert(receipt.failures[0].message.includes('9lives target stopped: assertion_failed'), 'capture: the failure is unchanged');
+  const files = captured(receipt);
+  assert.deepEqual(files.map(a => [a.name, a.contentType, a.retained]), [['9l.failure-screenshot', 'image/png', true], ['9l.failure-view-tree', 'text/xml', true]]);
+  for (const file of files) assert(file.path.startsWith(path.join(work, 'capture')) && /^[a-f0-9]{64}$/.test(file.sha256), 'capture: copied into the receipt directory with a digest');
+  assert(fs.readFileSync(files[0].path).subarray(0, 8).equals(Buffer.from('\x89PNG\r\n\x1a\n', 'latin1')), 'capture: the PNG is retained as is');
+  const tree = fs.readFileSync(files[1].path, 'utf8');
+  assert(tree.includes('synthetic view tree') && !tree.includes('synthetic-capture-secret'), 'capture: the retained view tree is redacted');
+  assert(receipt.retainedAttachments >= 2);
+  noCaptureContent(receipt, 'capture');
+  const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
+  // Beside Playwright's own error context: one image and one other file, counted, never carried.
+  const artifacts = frames.find(f => f.type === 'test_end').artifacts;
+  assert.equal(artifacts.filter(a => a.kind === 'image').length, 1, 'capture: one image counted');
+  assert(artifacts.length >= 2 && artifacts.every(a => a.retained === false && Object.keys(a).length === 3), 'capture: counted, never carried');
+}
+const captureReferenced = invoke('capture-referenced', {extra: ['--failure-details']});
+assert.equal(captureReferenced.code, 1);
+assert.deepEqual(captured(captureReferenced.summary.receipts[0]).map(a => [a.name, a.retained]), [['9l.failure-screenshot', false], ['9l.failure-view-tree', false]], 'capture-referenced: only referenced without --keep-attachments');
+noCaptureContent(captureReferenced.summary.receipts[0], 'capture-referenced');
+const capturePass = invoke('capture-pass');
+assert.equal(capturePass.code, 0, 'capture-pass: a passing test passes');
+assert(!capturePass.mutations.includes('capture'), 'capture-pass: a passing test captures nothing');
+assert.deepEqual(JSON.parse(fs.readFileSync(capturePass.summary.receipts[0].evidence.stdoutPath, 'utf8').trim().split('\n').find(line => line.includes('"test_end"'))).artifacts.filter(a => a.kind === 'image'), []);
+for (const mode of ['capture-stalled', 'capture-oversized']) {
+  const skipped = invoke(mode, {extra: ['--failure-details', '--keep-attachments']});
+  assert.equal(skipped.code, 1, `${mode}: the test still fails`);
+  assert.equal(skipped.summary.receipts[0].status, 'failed', `${mode}: a worker-side failure, not the engine deadline`);
+  assert(skipped.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), `${mode}: the failure is unchanged`);
+  assert.deepEqual(captured(skipped.summary.receipts[0]), [], `${mode}: nothing attached`);
+  assert(skipped.mutations.includes('capture'), `${mode}: the capture was asked for`);
+}
 // Every attempt that did not pass keeps a bounded, metadata-only failure
 // summary in its receipt, with or without --failure-details, so different
 // causes can be told apart without a rerun. It carries no message text.
@@ -375,5 +425,5 @@ assert.deepEqual(driftReceipt.agentProvenance.dependencyChanges, [{path: 'target
 assert(!fs.existsSync(driftEffects), 'helper drift: the worker never started');
 cases.push({mode: 'helper-drift', file: path.basename(spec), outcome: driftSummary.outcome, statuses: [driftReceipt.status], attempts: [driftReceipt.attempt]});
 fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify({version: 1, cases, ordinaryPlaywright: 'passed'}, null, 2));
-console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
+console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; an opted-in failure capture attached to a failed test only, retained (view tree redacted) only with --keep-attachments and skipped when stalled or oversized; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
 console.log(`Bounded receipts: ${path.relative(root, work)}`);

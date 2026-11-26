@@ -11,7 +11,7 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
 const biometric = mode.startsWith('biometric');
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed', 'focus'].includes(mode) ? mode : 'healthy';
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : mode === 'failure-capture' ? 'defect' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed', 'focus'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -27,6 +27,7 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   appPackage: fixture.appPackage, activity: fixture.activity,
   // Opt-in diagnostics and declared requirements for their qualification cases.
   ...(mode === 'diagnostics' || mode === 'phone-diagnostics' ? {diagnostics: {gestures: true}} : {}),
+  ...(mode === 'failure-capture' ? {diagnostics: {failureCapture: true}} : {}),
   ...(mode === 'phone-healthy' ? {expected: {versionCode: '7', versionName: '1.4.0', signerSHA256: process.env.NINELIVES_ANDROID_SIGNER}} : {}),
   ...(mode === 'phone-dirty-recovered' ? {recovery: {back: 2}} : {}),
   ...(mode === 'phone-posture' ? {requires: {posture: 'opened'}} : {}),
@@ -191,7 +192,9 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       markerProbe.checksAtStop = markerProbe.checks; markerProbe.stopMs = Date.now() - dispatchedAt;
       if (!started && serial) markerProbe.front = await frontWindow(resolve(sdk, 'platform-tools/adb'), serial, fixture.appPackage);
     }
-    await app.close();
+    // A failure capture is taken at fixture teardown, before the fixture
+    // closes the driver: a spec that closes it itself gets none.
+    if (mode !== 'failure-capture') await app.close();
     await probe;
     let deviceStopped = false;
     if (serial) {

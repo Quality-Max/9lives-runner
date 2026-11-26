@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // reportingAdapter attributes a fake failure to one test whose attachments
@@ -128,5 +129,104 @@ func TestPassedAttemptCarriesTestAnnotations(t *testing.T) {
 	summary, err := Execute(context.Background(), plan, ExecuteOptions{ReceiptDir: t.TempDir(), Adapters: []Adapter{annotatingAdapter{}}})
 	if err != nil || len(summary.Receipts) != 1 || summary.Receipts[0].Status != StatusPassed || len(summary.Receipts[0].Annotations) != 1 {
 		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+}
+
+// scratchReportingAdapter reports a native worker's failure. Its attachments
+// are what Playwright wrote into the attempt's private scratch, which only
+// FailuresWithin may name.
+type scratchReportingAdapter struct{ channelAdapter }
+
+func (scratchReportingAdapter) Failures([]byte, string) []TestFailure {
+	return []TestFailure{{Title: "native › failure capture"}}
+}
+
+func (scratchReportingAdapter) FailuresWithin(_ []byte, _ string, roots []string) []TestFailure {
+	failure := TestFailure{Title: "native › failure capture"}
+	for _, root := range roots {
+		directory := filepath.Join(root, "attachments")
+		entries, _ := os.ReadDir(directory)
+		for _, entry := range entries {
+			contentType := map[string]string{".png": "image/png", ".xml": "text/xml"}[filepath.Ext(entry.Name())]
+			failure.Attachments = append(failure.Attachments, TestAttachment{Name: entry.Name(), ContentType: contentType, Path: filepath.Join(directory, entry.Name())})
+		}
+	}
+	return []TestFailure{failure}
+}
+
+// captureExecutor stands in for a native worker whose failed test attached an
+// opted-in failure capture to Playwright's output in the private scratch.
+type captureExecutor struct{ t *testing.T }
+
+var syntheticPNG = []byte("\x89PNG\r\n\x1a\nsynthetic failure image")
+
+func (e captureExecutor) Run(_ context.Context, job Job, _ int) ProcessOutput {
+	directory := filepath.Join(job.Env["NINELIVES_TARGET_SCRATCH_DIR"], "playwright-output", "attachments")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		e.t.Fatal(err)
+	}
+	tree := filepath.Join(directory, "9l.failure-view-tree-1.xml")
+	if os.WriteFile(filepath.Join(directory, "9l.failure-screenshot-1.png"), syntheticPNG, 0o600) != nil ||
+		os.WriteFile(tree, []byte(`<hierarchy><node text="token=synthetic-secret-value" password="false"/></hierarchy>`), 0o600) != nil {
+		e.t.Fatal("fixture")
+	}
+	// A file that cannot be retained (not a regular file) is not referenced either.
+	if err := os.Symlink(tree, filepath.Join(directory, "linked.xml")); err != nil {
+		e.t.Log("symlink unavailable:", err)
+	}
+	if err := os.WriteFile(job.Env["NINELIVES_FAKE_EVENTS"], []byte(`{"outcome":"failed","assertions":0,"artifact":true}`), 0o600); err != nil {
+		e.t.Fatal(err)
+	}
+	return ProcessOutput{Executed: true, ExitCode: 1}
+}
+
+// A native target's Playwright output is private scratch removed with the
+// attempt. Its attachments are referenced only when --keep-attachments
+// copies them into the receipt directory; the receipt holds references,
+// digests and counts, never the image or the view tree.
+func TestNativeAttachmentsAreRetainedOnlyOnRequest(t *testing.T) {
+	for _, keep := range []bool{false, true} {
+		root := t.TempDir()
+		job := fakeJob("job-001", "test-failure", 0)
+		job.Target = "android:finance"
+		plan := Plan{Version: 1, RunID: "run-native-capture", Jobs: []Job{job}}
+		summary, err := Execute(context.Background(), plan, ExecuteOptions{Timeout: 5 * time.Second, ReceiptDir: root, KeepAttachments: keep, Executor: captureExecutor{t: t}, Adapters: []Adapter{scratchReportingAdapter{}}})
+		if err != nil || len(summary.Receipts) != 1 {
+			t.Fatalf("keep=%v summary=%+v err=%v", keep, summary, err)
+		}
+		receipt := summary.Receipts[0]
+		if receipt.Status != StatusFailed || len(receipt.Failures) != 1 {
+			t.Fatalf("keep=%v: a failed native test stays failed and listed: %+v", keep, receipt)
+		}
+		attachments := receipt.Failures[0].Attachments
+		if !keep {
+			if len(attachments) != 0 || receipt.FailureAttachments != 0 || receipt.RetainedAttachments != 0 {
+				t.Fatalf("without retention a scratch file was referenced: %+v", attachments)
+			}
+			continue
+		}
+		if len(attachments) != 2 || receipt.FailureAttachments != 2 || receipt.RetainedAttachments != 2 {
+			t.Fatalf("retained %+v (produced=%d retained=%d)", attachments, receipt.FailureAttachments, receipt.RetainedAttachments)
+		}
+		for _, attachment := range attachments {
+			if !attachment.Retained || !strings.HasPrefix(attachment.Path, root) || attachment.SHA256 == "" {
+				t.Fatalf("not retained into the receipt directory: %+v", attachment)
+			}
+		}
+		image, _ := os.ReadFile(attachments[0].Path)
+		sum := sha256.Sum256(image)
+		if attachments[0].ContentType != "image/png" || string(image) != string(syntheticPNG) || attachments[0].SHA256 != hex.EncodeToString(sum[:]) {
+			t.Fatalf("screenshot not copied byte for byte with its digest: %+v", attachments[0])
+		}
+		tree, _ := os.ReadFile(attachments[1].Path)
+		if attachments[1].ContentType != "text/xml" || strings.Contains(string(tree), "synthetic-secret-value") || !strings.Contains(string(tree), "<hierarchy>") {
+			t.Fatalf("view tree not retained redacted: %q", tree)
+		}
+		persisted, _ := os.ReadFile(receipt.ReceiptPath)
+		for _, leaked := range []string{"synthetic failure image", "hierarchy", "synthetic-secret-value"} {
+			if strings.Contains(string(persisted), leaked) {
+				t.Fatalf("receipt.json carries capture contents %q", leaked)
+			}
+		}
 	}
 }

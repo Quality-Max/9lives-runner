@@ -69,6 +69,15 @@ type FailureReporter interface {
 	Failures(report []byte, workDir string) []TestFailure
 }
 
+// AttachmentRootReporter adapters can also report attachment files under
+// other directories. A native target's Playwright output is private scratch
+// outside the working directory, removed with the attempt: the runner asks
+// for its files only when they are to be retained, so a receipt never
+// references a file that is already gone.
+type AttachmentRootReporter interface {
+	FailuresWithin(report []byte, workDir string, roots []string) []TestFailure
+}
+
 // AnnotationReporter adapters list each test's annotations from a report
 // that already validated.
 type AnnotationReporter interface {

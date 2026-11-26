@@ -45,6 +45,26 @@ func retainAttachments(directory string, failures []TestFailure) {
 	}
 }
 
+// dropScratchReferences removes the attachments under scratch that were not
+// retained: the scratch is deleted with the attempt, so a reference to it
+// would name a file that no longer exists.
+func dropScratchReferences(failures []TestFailure, scratch string) {
+	for i := range failures {
+		kept := failures[i].Attachments[:0]
+		for _, attachment := range failures[i].Attachments {
+			relative, err := filepath.Rel(scratch, attachment.Path)
+			inside := err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+			if attachment.Retained || !inside {
+				kept = append(kept, attachment)
+			}
+		}
+		if len(kept) == 0 {
+			kept = nil
+		}
+		failures[i].Attachments = kept
+	}
+}
+
 func copyAttachment(source, target string, text bool) (string, string, int64, error) {
 	input, err := os.Open(source)
 	if err != nil {

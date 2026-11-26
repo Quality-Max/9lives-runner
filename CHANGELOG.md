@@ -8,6 +8,23 @@ SDK versions.
 
 ### Added
 
+- Android failure capture (experimental, opt-in). With
+  `androidTargetDriver({..., diagnostics: {failureCapture: true}})` a test
+  that failed attaches, once and before the driver closes, a PNG of the
+  target display (`9l.failure-screenshot`, at most 8 MiB) and the
+  UiAutomator2 view hierarchy (`9l.failure-view-tree`, at most 2 MiB),
+  within at most 10 seconds and half the test's timeout. A part that fails,
+  times out or is too large is skipped and never changes the outcome;
+  passed, skipped and interrupted tests read nothing. Off by default on
+  owned emulators and attached phones alike: both files are screen content
+  and can hold personal data. A native target's Playwright output is deleted
+  with the attempt, so they are kept only with `--failure-details
+  --keep-attachments`, which now also copies a native target's attachments
+  into the receipt directory (the view tree redacted like other text); the
+  receipt only references them. Tested with a stubbed transport and the fake
+  native target; the `failure-capture` emulator case is not yet qualified.
+  The web keeps using Playwright's `screenshot: 'only-on-failure'`; iOS is
+  unchanged (#271).
 - iOS keyboard and system alerts (experimental). `fill(value, {submit: true})`
   presses Return in the field, `toHaveKeyboard()` reads the keyboard, and
   `hideKeyboard()` closes a keyboard that has a hide key (iPad); an iPhone

@@ -636,9 +636,22 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		receipt.Annotations = reporter.Annotations(detailReport)
 	}
 	if reporter, ok := adapterNamed(opts.Adapters, job.Adapter).(FailureReporter); ok && receipt.Validated && receipt.FailureCount > 0 && detailReport != nil {
-		receipt.Failures = reporter.Failures(detailReport, job.WorkDir)
+		// A native target's attachments, such as an opted-in failure capture,
+		// are in its private scratch: reported only to be retained.
+		nativeOutput := ""
+		if nativeScratch != "" && opts.KeepAttachments {
+			nativeOutput = filepath.Join(nativeScratch, "playwright-output")
+		}
+		if within, ok := reporter.(AttachmentRootReporter); ok && nativeOutput != "" {
+			receipt.Failures = within.FailuresWithin(detailReport, job.WorkDir, []string{nativeOutput})
+		} else {
+			receipt.Failures = reporter.Failures(detailReport, job.WorkDir)
+		}
 		if opts.KeepAttachments {
 			retainAttachments(filepath.Join(opts.ReceiptDir, runID, job.ID, receipt.AttemptID, "attachments"), receipt.Failures)
+		}
+		if nativeOutput != "" {
+			dropScratchReferences(receipt.Failures, nativeOutput)
 		}
 		for _, failure := range receipt.Failures {
 			receipt.FailureAttachments += len(failure.Attachments)

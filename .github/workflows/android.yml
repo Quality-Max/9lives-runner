@@ -71,7 +71,7 @@ jobs:
           INPUT_REPEAT: ${{ inputs.repeat }}
         run: |
           export LC_ALL=C
-          full='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version semantics semantics-defect semantics-delayed","operations diagnostics width-mismatch version-mismatch","isolation isolation-defect focus misfill"]'
+          full='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version semantics semantics-defect semantics-delayed","operations diagnostics width-mismatch version-mismatch failure-capture","isolation isolation-defect focus misfill"]'
           # One end-to-end pass, ambiguity and cancellation, and the cheap
           # rejection and setup-mismatch paths. None of these failed on hosted
           # runners in the November sample; the cases named in the hosted

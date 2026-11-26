@@ -1,11 +1,13 @@
 import {test as base, type Locator, type Page, type TestInfo} from '@playwright/test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
-import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
-export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type SetupPhase, type TargetDiagnostic, type WindowObservation} from './target-setup';
+import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, failureCaptureLimits, failureCaptureAttachments, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
+export {TargetSetupError, validTargetSetup, validTargetDiagnostic, failureCaptureLimits, failureCaptureAttachments, type TargetSetupRecord, type SetupClassification, type SetupPhase, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
@@ -26,6 +28,10 @@ export type TargetForeground = 'app' | 'foreign' | 'none';
 export type BiometricOutcome = 'match' | 'nomatch';
 /** Per-call bound, capped by Go's worker deadline. */
 export type TargetOperationOptions = {timeoutMs?: number};
+/** Opt-in failure capture: the target display's image as PNG bytes and the
+ * native view hierarchy as XML, each optional. Screen content: a driver
+ * returns it only when its user opted in. */
+export type TargetFailureCapture = {screenshot?: Uint8Array; viewTree?: string};
 
 /** Handles stay in the worker. Drivers must stop pending work on abort/close,
  * honor the context deadline, must not retry mutations, and must never act on
@@ -108,6 +114,12 @@ export interface TargetDriver extends TargetIdentity {
   /** Opt-in: describe a failed operation as bounded metadata, captured before
    * fixture teardown. Read-only; errors are ignored; one record per test. */
   diagnose?(failure: {operation: string; reason: string; elapsedMs: number; point?: TargetPoint}, context: TargetContext): Promise<TargetDiagnostic | undefined>;
+  /** Opt-in (the driver's own option decides; without it, answer undefined
+   * and read nothing): after a failed test, while the driver is still open,
+   * capture the target display and the view hierarchy once. Read-only; an
+   * item that fails or exceeds its limit is left out; errors and answers
+   * after the bound are ignored and never change the outcome. */
+  captureFailure?(context: TargetContext): Promise<TargetFailureCapture | undefined>;
 }
 
 const defaultOperationMs = 5_000;
@@ -142,6 +154,11 @@ const recheckMs = 5_000;
 const attachSetup = (record: TargetSetupRecord) => base.info().attach('9l.target-setup', {body: Buffer.from(JSON.stringify(record)), contentType: targetSetupType});
 const attachDiagnostic = (record: TargetDiagnostic) => base.info().attach('9l.target-diagnostic', {body: Buffer.from(JSON.stringify(record)), contentType: targetDiagnosticType});
 const boundedText = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max;
+const pngSignature = Buffer.from('\x89PNG\r\n\x1a\n', 'latin1');
+const validScreenshot = (value: unknown): value is Uint8Array => value instanceof Uint8Array && value.length > pngSignature.length &&
+  value.length <= failureCaptureLimits.screenshotBytes && Buffer.from(value.buffer, value.byteOffset, pngSignature.length).equals(pngSignature);
+// Markup, not arbitrary text: it starts with a tag and holds no NUL.
+const validViewTree = (value: unknown): value is string => boundedText(value, failureCaptureLimits.viewTreeBytes) && /^\s*</.test(value) && !value.includes('\u0000');
 
 /** Deterministic shared operations; browser/device handles stay in the worker. */
 export class TargetApp {
@@ -151,6 +168,7 @@ export class TargetApp {
   private reason = 'canceled';
   private closing?: Promise<void>;
   private diagnosed = false;
+  private captured = false;
   private externalAbort = () => this.stop('canceled');
 
   constructor(private driver: TargetDriver, expected: TargetIdentity, private options: {deadlineMs: number; signal?: AbortSignal}) {
@@ -213,6 +231,56 @@ export class TargetApp {
     } catch { record = undefined; }
     if (record === late) return;
     if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
+  }
+
+  /** Called by the target fixture once the test body has ended and before
+   * the driver closes. Only a test that failed (status `failed` or
+   * `timedOut`) and a driver that opted in capture anything: one PNG of the
+   * target display and one view-tree XML, each validated against
+   * failureCaptureLimits and attached as a Playwright file attachment. A
+   * released driver (a deadline or cancellation closed it), an operation
+   * still pending, a hook that fails, answers late or returns anything out
+   * of bounds attaches nothing. Never throws, never changes the outcome. */
+  async attachFailureCapture(info: Pick<TestInfo, 'status' | 'expectedStatus' | 'timeout' | 'outputPath' | 'attach'>) {
+    // Native targets only: the web has Playwright's own failure screenshots.
+    if (this.captured || this.driver.kind === 'web' || typeof this.driver.captureFailure !== 'function') return;
+    this.captured = true;
+    if ((info.status !== 'failed' && info.status !== 'timedOut') || info.expectedStatus !== 'passed' || this.closing || this.busy) return;
+    // Teardown has its own Playwright time slot, shared with close and any
+    // afterEach hook: the capture takes at most half of the test's timeout.
+    const share = info.timeout > 0 ? Math.floor(info.timeout / 2) : failureCaptureLimits.ms;
+    const bound = Math.min(this.options.deadlineMs, Date.now() + Math.min(failureCaptureLimits.ms, share));
+    if (bound - Date.now() < 1) return;
+    const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
+    // A hook that ignores its signal is abandoned shortly after the bound.
+    const abandon = AbortSignal.timeout(Math.max(1, bound - Date.now()) + settleMs);
+    const late = Symbol('late');
+    let capture: unknown;
+    try {
+      capture = await Promise.race([
+        this.driver.captureFailure({signal, deadlineMs: bound}),
+        new Promise<typeof late>(resolve => abandon.addEventListener('abort', () => resolve(late), {once: true})),
+      ]);
+    } catch { return; }
+    if (capture === late || !capture || typeof capture !== 'object') return;
+    const {screenshot, viewTree} = capture as Record<string, unknown>;
+    const items: {name: string; contentType: string; file: string; body: Buffer}[] = [];
+    if (validScreenshot(screenshot)) items.push({...failureCaptureAttachments.screenshot, body: Buffer.from(screenshot)});
+    if (validViewTree(viewTree)) items.push({...failureCaptureAttachments.viewTree, body: Buffer.from(viewTree, 'utf8')});
+    if (items.length === 0) return;
+    // Attached by path, so Playwright copies each into its own output (and
+    // 9l can retain it with --keep-attachments); the staging copy is removed.
+    let staging: string | undefined;
+    try {
+      staging = await mkdtemp(join(info.outputPath(), '.9l-failure-capture-'));
+      for (const item of items) {
+        const path = join(staging, item.file);
+        await writeFile(path, item.body, {mode: 0o600});
+        await info.attach(item.name, {path, contentType: item.contentType});
+      }
+    } catch { /* what was attached stays; the rest is skipped */ } finally {
+      if (staging) await rm(staging, {recursive: true, force: true}).catch(() => {});
+    }
   }
 
   private get maxMs() { return (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : maxOperationMs; }
@@ -732,11 +800,13 @@ type TargetOptions = {
  * Specs load without 9l (listing, editors); using `app` requires 9l run --sdk --target. */
 export function createTargetTest(options: TargetOptions) {
   const resolve = () => { engineIdentity(); return selectedTarget(); };
-  const useApp = async (target: ReturnType<typeof selectedTarget>, driver: TargetDriver, use: (app: TargetApp) => Promise<void>) => {
+  const useApp = async (target: ReturnType<typeof selectedTarget>, driver: TargetDriver, use: (app: TargetApp) => Promise<void>, info: TestInfo) => {
     let app: TargetApp | undefined;
     try {
       app = new TargetApp(driver, target, {deadlineMs: Number(process.env.NINELIVES_TARGET_DEADLINE_MS)});
       await use(app);
+      // The test has ended; a failed one may leave an opted-in capture.
+      await app.attachFailureCapture(info);
     } finally {
       if (app) await app.close();
       else { try { await driver.close(); } catch { throw stopped('cleanup_failed'); } }
@@ -750,13 +820,13 @@ export function createTargetTest(options: TargetOptions) {
       const target = resolve();
       owned(target, info);
       if (!options.web) throw stopped('unsupported_target');
-      await useApp(target, webTargetDriver(page, target.appId, options.web), use);
+      await useApp(target, webTargetDriver(page, target.appId, options.web), use, info);
     }});
   }
   return base.extend<TargetFixtures>({app: async ({}, use, info) => {
     const target = resolve();
     owned(target, info);
     if ((target.kind !== 'android-fake' && target.kind !== 'android' && target.kind !== 'ios') || !options.native) throw stopped('unsupported_target');
-    await useApp(target, options.native(target), use);
+    await useApp(target, options.native(target), use, info);
   }});
 }
