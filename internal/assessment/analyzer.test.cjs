@@ -1364,3 +1364,13 @@ test('target tests record the literal test IDs they use, but not aliases, pages 
   assert.deepEqual(ids, ['booking_join@14', 'home.title@16', 'booking_card@12<21']);
   assert.equal(facts.version, 15);
 });
+
+test('toHaveError on a target control is a credited target assertion', () => {
+  const facts = analyze(`import {createTargetTest} from '@9l/playwright';
+    const test = createTargetTest({});
+    test('t', async ({app}) => {
+      await app.getByTestId('email').fill('ada');
+      await app.getByTestId('email').toHaveError('Enter an email address');
+    });`);
+  assert.deepEqual(facts.tests[0].assertions.map(a => a.matcher), ['target:toHaveError']);
+});

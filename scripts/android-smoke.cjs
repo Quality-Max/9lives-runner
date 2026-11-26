@@ -126,7 +126,9 @@ for (const mode of modes) {
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,2);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='semantics'||mode==='semantics-delayed') {
     assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
-    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
+    // Nine, with the field's error text read by toHaveError.
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,9);assert.equal(receipt.verifiedAssertions,0);
+    assert(frames.some(f=>f.operation==='assert-error'&&f.status==='passed'),`${mode}: the field's error text matched`);
   } else if (mode==='operations') {
     // Eight: six operations checks, plus the focused field still visible and
     // no keyboard after hideKeyboard under the emulator's empty input method.

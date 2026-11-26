@@ -327,6 +327,8 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
     await app.getByTestId('login.status').toHaveText('Invalid');
     // @9l-outcome invalid-field-reported
     await app.getByTestId('email').toHaveState('invalid', true);
+    // The field's accessibility error, compared on the device, never read back.
+    await app.getByTestId('email').toHaveError('Enter an email address');
     await app.getByTestId('email').fill('ada@example.test', {timeoutMs: 20000});
     await app.getByTestId('validate').tap();
     await app.getByTestId('email').toHaveState('invalid', false);

@@ -39,6 +39,16 @@ SDK versions.
   machine-readable output, `runRepeat` version 1, with a published schema
   (#214).
 
+- `toHaveError(text, timeoutMs?)` on a target control asserts the
+  validation error it reports, exactly: on Android the field's
+  accessibility error (Flutter's `errorText`, `TextView.setError`), which
+  UiAutomator2 exposes as the hierarchy's `error` attribute, and on the web
+  the text of the element an invalid control's `aria-errormessage` names,
+  or its constraint-validation message. The driver compares; only pass or
+  fail is kept, never the text. iOS has no such read and fails it as
+  `unsupported_state`. A new `assert-error` assertion in `9l.target/6`
+  (#270).
+
 ### Fixed
 
 - An iOS tap on a control under the keyboard or a system alert landed on the
