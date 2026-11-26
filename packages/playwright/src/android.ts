@@ -923,10 +923,17 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       disarm();
       if (!await keyboardShown(c)) return;
       await endpoint('/back', c, 'POST', {});
+      // Read again only while a wait and a read, half again as slow as the
+      // slowest so far, still fit the bound. A wait that overruns it anyway
+      // (a loaded host) ends on the last reading, which showed the keyboard.
+      let slowest = 0;
       for (;;) {
+        const started = Date.now();
         if (!await keyboardShown(c)) return;
-        if (Date.now() + 100 >= c.deadlineMs) throw failure('keyboard_not_hidden');
+        slowest = Math.max(slowest, Date.now() - started);
+        if (Date.now() + 100 + slowest * 1.5 >= c.deadlineMs) throw failure('keyboard_not_hidden');
         await delay(100, undefined, {signal: c.signal});
+        if (Date.now() >= c.deadlineMs) throw failure('keyboard_not_hidden');
       }
     },
     async tapAt(point, c) {
