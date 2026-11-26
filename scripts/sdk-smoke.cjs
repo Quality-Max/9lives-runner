@@ -165,6 +165,15 @@ async function interrupted(kind, webServer = false) {
         const rerun = sync(engine, ['run', spec, ...(sdk ? ['--sdk'] : []), '--format', 'json', ...selection, ...passedEnv, '--receipt-dir', receipts], {
           env: {...environment, NINELIVES_SMOKE_WAIT: '0'},
         });
+        if (rerun.status !== 0) {
+          // Metadata only (#232): the exit code, outcome and receipt stop, and
+          // the engine's own `9l:` lines, never test output or environment.
+          let parsed;
+          try { parsed = JSON.parse(rerun.stdout); } catch { parsed = undefined; }
+          const receipts = (parsed?.receipts ?? []).map(r => ({status: r.status, stop: r.failureSummary?.stop, exitCode: r.exitCode}));
+          const engineLines = String(rerun.stderr).split(/\r?\n/).filter(line => line.startsWith('9l: ')).slice(0, 5).map(line => line.slice(0, 200));
+          console.error(`${smokeCase} ${sdk ? 'SDK' : 'ordinary'} rerun: ${JSON.stringify({status: rerun.status, signal: rerun.signal, outcome: parsed?.outcome, receipts, engine: engineLines})}`);
+        }
         assert.equal(rerun.status, 0, 'healthy rerun on the same port succeeds');
         const result = JSON.parse(rerun.stdout);
         assert.equal(result.outcome, 'passed');
