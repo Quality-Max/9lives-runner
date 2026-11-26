@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.shortLabel = exports.maxControls = void 0;
 exports.testabilityOf = testabilityOf;
 exports.rankControls = rankControls;
+exports.countTestIds = countTestIds;
 exports.renderScreenInspectReport = renderScreenInspectReport;
 // The platform-neutral half of `9l inspect --android` and `--ios`: each
 // control's handle, the testability score and the Markdown report. The
@@ -37,6 +38,23 @@ function rankControls(controls) {
         .sort((a, b) => order[a.control.stability] - order[b.control.stability] || a.index - b.index).map(({ control }) => control);
     const shown = ranked.slice(0, exports.maxControls);
     return { controls: shown, ...(ranked.length > shown.length ? { truncated: ranked.length - shown.length } : {}) };
+}
+const maxTestIds = 2000;
+/** Count the test IDs a window's elements carry, bounded. */
+function countTestIds(ids) {
+    const counts = new Map();
+    let truncated = false;
+    for (const id of ids) {
+        if (!id)
+            continue;
+        if (!counts.has(id) && counts.size >= maxTestIds) {
+            truncated = true;
+            continue;
+        }
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const testIds = Object.fromEntries([...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    return { testIds, ...(truncated ? { testIdsTruncated: true } : {}) };
 }
 const copyBadge = { android: '🟠 copy only', ios: '🟠 label only' };
 const footer = {

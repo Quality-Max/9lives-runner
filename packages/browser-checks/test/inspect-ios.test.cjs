@@ -137,3 +137,13 @@ test('a response body is counted in bytes and cancelled past its limit', async (
   assert.ok(pulls < 5, `read ${pulls} chunks after the limit`);
   assert.equal(await boundedBody(new Response('{"value":"é"}'), 64), '{"value":"é"}');
 });
+
+test('testIds counts every identifier on the screen, including labels, and never a label-only name', () => {
+  const result = inspectIosSource(source(
+    element('Button', { name: 'booking_join', label: 'Join' }),
+    element('Button', { name: 'booking_join', label: 'Join' }),
+    element('StaticText', { name: 'home.title', label: 'Welcome' }),
+    element('Button', { name: 'Cancel', label: 'Cancel' }),
+  ));
+  assert.deepEqual(result.testIds, { booking_join: 2, 'home.title': 1 });
+});

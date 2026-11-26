@@ -61,6 +61,42 @@ names only; anything else is `(unnamed module)`), and an
 `unrecognized-test-import` limit explains that its tests were not assessed,
 instead of a silent "0 tests, 0 findings".
 
+### Test IDs against inspected screens
+
+A spec can name a test ID the app doesn't have, or one that several elements
+share, and that only shows at run time as a missing or ambiguous control.
+Save what the app's screens hold with `9l inspect` and check the specs
+against it:
+
+```sh
+9l inspect --android --format json --out screens/bookings.json
+9l inspect --ios --format json --out screens/login.json
+.context/9l assess tests/ --screens 'screens/*.json'
+```
+
+`--screens` takes a saved `9l inspect --android` or `--ios` JSON result, or a
+glob of them, and can be repeated (at most 64 screens, 4 MiB each). The MCP
+`assess_test` tool takes the same as `screens`, paths inside the server's
+working directory. Each literal test ID a target test passes to
+`app.getByTestId(...)` (not an Android `controls` alias, nor a template or
+variable) is looked up in every screen's `testIds`, which counts every element
+carrying the ID, interactive or not:
+
+- `screen-test-id/unobserved-test-id` (informational): no screen holds the
+  ID. It may be on a screen that wasn't inspected, so it is never a concern on
+  its own.
+- `screen-test-id/repeated-test-id` (suspected): a screen holds the ID on more
+  than one element, so `getByTestId` refuses it as ambiguous while they are
+  all shown.
+
+The report's `screens` lists each screen's path, SHA-256, platform, app and
+number of test IDs, and names them in the text report, so a finding can be
+traced to what it was computed from. A screen with more test IDs than inspect
+keeps (`testIdsTruncated`) adds a limit, since an ID missing from it may still
+be on it. Only IDs and counts are read; labels and copy are not. A result
+without `testIds`, from a 9l before this policy, is refused: inspect the
+screen again. Findings are advisory and change no verdict.
+
 ### Suites
 
 ```sh
@@ -474,7 +510,11 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v17` adds the
+inputs invalidate prior assessments. Policy `assessment-source-v18` adds the
+`screen-test-id` rule (`unobserved-test-id`, `repeated-test-id`) for
+`--screens`, the per-test `testIds` fact and the report's optional `screens`;
+the helper version is 15, report version 3 and suite version 1 are unchanged.
+Policy `assessment-source-v17` adds the
 `copy-alias`, `partial-copy-alias`, `data-alias` and `literal-coordinates`
 codes of `fragile-selector` for target tests, and a fixture module's
 `aliases` in the analyzer's exports; the helper version is 14, report

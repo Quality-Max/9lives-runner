@@ -20,6 +20,15 @@ SDK versions.
   `login-hide` smoke cases; the save-password sheet itself was not
   reproduced (#292).
 
+- `9l assess --screens <file|glob>` (and `screens` on the MCP `assess_test`
+  tool) checks the literal test IDs target tests pass to `app.getByTestId`
+  against saved `9l inspect` results: an ID no screen holds is
+  `screen-test-id/unobserved-test-id` (informational), one a screen holds on
+  several elements `screen-test-id/repeated-test-id` (suspected). The report
+  names each screen by path and SHA-256. `9l inspect` JSON gains `testIds`,
+  the count of every test ID on the window, interactive or not. Policy
+  `assessment-source-v18`, analyzer helper version 15 (#316).
+
 ### Fixed
 
 - An iOS tap on a control under the keyboard or a system alert landed on the

@@ -64,8 +64,27 @@ export type ScreenResult = {
   controls: ScreenControl[];
   truncated?: number;
   testability: ScreenTestability;
+  /** Every test ID on the inspected window, interactive or not, with the
+   * number of elements that carry it. `9l assess --screens` reads it. */
+  testIds: Record<string, number>;
+  /** Set when the window held more distinct test IDs than are kept. */
+  testIdsTruncated?: true;
   warnings: string[];
 };
+
+const maxTestIds = 2000;
+/** Count the test IDs a window's elements carry, bounded. */
+export function countTestIds(ids: Iterable<string | undefined>): { testIds: Record<string, number>; testIdsTruncated?: true } {
+  const counts = new Map<string, number>();
+  let truncated = false;
+  for (const id of ids) {
+    if (!id) continue;
+    if (!counts.has(id) && counts.size >= maxTestIds) { truncated = true; continue; }
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  const testIds = Object.fromEntries([...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return { testIds, ...(truncated ? { testIdsTruncated: true as const } : {}) };
+}
 
 const copyBadge = { android: '🟠 copy only', ios: '🟠 label only' } as const;
 const footer = {

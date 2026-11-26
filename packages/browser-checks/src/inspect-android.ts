@@ -11,7 +11,7 @@
 // all nodes, not only the tappable ones.
 import { spawn } from 'node:child_process';
 import { androidDefaults, androidToolPaths } from './android-env';
-import { rankControls, renderScreenInspectReport, shortLabel, testabilityOf, type ScreenControl, type ScreenResult } from './inspect-screen';
+import { countTestIds, rankControls, renderScreenInspectReport, shortLabel, testabilityOf, type ScreenControl, type ScreenResult } from './inspect-screen';
 export type { NativeStability } from './inspect-screen';
 
 export type InspectAndroidArgs = {
@@ -178,7 +178,8 @@ export function inspectAndroidHierarchy(xml: string, options: { package?: string
   else if (controls.length === 0) warnings.push(`No tappable, checkable or editable controls in ${nodes.length} nodes. The screen may still be loading, or its controls may not be exposed to accessibility.`);
   if (nodes.some((node) => node.password)) warnings.push('A password field is on screen; its value is never reported.');
 
-  return { platform: 'android', apps: packages, nodeCount: nodes.length, ...rankControls(controls), testability, warnings };
+  return { platform: 'android', apps: packages, nodeCount: nodes.length, ...rankControls(controls), testability,
+    ...countTestIds(nodes.map(testIdOf)), warnings };
 }
 
 type Exec = (file: string, args: string[], timeoutMs: number) => Promise<{ status: number | null; stdout: string; stderr: string }>;

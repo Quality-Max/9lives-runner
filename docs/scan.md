@@ -66,6 +66,11 @@ Each tappable, checkable or editable control gets the handle the
 | 🟠 copy only | No ID, but a unique text, description or hint, or that of a label inside the control. The report gives the `controls` alias that would reach it, such as `{accessibilityId: "Alerts", className: "android.widget.Switch"}`. A copy edit or another device language breaks it. |
 | 🔴 none | No ID and no label that resolves to it alone, so only coordinates (`tapAt`) reach it. |
 
+The JSON result also carries `testIds`: every test ID on the window,
+interactive or not, with the number of elements carrying it (at most 2,000
+distinct IDs, then `testIdsTruncated`). `9l assess --screens` checks specs
+against it ([test IDs against inspected screens](test-assessment.md#test-ids-against-inspected-screens)).
+
 The score is the share of controls with a stable ID, and the weakest
 handles come first. Matching follows the driver: package-scoped, exact
 values, unique among all nodes. The dump covers only what is on screen; a

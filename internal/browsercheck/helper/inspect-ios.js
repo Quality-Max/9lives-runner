@@ -130,7 +130,8 @@ function inspectIosSource(xml) {
     if (all.some((element) => element.type === 'XCUIElementTypeSecureTextField'))
         warnings.push('A secure text field is on screen; its value is never reported.');
     const testability = (0, inspect_screen_1.testabilityOf)(controls, 'have only a label, which the 9l iOS driver cannot match');
-    return { platform: 'ios', apps, elementCount: all.length, ...(0, inspect_screen_1.rankControls)(controls), testability, warnings };
+    return { platform: 'ios', apps, elementCount: all.length, ...(0, inspect_screen_1.rankControls)(controls), testability,
+        ...(0, inspect_screen_1.countTestIds)(all.map((element) => { const id = identifierOf(element); return id && testIdPattern.test(id) ? id : undefined; })), warnings };
 }
 function renderIosInspectReport(result, opts = {}) {
     return (0, inspect_screen_1.renderScreenInspectReport)(result, opts);

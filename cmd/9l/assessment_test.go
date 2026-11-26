@@ -457,3 +457,59 @@ func TestAssessmentTextShowsOnlyKnownDimensions(t *testing.T) {
 		}
 	}
 }
+
+const screenSpec = "import {createTargetTest} from '@9l/playwright';\n" +
+	"const test = createTargetTest({});\n" +
+	"test('books', async ({app}) => {\n" +
+	"  await app.getByTestId('booking_join').tap();\n" +
+	"  await app.getByTestId('booking_cancel').tap();\n" +
+	"});\n"
+
+func TestAssessScreensChecksTestIDsAndNamesTheScreens(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("requires Node")
+	}
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "book.spec.ts")
+	screens := filepath.Join(dir, "screens")
+	if os.WriteFile(spec, []byte(screenSpec), 0o600) != nil || os.Mkdir(screens, 0o700) != nil ||
+		os.WriteFile(filepath.Join(screens, "home.json"), []byte(`{"platform":"android","apps":["com.example.app"],"controls":[],"testIds":{"booking_join":2}}`), 0o600) != nil {
+		t.Fatal("fixture")
+	}
+	var stdout, stderr bytes.Buffer
+	if code := assessCommand([]string{spec, "--screens", filepath.Join(screens, "*.json"), "--format", "json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	var report assessment.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil || len(report.Screens) != 1 || report.Screens[0].TestIDs != 1 {
+		t.Fatalf("report %v %+v", err, report.Screens)
+	}
+	var codes []string
+	for _, f := range report.Tests[0].Findings {
+		if f.Rule == "screen-test-id" {
+			codes = append(codes, f.Code)
+		}
+	}
+	if strings.Join(codes, ",") != "repeated-test-id,unobserved-test-id" {
+		t.Fatalf("codes %v", codes)
+	}
+	stdout.Reset()
+	if code := assessCommand([]string{dir, "--screens", filepath.Join(screens, "home.json")}, &stdout, &stderr); code != 0 ||
+		!strings.Contains(stdout.String(), `Screen "`+filepath.Join(screens, "home.json")+`": android, 1 test IDs, sha256 `) || !strings.Contains(stdout.String(), "screen-test-id") {
+		t.Fatalf("suite text: %s", stdout.String())
+	}
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{spec, "--screens", ""}, "--screens needs a path"},
+		{[]string{spec, "--screens", filepath.Join(dir, "none-*.json")}, "--screens matched no file"},
+		{[]string{spec, "--screens", spec}, "not a `9l inspect"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := assessCommand(c.args, &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), c.want) {
+			t.Fatalf("%v: code %d %q", c.args, code, stderr.String())
+		}
+	}
+}

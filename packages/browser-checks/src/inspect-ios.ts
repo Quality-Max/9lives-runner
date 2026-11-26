@@ -17,7 +17,7 @@ import { createServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { rankControls, renderScreenInspectReport, shortLabel, testabilityOf, type ScreenControl, type ScreenResult } from './inspect-screen';
+import { countTestIds, rankControls, renderScreenInspectReport, shortLabel, testabilityOf, type ScreenControl, type ScreenResult } from './inspect-screen';
 
 /** The Appium and XCUITest driver releases the iOS driver is qualified with;
  * packages/playwright/src/ios-runtime.ts is the source, a test keeps them equal. */
@@ -130,7 +130,8 @@ export function inspectIosSource(xml: string): InspectIosResult {
   if (controls.length === 0) warnings.push(`No visible controls in ${all.length} elements. The screen may still be loading, or its controls may not be exposed to accessibility.`);
   if (all.some((element) => element.type === 'XCUIElementTypeSecureTextField')) warnings.push('A secure text field is on screen; its value is never reported.');
   const testability = testabilityOf(controls, 'have only a label, which the 9l iOS driver cannot match');
-  return { platform: 'ios', apps, elementCount: all.length, ...rankControls(controls), testability, warnings };
+  return { platform: 'ios', apps, elementCount: all.length, ...rankControls(controls), testability,
+    ...countTestIds(all.map((element) => { const id = identifierOf(element); return id && testIdPattern.test(id) ? id : undefined; })), warnings };
 }
 
 export function renderIosInspectReport(result: InspectIosResult, opts: { now?: Date } = {}): string {

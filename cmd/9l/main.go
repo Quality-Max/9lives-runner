@@ -154,7 +154,9 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 	agentRecord := fs.String("agent-provenance", "", "agent creation snapshot JSON")
 	titles := fs.Bool("titles", false, "include literal test titles (source text) for local use")
 	limits := fs.Bool("limits", false, "text: list every analysis-limit location instead of one count per code and file")
-	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true})) != nil {
+	var screenArgs stringList
+	fs.Var(&screenArgs, "screens", "saved `9l inspect --android|--ios --format json` result, or a glob of them; check target tests' test IDs against these screens (repeatable)")
+	if fs.Parse(flagsFirst(args, map[string]bool{"--requirements": true, "--format": true, "--agent-provenance": true, "--screens": true})) != nil {
 		return 2
 	}
 	if fs.NArg() == 0 || (*format != "json" && *format != "text") {
@@ -187,6 +189,28 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 		}
 		return data, nil
 	}
+	var screens *assessment.Screens
+	if len(screenArgs) > 0 {
+		var paths []string
+		for _, arg := range screenArgs {
+			if arg == "" {
+				fmt.Fprintln(errOut, "9l: --screens needs a path or glob; omit it to assess without screens")
+				return 2
+			}
+			matches, err := filepath.Glob(arg)
+			if err != nil || len(matches) == 0 {
+				fmt.Fprintln(errOut, "9l: --screens matched no file:", arg)
+				return 2
+			}
+			sort.Strings(matches)
+			paths = append(paths, matches...)
+		}
+		var err error
+		if screens, err = assessment.LoadScreens(paths, read); err != nil {
+			fmt.Fprintln(errOut, "9l:", err)
+			return 2
+		}
+	}
 	var contract []byte
 	if *requirements != "" {
 		var err error
@@ -202,14 +226,14 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 			fmt.Fprintln(errOut, "9l: --agent-provenance applies to a single spec")
 			return 2
 		}
-		return assessSuite(ctx, fs.Args(), contract, *format, *titles, *limits, read, out, errOut)
+		return assessSuite(ctx, fs.Args(), contract, screens, *format, *titles, *limits, read, out, errOut)
 	}
 	source, err := read(fs.Arg(0), assessment.MaxSource)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
 	}
-	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles, Path: fs.Arg(0)})
+	report, err := assessment.Assess(ctx, source, contract, assessment.Options{Titles: *titles, Path: fs.Arg(0), Screens: screens})
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
@@ -248,7 +272,7 @@ func assessContext(ctx context.Context, args []string, out, errOut io.Writer) in
 
 // assessSuite reads and assesses every discovered file. It writes the combined
 // report even when some files could not be assessed, then exits 2 for them.
-func assessSuite(ctx context.Context, inputs []string, contract []byte, format string, titles, limits bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
+func assessSuite(ctx context.Context, inputs []string, contract []byte, screens *assessment.Screens, format string, titles, limits bool, read func(string, int64) ([]byte, error), out, errOut io.Writer) int {
 	paths, err := assessment.DiscoverSpecs(inputs)
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
@@ -271,7 +295,7 @@ func assessSuite(ctx context.Context, inputs []string, contract []byte, format s
 			files[index].Error = "source-limit"
 		}
 	}
-	suite, err := assessment.AssessSuite(ctx, files, contract, assessment.Options{Titles: titles})
+	suite, err := assessment.AssessSuite(ctx, files, contract, assessment.Options{Titles: titles, Screens: screens})
 	if err != nil {
 		fmt.Fprintln(errOut, "9l:", err)
 		return 2
@@ -309,6 +333,7 @@ func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
 	for _, limit := range suite.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
 	}
+	writeScreens(out, suite.Screens)
 	fmt.Fprintf(out, "Summary: %d files (%d assessed, ", suite.Summary.Files, suite.Summary.Assessed)
 	if suite.Summary.NoTests > 0 {
 		fmt.Fprintf(out, "%d with no tests, ", suite.Summary.NoTests)
@@ -319,6 +344,13 @@ func writeSuiteText(out io.Writer, suite assessment.SuiteReport, limits bool) {
 	}
 	fmt.Fprintf(out, "), %d tests, %d findings\n", suite.Summary.Tests, suite.Summary.Findings)
 	writeRuleCounts(out, suite.Summary.Rules)
+}
+
+// writeScreens names the inspected screens test IDs were checked against.
+func writeScreens(out io.Writer, screens []assessment.ScreenEvidence) {
+	for _, screen := range screens {
+		fmt.Fprintf(out, "Screen %s: %s, %d test IDs, sha256 %s\n", strconv.Quote(screen.Path), screen.Platform, screen.TestIDs, screen.SHA256)
+	}
 }
 
 func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
@@ -339,6 +371,7 @@ func writeAssessmentText(out io.Writer, report assessment.Report, limits bool) {
 	for _, limit := range report.Limits {
 		fmt.Fprintln(out, "Limit:", limit)
 	}
+	writeScreens(out, report.Screens)
 	counts, total := assessment.CountFindings(report)
 	fmt.Fprintf(out, "Summary: %d tests, %d findings\n", len(report.Tests), total)
 	writeRuleCounts(out, counts)
@@ -1545,3 +1578,9 @@ func diagnosticSummary(d runner.TargetDiagnostic) string {
 	}
 	return text + fmt.Sprintf("; app windows at the last mutation %s, after the failure %s", windows(d.WindowsBefore, d.FocusBefore), windows(d.WindowsAfter, d.FocusAfter))
 }
+
+// stringList collects a repeatable string flag.
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, ",") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
