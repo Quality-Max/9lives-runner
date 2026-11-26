@@ -29,6 +29,16 @@ SDK versions.
   the count of every test ID on the window, interactive or not. Policy
   `assessment-source-v18`, analyzer helper version 15 (#316).
 
+- `9l run --repeat <n> --deadline <d> [--label <name>]` measures how often a
+  job passes: n complete runs one after another, each with its own run ID
+  and receipts, and an aggregate with the pass rate, each member's outcome
+  and failure category, and a category histogram built from failure-summary
+  metadata. Repeats never retry: `--attempts` above 1 is refused and
+  Playwright runs with `--retries 0` unless `--retries` is given. The
+  aggregate is `passed` only when every member ran and passed. It is a new
+  machine-readable output, `runRepeat` version 1, with a published schema
+  (#214).
+
 ### Fixed
 
 - An iOS tap on a control under the keyboard or a system alert landed on the

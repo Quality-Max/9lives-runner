@@ -21,7 +21,7 @@ runner and its contract versions before decoding anything else:
   "cliVersion": "0.5.1",
   "contracts": {
     "plan": 1, "runResult": 2, "runStatus": 2, "receipt": 2,
-    "progressEvent": 1, "assess": 3, "assessSuite": 1,
+    "progressEvent": 1, "assess": 3, "assessSuite": 1, "runRepeat": 1,
     "executionReceipt": "execution-receipt/1.0", "engine": "9l.engine/1"
   },
   "commands": ["plan", "run", "status", "result", "cancel", "assess", "provenance", "prove", "tier1", "heal-native", "heal", "mcp", "version"]
@@ -165,6 +165,7 @@ independent validation in the SDK job:
 | `9l status --format json` | [run-status.schema.json](contracts/run-status.schema.json) |
 | `receipt.json` | [receipt.schema.json](contracts/receipt.schema.json) |
 | `events.jsonl` line | [progress-event.schema.json](contracts/progress-event.schema.json) |
+| `9l run --repeat N --format json`, and `repeats/<batchId>.json` in the receipt directory | [run-repeat.schema.json](contracts/run-repeat.schema.json) |
 | `9l assess` on one spec | [assess.schema.json](contracts/assess.schema.json) |
 | `9l assess` on several specs, a directory or a pattern | [assess-suite.schema.json](contracts/assess-suite.schema.json) |
 

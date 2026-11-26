@@ -80,6 +80,24 @@
   `N test(s) passed only on a Playwright retry inside this attempt` under the
   job, so a flaky pass is not read as a clean one. Target jobs (`--target`)
   already run without retries and refuse `--retries`.
+- Flake measurement: `--repeat <n>` (2–1000) runs the same job that many
+  times, one complete run after another, and reports how often it passed.
+  Each member is an ordinary run with its own run ID, result and receipts.
+  The batch needs `--deadline`, which bounds it as a whole; each member gets
+  what is left, and the deadline or a cancellation ends the batch after the
+  member it stopped, with a partial result. Repeats measure single attempts,
+  so `--attempts` above 1 is refused, and Playwright runs with `--retries 0`
+  unless `--retries` names another count: a retry would hide the failure
+  being counted. `--junit` and `--verify` describe one run and are refused.
+  `--label "1s pre-tap wait"` names the batch, to compare experiment arms.
+  The aggregate (`--format json`, and `repeats/<batchId>.json` in the receipt
+  directory; [schema](contracts/run-repeat.schema.json)) gives the pass rate,
+  each member's run ID, outcome and category, and a histogram of categories:
+  `passed`, or the failure summary's metadata tokens (stop, class, step,
+  operation, reason, `@control`), never messages, titles or app text. Its
+  outcome is `passed` only when every requested member ran and passed,
+  `failed` when any member failed, otherwise `incomplete`; the exit code
+  follows it (0, 1, 3).
 - Config and projects: `--config <file>` runs the specs with that Playwright
   config instead of the one Playwright finds (with `--sdk` it replaces the
   detected config), and `--project <name>` (repeatable, up to 16) runs only
