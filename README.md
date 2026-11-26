@@ -104,7 +104,7 @@ shows recorded before/after receipts on one synthetic app.
 
 | Component | Qualified |
 | --- | --- |
-| CLI and `@9l/playwright` | 0.7.2, released together; install matching versions |
+| CLI and `@9l/playwright` | 0.7.3, released together; install matching versions |
 | `@playwright/test` | 1.61.1 through 1.64.1 |
 | Browser | Chromium; other engines are unqualified |
 | Node | 24 (22 minimum) |
