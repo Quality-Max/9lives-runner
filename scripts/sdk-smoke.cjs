@@ -84,11 +84,17 @@ async function interrupted(kind, webServer = false) {
   const guard = setTimeout(() => child.kill('SIGTERM'), 65000);
   try {
     const start = Date.now();
+    let readyMs = 0;
     while (!fs.existsSync(marker)) {
-      assert(Date.now() - start < (process.platform === 'win32' ? 20000 : 10000), 'real browser did not become ready');
+      // A cancel case has a 45 s budget, so a slow hosted runner gets 30 s to
+      // start the web server and browser (#320); a timeout case must reach the
+      // browser well inside its own 12 s (25 s on Windows) deadline.
+      const ready = kind === 'cancel' ? 30000 : process.platform === 'win32' ? 20000 : 10000;
+      assert(Date.now() - start < ready, `real browser did not become ready within ${ready} ms`);
       assert(child.exitCode === null, 'engine exited before real browser work');
       await sleep(50);
     }
+    readyMs = Date.now() - start;
     const {workerPID} = JSON.parse(fs.readFileSync(marker));
     const table = processTable();
     const worker = table.find(item => item.pid === workerPID);
@@ -158,7 +164,7 @@ async function interrupted(kind, webServer = false) {
         assert.equal(result.receipts[0].executedTests, 1);
       }
     }
-    console.log(`SDK ${webServer ? 'webServer ' : ''}${kind}: ps verified no live owned processes${webServer ? `, same-port ${port} SDK/ordinary reruns passed` : ''} and terminal receipt verified`);
+    console.log(`SDK ${webServer ? 'webServer ' : ''}${kind}: browser ready in ${readyMs} ms; ps verified no live owned processes${webServer ? `, same-port ${port} SDK/ordinary reruns passed` : ''} and terminal receipt verified`);
   } finally {
     clearTimeout(guard);
     if (child.exitCode === null) { child.kill('SIGTERM'); await completion; }
