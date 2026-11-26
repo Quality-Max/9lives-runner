@@ -19,7 +19,8 @@ Ask the agent to map the requested behavior to explicit assertions, record
 source provenance before creation or repair, review assessment findings, and
 run the exact selected spec. Report failures, skips and unverified behavior
 alongside the execution receipt. A green result does not establish complete
-requirement coverage.
+requirement coverage. Ready-made prompts for these tasks are in
+[agent prompts](agent-prompts.md).
 
 To review findings reported by a reviewer or bot, ask the agent to follow the
 skill's triage workflow: one disposition per finding, a failing and then

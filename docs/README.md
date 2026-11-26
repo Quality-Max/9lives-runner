@@ -21,6 +21,7 @@
 | [CLI reference](cli.md) | You need plans, budgets, receipts or cancellation |
 | [CLI contract](contracts.md) | You are integrating `9l` into another tool through its JSON output and exit codes |
 | [Agent setup](agent-setup.md) | You want the optional QA skill workflow |
+| [Agent prompts](agent-prompts.md) | You want copy-paste prompts that make an agent write, fix, review or confirm tests with evidence |
 | [MCP server](mcp.md) | You want an agent to run, heal, assess and confirm specs through MCP tools |
 | [QualityMax coding sessions](qualitymax-coding-sessions.md) | You want to know how QualityMax runs 9lives in hosted agent sessions and reads its receipts |
 | [Test assessment](test-assessment.md) | You are reviewing requirements and source provenance |
