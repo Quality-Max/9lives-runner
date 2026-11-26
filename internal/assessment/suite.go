@@ -27,7 +27,14 @@ const (
 const SuiteVersion = 1
 
 // suiteFileTimeout is each file's analyzer budget, as for a single spec.
-var suiteFileTimeout = 10 * time.Second
+// fileTimeout bounds one spec's analysis: the spec, its fixture modules and
+// the spec again. The analyzer only parses source, so a generous bound costs
+// nothing on a healthy host; 10 s expired on a loaded CI runner where the
+// package's tests took 163 s (#232). Suite files get less, since a suite
+// retries a timed-out file once, alone.
+var fileTimeout = 30 * time.Second
+
+var suiteFileTimeout = 20 * time.Second
 
 // suiteWorkers analyzes at most four files at once, and at most half the
 // CPUs, so parallel analyzers do not starve each other of their budgets.

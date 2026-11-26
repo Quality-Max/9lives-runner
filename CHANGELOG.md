@@ -51,6 +51,10 @@ SDK versions.
 
 ### Fixed
 
+- `9l assess` gave each spec's analysis 10 s, which a loaded machine could
+  exceed, failing a healthy spec with `timeout`. One spec now gets 30 s and
+  each file of a suite 20 s, before a timed-out suite file is retried alone.
+  The analyzer only parses source; nothing else changes.
 - An iOS tap on a control under the keyboard or a system alert landed on the
   keyboard or the alert and was reported done. A control WebDriverAgent
   reports as not hittable is now checked for those covers and the tap is

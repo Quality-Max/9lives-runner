@@ -325,7 +325,7 @@ func Assess(ctx context.Context, source, contract []byte, opts Options) (Report,
 		return empty, diagnostic("parser-unavailable")
 	}
 	defer cleanup()
-	return assessWithHelper(ctx, source, contract, c, opts, parser, 10*time.Second)
+	return assessWithHelper(ctx, source, contract, c, opts, parser, fileTimeout)
 }
 
 func assessWithHelper(parent context.Context, source, contract []byte, c Contract, opts Options, parser string, timeout time.Duration) (Report, error) {
