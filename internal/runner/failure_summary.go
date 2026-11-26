@@ -21,7 +21,8 @@ var (
 	failureControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 	failureStops = []string{StopTestFailed, StopGoalFailed, StopDeadline, StopCanceled, StopInvalidEvidence, StopEvidenceTruncated,
-		StopExitWithoutFailure, StopProvenanceChanged, StopNotStarted, StopInfrastructure}
+		StopExitWithoutFailure, StopProvenanceChanged, StopNotStarted, StopInfrastructure,
+		StopVerificationContradicted, StopVerificationIncomplete, StopVerificationChanged}
 	failureClasses = []string{FailureAssertion, FailureTimeout, FailureActionTimeout, FailureEnvironment, FailureUnexpectedPass, FailureSetup, FailureOther}
 	failureSteps   = []string{"assertion", "action", "browser", "fixture", "goal", "other"}
 	// The final completed statuses of a failed test: an unexpected pass is
@@ -138,6 +139,9 @@ func failureStop(receipt Receipt) string {
 		if receipt.GoalFailed && receipt.NonGoalFailureCount == 0 {
 			return StopGoalFailed
 		}
+		if contradictedPass(receipt) {
+			return StopVerificationContradicted
+		}
 		return StopTestFailed
 	}
 	switch {
@@ -151,6 +155,14 @@ func failureStop(receipt Receipt) string {
 		return StopInvalidEvidence
 	case receipt.Validated && receipt.ExitCode != 0 && receipt.FailureCount == 0:
 		return StopExitWithoutFailure
+	}
+	// An attempt whose own evidence passed and whose independent checks did
+	// not all hold: the checks, not the infrastructure, stopped the pass.
+	if receipt.Validated && receipt.ExitCode == 0 && receipt.FailureCount == 0 && len(receipt.Verifications) > 0 && !verificationsHold(receipt) {
+		if slices.ContainsFunc(receipt.Verifications, func(record Verification) bool { return record.Reason == VerificationReasonFileChanged }) {
+			return StopVerificationChanged
+		}
+		return StopVerificationIncomplete
 	}
 	return StopInfrastructure
 }

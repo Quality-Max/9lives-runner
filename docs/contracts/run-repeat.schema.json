@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "RepeatCategory": {
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "runs"
+      ],
+      "type": "object"
+    },
+    "RepeatMember": {
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runId",
+        "outcome",
+        "complete",
+        "category",
+        "durationMs"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/run-repeat.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Aggregate of a repeated run: pass rate, failure categories and the member run IDs. Each member is an ordinary run with its own result and receipts; outcome is passed only when every requested member ran and passed.",
+  "properties": {
+    "batchId": {
+      "type": "string"
+    },
+    "categories": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/RepeatCategory"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "executed": {
+      "type": "integer"
+    },
+    "failed": {
+      "type": "integer"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "incomplete": {
+      "type": "integer"
+    },
+    "label": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string"
+    },
+    "passRate": {
+      "type": "number"
+    },
+    "passed": {
+      "type": "integer"
+    },
+    "playwrightRetries": {
+      "type": "integer"
+    },
+    "requested": {
+      "type": "integer"
+    },
+    "runs": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/RepeatMember"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "stoppedBy": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "batchId",
+    "requested",
+    "executed",
+    "outcome",
+    "passed",
+    "failed",
+    "incomplete",
+    "passRate",
+    "categories",
+    "runs",
+    "startedAt",
+    "finishedAt"
+  ],
+  "title": "9l run --repeat N --format json",
+  "type": "object"
+}

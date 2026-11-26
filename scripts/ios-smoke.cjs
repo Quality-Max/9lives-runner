@@ -2,9 +2,20 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {spawnSync}=require('node:child_process');
+const {spawn,spawnSync}=require('node:child_process');
+const {setTimeout:delay}=require('node:timers/promises');
 const root=path.resolve(__dirname,'..');
-const modes=['healthy','defect','missing','ambiguous','label-only','digest','unavailable','cancel','blocked'];
+// The last three stop the worker from outside while it holds a booted device:
+// the engine is interrupted, the attempt times out, or the worker is killed.
+const stopped=['runner-cancel','attempt-timeout','worker-kill'];
+// Face ID at the system prompt: the enrolled face signs in; a face that is
+// not enrolled, and a simulator without enrollment, must fail the assertion.
+const biometricModes=['biometric','biometric-nomatch','biometric-unenrolled'];
+// A password login: Return submits, the keyboard is read and a system alert
+// is answered by name; a tap under the keyboard and hiding an iPhone keyboard
+// must both fail before acting on the app.
+const loginModes=['login','login-covered','login-hide'];
+const modes=['healthy','defect','missing','ambiguous','label-only','digest','unavailable','cancel','blocked',...biometricModes,...loginModes,...stopped];
 if(process.argv[2]==='--list') {console.log(modes.join('\n'));process.exit(0);}
 const selected=process.argv.slice(2).length?process.argv.slice(2):modes;
 assert(selected.every(mode=>modes.includes(mode)),'unknown iOS case');
@@ -19,6 +30,9 @@ function command(file,args,options={}) {
   const result=spawnSync(file,args,{cwd:root,encoding:'utf8',timeout:600000,maxBuffer:4<<20,...options});
   assert.ifError(result.error);return result;
 }
+// Before the long WebDriverAgent build, not after it.
+const {requireBranch,provenanceFailure}=require('./smoke-branch.cjs');
+requireBranch(root,'smoke:ios');
 // The receipt must name the Xcode this host actually runs, queried here
 // independently of the driver, whichever supported Xcode is installed.
 const hostXcode=/^Xcode ([0-9.]+)\n/.exec(command('/usr/bin/xcodebuild',['-version']).stdout)?.[1];
@@ -39,7 +53,7 @@ function prepare(operation,file,args,timeout,stdio) {
 // Sessions start a prebuilt WebDriverAgent runner instead of compiling one.
 assert.notEqual(prepare('wda-build',process.execPath,['scripts/build-ios-wda.cjs'],1560000,['ignore','inherit','inherit']),undefined,'build WebDriverAgent');
 const spec=path.join(root,'testdata/sdk/ios/native.spec.ts');
-const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0);
+const creation=command(engine,['provenance',spec,'--agent','codex']);assert.equal(creation.status,0,provenanceFailure(creation));
 const provenance=path.join(work,'creation.json');fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
 function devices() {
   const result=command('/usr/bin/xcrun',['simctl','list','devices','-j']);assert.equal(result.status,0);
@@ -51,19 +65,82 @@ const sentinel=command('/usr/bin/xcrun',['simctl','create',`9l-sentinel-${Date.n
 assert.equal(sentinel.status,0,'create unrelated sentinel');
 const sentinelId=sentinel.stdout.trim();assert.match(sentinelId,/^[A-Fa-f0-9-]{36}$/);
 const results=[];
+const engineArgs=(mode,timeout)=>['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
+  '--grep',biometricModes.includes(mode)?'iOS biometrics':loginModes.includes(mode)?'iOS login':'iOS transfer',
+  '--agent-provenance',provenance,'--timeout',timeout,'--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
+  '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,NINELIVES_IOS_OS,DEVELOPER_DIR'];
+const record=result=>{
+  results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
+  console.log(JSON.stringify(result));
+};
+// The worker's own teardown cannot run in these cases. The engine must remove
+// the exact device, its process tree and nothing else, and say so in the receipt.
+async function stoppedWorker(mode,before,probe,env) {
+  const wallStarted=Date.now(),monotonicStarted=process.hrtime.bigint();
+  const child=spawn(engine,engineArgs(mode,mode==='attempt-timeout'?'2m':'8m'),{cwd:root,env,stdio:['ignore','pipe','ignore']});
+  let stdout='';child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{if(stdout.length<(4<<20)) stdout+=chunk;});
+  const exited=new Promise(resolve=>child.once('close',status=>resolve(status)));
+  let facts={},owner='',udid='',status;
+  try {
+    for(let i=0;i<1440&&!facts.deviceReady&&child.exitCode===null;i++) {
+      try {facts=JSON.parse(fs.readFileSync(probe,'utf8'));} catch {}
+      if(!facts.deviceReady) await delay(250);
+    }
+    assert.equal(facts.deviceReady,true,`${mode}: the worker never held a device; setup phase: ${facts.setupPhase||'unknown'}`);
+    const held=devices().filter(d=>/^9l-ios-/.test(d.name));
+    assert.equal(held.length,1,`${mode}: exactly one owned device while the worker runs`);
+    assert.equal(held[0].state,'Booted',`${mode}: the owned device is booted when the worker is stopped`);
+    owner=held[0].name;udid=held[0].udid;
+    if(mode==='runner-cancel') child.kill('SIGINT');
+    if(mode==='worker-kill') process.kill(facts.workerPid,'SIGKILL');
+    // Unreferenced timers: a bound that was not needed must not keep this script alive.
+    status=await Promise.race([exited,delay(360000,'engine did not exit',{ref:false})]);
+    assert.notEqual(status,'engine did not exit',`${mode}: the engine did not return after its worker was stopped`);
+  } finally {
+    // An assertion above must not leave the engine, its worker or the device behind.
+    let interruptedAtMs;
+    if(child.exitCode===null&&child.signalCode===null) {interruptedAtMs=Date.now()-wallStarted;child.kill('SIGINT');await Promise.race([exited,delay(180000,undefined,{ref:false})]);}
+    // Kept even when an assertion above failed (#291): the engine's own
+    // output and fixed timings. Monotonic time pauses while the host sleeps,
+    // so a gap between the two clocks shows sleep rather than a slow step.
+    fs.writeFileSync(path.join(work,`${mode}.json`),stdout,{mode:0o600});
+    fs.writeFileSync(path.join(work,`${mode}-timing.json`),JSON.stringify({wallMs:Date.now()-wallStarted,
+      monotonicMs:Math.round(Number(process.hrtime.bigint()-monotonicStarted)/1e6),interruptedAtMs,
+      engineExited:child.exitCode!==null||child.signalCode!==null,engineStatus:child.exitCode??child.signalCode}),{mode:0o600});
+  }
+  const data=JSON.parse(stdout),receipt=data.receipts[0];
+  assert.equal(data.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: a stopped attempt is not retried`);
+  // A canceled run cannot capture its final source snapshot; the engine
+  // reports that as unknown, never as matched or as an observed change.
+  assert.equal(receipt.agentProvenance.status,mode==='runner-cancel'?'unknown':'matched',mode);
+  assert.notEqual(status,0,mode);assert.notEqual(data.outcome,'passed',mode);
+  assert.equal(receipt.status,{'runner-cancel':'canceled','attempt-timeout':'timed_out','worker-kill':'failed'}[mode],`${mode}: receipt status`);
+  assert.deepEqual(receipt.targetCleanup,[{kind:'ios-simulator',outcome:'removed'}],`${mode}: the engine must remove the device its worker left`);
+  assert(!devices().some(d=>d.name===owner),`${mode}: owned device survived the worker`);
+  assert.equal(deviceSet(),before,`${mode}: simulator set/state changed`);
+  assert(devices().some(d=>d.udid===sentinelId),`${mode}: unrelated simulator lost`);
+  // The owner name is the private base path of this attempt's server, and the
+  // device identifier is the destination of its WebDriverAgent run.
+  for(const mark of [owner,udid]) assert.equal(spawnSync('/usr/bin/pgrep',['-f',mark],{encoding:'utf8',timeout:10000}).status,1,`${mode}: a process of the stopped worker survived`);
+  const raw=receipt.evidence.stdoutPath&&fs.existsSync(receipt.evidence.stdoutPath)?fs.readFileSync(receipt.evidence.stdoutPath,'utf8'):'';
+  assert(!['Sent $','Pending','hierarchy','Documents/started'].some(value=>raw.includes(value)),`${mode}: content leaked`);
+  const {workerPid,commands,...kept}=facts;
+  record({mode,qualified:true,outcome:data.outcome,status:receipt.status,validated:receipt.validated,simulatorSetPreserved:true,engineCleanup:receipt.targetCleanup,...kept,commands});
+}
+(async()=>{
 try {
   for(const mode of selected) {
     const before=deviceSet(),probe=path.join(work,`${mode}-probe.json`);
-    const run=command(engine,['run',spec,'--sdk','--config',path.join(root,'testdata/sdk/ios.config.ts'),'--target','ios:finance',
-      '--agent-provenance',provenance,'--timeout','8m','--deadline','9m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
-      '--pass-env','NINELIVES_IOS_CASE,NINELIVES_IOS_PROBE,NINELIVES_IOS_OS,DEVELOPER_DIR'],
-      {env:{...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe,NINELIVES_IOS_OS:os}});
+    const env={...process.env,NINELIVES_IOS_CASE:mode,NINELIVES_IOS_PROBE:probe,NINELIVES_IOS_OS:os};
+    if(stopped.includes(mode)) {await stoppedWorker(mode,before,probe,env);continue;}
+    const run=command(engine,engineArgs(mode,'8m'),{env});
     // Only sanitized engine receipts/protocol and bounded probe facts persist.
     fs.writeFileSync(path.join(work,`${mode}.json`),run.stdout,{mode:0o600});
     const data=JSON.parse(run.stdout),receipt=data.receipts[0];
     assert.equal(data.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: native mutations cannot retry`);
     assert.equal(receipt.agentProvenance.status,'matched',mode);
     assert.equal(receipt.validated,true,`${mode}: complete terminal evidence`);
+    assert.equal(receipt.targetCleanup,undefined,`${mode}: a worker that finishes releases its own device`);
     const facts=JSON.parse(fs.readFileSync(probe,'utf8'));
     assert.equal(deviceSet(),before,`${mode}: simulator set/state changed`);
     assert(devices().some(d=>d.udid===sentinelId),`${mode}: unrelated simulator lost`);
@@ -78,8 +155,32 @@ try {
       const fixture=JSON.parse(fs.readFileSync(path.join(root,'.context/ios-fixture/healthy/build.json'),'utf8'));
       assert.equal(rt.appSHA256,fixture.appSHA256);assert.equal(rt.bundleId,fixture.bundleId);
       assert.equal(rt.os,os);assert.equal(rt.runtime,runtime);assert.equal(rt.xcode,hostXcode);assert.equal(rt.deviceType,'com.apple.CoreSimulator.SimDeviceType.iPhone-16');
-    } else {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
-    if(!['digest','unavailable'].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
+    } else if(!['biometric','login'].includes(mode)) {assert.notEqual(run.status,0,mode);assert.notEqual(data.outcome,'passed',mode);}
+    if(!['digest','unavailable',...biometricModes,...loginModes].includes(mode)) assert.equal(facts.deviceStopped,true,`${mode}: owned device survived`);
+    if(loginModes.includes(mode)) {
+      assert(frames.some(f=>f.operation==='fill'&&f.status==='passed'),`${mode}: the password was submitted`);
+      if(mode==='login') {
+        assert.equal(run.status,0,`login: submit, keyboard and alert; setup phase: ${facts.setupPhase||'unknown'}`);assert.equal(data.outcome,'passed');
+        assert.equal(receipt.targetAssertions,4,'login: keyboard shown, home, keyboard hidden, notifications on');
+        assert(frames.some(f=>f.operation==='answer-alert'&&f.status==='passed'),'login: the alert was answered');
+      } else {
+        assert.equal(facts.stopReason,'operation_failed',`${mode}: refused, not passed`);
+        assert.equal(facts.driverReason,mode==='login-covered'?'covered_by_keyboard':'keyboard_not_hidden',`${mode}: driver reason`);
+        assert.equal(facts.clickDispatches,0,`${mode}: nothing was tapped`);
+      }
+    }
+    if(biometricModes.includes(mode)) {
+      // The presentation is an executed action, never an assertion; the
+      // sign-in is the one target assertion.
+      assert(frames.some(f=>f.operation==='biometric'&&f.status==='passed'),`${mode}: the biometric was presented once`);
+      if(mode==='biometric') {
+        assert.equal(run.status,0,`biometric: the enrolled face signs in; setup phase: ${facts.setupPhase||'unknown'}`);assert.equal(data.outcome,'passed');
+        assert.equal(receipt.targetAssertions,2,'biometric: the prompting and signed-in assertions');
+      } else {
+        assert.equal(facts.stopReason,'assertion_failed',`${mode}: the sign-in assertion fails`);
+        assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),`${mode}: sign-in assertion rejected`);
+      }
+    }
     if(mode==='defect') {
       assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),'defect must fail relevant assertion');
       assert.equal(facts.stopReason,'assertion_failed');assert.equal(facts.clickDispatches,1);
@@ -96,11 +197,11 @@ try {
       assert.equal(facts.stopReason,mode==='cancel'?'canceled':'operation_timeout');
       assert(frames.some(f=>f.operation==='tap'&&f.status==='failed'));
     }
-    const result={mode,qualified:true,outcome:data.outcome,validated:receipt.validated,simulatorSetPreserved:true,...facts};
-    results.push(result);fs.writeFileSync(path.join(work,'results.json'),JSON.stringify({version:1,cases:results},null,2));
-    console.log(JSON.stringify(result));
+    const {workerPid,deviceReady,...kept}=facts;
+    record({mode,qualified:true,outcome:data.outcome,validated:receipt.validated,simulatorSetPreserved:true,...kept});
   }
 } finally {
   assert.equal(command('/usr/bin/xcrun',['simctl','delete',sentinelId]).status,0,'remove owned sentinel');
   fs.rmSync(engine,{force:true});
 }
+})().catch(error=>{console.error(error);process.exitCode=1;});

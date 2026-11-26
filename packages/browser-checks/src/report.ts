@@ -55,7 +55,7 @@ const CHECK_META: Array<{ check: string; label: string; categories: string[] }> 
  * A text meter. Wrapped in a code span by callers so Markdown renders it in a monospace font and
  * the bars stay aligned down the column.
  */
-function meter(value: number, max: number, width: number): string {
+export function meter(value: number, max: number, width: number): string {
   if (max <= 0) return '░'.repeat(width);
   const filled = Math.max(0, Math.min(width, Math.round((value / max) * width)));
   return '█'.repeat(filled) + '░'.repeat(width - filled);
@@ -384,7 +384,7 @@ const STABILITY_EMOJI: Record<string, string> = {
 const STABILITY_RANK: Record<string, number> = { stable: 0, acceptable: 1, fragile: 2, none: 3 };
 
 /** Escape a value for a Markdown table cell without breaking its code span. */
-function cell(value: string): string {
+export function cell(value: string): string {
   return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
@@ -397,7 +397,7 @@ function cell(value: string): string {
  * backtick is padded so the delimiter stays unambiguous. The content is
  * preserved exactly — a selector stays copy-pasteable.
  */
-function codeSpan(value: string): string {
+export function codeSpan(value: string): string {
   const runs = value.match(/`+/g);
   const delimiter = '`'.repeat((runs ? Math.max(...runs.map((run) => run.length)) : 0) + 1);
   const padded = value.startsWith('`') || value.endsWith('`') ? ` ${value} ` : value;

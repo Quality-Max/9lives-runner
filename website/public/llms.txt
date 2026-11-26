@@ -6,7 +6,7 @@ This file follows the proposed llms.txt convention and does not guarantee how an
 
 What a result means: a passing receipt means the test's assertions passed and its execution report was validated. It does not prove that the assertions cover the requirements. Missing, interrupted or invalid evidence never produces a pass. Goal completion and model output are never treated as a passing test.
 
-Status: Playwright execution is qualified with Chromium; other browser engines are unqualified. Healing, fault testing (`9l prove`) and fix confirmation (`9l confirm`) are experimental. Android is experimental and qualified only on the emulators and phone listed in the Android guide. iOS, independent behavioral verification and verified replay are planned, not shipped.
+Status: Playwright execution is qualified with Chromium; other browser engines are unqualified. Healing, fault testing (`9l prove`) and fix confirmation (`9l confirm`) are experimental. Android is experimental and qualified only on the emulators and phone listed in the Android guide. Independent behavioral verification has an experimental first slice only: `9l run --verify` has the engine check HTTP postconditions declared outside the spec. iOS, broader independent verification and verified replay are planned, not shipped.
 
 Fetching the site root without `Accept: text/html` returns the installer script instead of the homepage. Documentation links below point to raw Markdown in the repository. Versions are not repeated here; the repository and its releases are authoritative.
 

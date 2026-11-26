@@ -30,12 +30,23 @@ export function parseWindows(text: string, appPackage: string): WindowState {
   return {windows, focus: focus.some(line => line[1] !== 'null') ? 'foreign' : 'none'};
 }
 
-/** Software keyboard visibility from `dumpsys input_method`. */
-export const imePattern = 'mInputShown=';
+/** The input method UiAutomator2's `hideKeyboard` capability selects on an
+ * owned emulator. It draws no window, so it never covers the app, and it does
+ * not consume Back: a Back sent to close it reaches the app instead. */
+export const emptyIme = 'io.appium.settings/.EmptyIME';
+
+/** Software keyboard visibility from `dumpsys input_method`: `mInputShown`,
+ * except that the empty input method is never a shown keyboard, even while a
+ * field has focus and Android reports it as shown. */
+// API 35 prints the selected method as mCurMethodId; API 36 moved it into a
+// per-user section as mSelectedMethodId. Either names the method in use.
+export const imePattern = 'mInputShown=|mCurMethodId=|mSelectedMethodId=';
 export type ImeState = 'shown' | 'hidden' | 'unknown';
 export function parseIme(text: string): ImeState {
   const value = /mInputShown=(true|false)/.exec(text)?.[1];
-  return value === undefined ? 'unknown' : value === 'true' ? 'shown' : 'hidden';
+  if (value === undefined) return 'unknown';
+  if (/(?:^|\s)(?:mCurMethodId|mSelectedMethodId)=(\S+)/m.exec(text)?.[1] === emptyIme) return 'hidden';
+  return value === 'true' ? 'shown' : 'hidden';
 }
 
 /** Physical displays from `dumpsys display`: the DisplayDeviceInfo lines carry

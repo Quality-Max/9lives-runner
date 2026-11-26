@@ -15,8 +15,9 @@ import (
 )
 
 var contractEnums = map[reflect.Type][]string{
-	reflect.TypeFor[runner.ReceiptStatus](): {"passed", "failed", "canceled", "timed_out", "error"},
-	reflect.TypeFor[runner.RunOutcome]():    {"passed", "failed", "incomplete"},
+	reflect.TypeFor[runner.ReceiptStatus]():      {"passed", "failed", "canceled", "timed_out", "error"},
+	reflect.TypeFor[runner.RunOutcome]():         {"passed", "failed", "incomplete"},
+	reflect.TypeFor[runner.VerificationResult](): {"verified", "contradicted", "unreachable", "not_run"},
 }
 
 var publishedContracts = []struct {
@@ -31,6 +32,7 @@ var publishedContracts = []struct {
 	{"receipt", "receipt.json", "One attempt's execution receipt, also embedded in the run result.", reflect.TypeFor[runner.Receipt](), runner.ReceiptVersion},
 	{"progress-event", "events.jsonl line", "One persisted progress event.", reflect.TypeFor[runner.ProgressEvent](), runner.ProgressEventVersion},
 	{"assess", "9l assess <one spec> --format json", "Advisory single-file source assessment. Static findings do not establish executed assertion coverage.", reflect.TypeFor[assessment.Report](), assessment.ReportVersion},
+	{"run-repeat", "9l run --repeat N --format json", "Aggregate of a repeated run: pass rate, failure categories and the member run IDs. Each member is an ordinary run with its own result and receipts; outcome is passed only when every requested member ran and passed.", reflect.TypeFor[RepeatSummary](), RepeatSummaryVersion},
 	{"assess-suite", "9l assess <several specs|dir|glob> --format json", "Advisory combined assessment of several files.", reflect.TypeFor[assessment.SuiteReport](), assessment.SuiteVersion},
 }
 

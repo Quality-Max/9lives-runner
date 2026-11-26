@@ -17,7 +17,7 @@ import (
 )
 
 const Version = "9l.engine/1"
-const TargetVersion = "9l.target/3"
+const TargetVersion = "9l.target/6"
 const maxFrameBytes = 16 * 1024
 const maxEvents = 10000
 const maxProtocolBytes = 4 << 20
@@ -363,6 +363,18 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 				return invalid("inconsistent test outcome")
 			}
 			state.final = true
+			// One entry per test, in result order. The stream has digests
+			// and no timestamps: no title and no duration is recorded.
+			listed := runner.TestOutcome{TestID: frame.TestID, Status: runner.TestPassed}
+			switch frame.Outcome {
+			case "skipped":
+				listed.Status = runner.TestSkipped
+			case "flaky":
+				listed.Status = runner.TestFlaky
+			case "unexpected":
+				listed.Status, listed.Class = runner.TestFailed, failedTest(frame.TestID, state).Class
+			}
+			validation.Tests = append(validation.Tests, listed)
 			if frame.Outcome == "skipped" {
 				if !testID.MatchString(frame.SkipKey) {
 					return invalid("invalid skip key")
@@ -458,7 +470,7 @@ func validate(raw []byte, identity runner.AttemptIdentity, skipPins map[string]b
 		return invalid("missing terminal outcome")
 	}
 	if targeted {
-		validation.Description += "; 9l.target/3; required target tests; worker-reported target assertion count only"
+		validation.Description += "; 9l.target/6; required target tests; worker-reported target assertion count only"
 	}
 	return validation, nil
 }
@@ -501,15 +513,15 @@ func outcome(state *testState) string {
 	return "expected"
 }
 
-// The typed operations of the shared target fixture (9l.target/3). Queries
-// such as bounds, viewport, query-visible and foreground are actions:
+// The typed operations of the shared target fixture (9l.target/6). Queries
+// such as bounds, viewport, query-visible, query-text and foreground are actions:
 // executed, never assertions.
-var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "foreground", "fingerprint"}
-var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
+var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "query-text", "foreground", "fingerprint", "biometric", "answer-alert"}
+var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard", "assert-error"}
 
 // targetControlOperations address one control by test ID and may name it;
 // targetControl is the identifier shape a named control has.
-var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "assert-visible", "assert-hidden", "assert-text", "assert-state"}
+var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "query-text", "assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-error"}
 var targetControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // Capabilities is the exact capability list a hello frame must carry. The
@@ -654,6 +666,14 @@ func decodeEvent(raw []byte) (event, error) {
 			return frame, fmt.Errorf("invalid setup")
 		}
 		keys := 3
+		if raw := setup["phase"]; raw != nil {
+			// Present means named: an empty phase is not the same as none.
+			var phase string
+			if json.Unmarshal(raw, &phase) != nil || phase == "" {
+				return frame, fmt.Errorf("invalid setup phase")
+			}
+			keys++
+		}
 		if recovery := setup["recovery"]; recovery != nil {
 			var fields map[string]json.RawMessage
 			if json.Unmarshal(recovery, &fields) != nil || len(fields) != 3 || fields["method"] == nil || fields["presses"] == nil || fields["restored"] == nil {
@@ -703,9 +723,10 @@ func decodeEvent(raw []byte) (event, error) {
 // setupReasons lists the closed reasons a driver may report per
 // classification. A reason outside its classification is invalid evidence.
 var setupReasons = map[string][]string{
-	runner.SetupBlocked:  {"device-locked", "screen-off"},
-	runner.SetupDirty:    {"extra-window", "foreign-focus", "ime-showing"},
-	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable", "build-sdk", "build-abi"},
+	runner.SetupBlocked: {"device-locked", "screen-off"},
+	runner.SetupDirty:   {"extra-window", "foreign-focus", "ime-showing"},
+	runner.SetupMismatch: {"posture", "display-width", "build-digest", "build-version", "build-signer", "biometrics-unavailable", "build-sdk", "build-abi",
+		"build-installed", "build-tree", "build-platform", "runtime-metadata"},
 	runner.SetupObserver: {"window-gone-element-displayed"},
 	runner.SetupUnknown:  {"device-state-unknown"},
 }
@@ -730,6 +751,9 @@ func validTargetSetup(s runner.TargetSetup) bool {
 	if !known || !oneOf(s.Reason, reasons...) || !oneOf(s.Stage, runner.SetupStageOpen, runner.SetupStageRecheck) || s.TestID != "" {
 		return false
 	}
+	if s.Phase != "" && (s.Stage != runner.SetupStageOpen || s.Recovery != nil || !oneOf(s.Phase, runner.SetupPhases...)) {
+		return false
+	}
 	if s.Classification == runner.SetupObserver && s.Stage != runner.SetupStageRecheck {
 		return false
 	}
@@ -743,6 +767,10 @@ func validTargetSetup(s runner.TargetSetup) bool {
 
 var androidPackage = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$`)
 var androidVersion = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$`)
+
+// iosAppVersion bounds CFBundleVersion and CFBundleShortVersionString: period-
+// separated integers of any practical length (CI build numbers, 20261121).
+var iosAppVersion = regexp.MustCompile(`^[0-9]{1,10}(\.[0-9]{1,10}){0,3}$`)
 
 func validAndroidRuntime(r runner.AndroidRuntime) bool {
 	return len(r.AppPackage) <= 200 && androidPackage.MatchString(r.AppPackage) && testID.MatchString(r.APKSHA256) && testID.MatchString(r.Worker) && r.TestID == "" &&
@@ -818,7 +846,7 @@ func Assertions(raw []byte) (AssertionFacts, error) {
 
 func validIOSRuntime(r runner.IOSRuntime) bool {
 	return r.TestID == "" && len(r.BundleID) <= 200 && regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$`).MatchString(r.BundleID) &&
-		testID.MatchString(r.AppSHA256) && testID.MatchString(r.Worker) && androidVersion.MatchString(r.Version) && androidVersion.MatchString(r.Build) && androidVersion.MatchString(r.OS) && androidVersion.MatchString(r.Xcode) &&
+		testID.MatchString(r.AppSHA256) && testID.MatchString(r.Worker) && iosAppVersion.MatchString(r.Version) && iosAppVersion.MatchString(r.Build) && androidVersion.MatchString(r.OS) && androidVersion.MatchString(r.Xcode) &&
 		regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$`).MatchString(r.Runtime) && r.Runtime == "com.apple.CoreSimulator.SimRuntime.iOS-"+strings.ReplaceAll(r.OS, ".", "-") &&
 		regexp.MustCompile(`^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$`).MatchString(r.DeviceType) && oneOf(r.Architecture, "arm64", "x86_64") &&
 		r.Appium == "3.8.0" && r.XCUITest == "10.43.1" && regexp.MustCompile(`^[1-9][0-9]{0,4}$`).MatchString(r.ViewportWidth) && regexp.MustCompile(`^[1-9][0-9]{0,4}$`).MatchString(r.ViewportHeight)

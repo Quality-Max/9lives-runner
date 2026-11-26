@@ -22,6 +22,17 @@ function invoke(spec, options = []) {
   const result = sync(engine, ['run', spec, '--sdk', '--format', 'json', '--receipt-dir', path.join(work, 'receipts'), ...options]);
   return {code: result.status, summary: JSON.parse(result.stdout)};
 }
+// The totals and testcases of a --junit report, as a CI dashboard reads them.
+function readJUnit(file) {
+  const raw = fs.readFileSync(file, 'utf8');
+  assert(raw.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
+  const totals = raw.match(/<testsuites name="9l run-[^"]+" tests="(\d+)" failures="(\d+)" errors="(\d+)" skipped="(\d+)"/);
+  assert(totals, 'JUnit report has run totals');
+  const testcases = [...raw.matchAll(/<testcase name="([^"]*)" classname="[^"]*"( time="[^"]*")?>([\s\S]*?)<\/testcase>/g)]
+    .map(([, name, time, body]) => ({name, timed: Boolean(time), body}));
+  assert.equal(testcases.length, Number(totals[1]), 'every testcase is counted');
+  return {raw, tests: Number(totals[1]), failures: Number(totals[2]), errors: Number(totals[3]), skipped: Number(totals[4]), testcases};
+}
 function readEvents(receipt) {
   const raw = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8');
   assert(!raw.includes('synthetic worker log'));
@@ -33,9 +44,11 @@ function processTable() {
   // Process identities/status only: never collect arguments or environment.
   if (process.platform === 'win32') {
     const result = sync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress']);
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,@{n='Started';e={if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { '' }}} | ConvertTo-Json -Compress"]);
     assert.equal(result.status, 0, 'process identity query failed');
-    return [].concat(JSON.parse(result.stdout)).map(item => ({pid: item.ProcessId, parent: item.ParentProcessId, group: 0, state: 'R', name: item.Name}));
+    // Windows reuses process IDs quickly, so a process is the same one only
+    // when its creation time matches too.
+    return [].concat(JSON.parse(result.stdout)).map(item => ({pid: item.ProcessId, parent: item.ParentProcessId, group: 0, state: 'R', name: item.Name, started: item.Started || ''}));
   }
   return sync('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,comm=']).stdout.trim().split('\n').map(line => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
@@ -59,7 +72,8 @@ async function interrupted(kind, webServer = false) {
   const environment = {...process.env, NINELIVES_SMOKE_MARKER: marker, NINELIVES_SMOKE_PORT: port, NINELIVES_SMOKE_WAIT: '1'};
   const passedEnv = ['--pass-env', 'NINELIVES_SMOKE_MARKER', '--pass-env', 'NINELIVES_SMOKE_PORT', '--pass-env', 'NINELIVES_SMOKE_WAIT'];
   const budget = kind === 'timeout' ? (process.platform === 'win32' ? '25s' : '12s') : '45s';
-  const child = spawn(engine, ['run', spec, '--sdk', '--format', 'json', webServer ? '--deadline' : '--timeout', budget, ...selection, ...passedEnv, '--receipt-dir', receipts], {
+  const junit = path.join(work, `${smokeCase}.xml`);
+  const child = spawn(engine, ['run', spec, '--sdk', '--format', 'json', webServer ? '--deadline' : '--timeout', budget, ...selection, ...passedEnv, '--receipt-dir', receipts, '--junit', junit], {
     cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -70,11 +84,17 @@ async function interrupted(kind, webServer = false) {
   const guard = setTimeout(() => child.kill('SIGTERM'), 65000);
   try {
     const start = Date.now();
+    let readyMs = 0;
     while (!fs.existsSync(marker)) {
-      assert(Date.now() - start < (process.platform === 'win32' ? 20000 : 10000), 'real browser did not become ready');
+      // A cancel case has a 45 s budget, so a slow hosted runner gets 30 s to
+      // start the web server and browser (#320); a timeout case must reach the
+      // browser well inside its own 12 s (25 s on Windows) deadline.
+      const ready = kind === 'cancel' ? 30000 : process.platform === 'win32' ? 20000 : 10000;
+      assert(Date.now() - start < ready, `real browser did not become ready within ${ready} ms`);
       assert(child.exitCode === null, 'engine exited before real browser work');
       await sleep(50);
     }
+    readyMs = Date.now() - start;
     const {workerPID} = JSON.parse(fs.readFileSync(marker));
     const table = processTable();
     const worker = table.find(item => item.pid === workerPID);
@@ -89,10 +109,17 @@ async function interrupted(kind, webServer = false) {
       if (process.platform !== 'win32') assert.notEqual(server.group, worker.group, 'webServer exercises a detached process group');
       ownedIds.add(serverPID);
     }
+    // A child names its parent by ID. On Windows IDs are reused, so a process
+    // whose recorded parent ID now belongs to an owned process may be an
+    // unrelated system process (csrss.exe, winlogon.exe were seen) whose real
+    // parent exited long ago. A real child starts after its parent.
+    const byPid = new Map(table.map(item => [item.pid, item]));
+    const childOf = (item, parent) => process.platform !== 'win32'
+      || (!!parent?.started && !!item.started && Date.parse(item.started) >= Date.parse(parent.started));
     for (let changed = true; changed;) {
       changed = false;
       for (const item of table) {
-        if (ownedIds.has(item.parent) && !ownedIds.has(item.pid)) { ownedIds.add(item.pid); changed = true; }
+        if (ownedIds.has(item.parent) && !ownedIds.has(item.pid) && childOf(item, byPid.get(item.parent))) { ownedIds.add(item.pid); changed = true; }
       }
     }
     const owned = table.filter(item => ownedIds.has(item.pid));
@@ -110,10 +137,24 @@ async function interrupted(kind, webServer = false) {
     assert.equal(receipt.status, kind === 'cancel' ? 'canceled' : 'timed_out');
     assert.equal(receipt.validated, false);
     assert(receipt.termination && receipt.termination.signal === (process.platform === 'win32' ? 'TerminateJobObject' : 'SIGTERM'), 'cleanup recorded');
+    // An interrupted run still writes its report, as one error: a test the
+    // worker never finished is not shown as passed, failed or skipped.
+    const report = readJUnit(junit);
+    assert.deepEqual([report.tests, report.failures, report.errors, report.skipped], [1, 0, 1, 0]);
+    assert(report.testcases[0].body.includes(`<error type="${kind === 'cancel' ? 'canceled' : 'deadline'}"`), 'the error carries the stop reason');
     const deadline = Date.now() + 5000;
+    // Same process: same ID and, on Windows, which reuses IDs quickly, the
+    // same name and creation time, so a new process that took a freed ID is
+    // not reported as a survivor. Unix keeps the ID-only match.
+    const same = (item, original) => item.pid === original.pid &&
+      (process.platform !== 'win32' || (item.name === original.name && item.started === original.started));
     while (true) {
-      const live = processTable().filter(item => owned.some(original => original.pid === item.pid) && !item.state.startsWith('Z'));
+      const live = processTable().filter(item => owned.some(original => same(item, original)) && !item.state.startsWith('Z'));
       if (!live.length) break;
+      if (Date.now() >= deadline) {
+        // Identities only, never arguments or environment.
+        console.error(`${smokeCase} survivors: ${JSON.stringify(live.map(({pid, parent, name, started}) => ({pid, parent, name, started})))}`);
+      }
       assert(Date.now() < deadline, 'owned worker/browser processes survived cancellation');
       await sleep(100);
     }
@@ -124,19 +165,106 @@ async function interrupted(kind, webServer = false) {
         const rerun = sync(engine, ['run', spec, ...(sdk ? ['--sdk'] : []), '--format', 'json', ...selection, ...passedEnv, '--receipt-dir', receipts], {
           env: {...environment, NINELIVES_SMOKE_WAIT: '0'},
         });
+        if (rerun.status !== 0) {
+          // Metadata only (#232): the exit code, outcome and receipt stop, and
+          // the engine's own `9l:` lines, never test output or environment.
+          let parsed;
+          try { parsed = JSON.parse(rerun.stdout); } catch { parsed = undefined; }
+          const receipts = (parsed?.receipts ?? []).map(r => ({status: r.status, stop: r.failureSummary?.stop, exitCode: r.exitCode}));
+          const engineLines = String(rerun.stderr).split(/\r?\n/).filter(line => line.startsWith('9l: ')).slice(0, 5).map(line => line.slice(0, 200));
+          console.error(`${smokeCase} ${sdk ? 'SDK' : 'ordinary'} rerun: ${JSON.stringify({status: rerun.status, signal: rerun.signal, outcome: parsed?.outcome, receipts, engine: engineLines})}`);
+        }
         assert.equal(rerun.status, 0, 'healthy rerun on the same port succeeds');
         const result = JSON.parse(rerun.stdout);
         assert.equal(result.outcome, 'passed');
         assert.equal(result.receipts[0].executedTests, 1);
       }
     }
-    console.log(`SDK ${webServer ? 'webServer ' : ''}${kind}: ps verified no live owned processes${webServer ? `, same-port ${port} SDK/ordinary reruns passed` : ''} and terminal receipt verified`);
+    console.log(`SDK ${webServer ? 'webServer ' : ''}${kind}: browser ready in ${readyMs} ms; ps verified no live owned processes${webServer ? `, same-port ${port} SDK/ordinary reruns passed` : ''} and terminal receipt verified`);
   } finally {
     clearTimeout(guard);
     if (child.exitCode === null) { child.kill('SIGTERM'); await completion; }
   }
 }
 
+// A one-order shop in its own process: spawnSync blocks this one.
+async function shop(defect) {
+  const marker = path.join(work, `shop-${defect ? 'defect' : 'ok'}`);
+  const env = {NINELIVES_SMOKE_MARKER: marker, NINELIVES_SMOKE_DEFECT: defect ? '1' : '0'};
+  if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
+  const child = spawn(process.execPath, [path.join(root, 'testdata/sdk/tests/verify/server.cjs')], {env, stdio: 'ignore'});
+  const deadline = Date.now() + 10000;
+  while (!fs.existsSync(marker)) {
+    assert(child.exitCode === null && Date.now() < deadline, 'shop fixture did not start');
+    await sleep(20);
+  }
+  return {child, url: `http://127.0.0.1:${JSON.parse(fs.readFileSync(marker, 'utf8')).port}`};
+}
+// Engine-observed postconditions: the same green spec passes against a shop
+// that stored the order, and is not green against one that only said so.
+async function independentVerification() {
+  const spec = 'testdata/sdk/tests/verify/order.spec.ts';
+  for (const defect of [false, true]) {
+    const {child, url} = await shop(defect);
+    try {
+      const checks = path.join(work, `checks-${defect}.json`);
+      fs.writeFileSync(checks, JSON.stringify({version: 1, checks: [
+        {id: 'order-stored-confirmed', outcomeId: 'order-confirmed', method: 'GET', url: `${url}/api/orders/1?probe=SMOKE-QUERY`,
+          expectStatus: 200, jsonPointer: '/status', equals: 'confirmed', withinMs: 2000},
+        {id: 'order-kept-one-item', method: 'GET', url: `${url}/api/orders/1`, expectStatus: 200, jsonPointer: '/items', equals: 1},
+      ]}));
+      process.env.NINELIVES_SMOKE_SHOP_URL = url;
+      const pass = ['--pass-env', 'NINELIVES_SMOKE_SHOP_URL'];
+      // Without the checks the weak assertion is all there is: green either way.
+      const unchecked = invoke(spec, pass);
+      assert.equal(unchecked.code, 0);
+      assert.equal(unchecked.summary.receipts[0].verifiedAssertions, 0);
+      assert.equal(unchecked.summary.receipts[0].verifications, undefined);
+      const junit = path.join(work, `verify-${defect}.xml`);
+      const checked = invoke(spec, [...pass, '--verify', checks, '--junit', junit]);
+      smokeCase = `verify-${defect ? 'contradicted' : 'verified'}`;
+      const receipt = checked.summary.receipts[0];
+      const report = readJUnit(junit);
+      // The worker's own evidence is the same in both runs: one passed test.
+      assert.equal(receipt.validated, true);
+      assert.equal(receipt.failureCount, 0);
+      assert.equal(receipt.executedTests, 1);
+      assert.equal(receipt.assertionCoverage, 'unknown');
+      assert.match(receipt.verificationSha256, /^[a-f0-9]{64}$/);
+      assert.deepEqual(receipt.verifications.map(item => [item.id, item.observedBy, item.httpStatus]),
+        [['order-stored-confirmed', 'engine', 200], ['order-kept-one-item', 'engine', 200]]);
+      if (!defect) {
+        assert.equal(checked.code, 0);
+        assert.equal(checked.summary.outcome, 'passed');
+        assert.equal(receipt.status, 'passed');
+        assert.equal(receipt.verifiedAssertions, 2);
+        assert.deepEqual(receipt.verifications.map(item => item.result), ['verified', 'verified']);
+        assert.deepEqual([report.tests, report.failures, report.errors], [3, 0, 0]);
+      } else {
+        assert.equal(checked.code, 1);
+        assert.equal(checked.summary.outcome, 'failed');
+        assert.equal(checked.summary.complete, false);
+        assert.equal(receipt.status, 'failed');
+        assert.equal(receipt.verifiedAssertions, 1);
+        assert.equal(receipt.failureSummary.stop, 'verification_contradicted');
+        assert.deepEqual(receipt.verifications.map(item => [item.result, item.reason]), [['contradicted', 'json_value'], ['verified', undefined]]);
+        assert.deepEqual([report.tests, report.failures, report.errors], [3, 1, 0]);
+        assert(report.testcases.find(item => item.name === 'verify order-stored-confirmed').body.includes('<failure type="verification_contradicted"'));
+        const events = readEvents(receipt);
+        assert(events.some(event => event.type === 'test_end' && event.status === 'passed'), 'the worker still reported its test passed');
+      }
+      // Nothing the engine sent or compared is kept, and the worker saw none of it.
+      const directory = path.dirname(receipt.receiptPath);
+      const kept = fs.readdirSync(directory).map(name => fs.readFileSync(path.join(directory, name), 'utf8')).join('\n') + JSON.stringify(checked.summary) + report.raw;
+      for (const leaked of ['SMOKE-QUERY', '/api/orders', 'jsonPointer', 'checks-', '"confirmed"'])
+        assert(!kept.includes(leaked), `receipt evidence holds ${leaked}`);
+    } finally {
+      delete process.env.NINELIVES_SMOKE_SHOP_URL;
+      child.kill();
+    }
+  }
+  console.log('Independent verification: a green spec with a weak assertion is verified against a correct shop and fails, contradicted, against a defective one');
+}
 async function main() {
   assert.equal(sync('go', ['build', '-o', engine, './cmd/9l']).status, 0);
   const passing = invoke('testdata/sdk/tests/checkout.spec.ts');
@@ -165,16 +293,59 @@ async function main() {
   assert.equal(canonical.correlation.attempt_id, receipt.attemptId);
   assert.equal(canonical.counts.total, 1);
   assert.equal(canonical.counts.availability, 'available');
-  const annotated = invoke('testdata/sdk/tests/checkout.spec.ts', ['--failure-details']);
+  // The per-test list a JUnit report is built from: a digest and an outcome,
+  // with no title and no invented duration.
+  assert.equal(receipt.tests.length, 1);
+  assert.deepEqual(Object.keys(receipt.tests[0]).sort(), ['status', 'testId']);
+  assert.equal(receipt.tests[0].status, 'passed');
+  const passingJUnit = path.join(work, 'passing.xml');
+  assert.equal(invoke('testdata/sdk/tests/checkout.spec.ts', ['--junit', passingJUnit]).code, 0);
+  const passingReport = readJUnit(passingJUnit);
+  assert.deepEqual([passingReport.tests, passingReport.failures, passingReport.errors, passingReport.skipped], [1, 0, 0, 0]);
+  assert.match(passingReport.testcases[0].name, /^test [a-f0-9]{12}$/);
+  assert.equal(passingReport.testcases[0].timed, false, 'the engine measures no per-test duration');
+  assert(!passingReport.raw.includes('synthetic checkout'), 'no title without --failure-details');
+  const annotatedJUnit = path.join(work, 'annotated.xml');
+  const annotated = invoke('testdata/sdk/tests/checkout.spec.ts', ['--failure-details', '--junit', annotatedJUnit]);
   assert.equal(annotated.code, 0);
+  // With the opt-in, Playwright's report names the test the stream identified.
+  assert.equal(annotated.summary.receipts[0].tests[0].title, 'synthetic checkout confirms an order');
+  assert.equal(readJUnit(annotatedJUnit).testcases[0].name, 'synthetic checkout confirms an order');
   assert.equal(annotated.summary.receipts[0].status, 'passed');
   assert.deepEqual(annotated.summary.receipts[0].annotations, [{
     test: 'synthetic checkout confirms an order',
     type: 'smoke-runtime',
     description: 'runtime annotation reaches receipts',
   }]);
-  const failing = invoke('testdata/sdk/tests/defect.spec.ts');
+  // --show-output streams the worker's console to the CLI's stderr, redacted,
+  // while stdout stays the JSON result and the evidence stays the protocol.
+  // Under --sdk Playwright relays a spec's console only to a terminal
+  // reporter, so the documented form adds --reporter list.
+  smokeCase = 'show-output';
+  const shown = sync(engine, ['run', 'testdata/sdk/tests/console-output.spec.ts', '--sdk', '--reporter', 'list', '--format', 'json', '--receipt-dir', path.join(work, 'receipts'), '--show-output'], {env: {...process.env, CI: ''}});
+  assert.equal(shown.status, 0, shown.stderr);
+  const shownSummary = JSON.parse(shown.stdout);
+  assert.equal(shownSummary.outcome, 'passed');
+  assert.match(shown.stderr, /\[job-001 stdout\] [^\n]*show-output check: token=\[REDACTED\]/);
+  assert(!shown.stderr.includes('fixture-smoke-secret') && !shown.stdout.includes('fixture-smoke-secret'));
+  assert(!shown.stdout.includes('show-output check'));
+  const shownReceipt = shownSummary.receipts[0];
+  assert.equal(shownReceipt.validated, true);
+  assert.equal(shownReceipt.evidence.stderrPath, undefined);
+  const shownEvidence = fs.readFileSync(shownReceipt.evidence.stdoutPath, 'utf8');
+  assert(!shownEvidence.includes('show-output check') && !shownEvidence.includes('injecting env'));
+  readEvents(shownReceipt);
+  assert(!fs.readFileSync(shownReceipt.receiptPath, 'utf8').includes('show-output check'));
+  const failingJUnit = path.join(work, 'failing.xml');
+  const failing = invoke('testdata/sdk/tests/defect.spec.ts', ['--junit', failingJUnit]);
   assert.equal(failing.code, 1);
+  // A defect is a <failure>, classed from the engine's own facts.
+  const failingReport = readJUnit(failingJUnit);
+  assert.deepEqual([failingReport.tests, failingReport.failures, failingReport.errors, failingReport.skipped], [1, 1, 0, 0]);
+  assert(failingReport.testcases[0].body.includes('<failure type="assertion" message="assertion: assertion step"'));
+  for (const leaked of ['business failure', 'Order rejected', 'toHaveText', 'getByRole']) {
+    assert(!failingReport.raw.includes(leaked), `JUnit report carries no ${leaked}`);
+  }
   assert.equal(failing.summary.outcome, 'failed');
   assert.equal(failing.summary.receipts[0].status, 'failed');
   assert.equal(failing.summary.receipts[0].failureCount, 1);
@@ -197,8 +368,16 @@ async function main() {
   assert.equal(receipt.failureSummary, undefined); // a passed receipt has none
   // Opt-in failure details come from Playwright's JSON reporter beside the
   // evidence stream; the validated stream itself still carries no titles.
-  const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details']);
+  const detailedJUnit = path.join(work, 'detailed.xml');
+  const detailed = invoke('testdata/sdk/tests/defect.spec.ts', ['--failure-details', '--junit', detailedJUnit]);
   assert.equal(detailed.code, 1);
+  const detailedReport = readJUnit(detailedJUnit);
+  assert.equal(detailedReport.testcases[0].name, 'business failure remains a failure');
+  assert.match(detailedReport.testcases[0].body, /<failure type="assertion"[\s\S]*toHaveText/);
+  // `9l result --junit` rebuilds the same report from the stored run.
+  const rebuiltJUnit = path.join(work, 'rebuilt.xml');
+  assert.equal(sync(engine, ['result', detailed.summary.runId, '--receipt-dir', path.join(work, 'receipts'), '--junit', rebuiltJUnit]).status, 0);
+  assert.equal(fs.readFileSync(rebuiltJUnit, 'utf8'), detailedReport.raw);
   assert.equal(detailed.summary.receipts[0].status, 'failed');
   const [detail] = detailed.summary.receipts[0].failures;
   assert.deepEqual(detailed.summary.receipts[0].failureSummary.tests.map(({testId, ...rest}) => rest), [failedTest], 'the summary does not depend on --failure-details');
@@ -214,8 +393,11 @@ async function main() {
   assert.equal(skipped.summary.receipts[0].validated, false);
   assert.equal(skipped.summary.receipts[0].evidence.stdoutPath || '', '');
   // A declared pin accepts that skip; it stays counted as skipped, not executed.
-  const pinned = invoke('testdata/sdk/tests/skipped.spec.ts', ['--pin-skip', 'skipped.spec.ts › selected test has no execution evidence']);
+  const pinnedJUnit = path.join(work, 'pinned.xml');
+  const pinned = invoke('testdata/sdk/tests/skipped.spec.ts', ['--pin-skip', 'skipped.spec.ts › selected test has no execution evidence', '--junit', pinnedJUnit]);
   assert.equal(pinned.code, 0);
+  const pinnedReport = readJUnit(pinnedJUnit);
+  assert.deepEqual([pinnedReport.tests, pinnedReport.failures, pinnedReport.errors, pinnedReport.skipped], [2, 0, 0, 1]);
   assert.equal(pinned.summary.complete, true);
   assert.equal(pinned.summary.receipts[0].validated, true);
   assert.equal(pinned.summary.receipts[0].executedTests, 1);
@@ -366,6 +548,7 @@ async function main() {
     await browser.close();
   }
   console.log('Goals: real Chromium multi-step execution, delayed controls, style drift, policy rejection and state redaction verified');
+  await independentVerification();
   await interrupted('timeout');
   await interrupted('cancel');
   await interrupted('timeout', true);

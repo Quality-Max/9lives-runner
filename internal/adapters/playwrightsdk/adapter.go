@@ -49,6 +49,10 @@ func (adapter Adapter) PlanTarget(path, input string, index int, target string) 
 	return job, nil
 }
 
+// IsolateOutput gives a job its own Playwright output directory, as the
+// plain Playwright adapter does.
+func (Adapter) IsolateOutput(job runner.Job) runner.Job { return playwright.IsolateOutput(job) }
+
 func (adapter Adapter) Plan(path, input string, index int) (runner.Job, error) {
 	// Resolve configuration separately from workspace-hoisted dependencies.
 	// A nested package manifest must not hide its owning Playwright config.
@@ -202,6 +206,18 @@ func (Adapter) Annotations(report []byte) []runner.TestAnnotation {
 
 func (Adapter) Failures(report []byte, workDir string) []runner.TestFailure {
 	return playwright.New().Failures(report, workDir)
+}
+
+// FailuresWithin also reports attachments under roots, such as a native
+// target's private Playwright output; see runner.AttachmentRootReporter.
+func (Adapter) FailuresWithin(report []byte, workDir string, roots []string) []runner.TestFailure {
+	return playwright.New().FailuresWithin(report, workDir, roots)
+}
+
+// TestTitles names the stream's test digests from Playwright's JSON report,
+// which exists only with failure details; see playwright.TestTitles.
+func (Adapter) TestTitles(report []byte) map[string]string {
+	return playwright.TestTitles(report)
 }
 
 func (Adapter) SanitizeEvidence(stdout, _ []byte, validated bool) ([]byte, []byte) {

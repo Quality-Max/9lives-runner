@@ -9,17 +9,25 @@ export const setupReasons: Record<SetupClassification, readonly string[]> = {
   blocked: ['device-locked', 'screen-off'],
   dirty: ['extra-window', 'foreign-focus', 'ime-showing'],
   /** The device is not in the posture or width the spec declared. */
-  mismatch: ['posture', 'display-width', 'build-digest', 'build-version', 'build-signer', 'biometrics-unavailable', 'build-sdk', 'build-abi'],
+  mismatch: ['posture', 'display-width', 'build-digest', 'build-version', 'build-signer', 'biometrics-unavailable', 'build-sdk', 'build-abi',
+    /** The app was rejected: its installed tree, its tree's shape or limits,
+     * its platform or bundle, or its runtime metadata. */
+    'build-installed', 'build-tree', 'build-platform', 'runtime-metadata'],
   /** The accessibility snapshot still reported an element whose window the
    * window manager no longer lists: observer staleness, not the app. */
   observer: ['window-gone-element-displayed'],
   unknown: ['device-state-unknown'],
 };
+/** The fixed parts of a driver's open; Go rejects any other value. */
+export const setupPhases = ['tools', 'artifact', 'wda', 'runtime', 'create', 'boot', 'bootstatus', 'architecture', 'install', 'server', 'session', 'metadata'] as const;
+export type SetupPhase = typeof setupPhases[number];
 export type TargetSetupRecord = {
   classification: SetupClassification;
   reason: string;
   /** `open`: found before any application operation; `recheck`: found after a failed assertion. */
   stage: 'open' | 'recheck';
+  /** The part of open that failed; only with stage `open` and no recovery. */
+  phase?: SetupPhase;
   /** A user-declared, non-destructive recovery the driver took before the test ran. */
   recovery?: {method: 'back'; presses: number; restored: boolean};
 };
@@ -28,10 +36,11 @@ export function validTargetSetup(value: unknown): value is TargetSetupRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const r = value as Record<string, unknown>;
   const keys = Object.keys(r);
-  if (keys.some(key => !['classification', 'reason', 'stage', 'recovery'].includes(key)) || keys.length < 3) return false;
+  if (keys.some(key => !['classification', 'reason', 'stage', 'phase', 'recovery'].includes(key)) || keys.length < 3) return false;
   if (!setupClassifications.includes(r.classification as SetupClassification) || typeof r.reason !== 'string' ||
       !setupReasons[r.classification as SetupClassification].includes(r.reason) || !['open', 'recheck'].includes(r.stage as string)) return false;
   if (r.classification === 'observer' && r.stage !== 'recheck') return false;
+  if (r.phase !== undefined && (r.stage !== 'open' || r.recovery !== undefined || !setupPhases.includes(r.phase as SetupPhase))) return false;
   if (r.recovery === undefined) return true;
   const recovery = r.recovery as Record<string, unknown> | null;
   return !!recovery && typeof recovery === 'object' && !Array.isArray(recovery) && Object.keys(recovery).length === 3 &&
@@ -78,3 +87,14 @@ export function validTargetDiagnostic(value: unknown): value is TargetDiagnostic
     (d.viewportWidth === undefined ? d.viewportHeight === undefined : pixel(d.viewportWidth) && pixel(d.viewportHeight) && (d.viewportWidth as number) > 0 && (d.viewportHeight as number) > 0) &&
     windows(d.windowsBefore) && windows(d.windowsAfter) && focus(d.focusBefore) && focus(d.focusAfter);
 }
+
+/** Bounds on a failure capture. A screenshot or view tree over its size is
+ * dropped; the capture as a whole gets at most `ms`, and at most half the
+ * test's own timeout, capped by the attempt deadline. */
+export const failureCaptureLimits = {screenshotBytes: 8 * 1024 * 1024, viewTreeBytes: 2 * 1024 * 1024, ms: 10_000} as const;
+/** The attachment names and content types of a failure capture. The view
+ * tree is text, so a retained copy is redacted like other text evidence. */
+export const failureCaptureAttachments = {
+  screenshot: {name: '9l.failure-screenshot', contentType: 'image/png', file: 'screenshot.png'},
+  viewTree: {name: '9l.failure-view-tree', contentType: 'text/xml', file: 'view-tree.xml'},
+} as const;

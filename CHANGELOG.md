@@ -4,6 +4,391 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## 0.7.3 — 2026-11-26
+
+A patch on the 0.7.x line. iOS gains keyboard handling and answering system
+alerts, target controls gain `toHaveError`, and Android can attach an opt-in
+failure screenshot and view tree. `9l assess --screens` checks target tests'
+test IDs against saved `9l inspect` screens (policy `assessment-source-v18`),
+and `9l run --repeat` measures a job's pass rate without retrying a run. The
+new `answer-alert` action and `assert-error` assertion make the shared target
+contract `9l.target/6`; receipt, run result and run status stay version 2.
+Update the CLI and `@9l/playwright` together: a target run that mixes 0.7.2
+or earlier (`9l.target/5`) with 0.7.3 is rejected when its evidence is
+validated after the run, so it ends incomplete, never green.
+
+### Added
+
+- Android failure capture (experimental, opt-in). With
+  `androidTargetDriver({..., diagnostics: {failureCapture: true}})` a test
+  that failed attaches, once and before the driver closes, a PNG of the
+  target display (`9l.failure-screenshot`, at most 8 MiB) and the
+  UiAutomator2 view hierarchy (`9l.failure-view-tree`, at most 2 MiB),
+  within at most 10 seconds and half the test's timeout. It is taken only in
+  a run that keeps it, `9l run --sdk --failure-details --keep-attachments`
+  on an `android:` target, which the engine signals to the worker per
+  attempt; otherwise nothing is read from the device. An attached phone also
+  needs `onPhone: true`. A part that fails, times out or is too large is
+  skipped and never changes the outcome; passed, skipped and interrupted
+  tests read nothing. Both files are screen content and can hold personal
+  data. They are the only files ever copied out of a native target's
+  private Playwright output; a trace, error context or video there is still
+  deleted with it. The view tree is redacted like other text; the receipt
+  only references them. The names `9l.failure-screenshot` and
+  `9l.failure-view-tree` are now reserved: the engine reporter rejects them
+  on a web target, on a test that did not fail, twice or as inline bodies.
+  The `failure-capture` emulator case qualified in three of three runs on
+  the documented API 35 emulator; an attached phone is not qualified. The
+  web keeps using Playwright's `screenshot: 'only-on-failure'`; iOS is
+  unchanged (#271).
+- iOS keyboard and system alerts (experimental). `fill(value, {submit: true})`
+  presses Return in the field, `toHaveKeyboard()` reads the keyboard, and
+  `hideKeyboard()` closes a keyboard that has a hide key (iPad); an iPhone
+  keyboard that stays up fails as `keyboard_not_hidden` instead of being
+  closed through a control of the app. The new `app.answerAlert(button)`
+  answers the system alert in front of the app (a permission request, a
+  save-password sheet) with the button named exactly as shown, once; nothing
+  is dismissed automatically and the button text is not recorded. Qualified
+  on the iOS 18.6 iPhone 16 Simulator with the `login`, `login-covered` and
+  `login-hide` smoke cases; the save-password sheet itself was not
+  reproduced (#292).
+- `9l assess --screens <file|glob>` (and `screens` on the MCP `assess_test`
+  tool) checks the literal test IDs target tests pass to `app.getByTestId`
+  against saved `9l inspect` results: an ID no screen holds is
+  `screen-test-id/unobserved-test-id` (informational), one a screen holds on
+  several elements `screen-test-id/repeated-test-id` (suspected). The report
+  names each screen by path and SHA-256. `9l inspect` JSON gains `testIds`,
+  the count of every test ID on the window, interactive or not. Policy
+  `assessment-source-v18`, analyzer helper version 15 (#316).
+- `9l run --repeat <n> --deadline <d> [--label <name>]` measures how often a
+  job passes: n complete runs one after another, each with its own run ID
+  and receipts, and an aggregate with the pass rate, each member's outcome
+  and failure category, and a category histogram built from failure-summary
+  metadata. Repeats never retry: `--attempts` above 1 is refused and
+  Playwright runs with `--retries 0` unless `--retries` is given. The
+  aggregate is `passed` only when every member ran and passed. It is a new
+  machine-readable output, `runRepeat` version 1, with a published schema
+  (#214).
+- `toHaveError(text, timeoutMs?)` on a target control asserts the
+  validation error it reports, exactly: on Android the field's
+  accessibility error (Flutter's `errorText`, `TextView.setError`), which
+  UiAutomator2 exposes as the hierarchy's `error` attribute, and on the web
+  the text of the element an invalid control's `aria-errormessage` names,
+  or its constraint-validation message. The driver compares; only pass or
+  fail is kept, never the text. iOS has no such read and fails it as
+  `unsupported_state`. A new `assert-error` assertion in `9l.target/6`
+  (#270).
+
+### Fixed
+
+- `9l assess` gave each spec's analysis 10 s, which a loaded machine could
+  exceed, failing a healthy spec with `timeout`. One spec now gets 30 s and
+  each file of a suite 20 s, before a timed-out suite file is retried alone.
+  The analyzer only parses source; nothing else changes.
+- An iOS tap on a control under the keyboard or a system alert landed on the
+  keyboard or the alert and was reported done. A control WebDriverAgent
+  reports as not hittable is now checked for those covers and the tap is
+  refused before any click as `covered_by_keyboard` or
+  `covered_by_system_alert`; other taps are unchanged.
+
+### Changed
+
+- The shared target contract is `9l.target/6`, for the new `answer-alert`
+  action and `assert-error` assertion. Update the CLI and `@9l/playwright`
+  together.
+
+## 0.7.2 — 2026-11-26
+
+A patch on the 0.7.x line with testability checks for native screens and
+biometric sign-in on the iOS Simulator. `9l inspect --android` and `--ios`
+rank the controls on a device screen by the test ID the driver would find
+them with, and `9l mcp` offers the same as `inspect_screen` for coding
+agents. `9l assess` reports native locators tied to on-screen copy or
+position (policy `assessment-source-v17`). An owned iOS Simulator can sign in
+with Face ID or Touch ID through the new portable `app.biometric()`. The new
+`biometric` action makes the shared target contract `9l.target/5`; receipt,
+run result and run status stay version 2. Update the CLI and `@9l/playwright`
+together: a run that mixes 0.7.1 or earlier (`9l.target/4`) with 0.7.2 is
+rejected when its evidence is validated after the run, so it ends
+incomplete, never green.
+
+### Added
+
+- `9l inspect --android` reports which controls on an attached Android
+  device's screen have a unique test ID, which share one (and so fail
+  `getByTestId` as ambiguous), which are reachable only by their copy (with
+  the `controls` alias that would reach them) and which only by coordinates,
+  with a testability score. It reads the active window with one
+  `uiautomator dump` over adb and changes nothing on the device. Checked
+  against a Flutter app on a local API 35 emulator.
+- `9l inspect --ios` ranks the controls of the app in front on a booted iOS
+  Simulator by the accessibility identifiers the iOS driver matches
+  (experimental). It reads one WebDriverAgent page source through a private
+  Appium session that names no app, so the app is not launched, reset or
+  terminated; WebDriverAgent stays installed on the simulator. Checked on
+  the iOS 18.6 iPhone 16 Simulator of the qualified host.
+- `9l mcp` gains `inspect_screen` (`platform: "android"` or `"ios"`), the
+  same screen ranking for coding agents, with optional `serial`, `package`,
+  `udid`, `format` and `timeout`. It taps and types nothing.
+- `9l assess` reports native locators tied to on-screen copy or position as
+  `fragile-selector` (suspected). A target test's `app.getByTestId(name)`
+  that resolves through an Android `controls` alias is `copy-alias` (exact
+  text, description or hint), `partial-copy-alias` (a description suffix or
+  substring) or `data-alias` (copy containing a number, such as a count,
+  date or position), whether the alias is declared in the spec or in the
+  fixture module it imports `test` from. `app.tapAt` with a literal `x` or
+  `y` is `literal-coordinates`; a point computed from a control's `bounds()`
+  is not reported. Findings are advisory and change no verdict. Policy
+  `assessment-source-v17`, analyzer helper version 14; report version 3 and
+  suite version 1 are unchanged.
+- Biometric sign-in on an owned iOS Simulator (experimental). An iOS driver
+  that declares `biometrics: {enrolled: boolean}` sets the simulator's
+  Face ID / Touch ID enrollment and, when enrolled, allows Face ID for the
+  app under test before it is launched and again after `reset()`.
+  `app.biometric('match' | 'nomatch')` then presents the enrolled face or
+  finger, or one that is not enrolled, at the system prompt. It is
+  recorded as an executed action; the sign-in still needs an assertion.
+  Qualified on the iOS 18.6 iPhone 16 Simulator of the iOS host with the
+  `biometric`, `biometric-nomatch` and `biometric-unenrolled` smoke cases.
+- `app.biometric()` is portable: on an owned Android emulator with declared
+  biometrics it touches enrolled finger 1 or unenrolled finger 2, as
+  `fingerprint()` does; elsewhere, including the web, it fails as
+  `unsupported_operation`.
+
+### Changed
+
+- The shared target contract is `9l.target/5`, for the new `biometric`
+  action. Update the CLI and `@9l/playwright` together: a run that mixes
+  `9l.target/4` with `9l.target/5` is rejected when its evidence is
+  validated, so it ends incomplete, never green.
+
+## 0.7.1 — 2026-11-23
+
+A patch on the 0.7.0 line from running a real Flutter app on the Android
+target. Target controls gain `text()` to read a value from the screen,
+`hideKeyboard()` on an owned emulator no longer sends Back to the app, and
+`9l assess` credits target tests whose fixture is imported from a local
+module. The shared target contract is `9l.target/4`; receipt, run result and
+run status stay version 2. Update the CLI and `@9l/playwright` together: a
+run that mixes 0.7.0 (`9l.target/3`) with 0.7.1 is rejected when its evidence
+is validated after the run, with the upgrade message, so it ends incomplete,
+never green.
+
+### Added
+
+- Target controls gain `text({timeoutMs}?)`, which returns the text a user
+  reads in a control, for a value a later step needs, such as an activation
+  code the app shows. It waits for the control to be shown, like an action
+  (absent or hidden is `missing_test_id`, ambiguity fails), answers at most
+  4 KiB, and is recorded as the executed action `query-text`, never as an
+  assertion. On the web it reads a field's current value, a select's chosen
+  option or visible text, and refuses a password field; `toHaveText` is
+  unchanged. Qualified on the web and the documented Android emulator; the
+  iOS driver supports it through its existing text read, not yet run on a
+  Simulator. 9lives never records the text, but a spec that prints it, as a
+  failed `expect(text).toBe(...)` does, makes it part of
+  `--failure-details`.
+
+### Fixed
+
+- Android: on an owned emulator, `hideKeyboard()` after `fill` no longer
+  sends Back to the app. The emulator runs Appium's empty input method, which
+  draws no window; with a field focused Android reports it as shown, so the
+  driver pressed Back, which nothing consumed, and the app left the screen.
+  That input method now reads as hidden: `hideKeyboard()` sends nothing and
+  `toHaveKeyboard(false)` holds. Phones keep their own keyboard and are
+  unchanged. Qualified on the documented API 35 emulators; the renamed API 36
+  field is read too.
+- `9l assess` recognizes target tests whose `test` is imported from a
+  relative fixture module that declares it with `createTargetTest`, as
+  `import {test} from './fixtures'`. It reads that module, credits the spec's
+  target assertions, and names the module and its SHA-256 in the report.
+  Before, such a spec's tests were an unrecognized import unless the fixture
+  was declared in the spec itself. The credit holds only while the spec loads
+  no other local code and the fixture module loads none and exports its
+  fixture only as `test`, since local code could replace `app`.
+
+## 0.7.0 — 2026-11-22
+
+The first stable release of the 0.7.0 line. It becomes GitHub's Latest
+release and npm `latest`, so installers and `9l update` select it. It
+includes the experimental iOS Simulator target first released in
+0.7.0-beta.1, and adds JUnit reports from validated receipts, a live view of
+test output, experimental engine-observed HTTP postconditions (`--verify`)
+and an assessment-first start. Receipts gain additive fields (`tests`,
+`testsTruncated`, `verifications`, `verificationSha256`, and `phase` with new
+`mismatch` reasons in iOS `targetSetup`); the receipt version stays 2 and the
+target contract stays `9l.target/3`. Update the CLI and `@9l/playwright`
+together: an older CLI rejects the new iOS setup fields and reasons as invalid
+evidence, and a 0.6.x CLI rejects `ios:` targets.
+
+### iOS Simulator (experimental)
+
+- `open` accepts real app version and build numbers, such as
+  `CFBundleVersion` 1234 or `2026.11.0`: up to four period-separated integers
+  of at most ten digits (#294).
+- An app that embeds frameworks or dylibs installs: the installed tree is
+  compared with the verified copy by names and bytes, because the Simulator
+  installer rewrites file modes. Both digests come from one read of each
+  file. Declared `appSHA256` values are unchanged (#293).
+- A failed `open` names its phase in the receipt's `targetSetup`, and a
+  rejected app reads as `mismatch` with a closed reason: `build-installed`,
+  `build-tree`, `build-platform` or `runtime-metadata`. A refused
+  WebDriverAgent tree is a `wda` failure, not a rejected app. Before this,
+  every open failure read `unknown`/`device-state-unknown` (#289).
+- Removing a Simulator left by a stopped worker has one two-minute budget for
+  every record and stops waiting for a `simctl` that does not return, so a
+  stuck CoreSimulator can no longer hold an attempt past its timeout,
+  deadline or interrupt. An unremoved device still fails the attempt (#291).
+- `npm run smoke:ios` and the Android smokes say that they need a branch
+  before any slow setup, instead of failing later on a detached checkout
+  such as a release tag (#290).
+
+### Added
+
+- Experimental: `9l run <one spec> --verify <checks.json>` adds
+  engine-observed HTTP postconditions, a first slice of independent
+  behavioral verification. After the test process tree has stopped, the
+  `9l` process probes the `GET` or `HEAD` checks declared in a closed,
+  versioned checks file outside the spec (exact status, and optionally an
+  exact JSON value at a JSON Pointer, polled for at most `withinMs`) and
+  records each in the receipt's additive `verifications` as `verified`,
+  `contradicted`, `unreachable` or `not_run`, with `observedBy: engine`.
+  Nothing about the checks reaches the test process, redirects are not
+  followed, and no URL, header, expected value or response body is
+  persisted. A test that reported itself passed is `failed` (exit 1, stop
+  `verification_contradicted`) when a check is contradicted, and incomplete
+  (exit 3) when a check could not be completed or the checks file's digest
+  changed during the attempt; a failing test stays failed.
+  `verifiedAssertions` counts the verified checks and `assertionCoverage`
+  stays `unknown`. Text output, `9l result` and `--junit` name each check.
+  The run must plan exactly one job, and a malformed checks file exits 2
+  before anything runs. It covers only state reachable over HTTP, not UI-only
+  or native app state, state removed by teardown, requirement coverage or
+  whether the checks themselves are right. Without `--verify` nothing
+  changes; with it, `outcome` `failed` no longer implies a failed test. See
+  [docs/verify.md](docs/verify.md).
+- `9l run --junit <file>` writes a JUnit XML report of the run for CI
+  dashboards, and `9l result <run-id> --junit <file>` rebuilds it from a
+  stored run (#272). Failed tests are `<failure>`, skipped tests
+  `<skipped>`, and everything that leaves a result unproven is `<error>`:
+  setup- and environment-classed failures, a goal that did not complete, an
+  attempt that did not validate or was canceled or timed out, and skipped
+  inputs. An incomplete run always contains an `<error>` and an attempt
+  without validated evidence shows no passing testcase. A bad path exits 2
+  before any test process starts; a report that cannot be written after the
+  run turns exit 0 into 3 and never changes a non-zero exit code. See
+  [docs/cli.md](docs/cli.md).
+- Validated receipts list each test's terminal outcome in `tests` (at most
+  2000, with `testsTruncated`): status, failure class, and for plain
+  Playwright runs the title and duration. With `--sdk` an entry is the
+  test's digest and outcome, without a duration; titles are added only with
+  `--failure-details`. The field is additive, so the receipt version stays
+  2.
+- `9l run --show-output` streams each test process's stdout and stderr,
+  such as a spec's `console.log`, to 9l's stderr while it runs, with or
+  without `--sdk` (#269). Lines are prefixed with job and stream, stripped
+  of terminal escapes and redacted best effort; `--format json` stdout is
+  unchanged. It is off by default, also in CI, and is never persisted:
+  receipts, logs, events, run results and MCP responses are the same with
+  and without it. A slow or failing stderr drops output with a marker and
+  never changes a result. Treat the stream as private. With `--sdk`, a
+  spec's `console.log` needs a terminal reporter:
+  `9l run <spec> --sdk --reporter list --show-output`. See
+  [docs/cli.md](docs/cli.md).
+
+### Changed
+
+- `9l doctor` ends by suggesting `9l assess` on your specs, which needs no
+  app or browser, then one `9l run`, instead of `9l scan`. The quickstart
+  gains a step that reviews specs with `9l assess` before running one.
+- `9l assess` text output shows only the dimensions it could judge on each
+  test line. A test whose five dimensions were all `unknown`, the usual case
+  without a requirements contract, used to print them all; it now prints its
+  location alone. JSON output is unchanged.
+
+### Fixed
+
+- `9l run` with more than one job gives each Playwright job its own output
+  directory, `test-results/9l-<job id>` in the job's project. The jobs used
+  to share the project's `outputDir`, which every Playwright process clears
+  when it starts, so a job starting later deleted the traces of one still
+  running: a passing test failed in teardown with `ENOENT`, passed on its
+  retry and was counted in `flakyTests`, or failed outright with
+  `retries: 0`. A run of one job keeps the project's own `outputDir`.
+  Android and iOS jobs already had a private directory. Collect traces from
+  `test-results/` as before, or use `--keep-attachments`
+  ([#268](https://github.com/Quality-Max/9lives-runner/issues/268)).
+- A spec that fails to load now names the error in the receipt and in the
+  text output, for example `Error: Cannot find module '@acme/helpers'`.
+  `9l run` used to say only that Playwright reported an error before finding
+  any test, and the cause had to be found in the attempt's `stdout.log`. Only
+  the first line is kept, without the require stack or source frames,
+  redacted and at most 300 bytes, as for a test runner that printed no
+  report. Runs with `--sdk` are unchanged: the engine protocol carries no
+  error text.
+- The text output of a failed assertion shows the `Received:` line. It
+  stopped after three lines, which for a matcher are the error, the locator
+  and the expected value.
+
+## 0.7.0-beta.1 — 2026-11-20
+
+The first beta of the 0.7.0 line adds an experimental iOS Simulator target.
+It is a prerelease: GitHub's Latest release and npm `latest` stay at 0.6.1,
+and installers and `9l update` keep selecting 0.6.1. Web and Android drivers
+are unchanged; the engine's new timing rule below applies to every target.
+Receipts gain `iosRuntimes` and `targetCleanup`; both are
+additive, so the receipt version is unchanged, and the target contract stays
+`9l.target/3`. Update the CLI and `@9l/playwright` together for iOS: a 0.6.1
+CLI rejects `ios:` targets and the SDK's iOS runtime evidence.
+
+### iOS Simulator (experimental)
+
+- `9l run --sdk --target ios:<alias>` with `@9l/playwright/ios`
+  (`iosTargetDriver`, `iosAppDigest`). Each test gets its own new Simulator
+  and a pinned Appium 3.8.0 and XCUITest driver 10.43.1 session. Tap, fill,
+  visibility, text and `enabled` work through exact accessibility
+  identifiers; a label never stands in for an identifier. The unpacked
+  Simulator `.app` must match its declared digest before and after install.
+- Receipts carry closed `iosRuntimes` metadata (build, runtime, device type,
+  OS, architecture, Xcode, pinned tool versions, viewport), bound to the test
+  and attempt. Missing, stale or cross-platform metadata cannot pass.
+- Sessions are headless, and the pinned driver closes a Simulator window that
+  is already open when a test starts. WebDriverAgent can run from products
+  built beforehand (`wdaProducts`) and listens on `127.0.0.1` only.
+- Qualified only from a source checkout on one Mac: Apple silicon, macOS
+  26.6.2, Xcode 27.2 and an iOS 18.6 iPhone 16 Simulator, where all twelve
+  cases of `npm run smoke:ios` qualified. Setup needs full Xcode, the pinned
+  tools in `tools/ios` and `scripts/build-ios-wda.cjs` from this repository;
+  installing the package does not provide them.
+- GitHub-hosted macOS runners are unqualified. A new Simulator needed 180 to
+  263 seconds there before it could be used, so `open` reached its
+  300-second bound before a session existed. See
+  [the iOS guide](docs/ios-driver.md).
+
+### Engine
+
+- When an iOS worker is canceled, reaches its attempt timeout or is killed
+  before its teardown runs, the engine removes the Simulator it had created.
+  It acts only on the record the driver wrote for that device, and a fresh
+  inventory decides the result, listed in the receipt as `targetCleanup`
+  (`removed`, `absent` or `unconfirmed`). An attempt with an unconfirmed
+  entry cannot pass. If the `9l` process itself is killed, the device stays;
+  remove it with `xcrun simctl delete`.
+- An attempt's canceled or timed-out status is decided when its worker
+  stops. Work the engine does afterwards, such as removing a native device or
+  closing the goal service, can no longer turn an attempt that finished in
+  time into a timeout and discard its validated report.
+
+### Android qualification (repository)
+
+- The `isolation-defect` smoke case keeps the ordinary five-second bound for
+  its final assertion, which can only fail. Waiting out the 90-second
+  relaunch allowance ran into the test budget on a slow hosted emulator.
+- Every Android smoke case reports bounded facts (read counts and timings,
+  in-flight marker checks, the focused window) and its duration, also when
+  it does not qualify.
+
 ## 0.6.1 — 2026-11-18
 
 A patch on the 0.6.0 line from a second field report on the experimental

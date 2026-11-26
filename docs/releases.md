@@ -22,12 +22,12 @@ and changelog. `npm test` fails if those declarations differ. Merge it to
 
 ```sh
 git fetch origin
-git tag -s v0.6.1 -m "9lives 0.6.1" origin/main
-git tag -v v0.6.1
-git push origin v0.6.1
+git tag -s v0.7.3 -m "9lives 0.7.3" origin/main
+git tag -v v0.7.3
+git push origin v0.7.3
 ```
 
-The commands above release CLI and SDK 0.6.1; choose the matching version for
+The commands above release CLI and SDK 0.7.3; choose the matching version for
 a later release. Never move a published tag to different source. The tag
 starts one workflow, `release.yml`, which runs in this order:
 
@@ -123,10 +123,10 @@ dist-tag keep the stable release.
 Opt in to the matching beta SDK explicitly:
 
 ```sh
-npm install --save-dev @9l/playwright@0.6.0-beta.4 @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.7.0-beta.1 @playwright/test@1.64.1
 ```
 
-For the CLI, download `v0.6.0-beta.4` with `gh release download` and follow the
+For the CLI, download `v0.7.0-beta.1` with `gh release download` and follow the
 archive, checksum and provenance checks in [the installation guide](install.md#verify-build-provenance).
 The shell installer and `9l update` select stable releases only.
 
@@ -151,15 +151,19 @@ Every change listed should be in the changelog's Unreleased section.
 
 **2. Prepare the release in one pull request**, branched from `origin/main`:
 
-- `var version` in `cmd/9l/main.go`, `version` in
-  `packages/playwright/package.json` and `@9l/playwright` in
-  `testdata/sdk/package.json` set to `<version>`, then
-  `npm install --package-lock-only --ignore-scripts`.
+- `node scripts/release-version.cjs --set <version>`. It sets `var version`
+  in `cmd/9l/main.go`, `version` in `packages/playwright/package.json` and
+  `@9l/playwright` in `testdata/sdk/package.json`, then runs
+  `npm install --package-lock-only --ignore-scripts` for the lockfile. It
+  refuses a version that is not later than the current one or a tree whose
+  declarations already differ, and checks every file before writing any.
+  `node scripts/release-version.cjs` alone prints the current version.
 - `CHANGELOG.md`: rename `## Unreleased` to `## <version> — YYYY-MM-DD` and
   open it with a short summary that names any contract change and whether the
   CLI and SDK must be updated together. Released sections stay as tagged.
 - For a beta, the install example under [Beta releases](#beta-releases).
-  Update the README compatibility table when a qualified pairing changes.
+  Update [the compatibility page](compatibility.md), and the short table in
+  the README, when a qualified pairing changes.
 - Run `npm test` (it fails when the declared versions differ),
   `go test ./cmd/9l` and `go build -o /tmp/9l ./cmd/9l && /tmp/9l --version`.
 
@@ -172,7 +176,23 @@ gh run list --commit <sha> --json name,status,conclusion
 ```
 
 Every run listed must be `completed` and `success`: at least `CI`, and
-`Android` when the change touched its paths.
+`Android` when the change touched its paths. On a push, `Android` runs only
+the fast subset of cases.
+
+Then check the full Android matrix, which runs nightly and repeated:
+
+```sh
+gh run list --workflow android.yml --event schedule --limit 1 --json databaseId,headSha,conclusion
+gh run view <run-id> --web   # the pass-rate table is in the run's summary
+```
+
+The latest nightly run must be on a commit that contains every Android change
+in the release, and its pass-rate summary must show every case qualified in at
+least two of its three runs. When a case is below that, or the nightly run is
+older than the release's Android changes, dispatch the full matrix on the
+release-preparation commit (`gh workflow run android.yml --ref main -f scope=full -f repeat=3`)
+and apply the same rule. A case that fails the rule is a defect to triage
+before tagging, not a run to repeat until green.
 
 **4. Re-check the state, then tag and push.**
 

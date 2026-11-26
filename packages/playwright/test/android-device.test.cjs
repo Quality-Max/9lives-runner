@@ -59,10 +59,23 @@ test('app windows are counted by package and focus is classified', () => {
   assert.deepEqual(parseWindows('  mCurrentFocus=null\n  mCurrentFocus=null', 'dev.ninelives.fixture'), {windows: 0, focus: 'none'});
 });
 
-test('keyboard visibility reads mInputShown only', () => {
+test('keyboard visibility reads mInputShown, and the empty input method as hidden', () => {
   assert.equal(parseIme('  mInputShown=true mImeWindowVis=0x2'), 'shown');
   assert.equal(parseIme('  mInputShown=false'), 'hidden');
   assert.equal(parseIme('mImeWindowVis=0x0'), 'unknown');
+  // The empty input method an owned emulator runs draws no window: a focused
+  // field leaves it reported as shown, but nothing covers the app, and a Back
+  // to close it would reach the app.
+  assert.equal(parseIme('  mCurMethodId=io.appium.settings/.EmptyIME\n  mInputShown=true'), 'hidden');
+  assert.equal(parseIme('  mCurMethodId=io.appium.settings/.EmptyIME\n  mInputShown=false'), 'hidden');
+  // API 36 names the selected method mSelectedMethodId, in a per-user section.
+  assert.equal(parseIme('      mSelectedMethodId=io.appium.settings/.EmptyIME\n      mInputShown=true'), 'hidden');
+  assert.equal(parseIme('      mSelectedMethodId=com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME\n      mInputShown=true'), 'shown');
+  assert.equal(parseIme('  mCurMethodId=io.appium.settings/.EmptyIME'), 'unknown');
+  // Any other method, including another Appium one, keeps its reading.
+  assert.equal(parseIme('  mCurMethodId=com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME\n  mInputShown=true'), 'shown');
+  assert.equal(parseIme('  mCurMethodId=io.appium.settings/.UnicodeIME\n  mInputShown=true'), 'shown');
+  assert.equal(parseIme('  mCurMethodId=io.appium.settings/.EmptyIMEx\n  mInputShown=true'), 'shown');
 });
 
 const {parseDisplays, activeDisplay, parsePosture} = require('../dist/android-device');

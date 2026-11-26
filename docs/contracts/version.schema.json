@@ -23,6 +23,9 @@
         "receipt": {
           "type": "integer"
         },
+        "runRepeat": {
+          "type": "integer"
+        },
         "runResult": {
           "type": "integer"
         },
@@ -38,6 +41,7 @@
         "progressEvent",
         "assess",
         "assessSuite",
+        "runRepeat",
         "executionReceipt",
         "engine"
       ],

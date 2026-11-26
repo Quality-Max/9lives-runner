@@ -10,7 +10,7 @@ completing does not verify that behavior.
 Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
-npm install --save-dev @9l/playwright@0.6.1 @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.7.3 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
@@ -56,15 +56,19 @@ Natural-language goals use finite observed controls and typed actions, with
 budgets and a conservative stop policy. See the
 [goal contract](https://github.com/Quality-Max/9lives-runner/blob/main/docs/goals.md)
 and [SDK bridge](https://github.com/Quality-Max/9lives-runner/blob/main/docs/sdk-bridge.md).
-Live provider accuracy, independent behavioral verification, verified replay,
+The CLI has an experimental first slice of independent behavioral
+verification, `9l run --verify`, which checks HTTP postconditions declared
+outside the spec from the engine process; this package takes no part in it.
+Live provider accuracy, broader independent verification, verified replay,
 iOS and Android devices beyond those listed below are not qualified features.
 
-## iOS Simulator (unreleased)
+## iOS Simulator (experimental)
 
-This source checkout includes an experimental `@9l/playwright/ios` driver.
-It is qualified from source on one Mac only. See the [source setup, supported
-operations and limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/ios-driver.md).
-It is not included in the published support matrix.
+Since 0.7.0 the package includes an experimental `@9l/playwright/ios` driver.
+It is qualified from a source checkout on one Mac only, and its setup needs
+the pinned tools and WebDriverAgent build script from the repository. See the
+[setup, supported operations and limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/ios-driver.md).
+It is not included in the stable support matrix.
 
 ## Android (experimental)
 
@@ -73,7 +77,7 @@ Appium 3.8.0 and UiAutomator2 8.7.0, with the same `app` fixture a web
 target uses. It is qualified on API 35 emulators and one Android 17 phone;
 see [Android setup and qualification limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/android-driver.md).
 
-1. Install the matching 0.6.1 CLI and `@9l/playwright` together (see
+1. Install the matching 0.7.3 CLI and `@9l/playwright` together (see
    [installation](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)),
    and the pinned automation tooling once, outside your project:
 

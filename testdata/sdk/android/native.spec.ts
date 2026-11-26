@@ -11,7 +11,7 @@ const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // installed with installInPlace; the serial stays in the environment.
 const attachedSerial = process.env.NINELIVES_ANDROID_SERIAL;
 const biometric = mode.startsWith('biometric');
-const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed', 'focus'].includes(mode) ? mode : 'healthy';
+const fixtureMode = attachedSerial ? 'phone-a' : mode === 'cancel' ? 'blocked' : mode === 'failure-capture' ? 'defect' : biometric ? 'biometric' : ['defect', 'state-defect', 'missing', 'ambiguous', 'blocked', 'install-fail', 'semantics', 'semantics-defect', 'semantics-delayed', 'focus'].includes(mode) ? mode : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/android-fixture/${fixtureMode}/build.json`), 'utf8'));
 let native: TargetDriver;
 const test = createTargetTest({native: target => native = androidTargetDriver({
@@ -27,6 +27,7 @@ const test = createTargetTest({native: target => native = androidTargetDriver({
   appPackage: fixture.appPackage, activity: fixture.activity,
   // Opt-in diagnostics and declared requirements for their qualification cases.
   ...(mode === 'diagnostics' || mode === 'phone-diagnostics' ? {diagnostics: {gestures: true}} : {}),
+  ...(mode === 'failure-capture' ? {diagnostics: {failureCapture: true}} : {}),
   ...(mode === 'phone-healthy' ? {expected: {versionCode: '7', versionName: '1.4.0', signerSHA256: process.env.NINELIVES_ANDROID_SIGNER}} : {}),
   ...(mode === 'phone-dirty-recovered' ? {recovery: {back: 2}} : {}),
   ...(mode === 'phone-posture' ? {requires: {posture: 'opened'}} : {}),
@@ -73,6 +74,22 @@ async function frontWindow(adb: string, serial: string, appPackage: string): Pro
     return owner === undefined ? 'unknown' : owner === appPackage ? 'app' : 'other';
   } catch { return 'unknown'; }
 }
+
+// failure-capture: the fixture captures and then closes the driver after the
+// test body, so whether the emulator stopped is read after that teardown.
+// Playwright runs a suite's afterAll after the test's fixtures are torn
+// down, also after a failure.
+let captureSerial = '';
+if (mode === 'failure-capture') test.afterAll(async () => {
+  const facts = process.env.NINELIVES_ANDROID_PROBE;
+  if (!facts) return;
+  let deviceStopped = false;
+  if (captureSerial) {
+    try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', captureSerial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+    catch { deviceStopped = true; }
+  }
+  writeFileSync(facts, JSON.stringify({...JSON.parse(readFileSync(facts, 'utf8')), deviceStopped, stoppedAfterTeardown: true}));
+});
 
 // @9l-requirement QUA-2204
 test('native transfer has fresh exact text and state', async ({app}) => {
@@ -191,10 +208,14 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       markerProbe.checksAtStop = markerProbe.checks; markerProbe.stopMs = Date.now() - dispatchedAt;
       if (!started && serial) markerProbe.front = await frontWindow(resolve(sdk, 'platform-tools/adb'), serial, fixture.appPackage);
     }
-    await app.close();
+    // A failure capture is taken at fixture teardown, before the fixture
+    // closes the driver: a spec that closes it itself gets none.
+    if (mode !== 'failure-capture') await app.close();
     await probe;
     let deviceStopped = false;
-    if (serial) {
+    // Still open here by design; the hook after the fixture checks it.
+    if (mode === 'failure-capture') captureSerial = serial;
+    else if (serial) {
       try { await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
       catch { deviceStopped = true; }
     }
@@ -233,6 +254,9 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     if (await app.foreground() !== 'app') throw new Error('app not in front');
     await app.getByTestId('list').scroll('down', {percent: 0.5});
     await app.getByTestId('status').toHaveText('scrolled');
+    // A value read from the screen for a later step: UiAutomator2's text of
+    // the same control, returned to the spec and never recorded.
+    if (await app.getByTestId('status').text() !== 'scrolled') throw new Error('status text not read');
     if (attachedSerial) {
       // A phone keeps its own input method: fill focuses the field like a
       // touch, which shows it, and hiding closes it.
@@ -244,6 +268,15 @@ test('native operations: touch, back, scroll, keyboard and lifecycle', async ({a
     } else {
       await app.toHaveKeyboard(false);
       await app.hideKeyboard();
+      // The owned emulator runs Appium's empty input method, which draws no
+      // window. With a field focused it is still the selected method, so a
+      // Back to close it would reach the app instead; hiding must leave the
+      // screen as it is.
+      await app.getByTestId('amount').fill('7');
+      await app.hideKeyboard();
+      await app.getByTestId('amount').toBeVisible();
+      if (await app.foreground() !== 'app') throw new Error('hideKeyboard left the app');
+      await app.toHaveKeyboard(false);
     }
     if (!attachedSerial) {
       // The spec's own adb, on the serial the driver booted, puts a system
@@ -315,6 +348,8 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
     await app.getByTestId('login.status').toHaveText('Invalid');
     // @9l-outcome invalid-field-reported
     await app.getByTestId('email').toHaveState('invalid', true);
+    // The field's accessibility error, compared on the device, never read back.
+    await app.getByTestId('email').toHaveError('Enter an email address');
     await app.getByTestId('email').fill('ada@example.test', {timeoutMs: 20000});
     await app.getByTestId('validate').tap();
     await app.getByTestId('email').toHaveState('invalid', false);

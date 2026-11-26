@@ -404,11 +404,38 @@ func inspectCommand(args []string, out, errOut io.Writer) int {
 	format := fs.String("format", "markdown", "markdown or json")
 	outPath := fs.String("out", "", "write the report to this file instead of stdout")
 	tree := fs.Bool("accessibility-tree", false, "include Chromium's accessibility tree")
-	valued := map[string]bool{"--format": true, "--out": true}
+	android := fs.Bool("android", false, "inspect the screen of an attached Android device instead of a URL")
+	ios := fs.Bool("ios", false, "inspect the foreground app of a booted iOS Simulator instead of a URL")
+	serial := fs.String("serial", "", "with --android, the adb serial of the device (required when several are attached)")
+	appPackage := fs.String("package", "", "with --android, report only controls of this package")
+	udid := fs.String("udid", "", "with --ios, the simulator's UDID (required when several are booted)")
+	wdaProducts := fs.String("wda-products", "", "with --ios, the WebDriverAgent Build/Products directory from scripts/build-ios-wda.cjs (default $NINELIVES_IOS_WDA_PRODUCTS)")
+	valued := map[string]bool{"--format": true, "--out": true, "--serial": true, "--package": true, "--udid": true, "--wda-products": true}
 	page := addPageFlags(fs, valued)
 	timeout := page.timeout
 	if fs.Parse(flagsFirst(args, valued)) != nil {
 		return exitUsage
+	}
+	screen := screenArguments{Serial: *serial, Package: *appPackage, UDID: *udid, WDAProducts: *wdaProducts, Format: *format}
+	switch {
+	case *android && *ios:
+		fmt.Fprintln(errOut, "9l: choose one of --android and --ios")
+		return exitUsage
+	case *android:
+		screen.Platform = "android"
+	case *ios:
+		screen.Platform = "ios"
+	}
+	if (*serial != "" || *appPackage != "") && !*android {
+		fmt.Fprintln(errOut, "9l: --serial and --package apply only with --android")
+		return exitUsage
+	}
+	if (*udid != "" || *wdaProducts != "") && !*ios {
+		fmt.Fprintln(errOut, "9l: --udid and --wda-products apply only with --ios")
+		return exitUsage
+	}
+	if screen.Platform != "" {
+		return inspectScreenCommand(fs, screen, *outPath, *timeout, out, errOut)
 	}
 	if fs.NArg() != 1 || *timeout <= 0 {
 		fmt.Fprintln(errOut, "9l: inspect takes one URL and a positive --timeout")
@@ -441,6 +468,111 @@ func inspectCommand(args []string, out, errOut io.Writer) int {
 		return exitIncomplete
 	}
 	return exitPassed
+}
+
+// screenEnv names the variables a device inspection needs, on top of the
+// helper's own allowlist: where adb and its server are, and where Xcode, the
+// pinned iOS tools and a prebuilt WebDriverAgent are.
+var screenEnv = map[string][]string{
+	"android": {"ANDROID_HOME", "ANDROID_SDK_ROOT", "HOMEBREW_PREFIX", "ANDROID_ADB_SERVER_PORT"},
+	"ios":     {"DEVELOPER_DIR", "NINELIVES_IOS_TOOLS", "NINELIVES_IOS_WDA_PRODUCTS"},
+}
+
+// inspectScreenCommand ranks the controls on an attached Android device's
+// active window or a booted simulator's foreground app.
+func inspectScreenCommand(fs *flag.FlagSet, screen screenArguments, outPath string, timeout time.Duration, out, errOut io.Writer) int {
+	if fs.NArg() != 0 || timeout <= 0 {
+		fmt.Fprintf(errOut, "9l: inspect --%s takes no URL and a positive --timeout\n", screen.Platform)
+		return exitUsage
+	}
+	var pageOnly []string
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "accessibility-tree", "allow-private-network", "storage-state", "acknowledge-private-content", "viewport":
+			pageOnly = append(pageOnly, "--"+f.Name)
+		}
+	})
+	if len(pageOnly) > 0 {
+		fmt.Fprintf(errOut, "9l: %s: only for a URL, not with --%s\n", strings.Join(pageOnly, ", "), screen.Platform)
+		return exitUsage
+	}
+	if screen.Format != "markdown" && screen.Format != "json" {
+		fmt.Fprintln(errOut, "9l: --format must be markdown or json")
+		return exitUsage
+	}
+	if screen.WDAProducts != "" {
+		absolute, err := filepath.Abs(screen.WDAProducts)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: --wda-products cannot be resolved")
+			return exitUsage
+		}
+		screen.WDAProducts = absolute
+	}
+	root, err := workingRoot()
+	if err != nil {
+		fmt.Fprintln(errOut, "9l: inspect cannot resolve its working directory")
+		return exitUsage
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	response, err := runScreenCheck(ctx, screen, root, timeout)
+	if err != nil {
+		fmt.Fprintln(errOut, "9l:", browserFailure(err))
+		return exitIncomplete
+	}
+	if writeReport(response, screen.Format == "json", outPath, out, errOut) != nil {
+		return exitIncomplete
+	}
+	return exitPassed
+}
+
+// screenArguments are the inspect_screen tool's arguments and the
+// `9l inspect --android|--ios` flags. WDAProducts is a CLI flag only; the
+// tool takes it from NINELIVES_IOS_WDA_PRODUCTS.
+type screenArguments struct {
+	Platform    string `json:"platform"`
+	Serial      string `json:"serial"`
+	Package     string `json:"package"`
+	UDID        string `json:"udid"`
+	WDAProducts string `json:"-"`
+	Format      string `json:"format"`
+	Timeout     *int   `json:"timeout"`
+}
+
+// runScreenCheck reads one device screen through the helper. The helper
+// bounds its own device calls by the same timeout; Go's bound adds a margin
+// for node's start and stops the whole process tree.
+func runScreenCheck(ctx context.Context, a screenArguments, root string, timeout time.Duration) (browsercheck.Response, error) {
+	if a.Format == "" {
+		a.Format = "json"
+	}
+	if a.Format != "json" && a.Format != "markdown" {
+		return browsercheck.Response{}, toolError{"format must be json or markdown"}
+	}
+	args := map[string]any{"timeoutMs": timeout.Milliseconds()}
+	set := func(name, value string) {
+		if value != "" {
+			args[name] = value
+		}
+	}
+	switch a.Platform {
+	case "android":
+		if a.UDID != "" {
+			return browsercheck.Response{}, toolError{"udid applies only to platform ios"}
+		}
+		set("serial", a.Serial)
+		set("package", a.Package)
+	case "ios":
+		if a.Serial != "" || a.Package != "" {
+			return browsercheck.Response{}, toolError{"serial and package apply only to platform android"}
+		}
+		set("udid", a.UDID)
+		set("wdaProducts", a.WDAProducts)
+	default:
+		return browsercheck.Response{}, toolError{"platform must be android or ios"}
+	}
+	request := browsercheck.Request{Tool: "inspect_" + a.Platform, Args: args, Format: a.Format}
+	return browsercheck.Run(ctx, request, browsercheck.Options{Root: root, Timeout: timeout + 5*time.Second, Env: screenEnv[a.Platform]})
 }
 
 func runBrowserCheck(request browsercheck.Request, root string, timeout time.Duration, errOut io.Writer) (browsercheck.Response, int) {
@@ -479,7 +611,7 @@ func writeReport(response browsercheck.Response, asJSON bool, outPath string, ou
 	return nil
 }
 
-// browserTool runs scan_url, inspect_page or generate_playwright_repro.
+// browserTool runs scan_url, inspect_page, inspect_screen or generate_playwright_repro.
 // Files they read or write stay inside the working directory, even with
 // NINELIVES_MCP_UNRESTRICTED=1, because the helper confines them there too.
 func (s *mcpServer) browserTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
@@ -509,6 +641,29 @@ func (s *mcpServer) browserTool(ctx context.Context, name string, raw json.RawMe
 			return nil, toolError{"reproduction could not be written"}
 		}
 		return map[string]any{"version": MCPToolResultVersion, "filePath": result.FilePath, "code": result.Code, "assumptions": result.Assumptions}, nil
+	}
+	if name == "inspect_screen" {
+		var args screenArguments
+		if err := decodeArguments(name, raw, &args); err != nil {
+			return nil, err
+		}
+		timeout, err := pageArguments{Timeout: args.Timeout}.timeout(s.runTimeout)
+		if err != nil {
+			return nil, err
+		}
+		response, err := runScreenCheck(ctx, args, root, timeout)
+		var refused toolError
+		switch {
+		case errors.As(err, &refused):
+			return nil, refused
+		case err != nil && ctx.Err() != nil:
+			return nil, ctx.Err()
+		case err != nil:
+			return nil, toolError{browserFailure(err)}
+		case args.Format == "markdown":
+			return textResult(response.Text), nil
+		}
+		return withVersion(response.Result), nil
 	}
 	var request browsercheck.Request
 	var timeout time.Duration

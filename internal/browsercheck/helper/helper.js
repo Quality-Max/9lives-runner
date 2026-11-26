@@ -11,6 +11,8 @@ const report_1 = require("./report");
 const scan_url_1 = require("./scan-url");
 const doctor_1 = require("./doctor");
 const android_1 = require("./android");
+const inspect_android_1 = require("./inspect-android");
+const inspect_ios_1 = require("./inspect-ios");
 exports.HELPER_PROTOCOL_VERSION = 1;
 async function handleRequest(request) {
     if (request?.version !== exports.HELPER_PROTOCOL_VERSION) {
@@ -33,6 +35,18 @@ async function handleRequest(request) {
             const result = (await (0, inspect_page_1.inspectPage)(request.args));
             if (request.format === 'markdown')
                 return { version: exports.HELPER_PROTOCOL_VERSION, result, text: (0, report_1.renderInspectReport)(result) };
+            return { version: exports.HELPER_PROTOCOL_VERSION, result };
+        }
+        if (request.tool === 'inspect_android') {
+            const result = await (0, inspect_android_1.inspectAndroid)(request.args);
+            if (request.format === 'markdown')
+                return { version: exports.HELPER_PROTOCOL_VERSION, result, text: (0, inspect_android_1.renderAndroidInspectReport)(result) };
+            return { version: exports.HELPER_PROTOCOL_VERSION, result };
+        }
+        if (request.tool === 'inspect_ios') {
+            const result = await (0, inspect_ios_1.inspectIos)(request.args);
+            if (request.format === 'markdown')
+                return { version: exports.HELPER_PROTOCOL_VERSION, result, text: (0, inspect_ios_1.renderIosInspectReport)(result) };
             return { version: exports.HELPER_PROTOCOL_VERSION, result };
         }
         return { version: exports.HELPER_PROTOCOL_VERSION, error: 'unknown browser check' };

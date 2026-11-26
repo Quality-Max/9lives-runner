@@ -10,3 +10,8 @@ __pycache__/
 /playwright-report/
 /.context/
 .pytest_cache/
+
+# Outputs of the Android workflow's case coverage check.
+/cases.txt
+/groups.txt
+/fast.txt

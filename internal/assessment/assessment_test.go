@@ -2,6 +2,8 @@ package assessment
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -358,7 +360,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -482,7 +484,7 @@ func TestAfterHookFailIsAConcern(t *testing.T) {
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -514,7 +516,7 @@ func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 		for i := range assertions {
 			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}, Matcher: "toBe"}
 		}
-		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}})
+		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, TestIDs: []TestID{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}})
 	}
 	if !validFacts(f, source, false) {
 		t.Fatal("shared modifiers counted once per test")
@@ -662,7 +664,7 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		got = append(got, strings.Join(rules, ","))
 	}
 	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v16" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v18" {
 		t.Fatalf("caught findings %q under %s", got, report.Policy)
 	}
 	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
@@ -837,7 +839,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v16" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v18" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -872,13 +874,13 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v16" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v18" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }
 
 func TestHazardEvidenceIsValidated(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if !validFacts(f, []byte("xx"), false) {
 		t.Fatal("valid hazard rejected")
 	}
@@ -948,7 +950,7 @@ func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
 	}
 	// A value typed into a field and a key press are not selectors.
 	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v16" {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v18" {
 		t.Fatalf("hazard findings %q under %s", got, report.Policy)
 	}
 	counts, total := CountFindings(report)
@@ -963,7 +965,7 @@ func TestTruncatedHazardsAreBoundedAndDisclosed(t *testing.T) {
 	for i := range hazards {
 		hazards[i] = Hazard{Location: Location{i%600 + 1, i/600 + 1}, Kind: "xpath"}
 	}
-	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}
 	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{fact}, HazardsTruncated: true}
 	if validFacts(f, source, false) {
 		t.Fatal("more hazards than the budget accepted")
@@ -998,7 +1000,7 @@ func TestAssessCreditsTargetAssertionsWithoutClaimingVerification(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Tests) != 2 || report.Policy != "assessment-source-v16" || report.Execution != "not_run" {
+	if len(report.Tests) != 2 || report.Policy != "assessment-source-v18" || report.Execution != "not_run" {
 		t.Fatalf("target tests not assessed: %+v", report)
 	}
 	confirmed, actions := report.Tests[0], report.Tests[1]
@@ -1011,5 +1013,228 @@ func TestAssessCreditsTargetAssertionsWithoutClaimingVerification(t *testing.T) 
 	// Source recognition is not runtime evidence: nothing here is verified.
 	if data, err := json.Marshal(report); err != nil || strings.Contains(string(data), "verified") {
 		t.Fatalf("a source report claims verification: %v", err)
+	}
+}
+
+// A spec often imports its createTargetTest fixture from a module beside it,
+// so several specs share one driver configuration. The fixture module is read
+// and, when its exported test is a target fixture, the spec's target
+// assertions are credited as if it were declared in the spec.
+func TestAssessCreditsTargetAssertionsFromALocalFixtureModule(t *testing.T) {
+	requireNode(t)
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("fixtures/target.mjs", "import {createTargetTest} from '@9l/playwright';\n"+
+		"export const test = createTargetTest({native: target => driver(target)});\n")
+	write("fixtures/plain.ts", "import {test as base} from '@playwright/test';\nexport const test = base.extend({});\n")
+	spec := func(module string) []byte {
+		return []byte("import {test} from '" + module + "';\n" +
+			"test('signs in', async ({app}) => {\n" +
+			"  await app.getByTestId('email').fill('x');\n" +
+			"  await app.getByTestId('home').toBeVisible();\n" +
+			"});\n")
+	}
+	specPath := filepath.Join(dir, "specs", "login.spec.mjs")
+	report, err := Assess(context.Background(), spec("../fixtures/target.mjs"), nil, Options{Path: specPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 1 || strings.Join(report.Tests[0].Assertions.Matchers, ",") != "target:toBeVisible" {
+		t.Fatalf("target assertions from a fixture module not credited: %+v", report)
+	}
+	// The report names the module it read and its digest.
+	sum := sha256.Sum256([]byte("import {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({native: target => driver(target)});\n"))
+	if !strings.Contains(strings.Join(report.Limits, "\n"), "target-fixture-module ../fixtures/target.mjs: read "+filepath.ToSlash(filepath.Join(dir, "fixtures", "target.mjs"))+" (sha256 "+hex.EncodeToString(sum[:])+")") {
+		t.Fatalf("fixture module not recorded: %v", report.Limits)
+	}
+	// Resolved without an extension too, as a bundler would.
+	if report, err = Assess(context.Background(), spec("../fixtures/target"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 {
+		t.Fatalf("extensionless fixture import not resolved: %+v %v", report, err)
+	}
+	// TypeScript's ESM convention: './x.js' in source names x.ts on disk.
+	write("fixtures/typed.ts", "import {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({});\n")
+	if report, err = Assess(context.Background(), spec("../fixtures/typed.js"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 1 {
+		t.Fatalf("a .js import of a .ts fixture not resolved: %+v %v", report, err)
+	}
+	// A fixture module that loads other local code is read but earns no
+	// credit: that code could replace app when the module loads.
+	write("fixtures/loads.ts", "import './setup';\nimport {createTargetTest} from '@9l/playwright';\nexport const test = createTargetTest({});\n")
+	if report, err = Assess(context.Background(), spec("../fixtures/loads"), nil, Options{Path: specPath}); err != nil || len(report.Tests) != 1 || report.Tests[0].Assertions.Count != 0 {
+		t.Fatalf("a fixture module loading local code was trusted: %+v %v", report, err)
+	}
+	// A module whose test is not a target fixture, a missing module, and a
+	// spec assessed without a path all keep the test import unrecognized.
+	for _, c := range []struct {
+		module string
+		path   string
+	}{{"../fixtures/plain", specPath}, {"../fixtures/missing", specPath}, {"../fixtures/target.mjs", ""}} {
+		report, err := Assess(context.Background(), spec(c.module), nil, Options{Path: c.path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Tests) != 0 || !strings.Contains(strings.Join(report.Limits, "\n"), c.module) {
+			t.Fatalf("%s (path %q) should stay unrecognized: tests %d, limits %v", c.module, c.path, len(report.Tests), report.Limits)
+		}
+	}
+}
+
+func TestAssessReportsNativeLocatorsTiedToCopyOrPosition(t *testing.T) {
+	requireNode(t)
+	dir := t.TempDir()
+	fixture := "import {createTargetTest} from '@9l/playwright';\n" +
+		"import {androidTargetDriver} from '@9l/playwright/android';\n" +
+		"export const test = createTargetTest({native: target => androidTargetDriver({appId: target.appId,\n" +
+		"  controls: {back: {accessibilityId: 'Back'}, tab: {accessibilityIdSuffix: 'Tab 2 of 4'}}})});\n"
+	if err := os.WriteFile(filepath.Join(dir, "fixtures.ts"), []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec := []byte("import {test} from './fixtures';\n" +
+		"test('opens sessions', async ({app}) => {\n" +
+		"  await app.getByTestId('back').tap();\n" +
+		"  await app.getByTestId('tab').tap();\n" +
+		"  await app.tapAt({x: 540, y: 2200});\n" +
+		"  await app.getByTestId('booking_card').toBeVisible();\n" +
+		"});\n")
+	report, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "sessions.spec.ts")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		if f.Rule == "fragile-selector" {
+			got = append(got, fmt.Sprintf("%s/%s@%d", f.Classification, f.Code, f.Line))
+		}
+	}
+	want := "suspected/copy-alias@3 suspected/data-alias@4 suspected/literal-coordinates@5"
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v18" || report.Tests[0].Assertions.Count != 1 {
+		t.Fatalf("native hazards %q, policy %s, assertions %d", strings.Join(got, " "), report.Policy, report.Tests[0].Assertions.Count)
+	}
+}
+
+func TestFixtureModuleAliasesAreBounded(t *testing.T) {
+	if !validTargetModule(targetModule{App: true, Aliases: map[string]string{"save": "copy-alias", "tab": "partial-copy-alias", "n": "data-alias"}}) {
+		t.Fatal("valid aliases refused")
+	}
+	for _, m := range []targetModule{
+		{Aliases: map[string]string{"save": "xpath"}},
+		{Aliases: map[string]string{"../x": "copy-alias"}},
+	} {
+		if validTargetModule(m) {
+			t.Fatalf("accepted %+v", m)
+		}
+	}
+	many := map[string]string{}
+	for i := 0; i < 257; i++ {
+		many[fmt.Sprintf("a%d", i)] = "copy-alias"
+	}
+	if validTargetModule(targetModule{Aliases: many}) {
+		t.Fatal("accepted 257 aliases")
+	}
+}
+
+func screenFile(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func readScreen(path string, limit int64) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err == nil && int64(len(data)) > limit {
+		return nil, errors.New("too large")
+	}
+	return data, err
+}
+
+func TestAssessChecksTestIDsAgainstInspectedScreens(t *testing.T) {
+	requireNode(t)
+	dir := t.TempDir()
+	home := screenFile(t, dir, "home.json", `{"platform":"android","apps":["com.example.app"],"controls":[],"testIds":{"booking_card":3,"booking_join":3,"home.title":1}}`)
+	login := screenFile(t, dir, "login.json", `{"platform":"ios","apps":["Example"],"controls":[],"testIds":{"username":1,"password":1}}`)
+	screens, err := LoadScreens([]string{home, login, home}, readScreen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := []byte("import {createTargetTest} from '@9l/playwright';\n" +
+		"import {androidTargetDriver} from '@9l/playwright/android';\n" +
+		"const test = createTargetTest({native: t => androidTargetDriver({appId: t.appId, controls: {back: {text: 'Back'}}})});\n" +
+		"test('books a session', async ({app}) => {\n" +
+		"  await app.getByTestId('username').fill('a');\n" +
+		"  await app.getByTestId('booking_join').tap();\n" +
+		"  await app.getByTestId('home.title').toBeVisible();\n" +
+		"  await app.getByTestId('booking_cancel').tap();\n" +
+		"  await app.getByTestId('back').tap();\n" +
+		"});\n")
+	report, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "book.spec.ts"), Screens: screens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		if f.Rule == "screen-test-id" {
+			got = append(got, fmt.Sprintf("%s/%s@%d", f.Classification, f.Code, f.Line))
+		}
+	}
+	// username and home.title are on one screen each; back is an alias.
+	if strings.Join(got, " ") != "suspected/repeated-test-id@6 informational/unobserved-test-id@8" || report.Policy != "assessment-source-v18" {
+		t.Fatalf("screen findings %q policy %s", strings.Join(got, " "), report.Policy)
+	}
+	if len(report.Screens) != 2 || report.Screens[0].Path != filepath.ToSlash(home) || report.Screens[0].TestIDs != 3 || report.Screens[1].Platform != "ios" || len(report.Screens[0].SHA256) != 64 {
+		t.Fatalf("screen evidence %+v", report.Screens)
+	}
+	if report.Tests[0].Dimensions["engineeringQuality"] != "concern" {
+		t.Fatal("a repeated test ID is a concern")
+	}
+	// Without screens nothing changes.
+	plain, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "book.spec.ts")})
+	if err != nil || plain.Screens != nil {
+		t.Fatalf("plain %+v %v", plain.Screens, err)
+	}
+	for _, f := range plain.Tests[0].Findings {
+		if f.Rule == "screen-test-id" {
+			t.Fatal("screen findings without screens")
+		}
+	}
+}
+
+func TestLoadScreensRefusesWhatInspectDoesNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	for _, c := range []struct{ body, want string }{
+		{`{"platform":"web","controls":[],"testIds":{}}`, "not a `9l inspect"},
+		{`{"url":"https://example.com","interactive":[]}`, "not a `9l inspect"},
+		{`{"platform":"android","controls":[]}`, "has no testIds"},
+		{`{"platform":"android","controls":[],"testIds":{"../x":1}}`, "invalid test ID"},
+		{`{"platform":"android","controls":[],"testIds":{"ok":0}}`, "invalid test ID"},
+		{`not json`, "not a `9l inspect"},
+	} {
+		path := screenFile(t, dir, "s.json", c.body)
+		if _, err := LoadScreens([]string{path}, readScreen); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s: %v", c.body, err)
+		}
+	}
+	if _, err := LoadScreens(nil, readScreen); err == nil {
+		t.Fatal("no screens accepted")
+	}
+	many := make([]string, MaxScreens+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("s%d.json", i)
+	}
+	if _, err := LoadScreens(many, readScreen); err == nil {
+		t.Fatal("too many screens accepted")
+	}
+	truncated := screenFile(t, dir, "big.json", `{"platform":"ios","controls":[],"testIds":{"a":1},"testIdsTruncated":true}`)
+	screens, err := LoadScreens([]string{truncated}, readScreen)
+	if err != nil || !screens.Evidence()[0].TestIDsTruncated {
+		t.Fatalf("truncated %v", err)
 	}
 }

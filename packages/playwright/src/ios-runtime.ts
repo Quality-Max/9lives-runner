@@ -16,9 +16,12 @@ export function validIOSRuntime(value: unknown): value is IOSRuntime {
   if (Object.keys(r).length !== iosRuntimeKeys.length || iosRuntimeKeys.some(key => typeof r[key] !== 'string')) return false;
   const v = r as Record<string, string>;
   const version = /^[0-9]{1,3}(\.[0-9]{1,5}){0,3}$/;
+  // CFBundleVersion and CFBundleShortVersionString are period-separated
+  // integers of any practical length (CI build numbers, 20261121, 2026.11.0).
+  const appVersion = /^[0-9]{1,10}(\.[0-9]{1,10}){0,3}$/;
   return /^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+$/.test(v.bundleId) && v.bundleId.length <= 200 &&
     /^[a-f0-9]{64}$/.test(v.appSHA256) && /^[a-f0-9]{64}$/.test(v.worker) &&
-    version.test(v.version) && version.test(v.build) && version.test(v.os) && version.test(v.xcode) &&
+    appVersion.test(v.version) && appVersion.test(v.build) && version.test(v.os) && version.test(v.xcode) &&
     /^com\.apple\.CoreSimulator\.SimRuntime\.iOS-[0-9]{1,3}(-[0-9]{1,5}){1,2}$/.test(v.runtime) &&
     v.runtime === `com.apple.CoreSimulator.SimRuntime.iOS-${v.os.replaceAll('.', '-')}` &&
     /^com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,80}$/.test(v.deviceType) &&

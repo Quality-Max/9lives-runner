@@ -44,11 +44,18 @@ The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `getByTestId(id)`. Observed controls expose `tap({timeoutMs}?)`,
 `fill(value, {submit, timeoutMs}?)` (focus the field and replace its text,
 as a user would; with `submit: true`, then press the keyboard's action key in
-it: Enter on the web, the input method's done action on Android. A driver
+it: Enter on the web, the input method's done action on Android, Return on
+iOS. A driver
 whose handles cannot press it refuses with `unsupported_operation` before
 filling), `toBeVisible(timeoutMs?)`,
 `toHaveText(exactText, timeoutMs?)`,
-`toHaveState('enabled' | 'checked' | 'invalid', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
+`toHaveState('enabled' | 'checked' | 'invalid', boolean, timeoutMs?)`,
+`toHaveError(text, timeoutMs?)` (the validation error the control reports,
+exactly: Android's accessibility error text, such as Flutter's `errorText`
+or `TextView.setError`, and on the web the text of the element an invalid
+control's `aria-errormessage` names, or its constraint-validation message;
+compared by the driver, so only pass or fail is kept, never the text; iOS
+and drivers without the read fail it as `unsupported_state`), `toBeHidden(timeoutMs?)`
 (absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle
 in device coordinates; the origin may be negative for a control scrolled
 partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`
@@ -62,12 +69,28 @@ at integer device coordinates: physical pixels on Android, CSS pixels in the
 web viewport; a point at or beyond the viewport the driver reports is refused
 before dispatch), `viewport()` and `screenDigest()` (the SHA-256 of a screenshot
 of the target display, computed in memory; the image is never retained),
-which are portable, and the Android-only
-`toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()`,
+which are portable; `toHaveKeyboard(boolean, timeoutMs?)` and
+`hideKeyboard()` on Android and iOS (on iOS `hideKeyboard()` only closes a
+keyboard that has a hide key, as on iPad; an iPhone keyboard that stays up
+fails as `keyboard_not_hidden` rather than being closed through a control of
+the app); `answerAlert(button, {timeoutMs}?)` on iOS, which answers the system
+alert in front of the app (a permission request, a save-password sheet) with
+the button named exactly as shown, once, and fails when no alert comes within
+the bound or the alert offers no such button; and the Android-only
+`terminate()`,
 `activate()`, `foreground({timeoutMs}?)`, `deviceSerial()` and
 `fingerprint(finger, {timeoutMs}?)` (a touch of an owned emulator's virtual
 fingerprint sensor with finger 1-10, only where the driver declares
 biometrics; see [biometrics](android-driver.md#biometrics-on-an-owned-emulator)).
+`biometric('match' | 'nomatch', {timeoutMs}?)` is the portable form: it
+presents the enrolled face or finger, or one that is not enrolled, at the
+system's biometric prompt. It is offered where the driver declares
+biometrics, on an owned iOS Simulator (Face ID or Touch ID; see
+[iOS biometrics](ios-driver.md#biometrics-on-the-owned-simulator)) and on an
+owned Android emulator (finger 1 or 2), and fails as `unsupported_operation`
+elsewhere, including the web. Call it once the prompt is on screen. Both are
+recorded as executed actions, never as assertions, so a biometric sign-in
+still needs an assertion.
 Observed controls also expose `isVisible({timeoutMs}?)`, a query for a
 screen that may or may not appear (an onboarding sheet, a permission
 prompt): without `timeoutMs` it makes one observation, and with it it polls
@@ -79,9 +102,25 @@ and a poll that Go's worker deadline cut short stops as `deadline` rather
 than answering `false`.
 `foreground()` reads which window has input focus: `app`, `foreign` (another
 package's window, such as a system dialog, permission prompt or Settings) or
-`none`; package scoping of every action is unchanged. Both are recorded as
-executed actions (`query-visible`, `foreground`), never as assertions, so a
-conditional spec still needs an assertion to protect its outcome.
+`none`; package scoping of every action is unchanged. Observed controls also
+expose `text({timeoutMs}?)`, which returns the text a user reads in a control,
+for a value a later step needs, such as a code the app shows. It waits within
+its bound, like an action, for the control to be shown: an absent or hidden
+control is `missing_test_id`, ambiguity fails, and the answer is a string of at
+most 4 KiB (longer is `invalid_property`). On the web it is a field's current
+value (not its default), a select's chosen option, or the element's visible
+text without scripts or hidden children, and a password field is refused as
+`unsupported_state`; `toHaveText` keeps comparing `textContent`. On Android it
+is UiAutomator2's text of the control, and on iOS WebDriverAgent's; the iOS
+path reuses the read `toHaveText` makes there and has not yet run on a
+Simulator for `text()`. 9lives never records the text in its evidence or the
+receipt, but the spec holds it: a value it puts into an error, including an
+assertion such as `expect(await control.text()).toBe(code)` whose failure
+prints the received value, is kept by `--failure-details`, and Playwright's
+own traces record what a web read returned when tracing is on. All three
+are recorded as executed actions (`query-visible`, `foreground`,
+`query-text`), never as assertions, so a spec still needs an assertion to
+protect its outcome.
 `deviceSerial()` returns the serial of the device the open session targets,
 for adb commands a spec issues itself; it is not a device operation, is not
 recorded and never enters a receipt, and those commands are outside the
@@ -103,7 +142,10 @@ stops the session with reason `setup_<classification>`, where the
 classification is `blocked` (a locked device), `dirty` (state a previous
 test left behind), `mismatch`, `observer` (the accessibility snapshot
 disagreed with the window manager) or `unknown`, and the reason is one of a
-closed list the engine checks. Two optional hooks complete it: `setup()` is
+closed list the engine checks. An `open` record may also name the fixed
+`phase` of open that failed (`tools`, `artifact`, `wda`, `runtime`, `create`,
+`boot`, `bootstatus`, `architecture`, `install`, `server`, `session` or
+`metadata`); the receipt keeps it, and `9l run` prints it. Two optional hooks complete it: `setup()` is
 read after a successful open and returns the record of a declared recovery
 that restored the baseline, so the receipt shows the test ran from it; and
 `recheck(context)` is called after a completed assertion failure while the
@@ -120,7 +162,7 @@ ordinary Playwright owns the page. `native(target)` synchronously constructs a
 Native fixture resolution has no implicit browser, context or page dependency.
 `page` and ordinary `expect` remain available to existing web tests.
 
-Drivers declare `9l.target/3`, the selected kind/app alias, and the exact ordered
+Drivers declare `9l.target/6`, the selected kind/app alias, and the exact ordered
 `targetCapabilities`. They observe at most two handles for a test ID: zero is
 missing, two is ambiguous. Mutations require exactly one observed handle and
 never silently select the first match. An action on a control (`tap`, `fill`,
@@ -156,7 +198,8 @@ receipt pass. Errors name the reason (`missing_test_id`, `ambiguous_test_id`,
 the local cause. The exception is a query: `isVisible()` answers false
 without stopping the session. When
 an operation fails by itself, the driver stays open until fixture teardown, so
-Playwright can still capture failure screenshots, traces and error context.
+Playwright can still capture failure screenshots, traces and error context,
+and an opted-in native driver its own failure capture (see below).
 An operation is aborted and fails at its deadline, so a late result never
 succeeds. Cancellation or a concurrent call closes the driver immediately; an
 operation still pending 250 ms after its deadline also closes it to cancel
@@ -168,14 +211,17 @@ close promise.
 
 ## Evidence and limits
 
-The existing `9l.engine/1` stream negotiates the additional `9l.target/3`
+The existing `9l.engine/1` stream negotiates the additional `9l.target/6`
 capability. Version 2 (0.6.0-beta.2) added the native operations, the
 `target_setup` and `target_diagnostic` frames and the Android runtime's display,
 posture and build identity. Version 3 adds the `query-visible` and
 `foreground` operations, the `foreground` and `device-serial` driver
-capabilities and the `operation_timeout` stop reason. A driver or SDK that
-declares an earlier version is rejected at the handshake with the upgrade
-message, so the CLI and `@9l/playwright` are updated together. Every frame carries the selected target's SHA-256 ID (a fixed
+capabilities and the `operation_timeout` stop reason. Version 4 adds the
+`query-text` operation. A driver that declares another version is refused
+by the SDK when it opens. A CLI and SDK on different versions are caught when
+Go validates the run's evidence, after the tests ran, with the upgrade
+message: the run ends incomplete, never green, so the CLI and
+`@9l/playwright` are updated together. Every frame carries the selected target's SHA-256 ID (a fixed
 digest of the public target name, not a secret) alongside run/job/attempt
 identity. Before execution, the reporter declares each test ID it will run; Go
 checks every frame against that list and requires a single test attempt,
@@ -195,8 +241,29 @@ attempt and is kept as `targetDiagnostics`; a passed test cannot carry one.
 `observer` classification (`window-gone-element-displayed`) after a failed
 hidden assertion only.
 
-A `target_setup` frame carries the classification, reason, stage and, for a
-declared recovery, its method, press count and whether it restored the
+A driver may implement `captureFailure(context)` for an opted-in failure
+capture: the Android driver answers only with `diagnostics:
+{failureCapture: true}`, and on an attached phone only with `onPhone: true`
+as well (see
+[Android](android-driver.md#failure-screenshot-and-view-tree-opt-in)). The
+SDK calls it only from the target fixture, once, after a test that failed (`failed` or
+`timedOut`) ended and before the driver closes, and only when the engine
+set `NINELIVES_FAILURE_CAPTURE_KEPT=1` for the attempt (`--failure-details
+--keep-attachments` on an `android:` target); never after a pass, skip or
+interruption and never once the driver was released. It returns an optional
+PNG `screenshot` and an optional XML `viewTree`; the SDK checks each against
+`failureCaptureLimits` (8 MiB, 2 MiB, at most 10 s and half the test's
+timeout, capped by the attempt deadline), drops what fails a check and
+attaches the rest as the files `9l.failure-screenshot` and
+`9l.failure-view-tree`. A hook that throws or answers late attaches nothing,
+and the test's outcome is unchanged. This is screen content, unlike every
+other record on this page: it crosses the engine bridge only as two counted
+`artifacts` entries, and from a native target's private output only these
+two files are ever retained. The web driver has no such hook: Playwright's own
+`screenshot: 'only-on-failure'` covers web failures. The iOS driver has none.
+
+A `target_setup` frame carries the classification, reason, stage, an optional
+open phase (never with a recheck or a recovery) and, for a declared recovery, its method, press count and whether it restored the
 baseline; nothing else. Go accepts one per stage per attempt from a native
 target (a recovered baseline before the test and a recheck after a failed
 assertion can both be present), rejects a reason outside its classification,
@@ -231,7 +298,9 @@ asserted.
 Existing size limits and closed schemas apply. IDs and enums cross the bridge;
 lookup IDs, fill values, expected/actual text, raw errors, page content and
 attachment bodies do not. Explicit existing opt-ins such as `--failure-details`
-and `--keep-attachments` retain their documented privacy implications.
+and `--keep-attachments` retain their documented privacy implications; with an
+Android driver's `diagnostics: {failureCapture: true}`, those include a failed
+test's screenshot and view hierarchy.
 
 The smoke checks a shared passing scenario, a planted wrong finance result
 that fails the exact-text check, missing/ambiguous controls and their reason
@@ -248,7 +317,7 @@ not claim runtime provenance. `9l assess` recognizes `createTargetTest`
 declarations and credits target assertions as `target:<matcher>`; that is
 source evidence of what the spec asserts, not verification of what ran.
 
-The unreleased [iOS Simulator driver](ios-driver.md) uses this same target
-contract with `ios:<alias>`. It is qualified from source on one Mac only, and
+The experimental [iOS Simulator driver](ios-driver.md), since 0.7.0, uses this same target contract with `ios:<alias>`. It is qualified
+from a source checkout on one Mac only, and
 only its declared deterministic operations are implemented. Its `iosRuntimes` receipt metadata
 is worker-reported attribution and does not count as independent verification.

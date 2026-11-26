@@ -10,7 +10,8 @@ const test = createTargetTest({
         <div data-testid="list" style="position:absolute;left:0;top:160px;width:400px;height:600px;overflow:auto"><div style="height:3000px"></div></div>
         <output data-testid="status" style="position:absolute;top:780px"></output>
         <input data-testid="email" type="email" required style="position:absolute;left:260px;top:40px">
-        <div data-testid="flagged" aria-invalid="true" style="position:absolute;left:260px;top:80px">Flagged</div>`);
+        <div data-testid="flagged" aria-invalid="true" aria-errormessage="flagged-error" style="position:absolute;left:260px;top:80px">Flagged</div>
+        <span id="flagged-error" style="position:absolute;left:260px;top:110px">Flagged for review</span>`);
       await page.evaluate(() => {
         // A click anywhere but the button dismisses the "modal" the button opened.
         document.addEventListener('click', event => { if (!(event.target as Element).closest('[data-testid=button]')) document.querySelector('[data-testid=status]')!.textContent = ''; });
@@ -110,6 +111,17 @@ test('a field reports its validation state', async ({app}) => {
   await app.getByTestId('flagged').toHaveState('invalid', true);
 });
 
+// A validation error: the text an invalid element names through
+// aria-errormessage, compared by the driver and never read back. A native
+// handle without the read fails as unsupported_state; another text fails the
+// assertion.
+test('a field reports its validation error', async ({app}) => {
+  await app.open();
+  // @9l-outcome flagged-error
+  // The fake native target has no flagged control; its email field reaches the error read.
+  await app.getByTestId(web ? 'flagged' : 'email').toHaveError(mode === 'wrong-error' ? 'Another message' : 'Flagged for review', 2000);
+});
+
 // Queries answer without ending the session: a status that is not shown yet
 // is false, the control that is shown is true, and a poll waits for one that
 // appears. The test continues and its assertion protects the outcome.
@@ -121,8 +133,18 @@ test('queries keep the session open', async ({app}) => {
   await app.tapAt({x: button.x + 10, y: button.y + 10});
   if (!await app.getByTestId('status').isVisible({timeoutMs: 2000})) throw new Error('status not shown after the tap');
   if (!web && await app.foreground() !== 'app') throw new Error('the app is not in front');
+  // A value read from the screen for a later step; it is not an assertion.
+  const status = await app.getByTestId('status').text();
+  if (status !== 'tapped') throw new Error('status text not read');
   // @9l-outcome tapped-after-optional-screen
   await app.getByTestId('status').toHaveText('tapped');
+});
+
+// A text read waits for its control like an action, and one that never
+// appears is missing, not an empty string.
+test('a text read needs its control', async ({app}) => {
+  await app.open();
+  await app.getByTestId('no-such-control').text({timeoutMs: 1000});
 });
 
 // A spec can tell that a system window is in front without acting on it.
@@ -135,6 +157,25 @@ test('the foreground window is read, not acted on', async ({app}) => {
   if (reason !== 'unsupported_operation') throw new Error(`deviceSerial: ${reason}`);
   // @9l-outcome system-window-detected
   await app.getByTestId('button').toBeVisible();
+});
+
+// A system alert is answered with the button the test names; one the alert
+// does not offer fails, and the web has no system alerts.
+test('a system alert is answered on the native target only', async ({app}) => {
+  await app.open();
+  await app.answerAlert('Allow');
+  // @9l-outcome alert-answered
+  await app.getByTestId('status').toHaveText('notifications on');
+});
+
+// A biometric is presented at a native prompt; the web has none and refuses
+// it with the same stable reason. A face that is not enrolled signs nobody in.
+test('a biometric signs in on the native target only', async ({app}) => {
+  await app.open();
+  await app.biometric('nomatch');
+  await app.biometric('match');
+  // @9l-outcome biometric-sign-in
+  await app.getByTestId('status').toHaveText('authenticated');
 });
 
 // A fingerprint touches a native sensor; the web has none and refuses it
