@@ -68,7 +68,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	serve := fs.Bool("serve", false, "open the interactive local demo server")
 	port := fs.Int("port", 4175, "loopback port for --serve (0 chooses a free port)")
 	open := fs.Bool("open", false, "open the interactive demo in your browser")
-	scenario := fs.String("scenario", "declined", "synthetic scene: declined, success, cats or cat-decoys")
+	scenario := fs.String("scenario", "declined", "synthetic scene: declined, success, cats, cat-decoys, dogs, mice or striped")
 	model := fs.String("model", jev.DefaultModel, "explicit Jev model")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -77,7 +77,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if fs.NArg() != 0 || !validScenario(*scenario) || *port < 0 || *port > 65535 || (*open && !*serve) {
-		fmt.Fprintln(errOut, "Use --serve [--open] [--port 4175], --live, --images, --model and --scenario declined|success|cats|cat-decoys.")
+		fmt.Fprintln(errOut, "Use --serve [--open] [--port 4175], --live, --images, --model and --scenario declined|success|cats|cat-decoys|dogs|mice|striped.")
 		return 2
 	}
 	config := jev.Config{Enabled: *live, Model: *model, Images: "off"}

@@ -111,9 +111,9 @@ Usage:
   9l result <run-id> [--format text|json] [--receipt-dir DIR] [--junit FILE]
   9l cancel <run-id> [--receipt-dir DIR]
   9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
-  9l diagnose <spec> [--jev [--jev-model MODEL] [--jev-images off|synthetic]] [--run-timeout D] [--pass-env NAME]... [--format text|json]
-          # run once; on failure report observed facts and, with --jev, a bounded diagnosis; never changes the result
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
+  9l diagnose <spec> [--jev [--jev-model MODEL] [--jev-images off|synthetic]] [--run-timeout D] [--pass-env NAME]... [--receipt-dir DIR] [--format text|json]
+          # experimental: run once; on failure report observed facts and, with --jev, one bounded Jev diagnosis; never changes the result
   9l mcp [--pass-env NAME]... [--provider NAME|none]  # MCP server on stdio: run_test, heal_test, assess_test, confirm_finding,
           # scan_url, inspect_page, inspect_screen, generate_playwright_repro
   9l scan <url> [--checks LIST] [--format markdown|json|issue] [--baseline FILE [--fail-on-new]] [--allow-private-network]
@@ -131,7 +131,7 @@ Usage:
           # experimental: does a reproduction spec fail before a fix and pass after it? needs @9l/playwright
   9l provenance <spec> --agent <id>  # creation snapshot JSON
   9l doctor [--sdk [spec]] [--android] [--paths] [--format text|json]  # read-only local prerequisite checks
-  9l doctor --jev[=false] [--jev-model MODEL] [--jev-images off|synthetic|masked] [--format text|json]
+  9l doctor --jev[=false] [--jev-model MODEL] [--jev-images off|synthetic|masked] [--format text|json]  # local Jev configuration; no API request
   9l version [--format text|json]  # json: contract versions for host integrations
   9l update [--check | --yes]  # check Latest; ask before replacing the runner
   9l star [--gh]  # open the GitHub repository; --gh stars it with your gh login
