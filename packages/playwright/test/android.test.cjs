@@ -408,6 +408,11 @@ test('attached phone dispatches back, keyboard, scroll, touch, geometry and life
     await assert.rejects(driver.keyboardShown(context()), /unavailable_state/);
     ime = 'mInputShown=true'; hideOnBack = false;
     await assert.rejects(driver.hideKeyboard(context(400)), /keyboard_not_hidden/);
+    // A wait that overruns the bound, as on a loaded host, still ends on the
+    // last reading: the keyboard was up, so keyboard_not_hidden, not deadline.
+    const stall = setTimeout(() => { const until = Date.now() + 250; while (Date.now() < until); }, 150);
+    await assert.rejects(driver.hideKeyboard(context(300)), /keyboard_not_hidden/);
+    clearTimeout(stall);
     assert(!requests.some(r => r.path.includes('hide_keyboard')), 'no Appium keyboard capability or endpoint');
     const [handle] = await driver.observeTestId('list', context());
     await handle.scroll('down', 0.5, context());

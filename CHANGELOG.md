@@ -81,6 +81,10 @@ validated after the run, so it ends incomplete, never green.
 
 ### Fixed
 
+- Android `hideKeyboard()` on a keyboard that stayed up could report
+  `deadline` instead of `keyboard_not_hidden` when a wait between its reads
+  overran the bound on a loaded host. It now reads again only while a wait
+  and a read still fit, and a wait that overruns ends on the last reading.
 - `9l assess` gave each spec's analysis 10 s, which a loaded machine could
   exceed, failing a healthy spec with `timeout`. One spec now gets 30 s and
   each file of a suite 20 s, before a timed-out suite file is retried alone.
