@@ -105,7 +105,7 @@ Only bounded version/build/runtime metadata may enter execution evidence. The
 one exception is opt-in: a spec that sets
 [`diagnostics: {failureCapture: true}`](#failure-screenshot-and-view-tree-opt-in)
 gets a screenshot and the page source of a failed test as Playwright
-attachments, kept only when the run asks for it.
+attachments, taken only in a run that keeps them.
 UiAutomator2's supported `hideKeyboard` capability installs its empty input
 method on this owned emulator. This keeps the fixture deterministic without
 keyboard-state dumps or back navigation. Software-keyboard behavior and layout
@@ -348,8 +348,8 @@ in `testdata/android/requirements.json`; annotations are claims to review.
 
 Native Playwright output is forced into attempt-owned temporary storage and
 removed. An opted-in [failure capture](#failure-screenshot-and-view-tree-opt-in)
-is written there too and survives the attempt only when `--failure-details
---keep-attachments` copies it. Screenshot, video and trace recording are off in the supplied config;
+is taken only when `--failure-details --keep-attachments` will copy its
+two files out of it; nothing else there is ever copied. Screenshot, video and trace recording are off in the supplied config;
 Appium logcat capture and page-source-on-error are disabled. Application values
 and transient native responses stay in memory. Arbitrary custom fixtures or
 user code can still write their own files and must follow the same privacy
@@ -390,7 +390,8 @@ By default the driver keeps no screen content, hierarchy or text, and
 nothing below happens. With `diagnostics: {failureCapture: true}` a test that
 failed also gets a screenshot of the target display and the UiAutomator2 view
 hierarchy as Playwright attachments, the evidence a person reaches for first
-when a native assertion fails:
+when a native assertion fails. The capture is taken only in a run that keeps
+it:
 
 ```ts
 androidTargetDriver({
@@ -404,21 +405,42 @@ androidTargetDriver({
   --target android:finance --failure-details --keep-attachments
 ```
 
-The option is off by default and applies to owned emulators and attached
-phones alike; there is no run flag that turns it on for a spec that did not
-ask for it. `diagnostics` must name at least one of `gestures` and
-`failureCapture`, each a boolean; anything else (`{}`, a string, another key)
-is rejected as `invalid_configuration` when the driver is constructed.
+The option is off by default; there is no run flag that turns it on for a
+spec that did not ask for it. `diagnostics` must name at least one of
+`gestures`, `failureCapture` and `onPhone`, each a boolean; anything else
+(`{}`, a string, another key) is rejected as `invalid_configuration` when
+the driver is constructed.
+
+**Attached phones need their own confirmation.** An attached phone is a
+person's device: its screen can show other apps' notifications and windows,
+messages and accounts that have nothing to do with the test. There
+`failureCapture: true` alone captures nothing; the capture also needs
+`onPhone: true`:
+
+```ts
+androidTargetDriver({..., deviceSerial, diagnostics: {failureCapture: true, onPhone: true}});
+```
+
+`onPhone` is accepted only with `failureCapture: true` and only with
+`deviceSerial`; on an owned emulator, or without `failureCapture`, it is
+`invalid_configuration`. Owned emulators need only `failureCapture`. Before
+setting it, make sure the phone holds test accounts only, and consider what
+its notifications can show.
 
 **When.** Once per test, when the test body has ended and before the fixture
 closes the driver, and only for a test whose Playwright status is `failed`
-or `timedOut` (target tests cannot use `test.fail()`). A test that passed,
-was skipped or was interrupted reads nothing. Nothing is read either when
-the driver is no longer open: an operation that ran into its deadline or a
-cancellation releases it at once, an operation still pending when the test
-timed out keeps the session busy, and a spec that calls `app.close()` itself
-has closed it. A failed operation that ended by itself leaves the driver
-open, so its capture shows the screen as it was when the test gave up.
+or `timedOut` (target tests cannot use `test.fail()`). The engine tells the
+worker, per attempt, whether this attempt keeps a capture: only a run with
+`--sdk --failure-details --keep-attachments` on an `android:` target does.
+Otherwise nothing is read from the device, since the files would only be
+deleted. A test that passed, was skipped or was interrupted reads nothing.
+Nothing is read either when the driver is no longer open: an operation that
+ran into its deadline or a cancellation releases it at once, an operation
+still pending when the test timed out keeps the session busy, and a spec
+that calls `app.close()` itself has closed it. Only the target fixture can
+take the capture; a spec cannot trigger or suppress it. A failed operation
+that ended by itself leaves the driver open, so its capture shows the
+screen as it was when the test gave up.
 
 **What.** One PNG of the targeted display (`adb exec-out screencap -p -d
 <display>`, the display `screenDigest()` reads) and UiAutomator2's page
@@ -440,27 +462,28 @@ run's result, and never delays teardown beyond that bound.
 
 **Attachments and evidence.** The SDK attaches the parts it validated as
 files named `9l.failure-screenshot` (`image/png`) and `9l.failure-view-tree`
-(`text/xml`); Playwright copies each into its output directory. The engine
-reporter refuses, as invalid evidence, a capture on a test that did not
-fail, on a web target, twice, or as an inline body. The evidence stream and
-the receipt never carry the image or the XML: the stream lists each
-attachment only as an opaque `artifacts` entry (`kind` `image` or `other`,
-`retained: false`), as for every Playwright attachment.
+(`text/xml`); Playwright copies each into its output directory. These names
+are reserved: the engine reporter refuses, as invalid evidence, either one
+on a test that did not fail, on a web target, twice, or as an inline body.
+The evidence stream and the receipt never carry the image or the XML: the
+stream lists each attachment only as an opaque `artifacts` entry (`kind`
+`image` or `other`, `retained: false`), as for every Playwright attachment.
 
 **Retention.** A native target's Playwright output is the attempt's private
-scratch in the system temporary directory, removed when the attempt ends,
-so the capture exists on disk only for the attempt's lifetime unless 9l
-copies it:
+scratch in the system temporary directory, removed when the attempt ends.
+With `--sdk --failure-details --keep-attachments` the capture's two files,
+and only they, are copied from it into
+`<receipt-dir>/<run>/<job>/<attempt>/attachments/` by the existing
+[retention](cli.md) rules (at most 32 MiB per file and 128 MiB per
+attempt); the receipt's `failures[].attachments` names each with its path,
+size and SHA-256, and `retainedAttachments` counts them. Everything else in
+that output is never referenced or copied and is deleted with it as
+before: a trace (which embeds the attachments, the view tree unredacted),
+an error context, videos and screenshots that the project's `use` options
+produce. A capture file that cannot be retained (over a limit) is not
+referenced either. Without all three flags no capture is taken.
 
-| Run | What remains |
-| --- | --- |
-| `--sdk` | Nothing; the two artifacts are counted in the evidence stream. |
-| `--sdk --failure-details` | The same; the failure is listed without a reference to a file that is about to be deleted. |
-| `--sdk --keep-attachments` | The same: under `--sdk` failures, and their attachments, are listed only with `--failure-details`. |
-| `--sdk --failure-details --keep-attachments` | Both files are copied into `<receipt-dir>/<run>/<job>/<attempt>/attachments/` by the existing [retention](cli.md) rules (at most 32 MiB per file and 128 MiB per attempt), and the receipt's `failures[].attachments` names each with its path, size and SHA-256; `retainedAttachments` counts them. |
-
-A capture file that cannot be retained (over a limit) is not referenced at
-all. The retained view tree is text, so it is redacted like other text
+The retained view tree is text, so it is redacted like other text
 evidence: authorization headers, bearer tokens, URL credentials and values
 after `token`, `secret`, `password` or `api_key` become `[REDACTED]`. That
 also rewrites UiAutomator2's `password="false"` attribute to
@@ -473,22 +496,28 @@ never does. A screenshot and a view tree hold whatever was on the display
 when the test failed: personal data, account details, messages, one-time
 codes, a credential a field or a dialog shows, and on an attached phone the
 notifications and windows of other apps on a person's real device. Use it
-with test accounts and synthetic data, keep it off on a phone that holds a
-person's own accounts, and treat receipt directories made with
-`--keep-attachments` as sensitive as the screens they show. Spec authors who
-attach their own screenshots remain responsible for them, as before.
+with test accounts and synthetic data, and treat receipt directories made
+with `--keep-attachments` as sensitive as the screens they show. Spec
+authors who attach their own screenshots remain responsible for them, as
+before.
 
 On the web, Playwright's own `screenshot: 'only-on-failure'` (and `trace`)
 in the project's `use` options already covers this and follows the same
 `--keep-attachments` rules; 9l adds nothing there. The iOS driver has no
 failure capture.
 
-The capture is tested against a stubbed device transport
-(`packages/playwright/test/android.test.cjs`) and end to end through the
-fake native target (`npm run smoke:targets`). The emulator case
-`failure-capture` (`node scripts/android-smoke.cjs failure-capture`) runs it
-against the synthetic defect APK; it is not yet qualified on an emulator or
-a phone.
+The capture is tested against a stubbed device transport through the
+target fixture (`packages/playwright/test/android.test.cjs`) and end to end
+through the engine's native retention path with the fake driver under an
+`android:` target (`npm run smoke:targets`, whose config also keeps a trace
+there). The emulator case `failure-capture`
+(`node scripts/android-smoke.cjs failure-capture`) runs it against the
+synthetic defect APK with `--failure-details --keep-attachments`. On
+2026-11-26 it qualified once on the documented API 35 emulator: an 85 KB
+PNG and a 14 KB view tree were retained and the receipt held only their
+references. That run preceded the engine's keep signal, the phone
+confirmation and the post-teardown stop check; one run qualifies this
+emulator only, and an attached phone is not qualified.
 
 ## Biometrics on an owned emulator
 

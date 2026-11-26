@@ -160,6 +160,12 @@ const validScreenshot = (value: unknown): value is Uint8Array => value instanceo
 // Markup, not arbitrary text: it starts with a tag and holds no NUL.
 const validViewTree = (value: unknown): value is string => boundedText(value, failureCaptureLimits.viewTreeBytes) && /^\s*</.test(value) && !value.includes('\u0000');
 
+type FailureCaptureInfo = Pick<TestInfo, 'status' | 'expectedStatus' | 'timeout' | 'outputPath' | 'attach'>;
+// Set by TargetApp's static block; module-private, so only the fixture runs it.
+let captureFailureOf: (app: TargetApp, info: FailureCaptureInfo) => Promise<void>;
+/** Set by the engine per attempt: "1" when it keeps a failure capture. */
+const failureCaptureKeptEnv = 'NINELIVES_FAILURE_CAPTURE_KEPT';
+
 /** Deterministic shared operations; browser/device handles stay in the worker. */
 export class TargetApp {
   private controller = new AbortController();
@@ -233,54 +239,62 @@ export class TargetApp {
     if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
   }
 
-  /** Called by the target fixture once the test body has ended and before
-   * the driver closes. Only a test that failed (status `failed` or
-   * `timedOut`) and a driver that opted in capture anything: one PNG of the
-   * target display and one view-tree XML, each validated against
-   * failureCaptureLimits and attached as a Playwright file attachment. A
-   * released driver (a deadline or cancellation closed it), an operation
-   * still pending, a hook that fails, answers late or returns anything out
-   * of bounds attaches nothing. Never throws, never changes the outcome. */
-  async attachFailureCapture(info: Pick<TestInfo, 'status' | 'expectedStatus' | 'timeout' | 'outputPath' | 'attach'>) {
-    // Native targets only: the web has Playwright's own failure screenshots.
-    if (this.captured || this.driver.kind === 'web' || typeof this.driver.captureFailure !== 'function') return;
-    this.captured = true;
-    if ((info.status !== 'failed' && info.status !== 'timedOut') || info.expectedStatus !== 'passed' || this.closing || this.busy) return;
-    // Teardown has its own Playwright time slot, shared with close and any
-    // afterEach hook: the capture takes at most half of the test's timeout.
-    const share = info.timeout > 0 ? Math.floor(info.timeout / 2) : failureCaptureLimits.ms;
-    const bound = Math.min(this.options.deadlineMs, Date.now() + Math.min(failureCaptureLimits.ms, share));
-    if (bound - Date.now() < 1) return;
-    const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
-    // A hook that ignores its signal is abandoned shortly after the bound.
-    const abandon = AbortSignal.timeout(Math.max(1, bound - Date.now()) + settleMs);
-    const late = Symbol('late');
-    let capture: unknown;
+  // Only the target fixture can reach this, through captureFailureOf below:
+  // a spec cannot call it early, out of turn or twice. Once the test body
+  // has ended and before the driver closes, a test that failed (status
+  // `failed` or `timedOut`) on a driver that opted in, in an attempt whose
+  // engine keeps the capture, attaches one PNG of the target display and one
+  // view-tree XML, each validated against failureCaptureLimits, as
+  // Playwright file attachments. A released driver (a deadline or
+  // cancellation closed it), an operation still pending, a hook that fails,
+  // answers late or returns anything out of bounds attaches nothing. It
+  // never throws and never changes the outcome.
+  async #attachFailureCapture(info: FailureCaptureInfo) {
     try {
-      capture = await Promise.race([
+      // Native targets only: the web has Playwright's own failure screenshots.
+      if (this.captured || this.driver.kind === 'web' || typeof this.driver.captureFailure !== 'function') return;
+      this.captured = true;
+      if ((info.status !== 'failed' && info.status !== 'timedOut') || info.expectedStatus !== 'passed' || this.closing || this.busy) return;
+      // Go says whether this attempt keeps it (--failure-details
+      // --keep-attachments); a capture that would only be deleted is not taken.
+      if (process.env[failureCaptureKeptEnv] !== '1') return;
+      // Teardown has its own Playwright time slot, shared with close and any
+      // afterEach hook: the capture takes at most half of the test's timeout.
+      const share = info.timeout > 0 ? Math.floor(info.timeout / 2) : failureCaptureLimits.ms;
+      const bound = Math.min(this.options.deadlineMs, Date.now() + Math.min(failureCaptureLimits.ms, share));
+      if (bound - Date.now() < 1) return;
+      const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
+      // A hook that ignores its signal is abandoned shortly after the bound.
+      const abandon = AbortSignal.timeout(Math.max(1, bound - Date.now()) + settleMs);
+      const late = Symbol('late');
+      const capture: unknown = await Promise.race([
         this.driver.captureFailure({signal, deadlineMs: bound}),
         new Promise<typeof late>(resolve => abandon.addEventListener('abort', () => resolve(late), {once: true})),
       ]);
-    } catch { return; }
-    if (capture === late || !capture || typeof capture !== 'object') return;
-    const {screenshot, viewTree} = capture as Record<string, unknown>;
-    const items: {name: string; contentType: string; file: string; body: Buffer}[] = [];
-    if (validScreenshot(screenshot)) items.push({...failureCaptureAttachments.screenshot, body: Buffer.from(screenshot)});
-    if (validViewTree(viewTree)) items.push({...failureCaptureAttachments.viewTree, body: Buffer.from(viewTree, 'utf8')});
-    if (items.length === 0) return;
-    // Attached by path, so Playwright copies each into its own output (and
-    // 9l can retain it with --keep-attachments); the staging copy is removed.
-    let staging: string | undefined;
-    try {
-      staging = await mkdtemp(join(info.outputPath(), '.9l-failure-capture-'));
-      for (const item of items) {
-        const path = join(staging, item.file);
-        await writeFile(path, item.body, {mode: 0o600});
-        await info.attach(item.name, {path, contentType: item.contentType});
+      if (capture === late || !capture || typeof capture !== 'object') return;
+      const {screenshot, viewTree} = capture as Record<string, unknown>;
+      const items: {name: string; contentType: string; file: string; body: Buffer}[] = [];
+      if (validScreenshot(screenshot)) items.push({...failureCaptureAttachments.screenshot, body: Buffer.from(screenshot)});
+      if (validViewTree(viewTree)) items.push({...failureCaptureAttachments.viewTree, body: Buffer.from(viewTree, 'utf8')});
+      if (items.length === 0) return;
+      // Attached by path, so Playwright copies each into its own output, where
+      // 9l can retain it; the staging copy is removed.
+      let staging: string | undefined;
+      try {
+        staging = await mkdtemp(join(info.outputPath(), '.9l-failure-capture-'));
+        for (const item of items) {
+          const path = join(staging, item.file);
+          await writeFile(path, item.body, {mode: 0o600});
+          await info.attach(item.name, {path, contentType: item.contentType});
+        }
+      } finally {
+        if (staging) await rm(staging, {recursive: true, force: true}).catch(() => {});
       }
-    } catch { /* what was attached stays; the rest is skipped */ } finally {
-      if (staging) await rm(staging, {recursive: true, force: true}).catch(() => {});
-    }
+    } catch { /* what was attached stays; the rest is skipped */ }
+  }
+
+  static {
+    captureFailureOf = (app, info) => app.#attachFailureCapture(info);
   }
 
   private get maxMs() { return (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : maxOperationMs; }
@@ -806,7 +820,7 @@ export function createTargetTest(options: TargetOptions) {
       app = new TargetApp(driver, target, {deadlineMs: Number(process.env.NINELIVES_TARGET_DEADLINE_MS)});
       await use(app);
       // The test has ended; a failed one may leave an opted-in capture.
-      await app.attachFailureCapture(info);
+      await captureFailureOf(app, info);
     } finally {
       if (app) await app.close();
       else { try { await driver.close(); } catch { throw stopped('cleanup_failed'); } }

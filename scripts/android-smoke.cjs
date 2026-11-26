@@ -138,9 +138,10 @@ for (const mode of modes) {
     assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
     if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
   }
-  // failure-capture leaves closing to the fixture, after its capture; the
-  // emulator set check above still finds a survivor.
-  if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch','failure-capture'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
+  if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
+  // failure-capture leaves closing to the fixture, after its capture: the
+  // stop is read by a hook that runs after that teardown.
+  if (mode==='failure-capture') assert.equal(facts.stoppedAfterTeardown,true,'failure-capture: the emulator was checked after the fixture closed the driver');
   if (mode==='defect' || mode==='state-defect') {
     const op=mode==='defect'?'assert-text':'assert-state';
     assert(frames.some(f=>f.operation===op&&f.status==='failed'),`${mode}: relevant assertion must reject defect`);

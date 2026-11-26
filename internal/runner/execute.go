@@ -477,6 +477,15 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 			diagnosticsPath = filepath.Join(directory, "diagnostics.json")
 			job.Env[diagnostics.DiagnosticsEnv()] = diagnosticsPath
 		}
+		// An opted-in Android failure capture is taken only when this attempt
+		// will keep it: failures listed (--failure-details) and their
+		// attachments retained (--keep-attachments). Always set here, so a
+		// value from the caller's environment never decides it.
+		keeps := "0"
+		if strings.HasPrefix(job.Target, "android:") && opts.KeepAttachments && diagnosticsPath != "" {
+			keeps = "1"
+		}
+		job.Env[FailureCaptureKeptEnv] = keeps
 	}
 	output := executor.Run(ctx, job, opts.MaxOutputBytes)
 	// Whether the attempt was canceled or ran out of time is decided by the
@@ -639,11 +648,15 @@ func executeAttempt(parent context.Context, runID string, job Job, attempt int, 
 		// A native target's attachments, such as an opted-in failure capture,
 		// are in its private scratch: reported only to be retained.
 		nativeOutput := ""
-		if nativeScratch != "" && opts.KeepAttachments {
+		if nativeScratch != "" && opts.KeepAttachments && strings.HasPrefix(job.Target, "android:") {
 			nativeOutput = filepath.Join(nativeScratch, "playwright-output")
 		}
 		if within, ok := reporter.(AttachmentRootReporter); ok && nativeOutput != "" {
 			receipt.Failures = within.FailuresWithin(detailReport, job.WorkDir, []string{nativeOutput})
+			// Only the capture's own two files leave that output: a trace,
+			// error context, video or screenshot there can embed screen
+			// content unredacted and is deleted with the scratch.
+			keepNativeCaptures(receipt.Failures, nativeOutput)
 		} else {
 			receipt.Failures = reporter.Failures(detailReport, job.WorkDir)
 		}

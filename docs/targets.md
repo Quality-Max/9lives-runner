@@ -237,10 +237,13 @@ hidden assertion only.
 
 A driver may implement `captureFailure(context)` for an opted-in failure
 capture: the Android driver answers only with `diagnostics:
-{failureCapture: true}` (see
-[Android](android-driver.md#failure-screenshot-and-view-tree-opt-in)). The
-fixture calls it once, after a test that failed (`failed` or `timedOut`)
-ended and before the driver closes, never after a pass, skip or
+{failureCapture: true}`, and on an attached phone only with `onPhone: true`
+as well (see
+[Android](android-driver.md#failure-screenshot-and-view-tree-opt-in)). Only
+the target fixture calls it, once, after a test that failed (`failed` or
+`timedOut`) ended and before the driver closes, and only when the engine
+set `NINELIVES_FAILURE_CAPTURE_KEPT=1` for the attempt (`--failure-details
+--keep-attachments` on an `android:` target); never after a pass, skip or
 interruption and never once the driver was released. It returns an optional
 PNG `screenshot` and an optional XML `viewTree`; the SDK checks each against
 `failureCaptureLimits` (8 MiB, 2 MiB, at most 10 s and half the test's
@@ -249,8 +252,8 @@ attaches the rest as the files `9l.failure-screenshot` and
 `9l.failure-view-tree`. A hook that throws or answers late attaches nothing,
 and the test's outcome is unchanged. This is screen content, unlike every
 other record on this page: it crosses the engine bridge only as two counted
-`artifacts` entries and is retained only by `--failure-details
---keep-attachments`. The web driver has no such hook: Playwright's own
+`artifacts` entries, and from a native target's private output only these
+two files are ever retained. The web driver has no such hook: Playwright's own
 `screenshot: 'only-on-failure'` covers web failures. The iOS driver has none.
 
 A `target_setup` frame carries the classification, reason, stage, an optional

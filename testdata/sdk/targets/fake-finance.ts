@@ -2,6 +2,7 @@ import {appendFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetCapabilities, TargetSetupError, type TargetDriver, type TargetHandle, type TargetIdentity, type TargetContext, type TargetSetupRecord} from '@9l/playwright';
+import {androidVersions} from '@9l/playwright/android';
 
 // Protocol fixture only. This does not communicate with an Android device.
 export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver {
@@ -25,6 +26,11 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
   return {
     ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/6' : '9l.target/6',
     capabilities: mode === 'capabilities' ? [] : targetCapabilities,
+    // Under an `android:` target the SDK requires runtime metadata: a fixed
+    // synthetic record, which names no real emulator or build.
+    runtime: () => target.kind === 'android' ? {appPackage: 'dev.ninelives.fixture', apkSHA256: 'a'.repeat(64), versionCode: '1', versionName: '1.0.0', signer: 'unknown',
+      api: '35', release: '15', abi: 'arm64-v8a', display: 'unknown', displayWidth: '0', displayHeight: '0', density: '0', posture: 'unknown',
+      emulator: '36.4.9', ...androidVersions, worker: 'b'.repeat(64)} : undefined,
     // Setup classifications a real device driver would make: a locked phone
     // before any operation, a leaked window recovered by a declared Back, and
     // a phone that locked while an assertion was polling.

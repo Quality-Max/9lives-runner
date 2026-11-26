@@ -279,54 +279,70 @@ assert.equal(stalled.code, 1);
 assert.equal(stalled.summary.receipts[0].status, 'failed', 'stalled-diagnose: a worker-side failure, not the engine deadline');
 assert(stalled.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'stalled-diagnose: plain assertion failure');
 assert.equal(stalled.summary.receipts[0].targetDiagnostics, undefined);
-// Opt-in failure capture (a driver option; the fake opts in by mode): a failed
-// test attaches one PNG and one view tree. Without --keep-attachments they are
-// Playwright's own files, only referenced; with it they are copied into the
-// receipt directory, the view tree redacted. The receipt itself never holds
-// the image or the XML, and the evidence stream only counts them.
+// Opt-in failure capture (a driver option; the fake opts in by mode), run
+// under a real `android:` target name so the engine's native private output
+// and retention path run end to end. The engine tells the worker whether the
+// attempt keeps a capture: only with --failure-details --keep-attachments on
+// an android target. Then a failed test attaches one PNG and one view tree,
+// and only those two files leave the private output, copied into the receipt
+// directory (the view tree redacted), although the config also keeps a trace
+// there. The receipt never holds the image or the XML; the stream only counts.
 const captureNames = ['9l.failure-screenshot', '9l.failure-view-tree'];
-const captured = receipt => (receipt.failures?.[0]?.attachments ?? []).filter(a => captureNames.includes(a.name));
-const noCaptureContent = (receipt, label) => {
+const keep = ['--failure-details', '--keep-attachments'];
+// On android-fake the project's own Playwright files (error context) are
+// referenced as before; the native private output's never are.
+const noCaptureContent = (receipt, label, native = true) => {
   for (const file of [receipt.receiptPath, receipt.evidence.stdoutPath]) {
     const text = fs.readFileSync(file, 'utf8');
-    for (const leaked of ['synthetic fake screen', 'synthetic view tree', 'synthetic-capture-secret', '<hierarchy']) assert(!text.includes(leaked), `${label}: ${path.basename(file)} carries ${leaked}`);
+    for (const leaked of ['synthetic fake screen', 'synthetic view tree', 'synthetic-capture-secret', '<hierarchy', ...(native ? ['trace.zip', 'error-context'] : [])]) assert(!text.includes(leaked), `${label}: ${path.basename(file)} carries ${leaked}`);
   }
 };
-const captureKept = invoke('capture', {extra: ['--failure-details', '--keep-attachments']});
+const captureKept = invoke('capture', {targets: ['android:finance'], extra: keep});
 assert.equal(captureKept.code, 1, 'capture: the test still fails');
 assert.deepEqual(captureKept.mutations, ['mutation', 'capture'], 'capture: asked once, after the test');
 {
   const receipt = captureKept.summary.receipts[0];
   assert.equal(receipt.status, 'failed');
+  assert.equal(receipt.validated, true, 'capture: the evidence validates');
   assert(receipt.failures[0].message.includes('9lives target stopped: assertion_failed'), 'capture: the failure is unchanged');
-  const files = captured(receipt);
-  assert.deepEqual(files.map(a => [a.name, a.contentType, a.retained]), [['9l.failure-screenshot', 'image/png', true], ['9l.failure-view-tree', 'text/xml', true]]);
+  const files = receipt.failures[0].attachments;
+  assert.deepEqual(files.map(a => [a.name, a.contentType, a.retained]), [['9l.failure-screenshot', 'image/png', true], ['9l.failure-view-tree', 'text/xml', true]], 'capture: only the two capture files are kept');
+  assert.deepEqual([receipt.failureAttachments, receipt.retainedAttachments], [2, 2]);
   for (const file of files) assert(file.path.startsWith(path.join(work, 'capture')) && /^[a-f0-9]{64}$/.test(file.sha256), 'capture: copied into the receipt directory with a digest');
+  assert.deepEqual(fs.readdirSync(path.dirname(files[0].path)).length, 2, 'capture: nothing else in the receipt directory');
   assert(fs.readFileSync(files[0].path).subarray(0, 8).equals(Buffer.from('\x89PNG\r\n\x1a\n', 'latin1')), 'capture: the PNG is retained as is');
   const tree = fs.readFileSync(files[1].path, 'utf8');
   assert(tree.includes('synthetic view tree') && !tree.includes('synthetic-capture-secret'), 'capture: the retained view tree is redacted');
-  assert(receipt.retainedAttachments >= 2);
   noCaptureContent(receipt, 'capture');
   const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
-  // Beside Playwright's own error context: one image and one other file, counted, never carried.
   const artifacts = frames.find(f => f.type === 'test_end').artifacts;
+  // The capture's image and tree plus the trace the config kept, counted only.
   assert.equal(artifacts.filter(a => a.kind === 'image').length, 1, 'capture: one image counted');
-  assert(artifacts.length >= 2 && artifacts.every(a => a.retained === false && Object.keys(a).length === 3), 'capture: counted, never carried');
+  assert(artifacts.length >= 3, `capture: the trace was produced beside the capture, got ${artifacts.length} attachments`);
+  assert(artifacts.every(a => a.retained === false && Object.keys(a).length === 3), 'capture: counted, never carried');
 }
-const captureReferenced = invoke('capture-referenced', {extra: ['--failure-details']});
-assert.equal(captureReferenced.code, 1);
-assert.deepEqual(captured(captureReferenced.summary.receipts[0]).map(a => [a.name, a.retained]), [['9l.failure-screenshot', false], ['9l.failure-view-tree', false]], 'capture-referenced: only referenced without --keep-attachments');
-noCaptureContent(captureReferenced.summary.receipts[0], 'capture-referenced');
-const capturePass = invoke('capture-pass');
+// Not kept, so not taken: failure details alone, no flags, or the same
+// flags on a target that is not android. Nothing is read or referenced.
+for (const [mode, targets, extra] of [['capture-details', ['android:finance'], ['--failure-details']], ['capture-bare', ['android:finance'], []],
+  ['capture-retain-only', ['android:finance'], ['--keep-attachments']], ['capture-fake', ['android-fake:finance'], keep]]) {
+  const skipped = invoke(mode, {targets, extra});
+  assert.equal(skipped.code, 1, `${mode}: the test still fails`);
+  assert(!skipped.mutations.includes('capture'), `${mode}: nothing captured when it would not be kept`);
+  const receipt = skipped.summary.receipts[0];
+  assert.equal(receipt.validated, true, mode);
+  assert.deepEqual((receipt.failures?.[0]?.attachments ?? []).filter(a => captureNames.includes(a.name)), [], `${mode}: nothing referenced`);
+  if (targets[0] === 'android:finance') assert.equal(receipt.failures?.[0]?.attachments, undefined, `${mode}: nothing from the private output is referenced`);
+  noCaptureContent(receipt, mode, targets[0] === 'android:finance');
+}
+const capturePass = invoke('capture-pass', {targets: ['android:finance'], extra: keep});
 assert.equal(capturePass.code, 0, 'capture-pass: a passing test passes');
 assert(!capturePass.mutations.includes('capture'), 'capture-pass: a passing test captures nothing');
-assert.deepEqual(JSON.parse(fs.readFileSync(capturePass.summary.receipts[0].evidence.stdoutPath, 'utf8').trim().split('\n').find(line => line.includes('"test_end"'))).artifacts.filter(a => a.kind === 'image'), []);
 for (const mode of ['capture-stalled', 'capture-oversized']) {
-  const skipped = invoke(mode, {extra: ['--failure-details', '--keep-attachments']});
+  const skipped = invoke(mode, {targets: ['android:finance'], extra: keep});
   assert.equal(skipped.code, 1, `${mode}: the test still fails`);
   assert.equal(skipped.summary.receipts[0].status, 'failed', `${mode}: a worker-side failure, not the engine deadline`);
   assert(skipped.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), `${mode}: the failure is unchanged`);
-  assert.deepEqual(captured(skipped.summary.receipts[0]), [], `${mode}: nothing attached`);
+  assert.deepEqual(skipped.summary.receipts[0].failures[0].attachments, undefined, `${mode}: nothing attached, and no trace kept`);
   assert(skipped.mutations.includes('capture'), `${mode}: the capture was asked for`);
 }
 // Every attempt that did not pass keeps a bounded, metadata-only failure
@@ -425,5 +441,5 @@ assert.deepEqual(driftReceipt.agentProvenance.dependencyChanges, [{path: 'target
 assert(!fs.existsSync(driftEffects), 'helper drift: the worker never started');
 cases.push({mode: 'helper-drift', file: path.basename(spec), outcome: driftSummary.outcome, statuses: [driftReceipt.status], attempts: [driftReceipt.attempt]});
 fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify({version: 1, cases, ordinaryPlaywright: 'passed'}, null, 2));
-console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; an opted-in failure capture attached to a failed test only, retained (view tree redacted) only with --keep-attachments and skipped when stalled or oversized; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
+console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; an opted-in failure capture taken only when kept (--failure-details --keep-attachments on an android target), only its two files retained from the native output (view tree redacted, trace not), skipped when stalled or oversized; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
 console.log(`Bounded receipts: ${path.relative(root, work)}`);

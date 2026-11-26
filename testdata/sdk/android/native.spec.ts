@@ -75,6 +75,22 @@ async function frontWindow(adb: string, serial: string, appPackage: string): Pro
   } catch { return 'unknown'; }
 }
 
+// failure-capture: the fixture captures and then closes the driver after the
+// test body, so whether the emulator stopped is read after that teardown.
+// Playwright runs a suite's afterAll after the test's fixtures are torn
+// down, also after a failure.
+let captureSerial = '';
+if (mode === 'failure-capture') test.afterAll(async () => {
+  const facts = process.env.NINELIVES_ANDROID_PROBE;
+  if (!facts) return;
+  let deviceStopped = false;
+  if (captureSerial) {
+    try { await promisify(execFile)(resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb'), ['-s', captureSerial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
+    catch { deviceStopped = true; }
+  }
+  writeFileSync(facts, JSON.stringify({...JSON.parse(readFileSync(facts, 'utf8')), deviceStopped, stoppedAfterTeardown: true}));
+});
+
 // @9l-requirement QUA-2204
 test('native transfer has fresh exact text and state', async ({app}) => {
   // Qualification-only transport probe: no server bodies, hierarchy or device logs.
@@ -197,7 +213,9 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     if (mode !== 'failure-capture') await app.close();
     await probe;
     let deviceStopped = false;
-    if (serial) {
+    // Still open here by design; the hook after the fixture checks it.
+    if (mode === 'failure-capture') captureSerial = serial;
+    else if (serial) {
       try { await command(resolve(sdk, 'platform-tools/adb'), ['-s', serial, 'get-state'], {timeout: 1000, maxBuffer: 1024}); }
       catch { deviceStopped = true; }
     }

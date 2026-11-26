@@ -77,14 +77,20 @@ export type AndroidTargetOptions = {
    * manager no longer lists is classified as observer staleness. No
    * screenshot, hierarchy, text or log is captured.
    *
-   * `failureCapture`: after a test that failed, and only then, the SDK asks
-   * once, before the driver closes, for a PNG of the target display and the
-   * UiAutomator2 view hierarchy (page source XML), and attaches them as
+   * `failureCapture`: after a test that failed, and only then, and only in
+   * a run that keeps it (`--failure-details --keep-attachments`), the SDK
+   * asks once, before the driver closes, for a PNG of the target display and
+   * the UiAutomator2 view hierarchy (page source XML), and attaches them as
    * Playwright attachments. They show the whole display, not only the app,
    * and can hold personal data or credentials on screen. Bounded by
    * failureCaptureLimits; a capture that fails, times out or is too large is
-   * skipped. Off by default, on owned emulators and attached phones alike. */
-  diagnostics?: {gestures?: boolean; failureCapture?: boolean};
+   * skipped. Off by default.
+   *
+   * `onPhone`: an attached phone is a person's device, with other apps'
+   * notifications and windows on its screen, so capture there also needs
+   * this confirmation; without it a phone captures nothing. Only with
+   * `failureCapture: true` and `deviceSerial`. */
+  diagnostics?: {gestures?: boolean; failureCapture?: boolean; onPhone?: boolean};
   /** What the spec needs from the device: a fold posture and/or a minimum
    * active-display width in dp. Another posture or a narrower display is
    * reported as a setup mismatch before any application operation. */
@@ -213,11 +219,13 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       (options.recovery !== undefined && (Object.keys(options.recovery).some(k => k !== 'back') || !Number.isInteger(backPresses) || backPresses < 1 || backPresses > 16)) ||
       ((options.baseline !== undefined || options.recovery !== undefined) && !physical) ||
       (options.diagnostics !== undefined && (!options.diagnostics || typeof options.diagnostics !== 'object' || Array.isArray(options.diagnostics) ||
-        Object.keys(options.diagnostics).length === 0 || Object.keys(options.diagnostics).some(k => k !== 'gestures' && k !== 'failureCapture') ||
+        Object.keys(options.diagnostics).length === 0 || Object.keys(options.diagnostics).some(k => !['gestures', 'failureCapture', 'onPhone'].includes(k)) ||
         (options.diagnostics.gestures !== undefined && typeof options.diagnostics.gestures !== 'boolean') ||
-        (options.diagnostics.failureCapture !== undefined && typeof options.diagnostics.failureCapture !== 'boolean')))) throw failure('invalid_configuration');
+        (options.diagnostics.failureCapture !== undefined && typeof options.diagnostics.failureCapture !== 'boolean') ||
+        (options.diagnostics.onPhone !== undefined && (typeof options.diagnostics.onPhone !== 'boolean' || options.diagnostics.failureCapture !== true || !physical))))) throw failure('invalid_configuration');
   const diagnostics = options.diagnostics?.gestures === true;
-  const failureCapture = options.diagnostics?.failureCapture === true;
+  // An attached phone captures only with its own confirmation.
+  const failureCapture = options.diagnostics?.failureCapture === true && (!physical || options.diagnostics.onPhone === true);
   const biometrics = options.biometrics;
   if (biometrics !== undefined && (physical || !biometrics || typeof biometrics !== 'object' || Object.keys(biometrics).some(k => k !== 'snapshot') ||
       typeof biometrics.snapshot !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(biometrics.snapshot))) throw failure('invalid_configuration');

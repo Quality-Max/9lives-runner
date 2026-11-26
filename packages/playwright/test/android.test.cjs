@@ -1442,67 +1442,97 @@ test('failure capture is opt-in, failed tests only, bounded, and never changes t
       return new Response(JSON.stringify({value}), {status: 200});
     };
     const {androidTargetDriver} = require('../dist/android');
-    const {TargetApp, failureCaptureLimits} = require('../dist/targets');
+    const {TargetApp, failureCaptureLimits, targetCapabilities} = require('../dist/targets');
     const base = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, deviceSerial: serial, apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
+    const emulator = {appId: 'phone', sdkRoot: dir, toolsRoot: dir, avd: 'Synthetic_API_35', apk: path.join(dir, 'app.apk'), apkSHA256: 'a'.repeat(64), appPackage: 'dev.ninelives.fixture', activity: '.MainActivity'};
     const context = () => ({signal: new AbortController().signal, deadlineMs: Date.now() + 30000});
-    for (const diagnostics of [{}, null, [], {failureCapture: 'yes'}, {failureCapture: 1}, {gestures: 1}, {failureCapture: true, screenshots: true}, {screenshots: true}]) {
-      assert.throws(() => androidTargetDriver({...base, diagnostics}), /invalid_configuration/, JSON.stringify(diagnostics));
+    for (const [options, diagnostics] of [
+      ...[{}, null, [], {failureCapture: 'yes'}, {failureCapture: 1}, {gestures: 1}, {failureCapture: true, screenshots: true}, {screenshots: true},
+        {onPhone: true}, {failureCapture: false, onPhone: true}, {failureCapture: true, onPhone: 'yes'}].map(d => [base, d]),
+      // An owned emulator needs no phone confirmation and refuses one.
+      [emulator, {failureCapture: true, onPhone: true}], [emulator, {failureCapture: true, onPhone: false}],
+    ]) {
+      assert.throws(() => androidTargetDriver({...options, diagnostics}), /invalid_configuration/, JSON.stringify(diagnostics));
     }
+    assert.doesNotThrow(() => androidTargetDriver({...emulator, diagnostics: {failureCapture: true}}));
     const output = path.join(dir, 'output');
-    // A stand-in for Playwright's TestInfo: attach copies the file, as Playwright does.
-    const testInfo = (status, attached, timeout = 240000) => ({status, expectedStatus: 'passed', timeout,
-      outputPath: (...segments) => { require('node:fs').mkdirSync(output, {recursive: true}); return path.join(output, ...segments); },
-      attach: async (name, options) => { attached.push({name, contentType: options.contentType, body: await fs.readFile(options.path), keys: Object.keys(options).sort()}); }});
-    const session = async (options, deadlineMs = Date.now() + 60000) => {
-      const driver = androidTargetDriver({...base, ...options});
-      opened.push(driver);
-      const app = new TargetApp(driver, {kind: 'android', appId: 'phone'}, {deadlineMs});
-      opened.push(app);
-      await driver.open(context());
-      return {driver, app};
+    // The real target fixture, as Playwright would run it: createTargetTest's
+    // app fixture is taken from test.extend and given a stand-in TestInfo
+    // whose attach copies the file, as Playwright does. The test body opens
+    // the driver and then fails (or passes) with the given status.
+    const playwright = require('@playwright/test');
+    const fixture = native => {
+      const extend = playwright.test.extend;
+      let fixtures;
+      playwright.test.extend = f => { fixtures = f; return {}; };
+      try { require('../dist/targets').createTargetTest({native}); } finally { playwright.test.extend = extend; }
+      return fixtures.app;
     };
+    const engine = {NINELIVES_ENGINE_PROTOCOL: '9l.engine/1', NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001', NINELIVES_ATTEMPT_ID: 'job-001-attempt-001', NINELIVES_TARGET: 'android:phone'};
+    const saved = Object.fromEntries([...Object.keys(engine), 'NINELIVES_TARGET_DEADLINE_MS', 'NINELIVES_FAILURE_CAPTURE_KEPT'].map(key => [key, process.env[key]]));
+    const run = async (native, {status = 'failed', kept = '1', timeout = 240000, deadline = 60000, body = async () => {}} = {}) => {
+      Object.assign(process.env, engine, {NINELIVES_TARGET_DEADLINE_MS: String(Date.now() + deadline)});
+      if (kept === 'unset') delete process.env.NINELIVES_FAILURE_CAPTURE_KEPT; else process.env.NINELIVES_FAILURE_CAPTURE_KEPT = kept;
+      const attached = [];
+      const info = {retry: 0, project: {name: 'android:phone'}, status: 'passed', expectedStatus: 'passed', timeout,
+        outputPath: (...segments) => { require('node:fs').mkdirSync(output, {recursive: true}); return path.join(output, ...segments); },
+        attach: async (name, options) => { attached.push({name, contentType: options.contentType, body: await fs.readFile(options.path), keys: Object.keys(options).sort()}); }};
+      let driver, app;
+      const started = Date.now();
+      await fixture(target => { driver = native(target); opened.push(driver); return driver; })({}, async given => {
+        app = given;
+        if (driver.open) await driver.open(context());
+        await body(driver, app);
+        info.status = status;
+      }, info);
+      return {attached, app, driver, elapsed: Date.now() - started};
+    };
+    const android = options => () => androidTargetDriver({...base, ...options});
     const reads = () => screencaps.length + sources.length;
-    // Without the opt-in, including with gesture diagnostics: nothing is read or attached.
-    for (const options of [{}, {diagnostics: {gestures: true}}, {diagnostics: {failureCapture: false}}]) {
-      const {driver, app} = await session(options);
-      const before = reads(), attached = [];
-      assert.equal(await driver.captureFailure(context()), undefined);
-      await app.attachFailureCapture(testInfo('failed', attached));
+    const on = {diagnostics: {failureCapture: true, onPhone: true}};
+    // Without the opt-in, including with gesture diagnostics, and on a phone
+    // without its own confirmation: nothing is read or attached.
+    for (const options of [{}, {diagnostics: {gestures: true}}, {diagnostics: {failureCapture: false}}, {diagnostics: {failureCapture: true}}, {diagnostics: {failureCapture: true, onPhone: false}}]) {
+      const before = reads();
+      const {attached, driver} = await run(android(options));
+      assert.equal(await driver.captureFailure(context()), undefined, JSON.stringify(options));
       assert.equal(reads(), before, `no screenshot or source request: ${JSON.stringify(options)}`);
       assert.deepEqual(attached, []);
-      await app.close();
     }
-    // With it, a failed test attaches exactly one PNG and one XML, once.
-    let {app} = await session({diagnostics: {failureCapture: true}});
-    let attached = [];
-    await app.attachFailureCapture(testInfo('failed', attached));
-    await app.attachFailureCapture(testInfo('failed', attached));
+    // Opted in, but the engine does not keep it (no --failure-details
+    // --keep-attachments, or no signal at all): nothing is read either.
+    for (const kept of ['0', 'unset', 'true']) {
+      const before = reads();
+      const {attached} = await run(android(on), {kept});
+      assert.equal(reads(), before, `no device read when the engine says ${kept}`);
+      assert.deepEqual(attached, []);
+    }
+    // Opted in and kept: a failed test attaches exactly one PNG and one XML.
+    let {attached, app} = await run(android(on));
     assert.deepEqual(attached.map(a => [a.name, a.contentType]), [['9l.failure-screenshot', 'image/png'], ['9l.failure-view-tree', 'text/xml']]);
     assert.deepEqual(attached.map(a => a.keys), [['contentType', 'path'], ['contentType', 'path']], 'attached as files, never as inline bodies');
     assert(attached[0].body.equals(png));
     assert.equal(attached[1].body.toString('utf8'), xml);
-    assert.equal(screencaps.length, 1);
-    assert.equal(sources.length, 1);
-    assert.deepEqual(screencaps[0].command, ['exec-out', 'screencap', '-p', '-d', '4619827259835644672'], 'the targeted display');
-    assert.equal(screencaps[0].maxBuffer, failureCaptureLimits.screenshotBytes, 'the screenshot is bounded while it is read');
+    assert.deepEqual(screencaps.at(-1).command, ['exec-out', 'screencap', '-p', '-d', '4619827259835644672'], 'the targeted display');
+    assert.equal(screencaps.at(-1).maxBuffer, failureCaptureLimits.screenshotBytes, 'the screenshot is bounded while it is read');
     assert.deepEqual(await fs.readdir(output), [], 'the staging copies are removed');
-    await app.close();
+    // Only the fixture can run it: TargetApp has no public or symbol-keyed
+    // way to take or suppress a capture, and its declaration names none.
+    assert.equal('attachFailureCapture' in app, false);
+    assert.deepEqual(Object.getOwnPropertySymbols(Object.getPrototypeOf(app)), []);
+    assert.deepEqual(Object.getOwnPropertyNames(TargetApp.prototype).filter(name => /capture/i.test(name)), []);
+    const declaration = await fs.readFile(path.join(__dirname, '../dist/targets.d.ts'), 'utf8');
+    assert(!/attachFailureCapture|captureFailureOf/.test(declaration), 'not in the published declaration');
     // A test that passed, was skipped or interrupted captures nothing.
     for (const status of ['passed', 'skipped', 'interrupted']) {
-      ({app} = await session({diagnostics: {failureCapture: true}}));
       const before = reads();
-      attached = [];
-      await app.attachFailureCapture(testInfo(status, attached));
+      ({attached} = await run(android(on), {status}));
       assert.equal(reads(), before, status);
       assert.deepEqual(attached, [], status);
-      await app.close();
     }
     // A timed-out test is a failure too.
-    ({app} = await session({diagnostics: {failureCapture: true}}));
-    attached = [];
-    await app.attachFailureCapture(testInfo('timedOut', attached));
+    ({attached} = await run(android(on), {status: 'timedOut'}));
     assert.equal(attached.length, 2);
-    await app.close();
     // Each item that fails, is too large or is not what it claims is skipped alone.
     for (const [screen, source, names] of [
       ['fail', 'ok', ['9l.failure-view-tree']], ['oversized', 'ok', ['9l.failure-view-tree']],
@@ -1510,56 +1540,41 @@ test('failure capture is opt-in, failed tests only, bounded, and never changes t
       ['fail', 'fail', []],
     ]) {
       Object.assign(device, {screen, source});
-      ({app} = await session({diagnostics: {failureCapture: true}}));
-      attached = [];
-      await app.attachFailureCapture(testInfo('failed', attached));
+      ({attached} = await run(android(on)));
       assert.deepEqual(attached.map(a => a.name), names, `${screen}/${source}`);
-      await app.close();
     }
     // A capture that never answers is cut at its bound: at most half the
     // test's timeout, and the attempt deadline.
     Object.assign(device, {screen: 'hold', source: 'hold'});
     for (const [timeout, deadline, limit] of [[2000, 60000, 1000], [240000, 1500, 1500]]) {
-      ({app} = await session({diagnostics: {failureCapture: true}}, Date.now() + deadline));
-      attached = [];
-      const started = Date.now();
-      await app.attachFailureCapture(testInfo('failed', attached, timeout));
-      const elapsed = Date.now() - started;
-      assert(elapsed < limit + 1000, `capture bounded near ${limit} ms, took ${elapsed} ms`);
-      assert.deepEqual(attached, []);
-      await app.close();
+      const result = await run(android(on), {timeout, deadline});
+      assert(result.elapsed < limit + 1000, `capture bounded near ${limit} ms, took ${result.elapsed} ms`);
+      assert.deepEqual(result.attached, []);
     }
     Object.assign(device, {screen: 'ok', source: 'ok'});
-    // A driver already closed (a deadline or cancellation released it) is not read.
-    let driver;
-    ({driver, app} = await session({diagnostics: {failureCapture: true}}));
-    await driver.close();
-    const before = reads();
-    attached = [];
-    await app.attachFailureCapture(testInfo('failed', attached));
+    // A driver the test already closed (or a deadline released) is not read.
+    let before = reads();
+    ({attached} = await run(android(on), {body: driver => driver.close()}));
     assert.equal(reads(), before);
     assert.deepEqual(attached, []);
-    await app.close();
     // A custom driver's hook is held to the same bounds: one that throws,
-    // ignores its signal or answers out of bounds attaches nothing.
-    const {targetCapabilities} = require('../dist/targets');
-    for (const [label, captureFailure, kind = 'android'] of [
+    // ignores its signal or answers malformed or out of bounds attaches
+    // nothing and adds no teardown error.
+    const hostile = new Proxy({}, {get: () => { throw new Error('synthetic getter'); }});
+    for (const [label, captureFailure] of [
       ['throws', async () => { throw new Error('synthetic'); }],
       ['stalls', () => new Promise(() => {})],
       ['not a PNG', async () => ({screenshot: Buffer.from('synthetic'), viewTree: 'synthetic plain text'})],
       ['oversized', async () => ({screenshot: Buffer.concat([png, Buffer.alloc(failureCaptureLimits.screenshotBytes)]), viewTree: `<a>${'x'.repeat(failureCaptureLimits.viewTreeBytes)}</a>`})],
       ['wrong types', async () => ({screenshot: png.toString('latin1'), viewTree: Buffer.from(xml)})],
-      ['a web driver', async () => ({screenshot: png, viewTree: xml}), 'web'],
+      ['a throwing getter', async () => hostile],
     ]) {
-      const custom = {kind, appId: 'phone', version: driver.version, capabilities: targetCapabilities, open: async () => {}, reset: async () => {}, close: async () => {}, observeTestId: async () => [], captureFailure};
-      const customApp = new TargetApp(custom, {kind, appId: 'phone'}, {deadlineMs: Date.now() + 60000});
-      attached = [];
-      const started = Date.now();
-      await customApp.attachFailureCapture(testInfo('failed', attached, 1000));
-      assert(Date.now() - started < 1500, `${label}: bounded`);
-      assert.deepEqual(attached, [], label);
-      await customApp.close();
+      const custom = target => ({...target, version: require('../dist/protocol').targetVersion, capabilities: targetCapabilities, reset: async () => {}, close: async () => {}, observeTestId: async () => [], captureFailure});
+      const result = await run(custom, {timeout: 1000});
+      assert(result.elapsed < 1500, `${label}: bounded`);
+      assert.deepEqual(result.attached, [], label);
     }
+    for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   } finally {
     for (const handle of opened) await handle.close().catch(() => {});
     cp.execFile = original.execFile; cp.spawn = original.spawn; global.fetch = original.fetch;

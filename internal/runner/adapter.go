@@ -72,8 +72,8 @@ type FailureReporter interface {
 // AttachmentRootReporter adapters can also report attachment files under
 // other directories. A native target's Playwright output is private scratch
 // outside the working directory, removed with the attempt: the runner asks
-// for its files only when they are to be retained, so a receipt never
-// references a file that is already gone.
+// for its files only when they are to be retained, keeps only a failure
+// capture's two files from it, and never references a file already gone.
 type AttachmentRootReporter interface {
 	FailuresWithin(report []byte, workDir string, roots []string) []TestFailure
 }
