@@ -380,6 +380,16 @@
   candidate from offline Tier 1 or a Tier 2 provider in isolation, and save it
   or apply it with approval. `heal-native` is an alias. See
   [Native Tier 2](native-tier2.md).
+- Experimental `9l diagnose <spec>`: run one spec once and, when a test
+  fails, report the observed facts from its receipt (failure class,
+  deterministic class, failed locator, snapshot and screenshot hashes). With
+  `--jev`, one bounded Jev request while the evidence is fresh maps typed
+  answers to a disposition such as `eligible-for-repair` or
+  `investigate-app`; an assertion failure is never eligible for repair. The
+  receipt is never changed. Exits 0 when the test passed, 1 when it did not
+  and 2 for a usage error or a run that could not complete; `diagnosis.json`
+  is saved beside the receipts in `.9lives/diagnoses/` (`--receipt-dir`).
+  See [Jev](jev.md#diagnose-a-failed-step).
 - `9l mcp`: serve `run_test`, `heal_test`, `assess_test`,
   `confirm_finding`, `scan_url`, `inspect_page` and
   `generate_playwright_repro` to coding agents over MCP stdio. See
