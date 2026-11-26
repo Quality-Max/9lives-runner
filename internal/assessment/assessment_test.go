@@ -360,7 +360,7 @@ func TestDisabledTestIsAnEngineeringConcernWithoutRuntimeProof(t *testing.T) {
 }
 
 func TestRejectForeignAndIncompleteFacts(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{9, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if validFacts(f, []byte("x"), false) {
 		t.Fatal("foreign location accepted")
 	}
@@ -484,7 +484,7 @@ func TestAfterHookFailIsAConcern(t *testing.T) {
 }
 
 func TestTitlesAndConditionalSkipEvidenceAreValidated(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Title: "checkout", Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{}, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if validFacts(f, []byte("x"), false) || !validFacts(f, []byte("x"), true) {
 		t.Fatal("title accepted without a request or rejected with one")
 	}
@@ -516,7 +516,7 @@ func TestSharedConditionalSkipsCountOnceTowardTheLimit(t *testing.T) {
 		for i := range assertions {
 			assertions[i] = Assertion{Location: Location{line, i + 2}, Outcomes: []string{}, Matcher: "toBe"}
 		}
-		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}})
+		f.Tests = append(f.Tests, Fact{Location: Location{line, 1}, Requirements: []string{}, Assertions: assertions, Sleeps: []Sleep{}, Hazards: []Hazard{}, TestIDs: []TestID{}, ConditionalSkips: guards, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}})
 	}
 	if !validFacts(f, source, false) {
 		t.Fatal("shared modifiers counted once per test")
@@ -664,7 +664,7 @@ func TestAssessReportsCaughtAssertions(t *testing.T) {
 		got = append(got, strings.Join(rules, ","))
 	}
 	want := []string{"no-direct-assertion@2,caught-assertion@3", "caught-assertion@7,fixed-wait@6,absence-after-wait@8", "", ""}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v17" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v18" {
 		t.Fatalf("caught findings %q under %s", got, report.Policy)
 	}
 	if summary := report.Tests[3].Assertions; summary.Count != 3 || strings.Join(summary.Matchers, ",") != "toEqual,toHaveURL" {
@@ -839,7 +839,7 @@ func TestAssessFlagsWaitThenAbsence(t *testing.T) {
 		}
 		rules = append(rules, r)
 	}
-	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v17" {
+	if fmt.Sprint(rules) != "[[fixed-wait absence-after-wait] [fixed-wait]]" || report.Policy != "assessment-source-v18" {
 		t.Fatalf("unexpected findings %v under %s", rules, report.Policy)
 	}
 }
@@ -874,13 +874,13 @@ func TestAssessResolvesSameFileAndMarkedHelpers(t *testing.T) {
 	}
 	// Helper facts keep the helper's own line and carry the test's call site.
 	want := []string{"", "no-direct-assertion@8", "fixed-wait@6via9,absence-after-wait@6via9", "analysis-limit/unresolved-helper@10"}
-	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v17" {
+	if strings.Join(got, " | ") != strings.Join(want, " | ") || report.Policy != "assessment-source-v18" {
 		t.Fatalf("helper findings %q under %s", got, report.Policy)
 	}
 }
 
 func TestHazardEvidenceIsValidated(t *testing.T) {
-	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
+	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: []Hazard{{Location: Location{1, 2}, Kind: "xpath"}}, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}}}
 	if !validFacts(f, []byte("xx"), false) {
 		t.Fatal("valid hazard rejected")
 	}
@@ -950,7 +950,7 @@ func TestAssessReportsDebuggingLeftoversAndFragileSelectors(t *testing.T) {
 	}
 	// A value typed into a field and a key press are not selectors.
 	want := "debugging-leftover/debugger-statement@4 debugging-leftover/page-pause@2via5 fragile-selector/xpath@6 fragile-selector/positional-css@7 fragile-selector/position@8"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v17" {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v18" {
 		t.Fatalf("hazard findings %q under %s", got, report.Policy)
 	}
 	counts, total := CountFindings(report)
@@ -965,7 +965,7 @@ func TestTruncatedHazardsAreBoundedAndDisclosed(t *testing.T) {
 	for i := range hazards {
 		hazards[i] = Hazard{Location: Location{i%600 + 1, i/600 + 1}, Kind: "xpath"}
 	}
-	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}
+	fact := Fact{Location: Location{1, 1}, Requirements: []string{}, Assertions: []Assertion{}, Sleeps: []Sleep{}, Hazards: hazards, TestIDs: []TestID{}, ConditionalSkips: []ConditionalSkip{}, Disabled: new(bool), Limits: []AnalysisLimit{}, AfterHookFails: []AfterHookFail{}}
 	f := Facts{Version: helperVersion, Compiler: "5.9.3", Tests: []Fact{fact}, HazardsTruncated: true}
 	if validFacts(f, source, false) {
 		t.Fatal("more hazards than the budget accepted")
@@ -1000,7 +1000,7 @@ func TestAssessCreditsTargetAssertionsWithoutClaimingVerification(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Tests) != 2 || report.Policy != "assessment-source-v17" || report.Execution != "not_run" {
+	if len(report.Tests) != 2 || report.Policy != "assessment-source-v18" || report.Execution != "not_run" {
 		t.Fatalf("target tests not assessed: %+v", report)
 	}
 	confirmed, actions := report.Tests[0], report.Tests[1]
@@ -1113,7 +1113,7 @@ func TestAssessReportsNativeLocatorsTiedToCopyOrPosition(t *testing.T) {
 		}
 	}
 	want := "suspected/copy-alias@3 suspected/data-alias@4 suspected/literal-coordinates@5"
-	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v17" || report.Tests[0].Assertions.Count != 1 {
+	if strings.Join(got, " ") != want || report.Policy != "assessment-source-v18" || report.Tests[0].Assertions.Count != 1 {
 		t.Fatalf("native hazards %q, policy %s, assertions %d", strings.Join(got, " "), report.Policy, report.Tests[0].Assertions.Count)
 	}
 }
@@ -1136,5 +1136,105 @@ func TestFixtureModuleAliasesAreBounded(t *testing.T) {
 	}
 	if validTargetModule(targetModule{Aliases: many}) {
 		t.Fatal("accepted 257 aliases")
+	}
+}
+
+func screenFile(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func readScreen(path string, limit int64) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err == nil && int64(len(data)) > limit {
+		return nil, errors.New("too large")
+	}
+	return data, err
+}
+
+func TestAssessChecksTestIDsAgainstInspectedScreens(t *testing.T) {
+	requireNode(t)
+	dir := t.TempDir()
+	home := screenFile(t, dir, "home.json", `{"platform":"android","apps":["com.example.app"],"controls":[],"testIds":{"booking_card":3,"booking_join":3,"home.title":1}}`)
+	login := screenFile(t, dir, "login.json", `{"platform":"ios","apps":["Example"],"controls":[],"testIds":{"username":1,"password":1}}`)
+	screens, err := LoadScreens([]string{home, login, home}, readScreen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := []byte("import {createTargetTest} from '@9l/playwright';\n" +
+		"import {androidTargetDriver} from '@9l/playwright/android';\n" +
+		"const test = createTargetTest({native: t => androidTargetDriver({appId: t.appId, controls: {back: {text: 'Back'}}})});\n" +
+		"test('books a session', async ({app}) => {\n" +
+		"  await app.getByTestId('username').fill('a');\n" +
+		"  await app.getByTestId('booking_join').tap();\n" +
+		"  await app.getByTestId('home.title').toBeVisible();\n" +
+		"  await app.getByTestId('booking_cancel').tap();\n" +
+		"  await app.getByTestId('back').tap();\n" +
+		"});\n")
+	report, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "book.spec.ts"), Screens: screens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range report.Tests[0].Findings {
+		if f.Rule == "screen-test-id" {
+			got = append(got, fmt.Sprintf("%s/%s@%d", f.Classification, f.Code, f.Line))
+		}
+	}
+	// username and home.title are on one screen each; back is an alias.
+	if strings.Join(got, " ") != "suspected/repeated-test-id@6 informational/unobserved-test-id@8" || report.Policy != "assessment-source-v18" {
+		t.Fatalf("screen findings %q policy %s", strings.Join(got, " "), report.Policy)
+	}
+	if len(report.Screens) != 2 || report.Screens[0].Path != filepath.ToSlash(home) || report.Screens[0].TestIDs != 3 || report.Screens[1].Platform != "ios" || len(report.Screens[0].SHA256) != 64 {
+		t.Fatalf("screen evidence %+v", report.Screens)
+	}
+	if report.Tests[0].Dimensions["engineeringQuality"] != "concern" {
+		t.Fatal("a repeated test ID is a concern")
+	}
+	// Without screens nothing changes.
+	plain, err := Assess(context.Background(), spec, nil, Options{Path: filepath.Join(dir, "book.spec.ts")})
+	if err != nil || plain.Screens != nil {
+		t.Fatalf("plain %+v %v", plain.Screens, err)
+	}
+	for _, f := range plain.Tests[0].Findings {
+		if f.Rule == "screen-test-id" {
+			t.Fatal("screen findings without screens")
+		}
+	}
+}
+
+func TestLoadScreensRefusesWhatInspectDoesNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	for _, c := range []struct{ body, want string }{
+		{`{"platform":"web","controls":[],"testIds":{}}`, "not a `9l inspect"},
+		{`{"url":"https://example.com","interactive":[]}`, "not a `9l inspect"},
+		{`{"platform":"android","controls":[]}`, "has no testIds"},
+		{`{"platform":"android","controls":[],"testIds":{"../x":1}}`, "invalid test ID"},
+		{`{"platform":"android","controls":[],"testIds":{"ok":0}}`, "invalid test ID"},
+		{`not json`, "not a `9l inspect"},
+	} {
+		path := screenFile(t, dir, "s.json", c.body)
+		if _, err := LoadScreens([]string{path}, readScreen); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("%s: %v", c.body, err)
+		}
+	}
+	if _, err := LoadScreens(nil, readScreen); err == nil {
+		t.Fatal("no screens accepted")
+	}
+	many := make([]string, MaxScreens+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("s%d.json", i)
+	}
+	if _, err := LoadScreens(many, readScreen); err == nil {
+		t.Fatal("too many screens accepted")
+	}
+	truncated := screenFile(t, dir, "big.json", `{"platform":"ios","controls":[],"testIds":{"a":1},"testIdsTruncated":true}`)
+	screens, err := LoadScreens([]string{truncated}, readScreen)
+	if err != nil || !screens.Evidence()[0].TestIDsTruncated {
+		t.Fatalf("truncated %v", err)
 	}
 }

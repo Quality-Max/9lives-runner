@@ -28,10 +28,10 @@ import (
 //go:embed analyzer.cjs
 var analyzer string
 
-const Policy = "assessment-source-v17"
+const Policy = "assessment-source-v18"
 
 // helperVersion is the version of the analyzer's facts.
-const helperVersion = 14
+const helperVersion = 15
 
 // unmapped-outcome codes: a test that maps none of its requirement's
 // outcomes is its own defect; an outcome mapped nowhere in the file is one
@@ -148,6 +148,14 @@ type AfterHookFail struct {
 	Location
 	Conditional bool `json:"conditional"`
 }
+
+// TestID is a literal test ID a target test passes to app.getByTestId(...)
+// that is not a controls alias, at its first use in the test.
+type TestID struct {
+	Location
+	Site *Location `json:"site,omitempty"`
+	ID   string    `json:"id"`
+}
 type Fact struct {
 	Location
 	Title            string            `json:"title,omitempty"`
@@ -155,6 +163,7 @@ type Fact struct {
 	Assertions       []Assertion       `json:"assertions"`
 	Sleeps           []Sleep           `json:"sleeps"`
 	Hazards          []Hazard          `json:"hazards"`
+	TestIDs          []TestID          `json:"testIds"`
 	ConditionalSkips []ConditionalSkip `json:"conditionalSkips"`
 	AfterHookFails   []AfterHookFail   `json:"afterHookFails"`
 	Disabled         *bool             `json:"disabled"`
@@ -223,7 +232,9 @@ type Report struct {
 	// UnrecognizedTestImports names the modules this file imports `test`
 	// from that assess does not recognise; its tests were not assessed.
 	UnrecognizedTestImports []string `json:"unrecognizedTestImports,omitempty"`
-	Tests                   []Test   `json:"tests"`
+	// Screens are the saved inspections the test IDs were checked against.
+	Screens []ScreenEvidence `json:"screens,omitempty"`
+	Tests   []Test           `json:"tests"`
 }
 
 func Decode(data []byte, target any) error {
@@ -278,6 +289,9 @@ type Options struct {
 	// Any other extension, or no path, parses as TSX. Suites use each file's
 	// own path.
 	Path string
+	// Screens are saved `9l inspect --format json` results; with them, the
+	// test IDs target tests use are checked against what the screens show.
+	Screens *Screens
 }
 
 // JavaScript reports whether Playwright loads a file at path as JavaScript,
@@ -351,6 +365,9 @@ func assessWithHelper(parent context.Context, source, contract []byte, c Contrac
 		}
 	}
 	report := Build(source, contract, c, facts)
+	if opts.Screens != nil {
+		applyScreens(&report, facts, opts.Screens)
+	}
 	// The credit then depends on files beside the spec: name each and its
 	// digest, so the report says what it was computed from.
 	for _, fixture := range read {
@@ -611,6 +628,16 @@ func validFacts(f Facts, source []byte, titles bool) bool {
 			if !valid(p.Location) || (p.Site != nil && !valid(*p.Site)) {
 				return false
 			}
+		}
+		if t.TestIDs == nil || len(t.TestIDs) > 128 {
+			return false
+		}
+		usedIDs := map[string]bool{}
+		for _, id := range t.TestIDs {
+			if !valid(id.Location) || (id.Site != nil && !valid(*id.Site)) || !screenTestID.MatchString(id.ID) || usedIDs[id.ID] {
+				return false
+			}
+			usedIDs[id.ID] = true
 		}
 		hazards += len(t.Hazards)
 		for _, h := range t.Hazards {

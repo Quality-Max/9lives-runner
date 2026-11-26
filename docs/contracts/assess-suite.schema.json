@@ -251,6 +251,12 @@
         "requirementsSHA256": {
           "type": "string"
         },
+        "screens": {
+          "items": {
+            "$ref": "#/$defs/ScreenEvidence"
+          },
+          "type": "array"
+        },
         "sourceSHA256": {
           "type": "string"
         },
@@ -287,6 +293,46 @@
         "completeness",
         "limits",
         "tests"
+      ],
+      "type": "object"
+    },
+    "ScreenEvidence": {
+      "properties": {
+        "apps": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "testIds": {
+          "type": "integer"
+        },
+        "testIdsTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "platform",
+        "apps",
+        "testIds"
       ],
       "type": "object"
     },
@@ -462,6 +508,12 @@
     },
     "requirementsSHA256": {
       "type": "string"
+    },
+    "screens": {
+      "items": {
+        "$ref": "#/$defs/ScreenEvidence"
+      },
+      "type": "array"
     },
     "summary": {
       "$ref": "#/$defs/SuiteSummary"

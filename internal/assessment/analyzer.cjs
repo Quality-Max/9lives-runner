@@ -336,7 +336,7 @@ function createAnalyzer(ts) {
           ...(aliases.size ? { aliases: Object.fromEntries([...aliases].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) } : {}) };
       }
       // Strict JSON on the Go side has no null: a module without one omits it.
-      return { version: 14, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };
+      return { version: 15, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };
     }
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
@@ -580,7 +580,7 @@ function createAnalyzer(ts) {
           const callback = node.arguments[node.arguments.length - 1];
           const statement = ts.isExpressionStatement(node.parent) ? node.parent : node;
           const disabled = inheritedDisabled || (ts.isPropertyAccessExpression(expr) && ['skip', 'fixme'].includes(expr.name.text));
-          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], afterHookFails: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
+          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], testIds: [], conditionalSkips: [], afterHookFails: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
           // Titles are source text; include literal ones only when requested.
           if (options.titles && node.arguments[0] && (ts.isStringLiteral(node.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(node.arguments[0]))) fact.title = [...node.arguments[0].text].slice(0, 200).join('');
           factScopes.set(fact, scopes);
@@ -917,6 +917,15 @@ function createAnalyzer(ts) {
                 return first.properties.some(property => ts.isPropertyAssignment(property) && ['x', 'y'].includes(property.name?.text) && numeric(property.initializer))
                   ? [{ node: child.expression.name, kind: 'literal-coordinates' }] : [];
               };
+              // A literal test ID passed to app.getByTestId(...) that is not a
+              // controls alias: what `9l assess --screens` checks against
+              // inspected screens.
+              const targetTestId = child => {
+                if (!ts.isCallExpression(child) || !ts.isPropertyAccessExpression(child.expression) || child.expression.name.text !== 'getByTestId') return null;
+                const first = child.arguments[0];
+                if (!first || !ts.isStringLiteralLike(first) || aliases.has(first.text) || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(first.text)) return null;
+                return targetKind(child.expression.expression) === 'app' ? { node: first, id: first.text } : null;
+              };
               // A target assertion's matcher, or null for any other call.
               const targetMatcher = call => {
                 if (!ts.isPropertyAccessExpression(call.expression)) return null;
@@ -974,6 +983,9 @@ function createAnalyzer(ts) {
                   hazardBudget.left--;
                   fact.hazards.push({ ...at(hazard.node), kind: hazard.kind });
                 }
+                // Each test ID once per test, at its first use, bounded.
+                const testId = targetTestId(child);
+                if (testId && fact.testIds.length < 128 && !fact.testIds.some(t => t.id === testId.id)) fact.testIds.push({ ...at(testId.node), id: testId.id });
                 if (ts.isCallExpression(child)) {
                   // Body-level skips can depend on runtime conditions or fixture
                   // values. Do not infer their disabled state from source alone.
@@ -1021,7 +1033,7 @@ function createAnalyzer(ts) {
                         if (ts.isIdentifier(parameter.name) && kind) helperTargets.set(parameter.name.text, kind);
                       });
                       const settled = consumed(child);
-                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
+                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, testIds: fact.testIds.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
                           returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]),
@@ -1031,6 +1043,7 @@ function createAnalyzer(ts) {
                         fact.assertions.length = saved.assertions;
                         fact.sleeps.length = saved.sleeps;
                         fact.hazards.length = saved.hazards;
+                        fact.testIds.length = saved.testIds;
                         Object.assign(hazardBudget, saved.hazardBudget);
                         fact.limits = saved.limits;
                         fact.unsupported = saved.unsupported;
@@ -1143,7 +1156,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => [...f.conditionalSkips, ...f.afterHookFails].map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 14, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 15, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -1168,7 +1181,7 @@ async function main(parserPath = process.argv[1]) {
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 14, error: code }));
+    process.stdout.write(JSON.stringify({ version: 15, error: code }));
     process.exitCode = 2;
   }
 }

@@ -207,6 +207,8 @@ type SuiteReport struct {
 	Files              []SuiteFile  `json:"files"`
 	Summary            SuiteSummary `json:"summary"`
 	Limits             []string     `json:"limits"`
+	// Screens are the saved inspections the test IDs were checked against.
+	Screens []ScreenEvidence `json:"screens,omitempty"`
 }
 
 // AssessSuite assesses files with a bounded worker pool under one suite
@@ -255,7 +257,11 @@ func AssessSuite(parent context.Context, inputs []SuiteInput, contract []byte, o
 			files[index] = assessSuiteFile(ctx, inputs[index], contract, c, opts, parser)
 		}
 	}
-	return buildSuite(files, contract), nil
+	suite := buildSuite(files, contract)
+	if opts.Screens != nil {
+		suite.Screens = opts.Screens.Evidence()
+	}
+	return suite, nil
 }
 
 func assessSuiteFile(ctx context.Context, input SuiteInput, contract []byte, c Contract, opts Options, parser string) SuiteFile {

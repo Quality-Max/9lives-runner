@@ -155,3 +155,15 @@ test('a row with its own caption beside a switch is ranked with the switch; an u
     [['copy', 'Alerts'], ['stable', ''], ['stable', 'Save']]);
   assert.equal(result.testability.score, 67);
 });
+
+test('testIds counts every test ID on the window, interactive or not, package-scoped', () => {
+  const result = inspectAndroidHierarchy(dump(
+    node({ 'resource-id': 'booking_card', clickable: 'true' }, [node({ 'resource-id': 'booking_join', clickable: 'true' })]),
+    node({ 'resource-id': 'booking_card', clickable: 'true' }, [node({ 'resource-id': 'booking_join', clickable: 'true' })]),
+    node({ 'resource-id': `${pkg}:id/home.title`, text: 'Welcome' }),
+    node({ 'resource-id': 'android:id/content' }),
+    node({ 'resource-id': 'other', package: 'com.android.systemui' }),
+  ), { package: pkg });
+  assert.deepEqual(result.testIds, { booking_card: 2, booking_join: 2, 'home.title': 1 });
+  assert.equal(result.testIdsTruncated, undefined);
+});

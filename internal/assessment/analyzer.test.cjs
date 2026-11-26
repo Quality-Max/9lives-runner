@@ -974,7 +974,7 @@ test('debugging leftovers and structural or positional selectors are hazards', (
     });`);
   assert.deepEqual(kinds(facts.tests[0]), ['debugger-statement@4', 'page-pause@2<5', 'xpath@6', 'xpath@7', 'xpath@8', 'positional-css@9',
     'position@10', 'position@11', 'position@12', 'position@13', 'positional-css@14', 'xpath@15', 'xpath@16']);
-  assert.equal(facts.version, 14);
+  assert.equal(facts.version, 15);
 });
 
 test('values, keys, role locators and non-page pauses are not hazards', () => {
@@ -1061,7 +1061,7 @@ test('after-hook test.fail() modifiers are attributed to the suite as conditiona
   // A test.fail('title', ...) declaration is not in the inventory, as before.
   assert.deepEqual(facts.tests.map(t => t.afterHookFails.map(f => [f.line, f.conditional])), [[[2, false], [2, true]], [[2, false], [2, true]], [[4, true], [5, true], [6, false]], []]);
   assert(facts.tests.every(t => !t.disabled && t.conditionalSkips.length === 0));
-  assert.equal(facts.version, 14);
+  assert.equal(facts.version, 15);
 });
 
 test('createTargetTest tests credit target assertions on the app fixture and its controls', () => {
@@ -1314,7 +1314,7 @@ test('controls aliases tied to copy and taps at literal coordinates are native h
   // booking_join is a resource ID, and a point from bounds() is not a literal.
   assert.deepEqual(kinds(facts.tests[0]), ['copy-alias@13', 'copy-alias@14', 'partial-copy-alias@15', 'data-alias@16', 'copy-alias@17',
     'copy-alias@18', 'literal-coordinates@20', 'literal-coordinates@21', 'literal-coordinates@24']);
-  assert.equal(facts.version, 14);
+  assert.equal(facts.version, 15);
 });
 
 test('native hazards need the target app and the android driver', () => {
@@ -1345,4 +1345,22 @@ test('a fixture module exports its copy-bound aliases and a spec importing it re
   const forged = analyze(`import {test} from './fixtures';
     test('t', async ({app}) => { await app.getByTestId('x').tap(); });`, {targetModules: {'./fixtures': {app: true, aliases: {x: 'rm -rf'}}}});
   assert.deepEqual(kinds(forged.tests[0]), []);
+});
+
+test('target tests record the literal test IDs they use, but not aliases, pages or dynamic IDs', () => {
+  const facts = analyze(`${nativeHead}
+    const openBooking = app => app.getByTestId('booking_card').tap();
+    test('t', async ({app, page}) => {
+      await app.getByTestId('booking_join').tap();
+      await app.getByTestId('booking_join').toBeVisible();
+      await app.getByTestId('home.title').toHaveText('Welcome');
+      await app.getByTestId('save').tap();
+      await page.getByTestId('web_only').click();
+      await app.getByTestId(dynamic).tap();
+      await app.getByTestId(\`tpl_\${n}\`).tap();
+      await openBooking(app);
+    });`);
+  const ids = facts.tests[0].testIds.map(t => (t.site ? `${t.id}@${t.line}<${t.site.line}` : `${t.id}@${t.line}`));
+  assert.deepEqual(ids, ['booking_join@14', 'home.title@16', 'booking_card@12<21']);
+  assert.equal(facts.version, 15);
 });

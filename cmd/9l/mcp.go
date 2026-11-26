@@ -95,6 +95,7 @@ var mcpTools = []map[string]any{
 			"properties": map[string]any{
 				"path":         map[string]any{"type": "string", "description": "Spec file or directory"},
 				"requirements": map[string]any{"type": "string", "description": "Optional reviewed requirement contract JSON"},
+				"screens":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 64, "description": "Optional saved inspect_screen or `9l inspect --format json` results; target tests' test IDs are checked against them"},
 			},
 			"required":             []string{"path"},
 			"additionalProperties": false,
@@ -620,8 +621,9 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 		return s.browserTool(ctx, name, raw)
 	default:
 		var args struct {
-			Path         string `json:"path"`
-			Requirements string `json:"requirements"`
+			Path         string   `json:"path"`
+			Requirements string   `json:"requirements"`
+			Screens      []string `json:"screens"`
 		}
 		if err := decodeArguments(name, raw, &args); err != nil {
 			return nil, err
@@ -636,7 +638,15 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 				return nil, err
 			}
 		}
-		return s.assessTest(ctx, path, requirements)
+		screens := make([]string, 0, len(args.Screens))
+		for _, screen := range args.Screens {
+			contained, err := s.contained(screen, false)
+			if err != nil {
+				return nil, err
+			}
+			screens = append(screens, contained)
+		}
+		return s.assessTest(ctx, path, requirements, screens)
 	}
 }
 
@@ -795,10 +805,13 @@ func boundedRun(run *tier2.RunResult) *tier2.RunResult {
 	return &copied
 }
 
-func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (any, error) {
+func (s *mcpServer) assessTest(ctx context.Context, path, requirements string, screens []string) (any, error) {
 	args := []string{path, "--format", "json"}
 	if requirements != "" {
 		args = append(args, "--requirements", requirements)
+	}
+	for _, screen := range screens {
+		args = append(args, "--screens", screen)
 	}
 	var out, errOut bytes.Buffer
 	code := assessContext(ctx, args, &out, &errOut)

@@ -155,7 +155,8 @@ function inspectAndroidHierarchy(xml, options = {}) {
         warnings.push(`No tappable, checkable or editable controls in ${nodes.length} nodes. The screen may still be loading, or its controls may not be exposed to accessibility.`);
     if (nodes.some((node) => node.password))
         warnings.push('A password field is on screen; its value is never reported.');
-    return { platform: 'android', apps: packages, nodeCount: nodes.length, ...(0, inspect_screen_1.rankControls)(controls), testability, warnings };
+    return { platform: 'android', apps: packages, nodeCount: nodes.length, ...(0, inspect_screen_1.rankControls)(controls), testability,
+        ...(0, inspect_screen_1.countTestIds)(nodes.map(testIdOf)), warnings };
 }
 const exec = (file, args, timeoutMs) => new Promise((settle, reject) => {
     const child = (0, node_child_process_1.spawn)(file, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
