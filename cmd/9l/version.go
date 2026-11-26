@@ -35,6 +35,7 @@ type Contracts struct {
 	ProgressEvent    int    `json:"progressEvent"`
 	Assess           int    `json:"assess"`
 	AssessSuite      int    `json:"assessSuite"`
+	RunRepeat        int    `json:"runRepeat"`
 	ExecutionReceipt string `json:"executionReceipt"`
 	Engine           string `json:"engine"`
 }
@@ -47,7 +48,7 @@ func versionInfo() VersionInfo {
 		Contracts: Contracts{
 			Plan: runner.PlanVersion, RunResult: runner.RunSummaryVersion, RunStatus: runner.RunStatusVersion,
 			Receipt: runner.ReceiptVersion, ProgressEvent: runner.ProgressEventVersion,
-			Assess: assessment.ReportVersion, AssessSuite: assessment.SuiteVersion,
+			Assess: assessment.ReportVersion, AssessSuite: assessment.SuiteVersion, RunRepeat: RepeatSummaryVersion,
 			ExecutionReceipt: runner.CanonicalReceiptSchema, Engine: playwrightsdk.Version,
 		},
 		Commands: commands,

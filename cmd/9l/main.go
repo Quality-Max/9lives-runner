@@ -743,7 +743,14 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	fs.Var(&passEnv, "pass-env", "forward this environment variable to test processes (repeatable or comma-separated)")
 	var skipPins skipPinList
 	fs.Var(&skipPins, "pin-skip", "with --sdk, accept this skipped test: \"<file> › <title>\" (repeatable)")
+	repeat := new(int)
+	label := new(string)
+	if command == "run" {
+		fs.IntVar(repeat, "repeat", 1, "run the same job this many times, one run after another, and report the pass rate and failure categories; needs --deadline for the whole batch, runs Playwright with --retries 0 unless --retries is given, and never retries a member")
+		fs.StringVar(label, "label", "", "with --repeat, a name for this batch, to compare experiment arms (one line, at most 128 bytes)")
+	}
 	normalized := flagsFirst(args, map[string]bool{
+		"-repeat": true, "--repeat": true, "-label": true, "--label": true,
 		"-pass-env": true, "--pass-env": true,
 		"-agent-provenance": true, "--agent-provenance": true,
 		"-pin-skip": true, "--pin-skip": true,
@@ -781,6 +788,29 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if fs.NArg() == 0 {
 		fmt.Fprintln(errOut, "9l: at least one spec, glob, or directory is required")
 		return 2
+	}
+	if *repeat == 0 && command == "plan" {
+		*repeat = 1
+	}
+	switch {
+	case *repeat < 1 || *repeat > MaxRepeat:
+		fmt.Fprintf(errOut, "9l: --repeat must be 1 to %d\n", MaxRepeat)
+		return exitUsage
+	case *label != "" && *repeat == 1:
+		fmt.Fprintln(errOut, "9l: --label applies only with --repeat")
+		return exitUsage
+	case len(*label) > 128 || strings.ContainsAny(*label, "\r\n\x00"):
+		fmt.Fprintln(errOut, "9l: --label is one line of at most 128 bytes")
+		return exitUsage
+	case *repeat > 1 && *deadline <= 0:
+		fmt.Fprintln(errOut, "9l: --repeat needs --deadline, the bound for the whole batch")
+		return exitUsage
+	case *repeat > 1 && *maxAttempts > 1:
+		fmt.Fprintln(errOut, "9l: --repeat measures single attempts; drop --attempts, since a retry would hide the failures it counts")
+		return exitUsage
+	case *repeat > 1 && (flagWasSet(fs, "junit") || flagWasSet(fs, "verify")):
+		fmt.Fprintln(errOut, "9l: --junit and --verify describe one run; they cannot be combined with --repeat")
+		return exitUsage
 	}
 	// Checked here so plan and --dry-run reject a path run would reject.
 	var report *junitReport
@@ -952,12 +982,25 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			playwrightRetries = retries
 		}
 	})
-	plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: *deadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects, Targets: targets, Retries: playwrightRetries})
+	// A repeat measures how often a job passes on its own: a Playwright retry
+	// inside a member would hide the failure it is there to count. Targets
+	// already run without automatic retries and refuse --retries.
+	if *repeat > 1 && playwrightRetries == nil && len(targets) == 0 {
+		zero := 0
+		playwrightRetries = &zero
+	}
+	build := func(runDeadline time.Duration) (runner.Plan, error) {
+		plan, err := runner.BuildPlan(fs.Args(), runner.PlanOptions{MaxJobs: *maxJobs, MaxParallel: *workers, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, Deadline: runDeadline, Adapters: availableAdapters, ExtraArgs: extraArgs, Selection: strings.Join(selection, " "), Reporters: extraReporters, Config: config, Projects: projects, Targets: targets, Retries: playwrightRetries})
+		if err == nil {
+			visual.apply(&plan)
+		}
+		return plan, err
+	}
+	plan, err := build(*deadline)
 	if err != nil {
 		fmt.Fprintf(errOut, "9l: plan: %v\n", err)
 		return 2
 	}
-	visual.apply(&plan)
 	// Another job running beside the checked one could change the state the
 	// checks observe, so plan and --dry-run reject what run would.
 	if postconditions != nil && (len(plan.Jobs) != 1 || len(plan.Skipped) != 0) {
@@ -1005,19 +1048,25 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			return err
 		}
 	}
-	result, err := runner.Execute(ctx, plan, runner.ExecuteOptions{
-		OnStarted: func() {
-			if *format == "json" {
-				fmt.Fprintf(errOut, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
-			} else {
-				fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
-			}
-		},
-		BeforeJobs:      beforeJobs,
-		AgentProvenance: agentProvenance,
-		Verifier:        verifierOption(postconditions),
-		Workers:         *workers, Timeout: *timeout, RunDeadline: *deadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, LiveOutput: liveOutput, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
-	})
+	execute := func(plan runner.Plan, runDeadline time.Duration) (runner.RunSummary, error) {
+		return runner.Execute(ctx, plan, runner.ExecuteOptions{
+			OnStarted: func() {
+				if *format == "json" {
+					fmt.Fprintf(errOut, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
+				} else {
+					fmt.Fprintf(out, "run %s started; use `9l cancel %s --receipt-dir %s` to cancel\n", plan.RunID, plan.RunID, *receiptDir)
+				}
+			},
+			BeforeJobs:      beforeJobs,
+			AgentProvenance: agentProvenance,
+			Verifier:        verifierOption(postconditions),
+			Workers:         *workers, Timeout: *timeout, RunDeadline: runDeadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, LiveOutput: liveOutput, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
+		})
+	}
+	if *repeat > 1 {
+		return runRepeat(ctx, *repeat, *label, *deadline, playwrightRetries, plan, build, execute, *format, *receiptDir, out, errOut)
+	}
+	result, err := execute(plan, *deadline)
 	// A setup error is found before any process starts: no run exists to
 	// report, cancel or retry, so it is a usage error without a result.
 	var setup runner.SetupError
