@@ -239,8 +239,8 @@ A driver may implement `captureFailure(context)` for an opted-in failure
 capture: the Android driver answers only with `diagnostics:
 {failureCapture: true}`, and on an attached phone only with `onPhone: true`
 as well (see
-[Android](android-driver.md#failure-screenshot-and-view-tree-opt-in)). Only
-the target fixture calls it, once, after a test that failed (`failed` or
+[Android](android-driver.md#failure-screenshot-and-view-tree-opt-in)). The
+SDK calls it only from the target fixture, once, after a test that failed (`failed` or
 `timedOut`) ended and before the driver closes, and only when the engine
 set `NINELIVES_FAILURE_CAPTURE_KEPT=1` for the attempt (`--failure-details
 --keep-attachments` on an `android:` target); never after a pass, skip or

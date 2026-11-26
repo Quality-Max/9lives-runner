@@ -437,8 +437,11 @@ deleted. A test that passed, was skipped or was interrupted reads nothing.
 Nothing is read either when the driver is no longer open: an operation that
 ran into its deadline or a cancellation releases it at once, an operation
 still pending when the test timed out keeps the session busy, and a spec
-that calls `app.close()` itself has closed it. Only the target fixture can
-take the capture; a spec cannot trigger or suppress it. A failed operation
+that calls `app.close()` itself has closed it. The SDK takes the capture
+only from the target fixture. A spec is the user's own code and can still
+reach the driver or the process environment to read the device or skip
+the capture; what is kept is decided by the run's flags in the engine,
+which a spec cannot change. A failed operation
 that ended by itself leaves the driver open, so its capture shows the
 screen as it was when the test gave up.
 
@@ -513,11 +516,11 @@ through the engine's native retention path with the fake driver under an
 there). The emulator case `failure-capture`
 (`node scripts/android-smoke.cjs failure-capture`) runs it against the
 synthetic defect APK with `--failure-details --keep-attachments`. On
-2026-11-26 it qualified once on the documented API 35 emulator: an 85 KB
-PNG and a 14 KB view tree were retained and the receipt held only their
-references. That run preceded the engine's keep signal, the phone
-confirmation and the post-teardown stop check; one run qualifies this
-emulator only, and an attached phone is not qualified.
+2026-11-26 it qualified in three of three runs on the documented API 35
+emulator, with the engine's keep signal and the post-teardown stop check:
+an 85 KB PNG and a 14 KB view tree were retained each time, the receipt
+held only their references, and the emulator had stopped after teardown.
+An attached phone, and with it the phone confirmation, is not qualified.
 
 ## Biometrics on an owned emulator
 
