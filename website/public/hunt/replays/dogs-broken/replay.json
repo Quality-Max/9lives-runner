@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "scenario": "dogs",
+  "broken": true,
+  "recordedAt": "2026-10-24T20:24:59.386478Z",
+  "runId": "run-20261024T202456Z-bbf8238897f4",
+  "outcome": "failed",
+  "fixtureSHA256": "73d52a1ffd45c1af1a3c6ed9e1c8b8298816427901aeccaf6f5e2d40641fef1d",
+  "jev": {
+    "status": "answered",
+    "model": "jev-1.14.0",
+    "requestCount": 1,
+    "questionCount": 9,
+    "usage": {
+      "inputTokens": 3388,
+      "outputTokens": 157,
+      "available": true
+    }
+  },
+  "receipts": [
+    {
+      "status": "failed",
+      "validated": true,
+      "executedTests": 1,
+      "failureCount": 1,
+      "durationMs": 3078
+    }
+  ],
+  "steps": [
+    {
+      "stage": "looking",
+      "message": "Jev is checking close-ups of nine hiding spots…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-0.png",
+      "target": null
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 1…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-1.png",
+      "target": {
+        "X": 9.882352941176471,
+        "Y": 31.666666666666668,
+        "Width": 4.851724063648897,
+        "Height": 6.9593760172526045
+      }
+    },
+    {
+      "stage": "checked",
+      "message": "Figure 1: score 0 → 1. Checked!",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-2.png",
+      "target": {
+        "X": 9.882352941176471,
+        "Y": 31.666666666666668,
+        "Width": 4.851724063648897,
+        "Height": 6.9593760172526045
+      }
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 2…",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-3.png",
+      "target": {
+        "X": 34.588235294117645,
+        "Y": 20.833333333333332,
+        "Width": 5.3045510684742645,
+        "Height": 7.608917236328125
+      }
+    },
+    {
+      "stage": "failed",
+      "message": "Caught it! A correct click did not add one to the score.",
+      "found": 1,
+      "checked": 1,
+      "image": "frame-4.png",
+      "target": {
+        "X": 34.588235294117645,
+        "Y": 20.833333333333332,
+        "Width": 5.3045510684742645,
+        "Height": 7.608917236328125
+      }
+    }
+  ]
+}

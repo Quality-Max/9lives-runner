@@ -4,6 +4,62 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Added
+
+- `9l diagnose <spec>` (experimental) runs one spec once through the normal
+  runner and, when a test fails, reports the observed facts from the
+  receipt: the runner's failure class, the deterministic class, the failed
+  locator and hashes of the attached accessible snapshot and screenshot.
+  With `--jev` it also makes one Jev request within a minute of the run
+  ending, bound to that attempt and the exact source that ran, and maps
+  the typed answers to an engine-owned disposition: `eligible-for-repair`,
+  `investigate-test`, `investigate-app`, `require-new-observation` or
+  `unresolved`. An assertion failure is never eligible for repair, and
+  without a snapshot or an accepted screenshot nothing is asked. Only the
+  error message and a redacted accessible snapshot are sent;
+  `--jev-images synthetic` also sends the failure screenshot, for screens
+  that show test data only. The diagnosis never changes the receipt, retries
+  or acts on the application. It is saved as `diagnosis.json` beside the
+  run's receipts, under `.9lives/diagnoses/` unless `--receipt-dir` names
+  another directory. Like `9l run`, the command exits 0 when the test
+  passed, 1 when a test failed, 2 for a usage error and 3 when the run did
+  not complete. `--jev` refuses before running anything without
+  `TYPESAFE_API_KEY`, or when `--pass-env` would forward it to the test
+  process. Diagnosis quality is not measured: the tests use a scripted Jev
+  and establish wiring and policy only. See [Jev](docs/jev.md).
+- `9l doctor --jev [--jev-model MODEL] [--jev-images off|synthetic|masked]`
+  checks the optional Jev configuration locally. It reports the status,
+  model, image policy and whether the credential is present, never its
+  value. It makes no API request: `connectivity` is always `not_checked`, so
+  availability, authentication and model support stay unverified. It exits
+  2 for `missing_credential` and 0 for `configured` or `disabled`, and does
+  not combine with `--sdk`, `--android`, `--paths` or a spec.
+- An internal, optional Jev decision client (`9l.jev/1`), used by
+  `9l diagnose` and the demo: typed Noul, Choice, fractional Score and Box
+  questions over evidence bound to one attempt and its exact source, with
+  request, question, byte, deadline and evidence-age limits and no retries
+  or redirects. Its records omit raw observations, images, answers and
+  provider error bodies. Ordinary runs never call it, and setting the
+  credential alone does not enable it.
+- A local Jev demo, `npm run demo:jev`: a checkout and a four-level picture
+  hunt in which an ordinary Playwright test, run through the runner, asserts
+  the result while optional Jev judgments interpret what is on screen. It is
+  offline by default and needs no key; `--live --images` makes explicit paid
+  requests. The website's `/hunt.html` is a static copy that replays eight
+  recorded live runs and makes no Jev request. These are individual synthetic
+  checks, not an accuracy benchmark.
+
+### Fixed
+
+- Failure attachments, such as the error-context snapshot and screenshot,
+  are kept for a project opened through a symlinked directory (macOS `/tmp`
+  and `/var/folders`, or a symlinked checkout). Playwright reports resolved
+  paths and the containment check compared them with the unresolved project
+  path, so every attachment there was dropped, which also left `9l heal`
+  without its snapshot. Symlink escapes and traversal are still refused.
+
 ## 0.7.3 — 2026-11-26
 
 A patch on the 0.7.x line. iOS gains keyboard handling and answering system

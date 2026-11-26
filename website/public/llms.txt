@@ -283,7 +283,7 @@ Other MCP hosts use the same command. If another `9l` may come first on `PATH`, 
 }
 ```
 
-The server exposes these tools: `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`, `inspect_page` and `generate_playwright_repro`. Only `run_test` status `passed` means the spec passed with complete, validated evidence; `incomplete` is never a pass. `generate_playwright_repro` writes a spec and runs nothing; execute it with `run_test`. Paths must stay inside the directory the server started in.
+The server exposes these tools: `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`, `inspect_page`, `inspect_screen` and `generate_playwright_repro`. Only `run_test` status `passed` means the spec passed with complete, validated evidence; `incomplete` is never a pass. `generate_playwright_repro` writes a spec and runs nothing; execute it with `run_test`. Paths must stay inside the directory the server started in.
 
 ### A prompt for an agent that reproduces and confirms a bug
 

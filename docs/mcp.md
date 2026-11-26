@@ -36,7 +36,7 @@ In the host's MCP inspector, compare the `initialize` response's
 `9lives` and `serverInfo.title` is `9lives Go runner`. Then refresh its tool
 list (`tools/list`). Go runner releases from 0.4.0 expose these seven tools:
 `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`,
-`inspect_page`, `generate_playwright_repro`. The next release adds an eighth,
+`inspect_page`, `generate_playwright_repro`. Releases from 0.7.2 add an eighth,
 `inspect_screen`.
 
 If only four appear, the host may still be running a Go release from before

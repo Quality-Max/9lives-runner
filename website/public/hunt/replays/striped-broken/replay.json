@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "scenario": "striped",
+  "broken": true,
+  "recordedAt": "2026-10-24T20:25:03.096784Z",
+  "runId": "run-20261024T202500Z-5f37d2013bd8",
+  "outcome": "failed",
+  "fixtureSHA256": "1fd7db62890136489c798026afd285ebce53ca32c6910cb1b0324480d8b24b92",
+  "jev": {
+    "status": "answered",
+    "model": "jev-1.14.0",
+    "requestCount": 1,
+    "questionCount": 9,
+    "usage": {
+      "inputTokens": 3551,
+      "outputTokens": 157,
+      "available": true
+    }
+  },
+  "receipts": [
+    {
+      "status": "failed",
+      "validated": true,
+      "executedTests": 1,
+      "failureCount": 1,
+      "durationMs": 2454
+    }
+  ],
+  "steps": [
+    {
+      "stage": "looking",
+      "message": "Jev is checking close-ups of nine hiding spots…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-0.png",
+      "target": null
+    },
+    {
+      "stage": "clicking",
+      "message": "Clicking hiding spot 5…",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-1.png",
+      "target": {
+        "X": 53.15293974034927,
+        "Y": 64.07833353678386,
+        "Width": 4.658824247472427,
+        "Height": 8.455001831054688
+      }
+    },
+    {
+      "stage": "failed",
+      "message": "Caught it! A correct click did not add one to the score.",
+      "found": 0,
+      "checked": 0,
+      "image": "frame-2.png",
+      "target": {
+        "X": 53.15293974034927,
+        "Y": 64.07833353678386,
+        "Width": 4.658824247472427,
+        "Height": 8.455001831054688
+      }
+    }
+  ]
+}

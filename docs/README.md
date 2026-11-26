@@ -28,6 +28,7 @@
 | [Verify](verify.md) | You want the engine to check a test's outcome itself, with HTTP postconditions declared outside the spec (experimental) |
 | [Confirm](confirm.md) | You want to know whether a reported finding's reproduction fails before a fix and passes after it (experimental) |
 | [Goals](goals.md) | You are configuring bounded observed-control execution |
+| [Jev](jev.md) | You want `9l diagnose` to explain a failed step (experimental), or are integrating optional typed decisions and image evidence in Go |
 | [SDK bridge](sdk-bridge.md) | You need protocol, privacy and evidence boundaries |
 | [Native Tier 1](native-tier1.md) / [Native Tier 2](native-tier2.md) | You are evaluating healing proposals and isolated candidate verification |
 | [Architecture](architecture.md) | You need package boundaries and design decisions |
@@ -47,7 +48,7 @@ with a maintainer status note. They describe the release the reviewer used.
 - **Assessment:** `9l assess` advises on waits, skips, assertions, requirement mappings, and source provenance.
 - **Page observations:** `9l scan` runs nine check categories; `9l inspect` ranks controls and locators.
 - **Optional SDK:** named steps and bounded goals alongside explicit Playwright assertions. Goal completion is unverified.
-- **Experimental:** supported locator healing, revision confirmation, and fetch/XHR fault testing. The demo qualifies one synthetic app in Chromium.
+- **Experimental:** supported locator healing, revision confirmation, fetch/XHR fault testing, and failed-step diagnosis (`9l diagnose`, optionally with one bounded Jev request that never changes the result). The demo qualifies one synthetic app in Chromium.
 - **Android (experimental):** Appium and UiAutomator2 execution on the documented emulators and phone; see the [Android driver guide](android-driver.md).
 - **iOS Simulator (experimental):** since 0.7.0, qualified from a source checkout on one Mac; see the [iOS driver guide](ios-driver.md).
 - **Independent postcondition checks (experimental):** `9l run <spec> --verify <checks.json>` has the engine probe HTTP postconditions declared outside the spec after the test process has stopped; a contradicted check fails a test that reported itself passed. It covers only state reachable by HTTP `GET` or `HEAD`; see the [verify guide](verify.md).
