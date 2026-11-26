@@ -4,6 +4,35 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Added
+
+- iOS keyboard and system alerts (experimental). `fill(value, {submit: true})`
+  presses Return in the field, `toHaveKeyboard()` reads the keyboard, and
+  `hideKeyboard()` closes a keyboard that has a hide key (iPad); an iPhone
+  keyboard that stays up fails as `keyboard_not_hidden` instead of being
+  closed through a control of the app. The new `app.answerAlert(button)`
+  answers the system alert in front of the app (a permission request, a
+  save-password sheet) with the button named exactly as shown, once; nothing
+  is dismissed automatically and the button text is not recorded. Qualified
+  on the iOS 18.6 iPhone 16 Simulator with the `login`, `login-covered` and
+  `login-hide` smoke cases; the save-password sheet itself was not
+  reproduced (#292).
+
+### Fixed
+
+- An iOS tap on a control under the keyboard or a system alert landed on the
+  keyboard or the alert and was reported done. A control WebDriverAgent
+  reports as not hittable is now checked for those covers and the tap is
+  refused before any click as `covered_by_keyboard` or
+  `covered_by_system_alert`; other taps are unchanged.
+
+### Changed
+
+- The shared target contract is `9l.target/6`, for the new `answer-alert`
+  action. Update the CLI and `@9l/playwright` together.
+
 ## 0.7.2 — 2026-11-26
 
 A patch on the 0.7.x line with testability checks for native screens and

@@ -142,11 +142,14 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   the app under test when `biometrics: {enrolled: true}` is declared (see
   [biometrics](#biometrics-on-the-owned-simulator)). Reset uninstalls and installs
   the frozen build again; it does not preserve app data.
-- Tap, fill, visibility, text equality and `enabled` state through the shared
-  target API. Each action re-observes its control and requires one match.
-  Mutations have no driver retries. Back, gestures, keyboard control, lifecycle
-  commands outside reset, screenshots, bounds and coordinate actions are not
-  implemented; optional operations stop as unsupported.
+- Tap, fill (with `submit` for the Return key), visibility, text equality and
+  `enabled` state through the shared target API, plus `toHaveKeyboard()`,
+  `hideKeyboard()` and `answerAlert()` (see
+  [keyboard and system alerts](#keyboard-and-system-alerts)). Each action
+  re-observes its control and requires one match. Mutations have no driver
+  retries. Back, gestures, lifecycle commands outside reset, screenshots,
+  bounds and coordinate actions are not implemented; optional operations stop
+  as unsupported.
 - Controls use exact accessibility identifiers restricted to the shared test-ID
   alphabet. WDA exposes `name = identifier || label`, without a raw identifier
   attribute. The predicate also excludes matching labels, so a label-only decoy
@@ -203,6 +206,54 @@ pass. These are worker-reported facts, not independent behavior verification.
 No app content, device UUID, Appium log, hierarchy or attachment body is retained
 by this driver. Provider credentials are not passed to the native server.
 
+## Keyboard and system alerts
+
+The keyboard stays up after a fill and can cover controls at the bottom of
+the screen, and system alerts (a permission request, iOS offering to save a
+password) appear over the app. WebDriverAgent taps a control's hit point even
+when one of them lies over it, so the tap lands on the keyboard or the alert
+and is still reported done. The driver handles both explicitly:
+
+- **Submit.** `fill(value, {submit: true})` types the field's Return key once
+  after the value. What Return does is the app's choice: it may log in, move
+  to the next field, or leave the keyboard up.
+- **Keyboard state.** `toHaveKeyboard(boolean)` reads whether the app's
+  hierarchy holds a keyboard.
+- **Hiding it.** An iPhone keyboard has no key that only closes it, and
+  WebDriverAgent knows no general way to close one. `hideKeyboard()` tries
+  WebDriverAgent's own dismissal, which works where the keyboard has a hide
+  key (iPad), and fails as `keyboard_not_hidden` when the keyboard is still up
+  two seconds later. It never taps a control of the app to close it; use
+  `submit` or the app's own control instead.
+- **Covered taps are refused.** Before a tap, a control WebDriverAgent reports
+  as not hittable is checked for the two covers: the keyboard over its
+  rectangle fails the tap as `covered_by_keyboard`, a system alert in front as
+  `covered_by_system_alert`, before any click is sent. A control that is not
+  hittable for another reason is tapped as before.
+- **Answering an alert.** `app.answerAlert('Allow')` waits within its bound
+  for a system alert, reads its buttons, requires the named button among them
+  exactly, taps it once and waits for the alert to close. A missing alert
+  fails as `missing_alert`, a button the alert does not offer as
+  `missing_alert_button`, an alert that stays as `alert_not_answered`. Nothing
+  is dismissed automatically, and the button text is not recorded.
+
+Three smoke cases qualify this on the host above, with an `iOS login` test in
+the fixture app's `login` variant: `login` (Return logs in, the keyboard is
+read, a notification permission alert is answered with `Allow`; four target
+assertions), `login-covered` (a tap on a button under the keyboard is refused
+as `covered_by_keyboard` with no click sent) and `login-hide` (hiding an
+iPhone keyboard fails as `keyboard_not_hidden` with no click sent):
+
+```sh
+node scripts/ios-smoke.cjs login login-covered login-hide
+```
+
+The save-password sheet itself was not reproduced: a synthetic app signed
+without a team does not get it, and one carrying the Associated Domains
+entitlement does not launch on the simulator. It is answered through the same
+alert interface when WebDriverAgent reports it as an alert; that is
+unverified.
+
 ## Biometrics on the owned simulator
 
 Apps that sign in with Face ID or Touch ID can be tested on the owned
@@ -255,6 +306,6 @@ The platform reference was assessed at commit
 `services/flutter_appium_runtime.py`. The useful contracts are finite grounded
 controls, exact unique matches, matching build/platform, and an owned loopback
 Appium session with cancellation and cleanup. This implementation applies those
-contracts to the existing `9l.target/5` fixtures and receipt validator. It does
+contracts to the existing `9l.target/6` fixtures and receipt validator. It does
 not duplicate the hosted mobile DSL, discovery/planning or provider engine, and
 does not require a platform account.

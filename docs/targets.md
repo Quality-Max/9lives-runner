@@ -44,7 +44,8 @@ The fixture exposes `open({timeoutMs}?)`, `reset({timeoutMs}?)`, `cancel()` and
 `getByTestId(id)`. Observed controls expose `tap({timeoutMs}?)`,
 `fill(value, {submit, timeoutMs}?)` (focus the field and replace its text,
 as a user would; with `submit: true`, then press the keyboard's action key in
-it: Enter on the web, the input method's done action on Android. A driver
+it: Enter on the web, the input method's done action on Android, Return on
+iOS. A driver
 whose handles cannot press it refuses with `unsupported_operation` before
 filling), `toBeVisible(timeoutMs?)`,
 `toHaveText(exactText, timeoutMs?)`,
@@ -62,8 +63,15 @@ at integer device coordinates: physical pixels on Android, CSS pixels in the
 web viewport; a point at or beyond the viewport the driver reports is refused
 before dispatch), `viewport()` and `screenDigest()` (the SHA-256 of a screenshot
 of the target display, computed in memory; the image is never retained),
-which are portable, and the Android-only
-`toHaveKeyboard(boolean, timeoutMs?)`, `hideKeyboard()`, `terminate()`,
+which are portable; `toHaveKeyboard(boolean, timeoutMs?)` and
+`hideKeyboard()` on Android and iOS (on iOS `hideKeyboard()` only closes a
+keyboard that has a hide key, as on iPad; an iPhone keyboard that stays up
+fails as `keyboard_not_hidden` rather than being closed through a control of
+the app); `answerAlert(button, {timeoutMs}?)` on iOS, which answers the system
+alert in front of the app (a permission request, a save-password sheet) with
+the button named exactly as shown, once, and fails when no alert comes within
+the bound or the alert offers no such button; and the Android-only
+`terminate()`,
 `activate()`, `foreground({timeoutMs}?)`, `deviceSerial()` and
 `fingerprint(finger, {timeoutMs}?)` (a touch of an owned emulator's virtual
 fingerprint sensor with finger 1-10, only where the driver declares
@@ -148,7 +156,7 @@ ordinary Playwright owns the page. `native(target)` synchronously constructs a
 Native fixture resolution has no implicit browser, context or page dependency.
 `page` and ordinary `expect` remain available to existing web tests.
 
-Drivers declare `9l.target/5`, the selected kind/app alias, and the exact ordered
+Drivers declare `9l.target/6`, the selected kind/app alias, and the exact ordered
 `targetCapabilities`. They observe at most two handles for a test ID: zero is
 missing, two is ambiguous. Mutations require exactly one observed handle and
 never silently select the first match. An action on a control (`tap`, `fill`,
@@ -196,7 +204,7 @@ close promise.
 
 ## Evidence and limits
 
-The existing `9l.engine/1` stream negotiates the additional `9l.target/5`
+The existing `9l.engine/1` stream negotiates the additional `9l.target/6`
 capability. Version 2 (0.6.0-beta.2) added the native operations, the
 `target_setup` and `target_diagnostic` frames and the Android runtime's display,
 posture and build identity. Version 3 adds the `query-visible` and

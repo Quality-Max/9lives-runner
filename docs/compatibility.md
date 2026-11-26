@@ -26,12 +26,12 @@ Use the matching CLI and SDK release above for the qualified pairing. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
 `artifact-metadata`, `terminal-outcomes`, `declared-outcomes` (in that order), then validates the
 execution evidence. It does not compare package versions or enforce a
-same-minor rule. The shared target contract is `9l.target/5`; older target
+same-minor rule. The shared target contract is `9l.target/6`; older target
 contracts are rejected at the handshake. Mixed package versions are unqualified even when
 their contracts match; update both distributions together before diagnosing
 a bridge failure. See the [SDK contract](sdk-bridge.md).
 
-An experimental [shared target contract](targets.md) (`9l.target/5`)
+An experimental [shared target contract](targets.md) (`9l.target/6`)
 dispatches one deterministic scenario to web and to native targets with the
 same `app` fixture. The experimental [Android target](android-driver.md)
 drives an owned local emulator, or an installed app on an explicitly selected

@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 
 function appWithText(read: (context: TargetContext) => Promise<string>, lifetime = 2000) {
   const driver: TargetDriver = {
-    kind: 'android-fake', appId: 'assertion', version: '9l.target/5', capabilities: targetCapabilities,
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/6', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => {},
     observeTestId: async () => [{
       tap: async () => {}, fill: async () => {}, visible: async () => true,
@@ -25,7 +25,7 @@ for (const requested of [undefined, 300000]) {
     const started = Date.now();
     let observed = 0;
     const driver: TargetDriver = {
-      kind: 'ios', appId: 'startup', version: '9l.target/5', capabilities: targetCapabilities,
+      kind: 'ios', appId: 'startup', version: '9l.target/6', capabilities: targetCapabilities,
       open: async context => { observed = context.deadlineMs; throw new Error('probe'); },
       reset: async () => {}, close: async () => {}, observeTestId: async () => [],
     };
@@ -42,7 +42,7 @@ test('iOS startup remains capped by the attempt deadline', async () => {
   const deadlineMs = Date.now() + 2000;
   let observed = 0;
   const driver: TargetDriver = {
-    kind: 'ios', appId: 'startup', version: '9l.target/5', capabilities: targetCapabilities,
+    kind: 'ios', appId: 'startup', version: '9l.target/6', capabilities: targetCapabilities,
     open: async context => { observed = context.deadlineMs; throw new Error('probe'); },
     reset: async () => {}, close: async () => {}, observeTestId: async () => [],
   };
@@ -59,7 +59,7 @@ for (const [kind, operation, timeoutMs] of [
   test(`${kind} ${operation} rejects timeout ${timeoutMs} before dispatch`, async () => {
     let dispatches = 0;
     const driver: TargetDriver = {
-      kind, appId: 'startup', version: '9l.target/5', capabilities: targetCapabilities,
+      kind, appId: 'startup', version: '9l.target/6', capabilities: targetCapabilities,
       open: async () => { dispatches++; }, reset: async () => { dispatches++; },
       close: async () => {}, observeTestId: async () => [],
     };
@@ -119,7 +119,7 @@ test('a failing assertion with uneven read times ends before its bound and keeps
     return 'wrong';
   };
   const driver: TargetDriver = {
-    kind: 'android', appId: 'assertion', version: '9l.target/5', capabilities: targetCapabilities,
+    kind: 'android', appId: 'assertion', version: '9l.target/6', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => { closed++; },
     observeTestId: async () => [{tap: async () => {}, fill: async () => {}, visible: async () => true, state: async () => true, text: read}],
   };
@@ -135,7 +135,7 @@ test('a failing assertion with uneven read times ends before its bound and keeps
 test('an Android operation deadline closes the driver even when abort settles its transport', async () => {
   let closed = 0;
   const driver: TargetDriver = {
-    kind: 'android', appId: 'assertion', version: '9l.target/5', capabilities: targetCapabilities,
+    kind: 'android', appId: 'assertion', version: '9l.target/6', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => { closed++; },
     observeTestId: async () => [{
       tap: context => new Promise((_, reject) => {
@@ -155,7 +155,7 @@ for (const outcome of ['resolve', 'reject']) {
   test(`an Android transport that ${outcome}s past its deadline cannot beat the timer`, async () => {
     let closed = 0;
     const driver: TargetDriver = {
-      kind: 'android', appId: 'assertion', version: '9l.target/5', capabilities: targetCapabilities,
+      kind: 'android', appId: 'assertion', version: '9l.target/6', capabilities: targetCapabilities,
       open: async () => {}, reset: async () => {}, close: async () => { closed++; },
       observeTestId: async () => [{
         tap: async context => {
@@ -178,7 +178,7 @@ for (const outcome of ['resolve', 'reject']) {
 // Queries answer only when their wait ran to its end, from reads that completed.
 function appWithVisibility(read: (context: TargetContext) => Promise<boolean>, lifetime = 2000) {
   const driver: TargetDriver = {
-    kind: 'android-fake', appId: 'assertion', version: '9l.target/5', capabilities: targetCapabilities,
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/6', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => {},
     observeTestId: async () => [{tap: async () => {}, fill: async () => {}, visible: read, state: async () => true, text: async () => ''}],
   };
@@ -227,7 +227,7 @@ function appWithLateControl(appearAfterMs: number, observations: {count: number}
   const shownAt = Date.now() + appearAfterMs;
   const handle = {tap: async () => { taps.count++; }, fill: async () => {}, visible: async () => true, state: async () => true, text: async () => ''};
   const driver: TargetDriver = {
-    kind: 'android-fake', appId: 'assertion', version: '9l.target/5', capabilities: targetCapabilities,
+    kind: 'android-fake', appId: 'assertion', version: '9l.target/6', capabilities: targetCapabilities,
     open: async () => {}, reset: async () => {}, close: async () => {},
     observeTestId: async () => { observations.count++; return ambiguous ? [handle, handle] : Date.now() >= shownAt ? [handle] : []; },
   };

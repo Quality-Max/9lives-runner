@@ -147,7 +147,10 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
     if (closed || serverFailed || (server && (server.exitCode !== null || server.signalCode !== null))) throw fail('runtime_unavailable');
   };
   const simctl = (args: string[], c: TargetContext) => command('/usr/bin/xcrun', ['simctl', ...args], c, env);
-  const request = async (path: string, c: TargetContext, method = 'GET', body?: unknown): Promise<any> => {
+  // One bounded WebDriver exchange. `error` is the W3C error code the server
+  // answered with, if any; transport failures and oversized or malformed
+  // answers throw.
+  const exchange = async (path: string, c: TargetContext, method = 'GET', body?: unknown): Promise<{value: any; error?: string}> => {
     check(c);
     const signal = AbortSignal.any([c.signal, controller.signal, AbortSignal.timeout(milliseconds(c))]);
     try {
@@ -164,14 +167,42 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
         chunks.push(value);
       }
       const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      if (!response.ok || !data || !Object.hasOwn(data, 'value') || data.value?.error) throw fail('driver_command_failed');
+      if (!data || !Object.hasOwn(data, 'value')) throw fail('invalid_response');
       check(c);
-      return data.value;
+      const error = typeof data.value?.error === 'string' ? data.value.error : !response.ok ? 'unknown error' : undefined;
+      return {value: data.value, ...(error ? {error} : {})};
     } catch { throw fail('transport_or_driver_failed'); }
+  };
+  const request = async (path: string, c: TargetContext, method = 'GET', body?: unknown): Promise<any> => {
+    const answer = await exchange(path, c, method, body);
+    if (answer.error) throw fail('transport_or_driver_failed');
+    return answer.value;
   };
   const endpoint = (path: string, c: TargetContext, method = 'GET', body?: unknown) => {
     if (!session) throw fail('session_unavailable');
     return request(`/session/${session}${path}`, c, method, body);
+  };
+  // The on-screen keyboard, if one is up: the app's keyboard element.
+  const keyboards = async (c: TargetContext): Promise<string[]> => {
+    const values = await endpoint('/elements', c, 'POST', {using: '-ios class chain', value: '**/XCUIElementTypeKeyboard'});
+    if (!Array.isArray(values) || values.length > 8 || values.some(v => typeof v?.[elementKey] !== 'string')) throw fail('invalid_elements');
+    return values.map(v => v[elementKey] as string);
+  };
+  type Rect = {x: number; y: number; width: number; height: number};
+  const rect = async (ref: string, c: TargetContext): Promise<Rect> => {
+    const r = await endpoint(`/element/${ref}/rect`, c);
+    if (![r?.x, r?.y, r?.width, r?.height].every(n => typeof n === 'number' && Number.isFinite(n))) throw fail('invalid_property');
+    return r;
+  };
+  const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  // The text of a system alert in front of the app, or undefined when none
+  // is. Alerts belong to SpringBoard, not to the app's hierarchy.
+  const alertText = async (c: TargetContext): Promise<string | undefined> => {
+    if (!session) throw fail('session_unavailable');
+    const answer = await exchange(`/session/${session}/alert/text`, c);
+    if (answer.error === 'no such alert') return undefined;
+    if (answer.error || typeof answer.value !== 'string') throw fail('transport_or_driver_failed');
+    return answer.value;
   };
   const appCommand = (name: 'terminateApp' | 'activateApp', c: TargetContext) =>
     endpoint('/execute/sync', c, 'POST', {script: `mobile: ${name}`, args: [{bundleId: options.bundleId}]});
@@ -418,12 +449,27 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
       const matches = await find(id, c);
       return matches.map((): TargetHandle => ({
         // Re-query before each operation: a new duplicate cannot inherit an old handle.
-        async tap(c) { await endpoint(`${await element(id, c)}/click`, c, 'POST', {}); },
+        // WebDriverAgent taps the control's hit point even when the keyboard
+        // or a system alert lies over it: the tap lands there and is
+        // reported done. A control it reports as not hittable is checked
+        // for those two covers first, and refused before any tap when one
+        // is in front. Otherwise the tap is unchanged.
+        async tap(c) {
+          const ref = await element(id, c);
+          if (await endpoint(`${ref}/attribute/hittable`, c) === 'false') {
+            const keyboard = (await keyboards(c))[0];
+            if (keyboard && overlaps(await rect(ref.slice('/element/'.length), c), await rect(keyboard, c))) throw fail('covered_by_keyboard');
+            if (await alertText(c) !== undefined) throw fail('covered_by_system_alert');
+          }
+          await endpoint(`${ref}/click`, c, 'POST', {});
+        },
         async fill(value, c) {
           if (typeof value !== 'string' || Buffer.byteLength(value) > 4096) throw fail('invalid_value');
           await endpoint(`${await element(id, c)}/clear`, c, 'POST', {});
           await endpoint(`${await element(id, c)}/value`, c, 'POST', {text: value});
         },
+        // The keyboard's Return key in this field, typed once.
+        async submit(c) { await endpoint(`${await element(id, c)}/value`, c, 'POST', {text: '\n'}); },
         async visible(c) { return bool(await endpoint(`${await element(id, c)}/displayed`, c)); },
         async text(c) {
           const text = await endpoint(`${await element(id, c)}/text`, c);
@@ -435,6 +481,40 @@ export function iosTargetDriver(options: IOSTargetOptions): TargetDriver {
           return bool(await endpoint(`${await element(id, c)}/enabled`, c));
         },
       }));
+    },
+    async keyboardShown(c) { return (await keyboards(c)).length > 0; },
+    // An iPhone keyboard has no key that only closes it, and WebDriverAgent
+    // knows no general way to close one. Its own dismissal is tried (it
+    // succeeds where the keyboard has a hide key, as on iPad); a keyboard
+    // still up afterwards fails as keyboard_not_hidden rather than being
+    // closed through a control of the app.
+    async hideKeyboard(c) {
+      if (!(await keyboards(c)).length) return;
+      await exchange(`/session/${session}/execute/sync`, c, 'POST', {script: 'mobile: hideKeyboard', args: [{}]});
+      for (const end = Math.min(Date.now() + 2000, c.deadlineMs - 250); ;) {
+        if (!(await keyboards(c)).length) return;
+        if (Date.now() >= end) throw fail('keyboard_not_hidden');
+        await delay(200, undefined, {signal: c.signal});
+      }
+    },
+    // Answer the system alert in front of the app (a permission request, a
+    // save-password sheet) with the button the test names. Waits within the
+    // bound for an alert, requires the button among its buttons exactly,
+    // taps it once and waits for the alert to close. Never another button.
+    async answerAlert(button: string, c: TargetContext) {
+      if (typeof button !== 'string' || !button || button.length > 64 || /[\u0000-\u001f]/.test(button)) throw fail('invalid_value');
+      while (await alertText(c) === undefined) {
+        if (Date.now() + 250 >= c.deadlineMs) throw fail('missing_alert');
+        await delay(200, undefined, {signal: c.signal});
+      }
+      const buttons = await endpoint('/execute/sync', c, 'POST', {script: 'mobile: alert', args: [{action: 'getButtons'}]});
+      if (!Array.isArray(buttons) || buttons.length > 16 || buttons.some(b => typeof b !== 'string')) throw fail('invalid_property');
+      if (!buttons.includes(button)) throw fail('missing_alert_button');
+      await endpoint('/execute/sync', c, 'POST', {script: 'mobile: alert', args: [{action: 'accept', buttonLabel: button}]});
+      while (await alertText(c) !== undefined) {
+        if (Date.now() + 250 >= c.deadlineMs) throw fail('alert_not_answered');
+        await delay(200, undefined, {signal: c.signal});
+      }
     },
     // Present a face or finger at the system prompt. The prompt drops a
     // presentation that arrives while it is still animating in, so wait,

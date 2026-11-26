@@ -8,14 +8,15 @@ import {resolve, join} from 'node:path';
 
 const mode = process.env.NINELIVES_IOS_CASE ?? 'healthy';
 const biometric = ['biometric', 'biometric-nomatch', 'biometric-unenrolled'].includes(mode);
-const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : biometric ? 'biometric' : 'healthy';
+const login = ['login', 'login-covered', 'login-hide'].includes(mode);
+const variant = ['defect', 'missing', 'ambiguous', 'label-only'].includes(mode) ? mode : biometric ? 'biometric' : login ? 'login' : 'healthy';
 const fixture = JSON.parse(readFileSync(resolve(__dirname, `../../../.context/ios-fixture/${variant}/build.json`), 'utf8'));
 const wda = JSON.parse(readFileSync(resolve(__dirname, '../../../.context/ios-wda/build.json'), 'utf8'));
 // The smoke names one installed runtime explicitly; nothing selects "latest".
 const os = process.env.NINELIVES_IOS_OS ?? '18.6';
 if (!/^[0-9]{1,3}(\.[0-9]{1,5}){1,2}$/.test(os)) throw new Error('invalid NINELIVES_IOS_OS');
 const stoppedWorker = ['runner-cancel', 'attempt-timeout', 'worker-kill'].includes(mode);
-const facts = {clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '', deviceReady: false, workerPid: 0,
+const facts = {driverReason: '', clickDispatches: 0, started: false, deviceStopped: false, stopReason: '', setupPhase: '', deviceReady: false, workerPid: 0,
   commands: [] as {operation: string; elapsedMs: number; outcome: 'pending' | 'passed' | 'failed'}[]};
 const persistProbe = () => {
   if (process.env.NINELIVES_IOS_PROBE) writeFileSync(process.env.NINELIVES_IOS_PROBE, JSON.stringify(facts));
@@ -160,6 +161,51 @@ test('iOS biometrics: Face ID at the system prompt', async ({app}) => {
     if (typeof reason === 'string' && /^[a-z_]{1,64}$/.test(reason)) facts.stopReason = reason;
     throw error;
   } finally {
+    try { await app.close(); } finally { persistProbe(); }
+  }
+});
+
+// A password login and the screen after it: Return submits the password,
+// the keyboard is read, and a system permission alert is answered with a
+// named button. login-covered leaves the keyboard over a button at the
+// bottom of the screen: the tap must be refused before any click, not land
+// on the keyboard. login-hide asks to hide an iPhone keyboard, which has no
+// key that only closes it: that must fail, not tap a control of the app.
+test('iOS login: submit, keyboard and a system alert', async ({app}) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (/\/element\/[^/]+\/click$/.test(String(input)) && init?.method === 'POST') facts.clickDispatches++;
+    return originalFetch(input, init);
+  };
+  try {
+    await app.open({timeoutMs: 300000});
+    await app.getByTestId('username').fill('ada@example.com');
+    await app.toHaveKeyboard(true);
+    await app.getByTestId('password').fill('correct-horse', {submit: true});
+    await app.getByTestId('home.title').toBeVisible(15000);
+    await app.toHaveKeyboard(false);
+    if (mode === 'login') {
+      await app.getByTestId('notify').tap();
+      await app.answerAlert('Allow', {timeoutMs: 15000});
+      // @9l-outcome notifications-allowed
+      await app.getByTestId('home.status').toHaveText('Notifications on', 10000);
+      return;
+    }
+    // Return keeps this field's keyboard up, as many real forms do.
+    await app.getByTestId('note').fill('x', {submit: true});
+    await app.toHaveKeyboard(true);
+    // Nothing before this point clicks (fill sets the value), so any click
+    // the smoke counts came from the step that must refuse.
+    if (mode === 'login-hide') await app.hideKeyboard();
+    else await app.getByTestId('continue').tap();
+  } catch (error) {
+    const e = error as {reason?: unknown; cause?: {message?: unknown}};
+    if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) facts.stopReason = e.reason;
+    const cause = e.cause?.message;
+    if (typeof cause === 'string' && /^9lives iOS: [a-z_]{1,80}$/.test(cause)) facts.driverReason = cause.slice(12);
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
     try { await app.close(); } finally { persistProbe(); }
   }
 });

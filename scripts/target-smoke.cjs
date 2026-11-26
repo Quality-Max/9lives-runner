@@ -228,6 +228,12 @@ assert.equal(biometric.summary.receipts[0].targetAssertions, 1, 'biometric: the 
 const webBiometric = invoke('biometric-web', {targets: ['web:finance'], grep: 'biometric signs in', file: operations, extra: ['--failure-details']});
 assert.notEqual(webBiometric.code, 0, 'biometric-web: the web has no biometric prompt');
 assert(webBiometric.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'biometric-web: no prompt, a stable reason');
+const alertAnswered = invoke('answer-alert', {targets: ['android-fake:finance'], grep: 'system alert is answered', file: operations});
+assert.equal(alertAnswered.code, 0, 'answer-alert: the named button answers the native alert');
+assert.equal(alertAnswered.summary.receipts[0].targetAssertions, 1, 'answer-alert: the answer is an action, its effect an assertion');
+const webAlert = invoke('answer-alert-web', {targets: ['web:finance'], grep: 'system alert is answered', file: operations, extra: ['--failure-details']});
+assert.notEqual(webAlert.code, 0, 'answer-alert-web: the web has no system alerts');
+assert(webAlert.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'answer-alert-web: a stable reason');
 const webFingerprint = invoke('fingerprint-web', {targets: ['web:finance'], grep: 'fingerprint signs in', file: operations, extra: ['--failure-details']});
 assert.notEqual(webFingerprint.code, 0);
 assert(webFingerprint.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'fingerprint-web: no sensor, a stable reason');

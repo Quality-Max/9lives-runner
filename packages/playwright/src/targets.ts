@@ -9,7 +9,7 @@ export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSe
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
-  'foreground', 'device-serial', 'fingerprint', 'biometric'] as const;
+  'foreground', 'device-serial', 'fingerprint', 'biometric', 'answer-alert'] as const;
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
 export type TargetPoint = {x: number; y: number};
@@ -64,10 +64,14 @@ export interface TargetDriver extends TargetIdentity {
   // stable reason unsupported_operation; it never substitutes another action.
   /** Platform back: Android's Back key, the browser's history. */
   back?(context: TargetContext): Promise<void>;
-  /** Software keyboard visibility; an unreadable state throws. Android only. */
+  /** Software keyboard visibility; an unreadable state throws. Android and iOS. */
   keyboardShown?(context: TargetContext): Promise<boolean>;
-  /** Dismiss the keyboard without changing the input method. Android only. */
+  /** Dismiss the keyboard without changing the input method or acting on
+   * the app. A keyboard that stays up fails. Android and iOS. */
   hideKeyboard?(context: TargetContext): Promise<void>;
+  /** Answer the system alert in front of the app with the named button,
+   * once. No alert within the bound, or no such button, fails. iOS only. */
+  answerAlert?(button: string, context: TargetContext): Promise<void>;
   /** One touch down/up at device coordinates. */
   tapAt?(point: TargetPoint, context: TargetContext): Promise<void>;
   viewport?(context: TargetContext): Promise<TargetSize>;
@@ -386,7 +390,7 @@ export class TargetApp {
     }
   }
 
-  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint' | 'biometric'>(name: K): NonNullable<TargetDriver[K]> {
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint' | 'biometric' | 'answerAlert'>(name: K): NonNullable<TargetDriver[K]> {
     const method = this.driver[name];
     if (typeof method !== 'function') throw stopped('unsupported_operation');
     return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
@@ -394,9 +398,24 @@ export class TargetApp {
 
   /** Platform back: Android's Back key, the browser's history. */
   back(options: TargetOperationOptions = {}) { return this.perform('back', context => this.optional('back')(context), options.timeoutMs); }
-  /** Dismiss the software keyboard, keeping the selected input method. Android only. */
+  /** Dismiss the software keyboard, keeping the selected input method. On
+   * iOS only where the keyboard can close without a control of the app (an
+   * iPad hide key); an iPhone keyboard that stays up fails. */
   hideKeyboard(options: TargetOperationOptions = {}) { return this.perform('hide-keyboard', context => this.optional('hideKeyboard')(context), options.timeoutMs); }
-  /** Android only: assert the software keyboard is shown or hidden. */
+  /** Answer the system alert in front of the app, such as a permission
+   * request or a save-password sheet, with the button named exactly as
+   * shown (`'Allow'`, `'Not Now'`). Waits within the bound for an alert,
+   * taps that button once and waits for the alert to close; never another
+   * button and never an alert the test did not ask for. iOS only; elsewhere
+   * unsupported_operation. Recorded as an executed action; the button text
+   * is not recorded. */
+  answerAlert(button: string, options: TargetOperationOptions = {}) {
+    return this.perform('answer-alert', async context => {
+      if (typeof button !== 'string' || !button || button.length > 64 || /[\u0000-\u001f]/.test(button)) throw stopped('invalid_value');
+      await this.optional('answerAlert')(button, context);
+    }, options.timeoutMs);
+  }
+  /** Assert the software keyboard is shown or hidden. Android and iOS. */
   toHaveKeyboard(visible: boolean, timeoutMs?: number) {
     if (typeof visible !== 'boolean') return this.assertLoop('assert-keyboard', async () => { throw stopped('invalid_value'); }, timeoutMs);
     return this.assertLoop('assert-keyboard', async context => await this.optional('keyboardShown')(context) === visible, timeoutMs);
