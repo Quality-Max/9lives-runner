@@ -109,10 +109,17 @@ async function interrupted(kind, webServer = false) {
       if (process.platform !== 'win32') assert.notEqual(server.group, worker.group, 'webServer exercises a detached process group');
       ownedIds.add(serverPID);
     }
+    // A child names its parent by ID. On Windows IDs are reused, so a process
+    // whose recorded parent ID now belongs to an owned process may be an
+    // unrelated system process (csrss.exe, winlogon.exe were seen) whose real
+    // parent exited long ago. A real child starts after its parent.
+    const byPid = new Map(table.map(item => [item.pid, item]));
+    const childOf = (item, parent) => process.platform !== 'win32'
+      || (!!parent?.started && !!item.started && Date.parse(item.started) >= Date.parse(parent.started));
     for (let changed = true; changed;) {
       changed = false;
       for (const item of table) {
-        if (ownedIds.has(item.parent) && !ownedIds.has(item.pid)) { ownedIds.add(item.pid); changed = true; }
+        if (ownedIds.has(item.parent) && !ownedIds.has(item.pid) && childOf(item, byPid.get(item.parent))) { ownedIds.add(item.pid); changed = true; }
       }
     }
     const owned = table.filter(item => ownedIds.has(item.pid));
