@@ -198,7 +198,8 @@ receipt pass. Errors name the reason (`missing_test_id`, `ambiguous_test_id`,
 the local cause. The exception is a query: `isVisible()` answers false
 without stopping the session. When
 an operation fails by itself, the driver stays open until fixture teardown, so
-Playwright can still capture failure screenshots, traces and error context.
+Playwright can still capture failure screenshots, traces and error context,
+and an opted-in native driver its own failure capture (see below).
 An operation is aborted and fails at its deadline, so a late result never
 succeeds. Cancellation or a concurrent call closes the driver immediately; an
 operation still pending 250 ms after its deadline also closes it to cancel
@@ -240,6 +241,27 @@ attempt and is kept as `targetDiagnostics`; a passed test cannot carry one.
 `observer` classification (`window-gone-element-displayed`) after a failed
 hidden assertion only.
 
+A driver may implement `captureFailure(context)` for an opted-in failure
+capture: the Android driver answers only with `diagnostics:
+{failureCapture: true}`, and on an attached phone only with `onPhone: true`
+as well (see
+[Android](android-driver.md#failure-screenshot-and-view-tree-opt-in)). The
+SDK calls it only from the target fixture, once, after a test that failed (`failed` or
+`timedOut`) ended and before the driver closes, and only when the engine
+set `NINELIVES_FAILURE_CAPTURE_KEPT=1` for the attempt (`--failure-details
+--keep-attachments` on an `android:` target); never after a pass, skip or
+interruption and never once the driver was released. It returns an optional
+PNG `screenshot` and an optional XML `viewTree`; the SDK checks each against
+`failureCaptureLimits` (8 MiB, 2 MiB, at most 10 s and half the test's
+timeout, capped by the attempt deadline), drops what fails a check and
+attaches the rest as the files `9l.failure-screenshot` and
+`9l.failure-view-tree`. A hook that throws or answers late attaches nothing,
+and the test's outcome is unchanged. This is screen content, unlike every
+other record on this page: it crosses the engine bridge only as two counted
+`artifacts` entries, and from a native target's private output only these
+two files are ever retained. The web driver has no such hook: Playwright's own
+`screenshot: 'only-on-failure'` covers web failures. The iOS driver has none.
+
 A `target_setup` frame carries the classification, reason, stage, an optional
 open phase (never with a recheck or a recovery) and, for a declared recovery, its method, press count and whether it restored the
 baseline; nothing else. Go accepts one per stage per attempt from a native
@@ -276,7 +298,9 @@ asserted.
 Existing size limits and closed schemas apply. IDs and enums cross the bridge;
 lookup IDs, fill values, expected/actual text, raw errors, page content and
 attachment bodies do not. Explicit existing opt-ins such as `--failure-details`
-and `--keep-attachments` retain their documented privacy implications.
+and `--keep-attachments` retain their documented privacy implications; with an
+Android driver's `diagnostics: {failureCapture: true}`, those include a failed
+test's screenshot and view hierarchy.
 
 The smoke checks a shared passing scenario, a planted wrong finance result
 that fails the exact-text check, missing/ambiguous controls and their reason

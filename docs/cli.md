@@ -211,7 +211,12 @@
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
   directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
-  128 MiB per attempt; only regular files inside the project). The receipt
+  128 MiB per attempt; only regular files inside the project, with one
+  exception: the two files of an Android driver's opt-in
+  [failure capture](android-driver.md#failure-screenshot-and-view-tree-opt-in)
+  in a native target's private Playwright output, referenced only when
+  copied. Nothing else from that output, which is deleted with the attempt,
+  is referenced or copied). The receipt
   records the request as `keepAttachments`, how many attachment files the
   listed failures reference as `failureAttachments` (inline bodies and files
   outside the project are never referenced) and how many were copied as

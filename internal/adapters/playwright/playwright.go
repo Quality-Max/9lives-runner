@@ -777,7 +777,14 @@ func boundedText(text string, limit int) string {
 // attempt, so retries report the final failure. A test.fail() test that
 // passed is unexpected too; it has no error, so its message says that the
 // expected failure did not happen.
-func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
+func (adapter Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
+	return adapter.FailuresWithin(raw, workDir, nil)
+}
+
+// FailuresWithin is Failures that also reports attachment files under the
+// given directories, such as a native target's private Playwright output,
+// which lies outside the job's working directory.
+func (Adapter) FailuresWithin(raw []byte, workDir string, roots []string) []runner.TestFailure {
 	var parsed failureReport
 	if json.Unmarshal(raw, &parsed) != nil {
 		return nil
@@ -841,7 +848,7 @@ func (Adapter) Failures(raw []byte, workDir string) []runner.TestFailure {
 						if !filepath.IsAbs(path) {
 							path = filepath.Join(workDir, path)
 						}
-						if !attachmentInProject(workDir, path) {
+						if !attachmentInProject(workDir, path) && !attachmentInRoots(roots, path) {
 							continue
 						}
 						reference := runner.TestAttachment{Name: attachment.Name, ContentType: attachment.ContentType, Path: path}
@@ -932,6 +939,15 @@ func attachmentInProject(workDir, path string) bool {
 	}
 	_, ok := withinDirectory(realDir, realPath)
 	return ok
+}
+
+func attachmentInRoots(roots []string, path string) bool {
+	for _, root := range roots {
+		if attachmentInProject(root, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // withinDirectory returns path relative to directory when it is inside it.

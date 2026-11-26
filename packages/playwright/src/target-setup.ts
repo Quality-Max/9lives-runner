@@ -87,3 +87,14 @@ export function validTargetDiagnostic(value: unknown): value is TargetDiagnostic
     (d.viewportWidth === undefined ? d.viewportHeight === undefined : pixel(d.viewportWidth) && pixel(d.viewportHeight) && (d.viewportWidth as number) > 0 && (d.viewportHeight as number) > 0) &&
     windows(d.windowsBefore) && windows(d.windowsAfter) && focus(d.focusBefore) && focus(d.focusAfter);
 }
+
+/** Bounds on a failure capture. A screenshot or view tree over its size is
+ * dropped; the capture as a whole gets at most `ms`, and at most half the
+ * test's own timeout, capped by the attempt deadline. */
+export const failureCaptureLimits = {screenshotBytes: 8 * 1024 * 1024, viewTreeBytes: 2 * 1024 * 1024, ms: 10_000} as const;
+/** The attachment names and content types of a failure capture. The view
+ * tree is text, so a retained copy is redacted like other text evidence. */
+export const failureCaptureAttachments = {
+  screenshot: {name: '9l.failure-screenshot', contentType: 'image/png', file: 'screenshot.png'},
+  viewTree: {name: '9l.failure-view-tree', contentType: 'text/xml', file: 'view-tree.xml'},
+} as const;

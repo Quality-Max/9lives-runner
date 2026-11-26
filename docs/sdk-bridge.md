@@ -154,6 +154,10 @@ opaque ID, coarse kind and `retained: false`; bodies, names and file paths are n
 copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
+An Android driver's opt-in failure capture (`9l.failure-screenshot`,
+`9l.failure-view-tree`) is such a pair of file attachments; the reporter
+accepts it only on a failed native test, once each, and never forwards its
+contents. See [Android](android-driver.md#failure-screenshot-and-view-tree-opt-in).
 
 A failed typed target step (see [targets](targets.md)) also sends its stop
 reason, a `[a-z_]{1,64}` token taken only from the fixture's own

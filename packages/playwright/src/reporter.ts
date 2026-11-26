@@ -4,7 +4,7 @@ import type {Reporter, FullConfig, Suite, TestCase, TestError, TestResult, TestS
 import {capabilities, engineEventsPath, engineIdentity, maxEvents, maxFrameBytes, skipPinKey, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validIOSRuntime, iosRuntimeType} from './ios-runtime';
 import {validAndroidRuntime, androidRuntimeType} from './android-runtime';
-import {validTargetSetup, targetSetupType, validTargetDiagnostic, targetDiagnosticType} from './target-setup';
+import {validTargetSetup, targetSetupType, validTargetDiagnostic, targetDiagnosticType, failureCaptureAttachments} from './target-setup';
 
 function insideAssertion(step: TestStep) {
   for (let ancestor = step.parent; ancestor; ancestor = ancestor.parent) {
@@ -101,6 +101,15 @@ export default class EngineReporter implements Reporter {
     const setups = result.attachments.filter(attachment => attachment.name === '9l.target-setup');
     const stages = setups.map(attachment => { try { return JSON.parse(attachment.body?.toString('utf8') ?? '')?.stage; } catch { return undefined; } });
     if (result.attachments.filter(attachment => attachment.name === '9l.target-diagnostic').length > 1 || setups.length > 2 || (setups.length === 2 && !(stages[0] === 'open' && stages[1] === 'recheck'))) { this.emit('engine_error'); return; }
+    // An opted-in failure capture: on a failed native test only, at most one
+    // file of each kind. Its body never enters the stream; like any other
+    // attachment it is counted below as retained: false.
+    for (const kind of Object.values(failureCaptureAttachments)) {
+      const captured = result.attachments.filter(attachment => attachment.name === kind.name);
+      if (captured.length === 0) continue;
+      if (captured.length > 1 || !this.target || this.target.kind === 'web' || (result.status !== 'failed' && result.status !== 'timedOut') ||
+          captured[0].contentType !== kind.contentType || captured[0].body !== undefined || !captured[0].path) { this.emit('engine_error'); return; }
+    }
     for (const attachment of result.attachments) {
       if (attachment.name === '9l.target-diagnostic') {
         if (!this.target || this.target.kind === 'web' || attachment.contentType !== targetDiagnosticType || !attachment.body || attachment.body.length > 1024) { this.emit('engine_error'); return; }

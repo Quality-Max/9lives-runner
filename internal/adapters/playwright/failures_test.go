@@ -87,6 +87,30 @@ func TestFailuresDoNotFollowSymlinkedDirectoriesOutOfTheProject(t *testing.T) {
 	}
 }
 
+// A native target writes Playwright output to private scratch outside the
+// project. Only FailuresWithin names files there, and only inside the roots
+// it is given.
+func TestFailuresWithinReportsOnlyTheGivenRoots(t *testing.T) {
+	project, scratch, elsewhere := t.TempDir(), t.TempDir(), t.TempDir()
+	captured := filepath.Join(scratch, "attachments", "9l.failure-screenshot-1.png")
+	write(t, captured, "\x89PNG synthetic", 0o600)
+	foreign := filepath.Join(elsewhere, "id_rsa")
+	write(t, foreign, "key", 0o600)
+	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"title": "f.spec.ts", "specs": []any{map[string]any{"title": "t", "tests": []any{map[string]any{"status": "unexpected", "results": []any{
+		map[string]any{"status": "failed", "attachments": []any{
+			map[string]any{"name": "9l.failure-screenshot", "contentType": "image/png", "path": captured},
+			map[string]any{"name": "x", "path": foreign},
+		}},
+	}}}}}}}})
+	if failures := New().Failures(raw, project); len(failures) != 1 || len(failures[0].Attachments) != 0 {
+		t.Fatalf("scratch referenced without being asked: %+v", failures)
+	}
+	failures := New().FailuresWithin(raw, project, []string{scratch})
+	if len(failures) != 1 || len(failures[0].Attachments) != 1 || failures[0].Attachments[0].Path != captured || failures[0].Attachments[0].Bytes == 0 {
+		t.Fatalf("attachments=%+v", failures)
+	}
+}
+
 func TestPageSnapshotReadsTheAriaBlockOfErrorContext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "error-context.md")
 	write(t, path, "# Error details\n\n```\nTimeoutError\n```\n\n# Page snapshot\n\n```yaml\n- button \"Einloggen\" [ref=e2]\n- status\n```\n\n# Test source\n", 0o600)
