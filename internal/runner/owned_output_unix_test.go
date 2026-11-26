@@ -120,6 +120,14 @@ func TestOwnedOutputStopsReadingAWriterThatNeverStops(t *testing.T) {
 	}
 	stop := writeUntilClosed(childEnd.(*os.File))
 	defer stop()
+	// The drain must start while the writer is writing. A writer goroutine
+	// a loaded host had not yet scheduled left the pipe quiet through the
+	// window, and the drain rightly ended complete (#232).
+	for begin := time.Now(); sink.Len() == 0; time.Sleep(5 * time.Millisecond) {
+		if time.Since(begin) > 10*time.Second {
+			t.Fatal("the writer never started")
+		}
+	}
 	result := make(chan error, 1)
 	started := time.Now()
 	go func() { result <- output.drain(context.Background(), 50*time.Millisecond) }()
