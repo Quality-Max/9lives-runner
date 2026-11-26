@@ -33,7 +33,7 @@ function createAnalyzer(ts) {
   // @9l/playwright target assertions (9l.target/6): on a control from
   // app.getByTestId(...), and the app-level keyboard check. Each polls the
   // driver and rejects when the state is not reached, so it is asynchronous.
-  const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState']);
+  const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState', 'toHaveError']);
   const targetAppMatchers = new Set(['toHaveKeyboard']);
   // Page, frame, locator, handle and context methods whose function arguments
   // Playwright serializes and runs in the browser.

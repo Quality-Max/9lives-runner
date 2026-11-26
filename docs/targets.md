@@ -49,7 +49,13 @@ iOS. A driver
 whose handles cannot press it refuses with `unsupported_operation` before
 filling), `toBeVisible(timeoutMs?)`,
 `toHaveText(exactText, timeoutMs?)`,
-`toHaveState('enabled' | 'checked' | 'invalid', boolean, timeoutMs?)`, `toBeHidden(timeoutMs?)`
+`toHaveState('enabled' | 'checked' | 'invalid', boolean, timeoutMs?)`,
+`toHaveError(text, timeoutMs?)` (the validation error the control reports,
+exactly: Android's accessibility error text, such as Flutter's `errorText`
+or `TextView.setError`, and on the web the text of the element an invalid
+control's `aria-errormessage` names, or its constraint-validation message;
+compared by the driver, so only pass or fail is kept, never the text; iOS
+and drivers without the read fail it as `unsupported_state`), `toBeHidden(timeoutMs?)`
 (absent or not displayed), `bounds({timeoutMs}?)` (the control's rectangle
 in device coordinates; the origin may be negative for a control scrolled
 partly out of view) and `scroll('up' | 'down' | 'left' | 'right', {percent, timeoutMs}?)`

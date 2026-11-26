@@ -176,6 +176,16 @@ assert.equal(validation.summary.receipts[0].targetAssertions, 3);
 const noInvalid = invoke('validation-native', {targets: ['android-fake:finance'], grep: 'validation state', file: operations, extra: ['--failure-details']});
 assert.notEqual(noInvalid.code, 0);
 assert(noInvalid.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_state'), 'validation: a handle without the invalid read is unsupported, never another state');
+const errorText = invoke('validation-error', {targets: ['web:finance'], grep: 'validation error', file: operations});
+assert.equal(errorText.code, 0, 'validation-error: the web reads the aria-errormessage text');
+assert.equal(errorText.summary.receipts[0].targetAssertions, 1, 'validation-error: one assertion');
+const wrongError = invoke('wrong-error', {targets: ['web:finance'], grep: 'validation error', file: operations, extra: ['--failure-details']});
+assert.notEqual(wrongError.code, 0, 'wrong-error: another text cannot pass');
+assert(wrongError.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'wrong-error: a plain assertion failure');
+assert(!JSON.stringify(wrongError.summary).includes('Flagged for review'), 'wrong-error: the shown error text is never recorded');
+const noError = invoke('validation-error-native', {targets: ['android-fake:finance'], grep: 'validation error', file: operations, extra: ['--failure-details']});
+assert.notEqual(noError.code, 0);
+assert(noError.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_state'), 'validation-error: a handle without the error read is unsupported');
 // Queries: a control that is absent or not yet shown answers false without
 // ending the session, and the test's later steps still run. They are
 // executed actions, never assertions; ambiguity still fails.

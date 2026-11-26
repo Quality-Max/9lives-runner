@@ -530,6 +530,20 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       if (after !== before || flagged.some(ref => ref !== before)) throw failure('stale_element_reference');
       return flagged.length === 1;
     },
+    // The node's accessibility error text (Flutter's errorText,
+    // TextView.setError), which UiAutomator2 exposes as the hierarchy's
+    // `error` attribute only. Read like content-invalid: bracketed between
+    // two resolutions of the control, compared inside the XPath, so the
+    // text itself never comes back.
+    hasError: async (text: string, c: TargetContext) => {
+      disarm();
+      if (typeof text !== 'string' || !text || Buffer.byteLength(text) > 1024) throw failure('invalid_value');
+      const before = await resolveOne(id, c);
+      const flagged = elements(await endpoint('/elements', c, 'POST', {using: 'xpath', value: `${xpathOf(id)}[@error=${xpathLiteral(text)}]`}));
+      const after = await resolveOne(id, c);
+      if (after !== before || flagged.some(ref => ref !== before)) throw failure('stale_element_reference');
+      return flagged.length === 1;
+    },
     // One supported UiAutomator2 gesture inside the resolved element; the
     // driver reports whether more content exists, which is not retained.
     scroll: async (direction, percent, c) => {

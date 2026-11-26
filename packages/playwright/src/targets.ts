@@ -39,6 +39,12 @@ export interface TargetHandle {
   /** Whether the control reports a validation error. A handle without it
    * fails `toHaveState('invalid', …)` as unsupported_state. */
   invalid?(context: TargetContext): Promise<boolean>;
+  /** Whether the control reports exactly this validation error text: the
+   * accessibility error of a native field, the error message an element
+   * names on the web. The driver compares on its side and answers only
+   * true or false; the text it read is never returned. A handle without it
+   * fails `toHaveError` as unsupported_state. */
+  hasError?(text: string, context: TargetContext): Promise<boolean>;
   /** Press the keyboard's action key in this field, as a user finishing it
    * would: Enter on the web, the input method's done action on Android. A
    * handle without it fails `fill(value, {submit: true})` as
@@ -618,6 +624,18 @@ export class TargetApp {
           return boundedText(actual, 4096) && actual === value;
         }, timeoutMs);
       },
+      /** Passes when the control reports exactly this validation error, such
+       * as a field's "Enter an email address". Compared by the driver; only
+       * the result is kept, never the text. */
+      toHaveError: (text: string, timeoutMs?: number) => {
+        if (!boundedText(text, 1024) || text === '') return assertion('assert-error', async () => { throw stopped('invalid_value'); }, timeoutMs);
+        return assertion('assert-error', async (handle, context) => {
+          if (typeof handle.hasError !== 'function') throw stopped('unsupported_state');
+          const matched: unknown = await handle.hasError(text, context);
+          if (typeof matched !== 'boolean') throw stopped('invalid_property');
+          return matched;
+        }, timeoutMs);
+      },
       toHaveState: (name: TargetState, value: boolean, timeoutMs?: number) => {
         if (!['enabled', 'checked', 'invalid'].includes(name) || typeof value !== 'boolean') return assertion('assert-state', async () => { throw stopped('unsupported_state'); }, timeoutMs);
         return assertion('assert-state', async (handle, context) => {
@@ -676,6 +694,19 @@ function locatorHandle(locator: Locator): TargetHandle {
       const aria = element.getAttribute('aria-invalid');
       return (aria !== null && aria !== '' && aria !== 'false') || element.matches(':invalid');
     }, undefined, {timeout: remaining(context)}),
+    // An invalid element's error: the text of the element its
+    // aria-errormessage names, or the browser's constraint-validation
+    // message. Compared in the page; only the boolean leaves it.
+    hasError: async (text, context) => locator.evaluate((element, expected) => {
+      const aria = element.getAttribute('aria-invalid');
+      const invalid = (aria !== null && aria !== '' && aria !== 'false') || element.matches(':invalid');
+      if (!invalid) return false;
+      const named = element.getAttribute('aria-errormessage');
+      const messages = (named ?? '').split(/\s+/).filter(Boolean).map(id => element.ownerDocument.getElementById(id))
+        .map(node => node?.innerText.trim() ?? '');
+      const validation = 'validationMessage' in element ? String((element as HTMLInputElement).validationMessage) : '';
+      return messages.includes(expected) || validation === expected;
+    }, text, {timeout: remaining(context)}),
     scroll: async (direction, percent, context) => {
       remaining(context);
       await locator.evaluate((element, {direction, percent}) => {

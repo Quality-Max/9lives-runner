@@ -506,6 +506,15 @@ stable per node) and any flagged node is that element; a control that
 vanished, was replaced or became ambiguous in between is a failed read that
 the assertion polls past, never a state. The error text itself is not read.
 
+`toHaveError(text)` checks that text. UiAutomator2 8.7.0 writes a node's
+accessibility error (`AccessibilityNodeInfo.getError()`, which Flutter's
+`errorText` and `TextView.setError` set) as the hierarchy's `error`
+attribute, also not as an element attribute. The read is bracketed the same
+way, with the expected text inside the package-scoped XPath
+(`[@error="…"]`): the comparison happens on the device and only whether the
+control matched comes back, so the text the app shows is never returned to
+the worker or recorded.
+
 Before any application operation the driver reads the keyguard and
 wakefulness markers of `dumpsys window` and `dumpsys power`, filtered on the
 device and kept in memory. A locked phone or a sleeping screen stops the test

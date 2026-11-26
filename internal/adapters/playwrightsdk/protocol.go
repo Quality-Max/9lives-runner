@@ -517,11 +517,11 @@ func outcome(state *testState) string {
 // such as bounds, viewport, query-visible, query-text and foreground are actions:
 // executed, never assertions.
 var targetActions = []string{"open", "reset", "tap", "fill", "back", "hide-keyboard", "scroll", "tap-at", "bounds", "viewport", "terminate", "activate", "screen-digest", "query-visible", "query-text", "foreground", "fingerprint", "biometric", "answer-alert"}
-var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard"}
+var targetAssertions = []string{"assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-keyboard", "assert-error"}
 
 // targetControlOperations address one control by test ID and may name it;
 // targetControl is the identifier shape a named control has.
-var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "query-text", "assert-visible", "assert-hidden", "assert-text", "assert-state"}
+var targetControlOperations = []string{"tap", "fill", "scroll", "bounds", "query-visible", "query-text", "assert-visible", "assert-hidden", "assert-text", "assert-state", "assert-error"}
 var targetControl = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // Capabilities is the exact capability list a hello frame must carry. The
