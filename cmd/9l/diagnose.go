@@ -70,6 +70,13 @@ func diagnoseCommand(args []string, out, errOut io.Writer) int {
 	}
 	config := jev.Config{Enabled: *useJev, Model: *model, Images: *images}
 	if *useJev {
+		// The Jev credential stays in the 9l process, never in a test process.
+		for _, name := range passEnv {
+			if strings.EqualFold(name, jev.CredentialName) {
+				fmt.Fprintln(errOut, "9l: diagnose --jev keeps "+jev.CredentialName+" in the 9l process; do not forward it with --pass-env; no test was run")
+				return 2
+			}
+		}
 		preflight, err := jev.CheckConfig(config)
 		if err != nil || preflight.Status != "configured" {
 			fmt.Fprintln(errOut, "9l: diagnose --jev needs a valid model and "+jev.CredentialName+" in this process; no test was run")
@@ -105,8 +112,10 @@ func diagnoseCommand(args []string, out, errOut io.Writer) int {
 }
 
 // diagnoseSpec runs the spec once and diagnoses a failure immediately, while
-// its evidence is still fresh. It returns 0 when the test passed, 1 when it
-// failed (diagnosed or not) and 2 when the run did not complete.
+// its evidence is still fresh. As with 9l run, it returns 0 when the test
+// passed, 1 when it failed (diagnosed or not), 2 when the run could not be
+// planned or started and 3 when it ended incomplete (timed out, canceled or
+// without valid evidence).
 func diagnoseSpec(ctx context.Context, spec string, source []byte, config jev.Config, timeout time.Duration, receipts string, passEnv []string) (diagnoseReport, int) {
 	report := diagnoseReport{Spec: spec}
 	var nonce [6]byte
@@ -125,22 +134,28 @@ func diagnoseSpec(ctx context.Context, spec string, source []byte, config jev.Co
 	receipt := summary.Receipts[0]
 	report.Outcome, report.Receipt = string(receipt.Status), receipt.ReceiptPath
 	if receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0 {
-		return report, 0
+		return report, exitPassed
+	}
+	// Only a failed test is a failure. A run that timed out, was canceled or
+	// left no valid evidence is incomplete, never a failing test.
+	code := exitFailed
+	if receipt.Status != runner.StatusFailed {
+		code = exitIncomplete
 	}
 	sourceSHA := hex.EncodeToString(sha256Of(source))
 	// Evidence is bound to the exact source that ran.
 	if current, err := readSource(spec); err != nil || hex.EncodeToString(sha256Of(current)) != sourceSHA {
-		d := jevassist.Diagnosis{Version: jevassist.DiagnosisVersion, Status: "error", Disposition: jevassist.Unresolved, Reason: "source_changed", Facts: jevassist.Facts{Outcome: "failed"}, Limitations: []string{"the spec changed during the run"}}
+		d := jevassist.Diagnosis{Version: jevassist.DiagnosisVersion, Status: "error", Disposition: jevassist.Unresolved, Reason: "source_changed", Facts: jevassist.Facts{Outcome: string(receipt.Status)}, Limitations: []string{"the spec changed during the run"}}
 		report.Diagnosis = &d
-		return report, 1
+		return report, code
 	}
 	if len(receipt.Failures) == 0 {
-		return report, 1 // timed out or canceled before a test failed: nothing to diagnose
+		return report, code // no test failure was recorded: nothing to diagnose
 	}
 	revision, limitations := sourceRevision(spec, sourceSHA)
 	evidence, more, err := jevassist.FromReceipt(receipt, revision, sourceSHA)
 	if err != nil {
-		return report, 1
+		return report, code
 	}
 	var decider jevassist.Decider
 	if config.Enabled {
@@ -160,17 +175,21 @@ func diagnoseSpec(ctx context.Context, spec string, source []byte, config jev.Co
 		d = jevassist.Diagnose(ctx, decider, evidence, config.Images, append(limitations, more...))
 	}
 	d.Facts.ReceiptPath = receipt.ReceiptPath
-	report.Diagnosis = &d
-	if raw, err := json.MarshalIndent(d, "", "  "); err == nil {
-		_ = os.WriteFile(filepath.Join(dir, "diagnosis.json"), append(raw, '\n'), 0o600)
+	raw, err := json.MarshalIndent(d, "", "  ")
+	if err == nil {
+		err = os.WriteFile(filepath.Join(dir, "diagnosis.json"), append(raw, '\n'), 0o600)
 	}
-	return report, 1
+	if err != nil {
+		d.Limitations = append(d.Limitations, "diagnosis.json could not be saved beside the receipts")
+	}
+	report.Diagnosis = &d
+	return report, code
 }
 
 // sourceRevision is the checkout's commit, or the source hash outside git.
 func sourceRevision(spec, sourceSHA string) (string, []string) {
 	cmd := exec.Command("git", "-C", filepath.Dir(spec), "rev-parse", "HEAD")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(withoutEnv(os.Environ(), jev.CredentialName), "GIT_TERMINAL_PROMPT=0")
 	if raw, err := cmd.Output(); err == nil {
 		if revision := strings.TrimSpace(string(raw)); len(revision) == 40 || len(revision) == 64 {
 			return revision, nil
@@ -181,15 +200,31 @@ func sourceRevision(spec, sourceSHA string) (string, []string) {
 
 func sha256Of(raw []byte) []byte { sum := sha256.Sum256(raw); return sum[:] }
 
+// withoutEnv drops a variable from an environment list. Names compare
+// case-insensitively, as Windows treats them.
+func withoutEnv(env []string, name string) []string {
+	kept := make([]string, 0, len(env))
+	for _, entry := range env {
+		if key, _, _ := strings.Cut(entry, "="); !strings.EqualFold(key, name) {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
 func printDiagnosis(w io.Writer, report diagnoseReport) error {
 	var b strings.Builder
 	if report.Diagnosis == nil {
-		fmt.Fprintf(&b, "9l diagnose: %s %s; nothing to diagnose.\n", report.Spec, report.Outcome)
+		outcome := report.Outcome
+		if outcome != string(runner.StatusPassed) && outcome != string(runner.StatusFailed) {
+			outcome = "did not complete (" + outcome + ")"
+		}
+		fmt.Fprintf(&b, "9l diagnose: %s %s; nothing to diagnose.\n", report.Spec, outcome)
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
 	d := report.Diagnosis
-	fmt.Fprintf(&b, "9l diagnose: %s failed", firstNonEmptyString(d.Facts.Test, report.Spec))
+	fmt.Fprintf(&b, "9l diagnose: %s %s", firstNonEmptyString(d.Facts.Test, report.Spec), report.Outcome)
 	if d.Facts.FailureClass != "" {
 		fmt.Fprintf(&b, " (%s)", d.Facts.FailureClass)
 	}
@@ -210,7 +245,7 @@ func printDiagnosis(w io.Writer, report diagnoseReport) error {
 	for _, limitation := range d.Limitations {
 		b.WriteString("Limit: " + limitation + "\n")
 	}
-	fmt.Fprintf(&b, "Result unchanged: failed. Receipt: %s\n", report.Receipt)
+	fmt.Fprintf(&b, "Result unchanged: %s. Receipt: %s\n", report.Outcome, report.Receipt)
 	_, err := io.WriteString(w, b.String())
 	return err
 }
