@@ -12,21 +12,23 @@ SDK versions.
   runner and, when a test fails, reports the observed facts from the
   receipt: the runner's failure class, the deterministic class, the failed
   locator and hashes of the attached accessible snapshot and screenshot.
-  With `--jev` it also makes one Jev request while the evidence is under a
-  minute old, bound to that attempt and the exact source that ran, and maps
+  With `--jev` it also makes one Jev request within a minute of the run
+  ending, bound to that attempt and the exact source that ran, and maps
   the typed answers to an engine-owned disposition: `eligible-for-repair`,
   `investigate-test`, `investigate-app`, `require-new-observation` or
-  `unresolved`. An assertion failure is never eligible for repair. Only the
+  `unresolved`. An assertion failure is never eligible for repair, and
+  without a snapshot or an accepted screenshot nothing is asked. Only the
   error message and a redacted accessible snapshot are sent;
   `--jev-images synthetic` also sends the failure screenshot, for screens
   that show test data only. The diagnosis never changes the receipt, retries
   or acts on the application. It is saved as `diagnosis.json` beside the
   run's receipts, under `.9lives/diagnoses/` unless `--receipt-dir` names
-  another directory. The command exits 0 when the test passed, 1 when it did
-  not and 2 for a usage error or a run that could not complete; `--jev`
-  without `TYPESAFE_API_KEY` refuses before running anything. Diagnosis
-  quality is not measured: the tests use a scripted Jev and establish wiring
-  and policy only. See [Jev](docs/jev.md).
+  another directory. Like `9l run`, the command exits 0 when the test
+  passed, 1 when a test failed, 2 for a usage error and 3 when the run did
+  not complete. `--jev` refuses before running anything without
+  `TYPESAFE_API_KEY`, or when `--pass-env` would forward it to the test
+  process. Diagnosis quality is not measured: the tests use a scripted Jev
+  and establish wiring and policy only. See [Jev](docs/jev.md).
 - `9l doctor --jev [--jev-model MODEL] [--jev-images off|synthetic|masked]`
   checks the optional Jev configuration locally. It reports the status,
   model, image policy and whether the credential is present, never its
