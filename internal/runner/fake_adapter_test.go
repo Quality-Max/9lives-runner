@@ -104,11 +104,14 @@ func TestFakeAdapterTimeoutAndCancellation(t *testing.T) {
 			} else {
 				defer cancel()
 			}
+			// The child would sleep a minute: ending well inside that proves
+			// it was terminated, without tying the test to how fast a loaded
+			// host starts a process and writes receipts (#232).
 			started := time.Now()
-			plan := Plan{Version: 1, RunID: "run-" + test.name, Jobs: []Job{fakeJob("job-001", "sleep", 5000)}}
+			plan := Plan{Version: 1, RunID: "run-" + test.name, Jobs: []Job{fakeJob("job-001", "sleep", 60000)}}
 			summary, _ := Execute(ctx, plan, ExecuteOptions{Workers: 1, Timeout: test.timeout, ReceiptDir: t.TempDir(), Adapters: []Adapter{fakeAdapter{}}})
-			if time.Since(started) > time.Second {
-				t.Fatal("cancellation did not terminate child promptly")
+			if elapsed := time.Since(started); elapsed > 15*time.Second {
+				t.Fatalf("cancellation did not terminate the child: the run took %s", elapsed)
 			}
 			want := StatusCanceled
 			if test.kind == "timeout" {
@@ -339,13 +342,15 @@ func TestSharedRunDeadlineIsClassified(t *testing.T) {
 
 func TestPersistedStatusResultAndExternalCancellation(t *testing.T) {
 	root := t.TempDir()
-	plan := Plan{Version: 1, RunID: "run-external-cancel", Jobs: []Job{fakeJob("job-001", "sleep", 5000)}}
+	// A minute-long child and generous bounds: only a cancellation that
+	// reaches the child can end the run in time, however slow the host (#232).
+	plan := Plan{Version: 1, RunID: "run-external-cancel", Jobs: []Job{fakeJob("job-001", "sleep", 60000)}}
 	done := make(chan RunSummary, 1)
 	go func() {
-		summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 10 * time.Second, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
+		summary, _ := Execute(context.Background(), plan, ExecuteOptions{Workers: 1, Timeout: 2 * time.Minute, ReceiptDir: root, Adapters: []Adapter{fakeAdapter{}}})
 		done <- summary
 	}()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for {
 		status, err := LoadStatus(root, plan.RunID)
 		if err == nil && status.State == "running" {
@@ -364,7 +369,7 @@ func TestPersistedStatusResultAndExternalCancellation(t *testing.T) {
 		if summary.Canceled != 1 || summary.Complete {
 			t.Fatalf("unexpected canceled result: %#v", summary)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("external cancellation was not observed promptly")
 	}
 	status, err := LoadStatus(root, plan.RunID)
