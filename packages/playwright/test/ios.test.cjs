@@ -82,6 +82,7 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'9l-ios-transport-'));
   const original = {execFile:cp.execFile,spawn:cp.spawn,fetch:global.fetch,kill:process.kill,platform:Object.getOwnPropertyDescriptor(process,'platform'),scratch:process.env.NINELIVES_TARGET_SCRATCH_DIR};
   const commands=[], requests=[], kills=[];
+  let keyboard=0, hittable='true', alert=false, alertSticks=false, ipad=false, elementRect={x:30,y:712,width:300,height:50}, values=[];
   let bio=false, grant='2', screens=['a','b','b'], screenCalls=0, grantSessions=[];
   let owned, staged, installedApp, tamper=false, bundleVersion='1', elements=1, hold=false, clicks=0, foreign=false, architectures='arm64 x86_64', shutdownFails=false, deleteFails=false, inventoryFails=false, createOutput, wdaBundle='com.facebook.WebDriverAgentRunner.xctrunner';
   const udid='12345678-1234-1234-1234-123456789abc';
@@ -161,6 +162,25 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
       else if(pathname.endsWith('/session')) value={sessionId:'session-1',capabilities:{udid:foreign?'foreign':udid,platformName:'iOS'}};
       else if(pathname.endsWith('/window/rect')) value={x:0,y:0,width:390,height:844};
       else if(pathname.endsWith('/window/size')) return new Response(JSON.stringify({value:{error:'unknown command'}}),{status:404});
+      else if(pathname.endsWith('/elements')&&body.using==='-ios class chain') {
+        assert.equal(body.value,'**/XCUIElementTypeKeyboard');
+        value=Array.from({length:keyboard},(_,i)=>({'element-6066-11e4-a52e-4f735466cecf':`keyboard-${i}`}));
+      }
+      else if(pathname.endsWith('/attribute/hittable')) value=hittable;
+      else if(pathname.endsWith('/rect')) value=pathname.includes('/keyboard-')?{x:0,y:561,width:393,height:233}:elementRect;
+      else if(pathname.endsWith('/alert/text')) {
+        if(!alert) return new Response(JSON.stringify({value:{error:'no such alert',message:'none'}}),{status:404});
+        value='“Finance” Would Like to Send You Notifications';
+      }
+      else if(pathname.endsWith('/execute/sync')&&body.script==='mobile: alert') {
+        if(body.args[0].action==='getButtons') value=['Don’t Allow','Allow'];
+        else {assert.deepEqual(body.args[0],{action:'accept',buttonLabel:'Allow'});if(!alertSticks) alert=false;}
+      }
+      else if(pathname.endsWith('/execute/sync')&&body.script==='mobile: hideKeyboard') {
+        if(!ipad) return new Response(JSON.stringify({value:{error:'invalid element state',message:'Did not know how to dismiss the keyboard'}}),{status:500});
+        keyboard=0;
+      }
+      else if(/\/element\/[^/]+\/value$/.test(pathname)) values.push(body.text);
       else if(pathname.endsWith('/elements')) {
         assert.match(body.value,/^name == "[a-z]+" AND label != "[a-z]+"$/);
         value=Array.from({length:elements},(_,i)=>({'element-6066-11e4-a52e-4f735466cecf':`element-${i}`}));
@@ -274,6 +294,33 @@ test('owned iOS transport checks build/session identity, rejects ambiguous actio
     await driver.close();fs.rmSync(link);assert.equal(commands.some(args=>args[1]==='create'),false);
     assert.deepEqual(records(),[]);
     assert.throws(()=>iosTargetDriver({...opts,wdaProducts:'relative/Products'}),/invalid_options/);
+    // Keyboard and system alerts: Return submits once; the keyboard is read
+    // from the app's hierarchy; an iPhone keyboard that cannot be closed
+    // fails instead of being closed through the app; a tap under the
+    // keyboard or a system alert is refused before any click; an alert is
+    // answered only with a button it offers, and must then close.
+    hold=false;driver=iosTargetDriver(opts);await driver.open(c());
+    const [field]=await driver.observeTestId('send',c());
+    values=[];await field.submit(c());assert.deepEqual(values,['\n']);
+    keyboard=0;assert.equal(await driver.keyboardShown(c()),false);
+    keyboard=1;assert.equal(await driver.keyboardShown(c()),true);
+    const short=()=>({signal:new AbortController().signal,deadlineMs:Date.now()+3000});
+    await assert.rejects(driver.hideKeyboard(short()),/keyboard_not_hidden/);
+    ipad=true;await driver.hideKeyboard(c());assert.equal(keyboard,0);ipad=false;
+    await driver.hideKeyboard(c());
+    clicks=0;keyboard=1;hittable='false';
+    await assert.rejects(field.tap(c()),/covered_by_keyboard/);assert.equal(clicks,0);
+    keyboard=0;alert=true;
+    await assert.rejects(field.tap(c()),/covered_by_system_alert/);assert.equal(clicks,0);
+    // Not hittable for another reason: the tap is unchanged.
+    alert=false;await field.tap(c());assert.equal(clicks,1);
+    hittable='true';keyboard=1;elementRect={x:30,y:100,width:300,height:50};await field.tap(c());assert.equal(clicks,2);keyboard=0;
+    alert=true;await driver.answerAlert('Allow',c());assert.equal(alert,false);
+    alert=true;await assert.rejects(driver.answerAlert('Allow now',c()),/missing_alert_button/);
+    alertSticks=true;await assert.rejects(driver.answerAlert('Allow',short()),/alert_not_answered/);alertSticks=false;alert=false;
+    await assert.rejects(driver.answerAlert('Allow',short()),/missing_alert/);
+    for (const bad of ['', 'x'.repeat(65), 'Allow\n', 7]) await assert.rejects(driver.answerAlert(bad,c()),/invalid_value/);
+    await driver.close();assert.equal(owned,undefined);
     // Biometrics: enrollment and Face ID permission are set on the owned
     // device after install and before the session launches the app, and
     // again after reset reinstalls it; the face is presented once the

@@ -147,6 +147,15 @@ test('the foreground window is read, not acted on', async ({app}) => {
   await app.getByTestId('button').toBeVisible();
 });
 
+// A system alert is answered with the button the test names; one the alert
+// does not offer fails, and the web has no system alerts.
+test('a system alert is answered on the native target only', async ({app}) => {
+  await app.open();
+  await app.answerAlert('Allow');
+  // @9l-outcome alert-answered
+  await app.getByTestId('status').toHaveText('notifications on');
+});
+
 // A biometric is presented at a native prompt; the web has none and refuses
 // it with the same stable reason. A face that is not enrolled signs nobody in.
 test('a biometric signs in on the native target only', async ({app}) => {
