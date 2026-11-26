@@ -80,6 +80,26 @@ inspection and reproduction tools over MCP stdio. See the
 [MCP server](docs/mcp.md) and [agent setup](docs/agent-setup.md) for Codex,
 Claude and the optional [QA skill](skills/9lives-qa/SKILL.md).
 
+Prompts that hold the agent to evidence:
+
+```text
+Use the 9lives MCP tools to write a Playwright test for {behavior} from
+{acceptance criteria}. Build locators from inspect_page {url}, map every
+criterion to an expect() assertion, resolve every assess_test concern, then
+run_test it. Report the status, receipt path and any criterion left unchecked.
+It is not done unless run_test returned passed.
+```
+
+```text
+{spec} is failing. run_test it and show me the failure class. If an assertion
+failed, stop and show me expected versus actual; do not change the assertion.
+If a locator broke, run heal_test without apply and show me the diff. Do not
+add retries, waits or skips.
+```
+
+More for reviews, bug-fix confirmation and finding triage are in
+[agent prompts](docs/agent-prompts.md).
+
 ## Evidence
 
 An [independent field report](docs/reviews/field-report-2026-10-09.md) on CLI
