@@ -4,7 +4,18 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
-## Unreleased
+## 0.7.3 — 2026-11-26
+
+A patch on the 0.7.x line. iOS gains keyboard handling and answering system
+alerts, target controls gain `toHaveError`, and Android can attach an opt-in
+failure screenshot and view tree. `9l assess --screens` checks target tests'
+test IDs against saved `9l inspect` screens (policy `assessment-source-v18`),
+and `9l run --repeat` measures a job's pass rate without retrying a run. The
+new `answer-alert` action and `assert-error` assertion make the shared target
+contract `9l.target/6`; receipt, run result and run status stay version 2.
+Update the CLI and `@9l/playwright` together: a target run that mixes 0.7.2
+or earlier (`9l.target/5`) with 0.7.3 is rejected when its evidence is
+validated after the run, so it ends incomplete, never green.
 
 ### Added
 
@@ -26,9 +37,10 @@ SDK versions.
   only references them. The names `9l.failure-screenshot` and
   `9l.failure-view-tree` are now reserved: the engine reporter rejects them
   on a web target, on a test that did not fail, twice or as inline bodies.
-  The `failure-capture` emulator case qualified once on the documented API
-  35 emulator. The web keeps using Playwright's
-  `screenshot: 'only-on-failure'`; iOS is unchanged (#271).
+  The `failure-capture` emulator case qualified in three of three runs on
+  the documented API 35 emulator; an attached phone is not qualified. The
+  web keeps using Playwright's `screenshot: 'only-on-failure'`; iOS is
+  unchanged (#271).
 - iOS keyboard and system alerts (experimental). `fill(value, {submit: true})`
   presses Return in the field, `toHaveKeyboard()` reads the keyboard, and
   `hideKeyboard()` closes a keyboard that has a hide key (iPad); an iPhone
@@ -40,7 +52,6 @@ SDK versions.
   on the iOS 18.6 iPhone 16 Simulator with the `login`, `login-covered` and
   `login-hide` smoke cases; the save-password sheet itself was not
   reproduced (#292).
-
 - `9l assess --screens <file|glob>` (and `screens` on the MCP `assess_test`
   tool) checks the literal test IDs target tests pass to `app.getByTestId`
   against saved `9l inspect` results: an ID no screen holds is
@@ -49,7 +60,6 @@ SDK versions.
   names each screen by path and SHA-256. `9l inspect` JSON gains `testIds`,
   the count of every test ID on the window, interactive or not. Policy
   `assessment-source-v18`, analyzer helper version 15 (#316).
-
 - `9l run --repeat <n> --deadline <d> [--label <name>]` measures how often a
   job passes: n complete runs one after another, each with its own run ID
   and receipts, and an aggregate with the pass rate, each member's outcome
@@ -59,7 +69,6 @@ SDK versions.
   aggregate is `passed` only when every member ran and passed. It is a new
   machine-readable output, `runRepeat` version 1, with a published schema
   (#214).
-
 - `toHaveError(text, timeoutMs?)` on a target control asserts the
   validation error it reports, exactly: on Android the field's
   accessibility error (Flutter's `errorText`, `TextView.setError`), which
@@ -85,7 +94,8 @@ SDK versions.
 ### Changed
 
 - The shared target contract is `9l.target/6`, for the new `answer-alert`
-  action. Update the CLI and `@9l/playwright` together.
+  action and `assert-error` assertion. Update the CLI and `@9l/playwright`
+  together.
 
 ## 0.7.2 — 2026-11-26
 

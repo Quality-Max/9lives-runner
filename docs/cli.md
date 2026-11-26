@@ -80,7 +80,7 @@
   `N test(s) passed only on a Playwright retry inside this attempt` under the
   job, so a flaky pass is not read as a clean one. Target jobs (`--target`)
   already run without retries and refuse `--retries`.
-- Flake measurement: `--repeat <n>` (2–1000) runs the same job that many
+- Flake measurement: `--repeat <n>` (1–1000) runs the same job that many
   times, one complete run after another, and reports how often it passed.
   Each member is an ordinary run with its own run ID, result and receipts.
   The batch needs `--deadline`, which bounds it as a whole; each member gets
