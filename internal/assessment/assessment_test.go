@@ -1189,7 +1189,7 @@ func TestAssessChecksTestIDsAgainstInspectedScreens(t *testing.T) {
 	if strings.Join(got, " ") != "suspected/repeated-test-id@6 informational/unobserved-test-id@8" || report.Policy != "assessment-source-v18" {
 		t.Fatalf("screen findings %q policy %s", strings.Join(got, " "), report.Policy)
 	}
-	if len(report.Screens) != 2 || report.Screens[0].Path != home || report.Screens[0].TestIDs != 3 || report.Screens[1].Platform != "ios" || len(report.Screens[0].SHA256) != 64 {
+	if len(report.Screens) != 2 || report.Screens[0].Path != filepath.ToSlash(home) || report.Screens[0].TestIDs != 3 || report.Screens[1].Platform != "ios" || len(report.Screens[0].SHA256) != 64 {
 		t.Fatalf("screen evidence %+v", report.Screens)
 	}
 	if report.Tests[0].Dimensions["engineeringQuality"] != "concern" {

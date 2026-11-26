@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -495,7 +496,7 @@ func TestAssessScreensChecksTestIDsAndNamesTheScreens(t *testing.T) {
 	}
 	stdout.Reset()
 	if code := assessCommand([]string{dir, "--screens", filepath.Join(screens, "home.json")}, &stdout, &stderr); code != 0 ||
-		!strings.Contains(stdout.String(), `Screen "`+filepath.Join(screens, "home.json")+`": android, 1 test IDs, sha256 `) || !strings.Contains(stdout.String(), "screen-test-id") {
+		!strings.Contains(stdout.String(), "Screen "+strconv.Quote(filepath.ToSlash(filepath.Join(screens, "home.json")))+": android, 1 test IDs, sha256 ") || !strings.Contains(stdout.String(), "screen-test-id") {
 		t.Fatalf("suite text: %s", stdout.String())
 	}
 	for _, c := range []struct {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 )
@@ -23,6 +24,7 @@ type screen struct {
 
 // ScreenEvidence names one inspected screen a report was checked against.
 type ScreenEvidence struct {
+	// Path is the screen as given, with forward slashes, as suite file paths are.
 	Path     string   `json:"path"`
 	SHA256   string   `json:"sha256"`
 	Platform string   `json:"platform"`
@@ -89,7 +91,7 @@ func LoadScreens(paths []string, read func(string, int64) ([]byte, error)) (*Scr
 			apps = []string{}
 		}
 		s.screens = append(s.screens, screen{
-			evidence: ScreenEvidence{Path: path, SHA256: digest(data), Platform: raw.Platform, Apps: apps, TestIDs: len(raw.TestIDs), TestIDsTruncated: raw.TestIDsTruncated},
+			evidence: ScreenEvidence{Path: filepath.ToSlash(path), SHA256: digest(data), Platform: raw.Platform, Apps: apps, TestIDs: len(raw.TestIDs), TestIDsTruncated: raw.TestIDsTruncated},
 			ids:      raw.TestIDs,
 		})
 	}
