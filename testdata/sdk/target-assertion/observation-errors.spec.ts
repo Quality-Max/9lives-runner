@@ -10,14 +10,18 @@ function session(read: () => Promise<string>, absent = false) {
       state: async () => true, text: read,
     }],
   };
-  return new TargetApp(driver, driver, {deadlineMs: Date.now() + 2000});
+  // The session's deadline is far past every assertion bound here, so a
+  // loaded host reaching it first cannot turn a result into `deadline`.
+  return new TargetApp(driver, driver, {deadlineMs: Date.now() + 60_000});
 }
 
 test('unavailable reads cannot claim a completed business mismatch', async () => {
   let reads = 0;
   const app = session(async () => { reads++; throw new Error('synthetic unavailable read'); });
   try {
-    await expect(app.getByTestId('receipt').toHaveText('wanted', 100)).rejects.toThrow('operation_failed');
+    // Every read fails at once, so the poll runs to its bound: 2 s leaves
+    // room for a stalled read before the bound ends it as a timeout.
+    await expect(app.getByTestId('receipt').toHaveText('wanted', 2000)).rejects.toThrow('operation_failed');
     expect(reads).toBeGreaterThan(1);
   } finally { await app.close(); }
 });
