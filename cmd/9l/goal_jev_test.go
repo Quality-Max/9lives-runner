@@ -63,7 +63,8 @@ func (o *observingJev) Decide(_ context.Context, b jev.Binding, obs jev.Observat
 	}
 	probabilities[choice] = 1
 	confidence := .95
-	return jev.Result{Record: jev.Record{Version: jev.Version, Binding: b, Status: "answered"}, Answers: map[string]jev.Answer{"next": {Type: "choice", Choice: choice, Confidence: &confidence, Probabilities: probabilities}}}, nil
+	// Like the real client: one request per answered call, and the model.
+	return jev.Result{Record: jev.Record{Version: jev.Version, Binding: b, Status: "answered", RequestCount: 1, Model: "jev-1.14.0"}, Answers: map[string]jev.Answer{"next": {Type: "choice", Choice: choice, Confidence: &confidence, Probabilities: probabilities}}}, nil
 }
 
 func TestRunSDKGoalWithJevKeepsIndependentAssertions(t *testing.T) {
@@ -117,6 +118,17 @@ func TestRunSDKGoalWithJevKeepsIndependentAssertions(t *testing.T) {
 			}
 			if goal.Status != "completed" || goal.Provider != "jev" || !strings.Contains(strings.Join(actions, ","), "fill,click") || bound.AttemptID != summary.Receipts[0].AttemptID {
 				t.Fatalf("goal %s by %s, actions %v, bound %+v", goal.Status, goal.Provider, actions, bound)
+			}
+			// The receipt counts exactly the Jev requests that were answered.
+			requests := 0
+			for _, d := range goal.Decisions {
+				if d.Requests == nil || d.Model != "jev-1.14.0" {
+					t.Fatalf("decision %s did not record its Jev requests and model: %+v", d.ID, d)
+				}
+				requests += *d.Requests
+			}
+			if requests != fake.asked {
+				t.Fatalf("the receipt counts %d Jev requests; %d were answered", requests, fake.asked)
 			}
 			wantStatus := runner.StatusPassed
 			if tc.defect {

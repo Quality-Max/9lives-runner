@@ -36,12 +36,17 @@ try {
   emit('run-status', ['status', passed.runId, '--receipt-dir', receipts]);
   const failed = emit('run-result', ['run', 'testdata/sdk/tests/goal-mixed-failure.spec.ts', '--sdk', '--receipt-dir', receipts], 1);
   emit('run-result', ['run', 'testdata/sdk/tests/goal-start-failure.spec.ts', '--sdk', '--receipt-dir', receipts], 3);
+  // A scripted goal records real decisions. A script sends no provider
+  // request, so its decisions carry no request count or model.
+  const goal = emit('run-result', ['run', 'testdata/sdk/tests/goal.spec.ts', '--sdk', '--goal-script', 'testdata/sdk/goal-script.json', '--receipt-dir', receipts]);
+  const decision = document => document.receipts[0].goals[0].decisions[0];
+  assert.ok(decision(goal) && !('requests' in decision(goal)) && !('model' in decision(goal)));
   emit('assess', ['assess', 'testdata/sdk/tests/checkout.spec.ts']);
   emit('assess-suite', ['assess', 'testdata/sdk/tests/checkout.spec.ts', 'testdata/sdk/tests/defect.spec.ts']);
   // A receipt that did not pass always carries its metadata-only failure summary.
   assert.equal(passed.receipts[0].failureSummary, undefined);
   assert.equal(typeof failed.receipts[0].failureSummary?.stop, 'string');
-  for (const receipt of [...passed.receipts, ...failed.receipts]) {
+  for (const receipt of [...passed.receipts, ...failed.receipts, ...goal.receipts]) {
     samples.push({schema: 'receipt', document: JSON.parse(fs.readFileSync(receipt.receiptPath, 'utf8')), valid: true});
   }
   const events = fs.readFileSync(path.join(receipts, passed.runId, 'events.jsonl'), 'utf8').trim().split('\n');
@@ -59,10 +64,21 @@ try {
     mutate(document);
     samples.push({schema: 'run-result', document, valid: false});
   }
+  // A provider's reported request count and model are optional, typed fields.
+  for (const [mutate, valid] of [
+    [entry => { entry.requests = 2; entry.model = 'fixture-model'; }, true],
+    [entry => { entry.requests = 0; }, true],
+    [entry => { entry.requests = 'two'; }, false],
+    [entry => { entry.model = 7; }, false],
+  ]) {
+    const document = structuredClone(goal);
+    mutate(decision(document));
+    samples.push({schema: 'run-result', document, valid});
+  }
   active = 'independent-validator';
   const validation = command(process.env.NINELIVES_CONTRACT_PYTHON || 'python3', ['scripts/validate-cli-contracts.py'], {input: JSON.stringify(samples)});
   assert.equal(validation.status, 0);
-  console.log(`CLI contracts: ${samples.filter(item => item.valid).length} emitted documents across 8 schemas validated; ${samples.filter(item => !item.valid).length} invalid mutations rejected`);
+  console.log(`CLI contracts: ${samples.filter(item => item.valid).length} documents across 8 schemas validated; ${samples.filter(item => !item.valid).length} invalid mutations rejected`);
 } catch (error) {
   // Never echo process output, document bodies or exception payloads.
   console.error(`CLI contract smoke failed at ${active} (${error instanceof assert.AssertionError ? 'assertion' : 'execution'})`);

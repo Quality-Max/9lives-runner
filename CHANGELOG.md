@@ -8,6 +8,17 @@ SDK versions.
 
 ### Added
 
+- Goal decision receipts record how many provider requests the decision made
+  (`requests`) and the model the provider reported (`model`), when the
+  provider knows them. Jev reports one or two requests per decision, and zero
+  when the engine-built options or observation did not fit a request; the
+  OpenAI and Anthropic providers report one request and the model their
+  response names. CLI providers and goal scripts leave both out, as does a
+  failed provider call, so an absent `requests` means unknown, never zero.
+  Both fields are optional: receipt, run result and run status stay version
+  2. `npm run qualify:jev -- --mode jev` now totals actual goal requests and
+  reports the model instead of showing them as unknown. Closes #340.
+
 - `9l diagnose <spec>` (experimental) runs one spec once through the normal
   runner and, when a test fails, reports the observed facts from the
   receipt: the runner's failure class, the deterministic class, the failed

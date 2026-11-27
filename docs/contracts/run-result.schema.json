@@ -283,10 +283,16 @@
         "inputTokens": {
           "type": "integer"
         },
+        "model": {
+          "type": "string"
+        },
         "outcome": {
           "type": "string"
         },
         "outputTokens": {
+          "type": "integer"
+        },
+        "requests": {
           "type": "integer"
         },
         "targetId": {

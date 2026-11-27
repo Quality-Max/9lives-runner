@@ -47,7 +47,8 @@ func (s *scriptedGoalJev) Decide(_ context.Context, b jev.Binding, o jev.Observa
 		confidence := s.confident
 		answers[id] = jev.Answer{Type: "choice", Choice: choice, Confidence: &confidence, Probabilities: probabilities}
 	}
-	return jev.Result{Record: jev.Record{Status: "answered", Binding: b, Usage: jev.Usage{InputTokens: 900, OutputTokens: 40, Available: true}}, Answers: answers}, nil
+	// Like the real client: one request per answered call, and the model.
+	return jev.Result{Record: jev.Record{Status: "answered", Binding: b, RequestCount: 1, Model: "jev-1.14.0", Usage: jev.Usage{InputTokens: 900, OutputTokens: 40, Available: true}}, Answers: answers}, nil
 }
 
 func bound(s *scriptedGoalJev) *boundGoal {
@@ -88,6 +89,10 @@ func TestGoalChoicesAreTypedAndValuesStayEngineOwned(t *testing.T) {
 			completion, err := bound(fake).CompleteDecision(context.Background(), goalPromptJSON(t, tc.parameters, signup), "", 512)
 			if err != nil || completion.Text != tc.want || len(fake.asked) != tc.requests || !completion.UsageAvailable || completion.InputTokens != 900*tc.requests {
 				t.Fatalf("got %q %v after %d requests", completion.Text, err, len(fake.asked))
+			}
+			// The decision reports the requests it made and the model, once.
+			if !completion.RequestsAvailable || completion.Requests != tc.requests || completion.Model != "jev-1.14.0" {
+				t.Fatalf("reported %d requests (known %v), model %q", completion.Requests, completion.RequestsAvailable, completion.Model)
 			}
 			for _, contract := range fake.asked {
 				for _, q := range contract.Questions {
@@ -133,6 +138,11 @@ func TestUnclearGoalChoicesAbstain(t *testing.T) {
 			completion, err := b.CompleteDecision(context.Background(), goalPromptJSON(t, tc.parameters, tc.controls), "", 512)
 			if err != nil || completion.Text != `{"action":"unresolved"}` || len(fake.asked) != tc.requests {
 				t.Fatalf("got %q %v after %d requests", completion.Text, err, len(fake.asked))
+			}
+			// An abstention decided without asking counts zero requests and
+			// zero tokens as known values, not as unknown.
+			if !completion.RequestsAvailable || completion.Requests != tc.requests || tc.requests == 0 && (!completion.UsageAvailable || completion.InputTokens != 0 || completion.Model != "") {
+				t.Fatalf("reported %d requests (known %v), usage known %v, model %q", completion.Requests, completion.RequestsAvailable, completion.UsageAvailable, completion.Model)
 			}
 		})
 	}

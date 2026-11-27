@@ -123,8 +123,10 @@ The client is bound to each attempt (run, job, attempt) and to a digest of the
 planned specs' bytes, and is closed with the attempt. `complete` stays
 completed-but-unverified: the test's own assertions decide the result, and a
 goal that completes against a wrong business outcome still fails. The receipt
-records `jev` as the goal provider and each decision as usual. Cost is not
-estimated; use the engine's decision and token budgets.
+records `jev` as the goal provider and each decision as usual, with the Jev
+requests it made (`requests`: one or two, zero when the engine-built options
+or observation did not fit a request) and the model Jev reported (`model`).
+Cost is not estimated; use the engine's decision and token budgets.
 
 ## Qualification
 

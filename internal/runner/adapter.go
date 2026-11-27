@@ -23,6 +23,11 @@ type GoalDecisionReceipt struct {
 	InputTokens    int    `json:"inputTokens"`
 	OutputTokens   int    `json:"outputTokens"`
 	UsageAvailable bool   `json:"usageAvailable"`
+	// Requests is how many provider requests the decision made, absent when
+	// the provider cannot say; 0 means it decided without asking. Model is
+	// the model the provider reported, absent when it named none.
+	Requests *int   `json:"requests,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 type GoalReceipt struct {
 	ID                  string                `json:"id"`
