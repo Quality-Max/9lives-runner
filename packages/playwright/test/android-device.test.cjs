@@ -164,3 +164,34 @@ test('the emulator version comes from -version on either stream, else the packag
   assert.equal(parseEmulatorVersion('Android emulator version 37.2.13.0.1.2'), '37.2.13.0');
   assert.equal(parsePackageRevision(properties), '37.2.13');
 });
+
+// `dumpsys input` on API 35 after a reset, filtered as the driver filters it
+// (grep -A4 on the FocusedWindows header).
+test('the input dispatcher focus names the app, another window, none or unknown', () => {
+  const {parseInputFocus, inputFocusPattern} = require('../dist/android-device');
+  const focused = owner => `  FocusedWindows:\n    displayId=0, name='b1216c3 ${owner}'\n  FocusRequests:\n    displayId=0, name='b1216c3 ${owner}' result='OK'\n`;
+  assert.equal(parseInputFocus(focused('dev.ninelives.fixture/dev.ninelives.fixture.MainActivity'), 'dev.ninelives.fixture'), 'app');
+  assert.equal(parseInputFocus(focused('com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity'), 'dev.ninelives.fixture'), 'other');
+  // A system window titled without a package path, and a package that only shares a prefix.
+  assert.equal(parseInputFocus(focused('NotificationShade'), 'dev.ninelives.fixture'), 'other');
+  assert.equal(parseInputFocus(focused('dev.ninelives.fixture.other/x.Main'), 'dev.ninelives.fixture'), 'other');
+  // The app on any display wins; a header with no window line is none.
+  assert.equal(parseInputFocus(`  FocusedWindows:\n    displayId=2, name='a1 other.app/x.Main'\n    displayId=0, name='b2 dev.ninelives.fixture/dev.ninelives.fixture.MainActivity'\n`, 'dev.ninelives.fixture'), 'app');
+  assert.equal(parseInputFocus('  FocusedWindows: <none>\n  FocusRequests: <none>\n', 'dev.ninelives.fixture'), 'none');
+  assert.equal(parseInputFocus('  FocusedWindows:\n  FocusRequests:\n', 'dev.ninelives.fixture'), 'none');
+  // Without the block, nothing was read.
+  assert.equal(parseInputFocus('', 'dev.ninelives.fixture'), 'unknown');
+  assert.equal(parseInputFocus('  FocusedApplications:\n    displayId=0, name=\'ActivityRecord{9fd10d2 u0 dev.ninelives.fixture/.MainActivity t10}\'\n', 'dev.ninelives.fixture'), 'unknown');
+  assert.ok(new RegExp(inputFocusPattern, 'm').test('  FocusedWindows:'));
+});
+
+test('a relaunch counts only when am start reports it', () => {
+  const {launchReported} = require('../dist/android-device');
+  const intent = 'Starting: Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] cmp=dev.ninelives.fixture/.MainActivity }';
+  assert.equal(launchReported(`${intent}\nStatus: ok\nLaunchState: COLD\nActivity: dev.ninelives.fixture/.MainActivity\nTotalTime: 523\nWaitTime: 530\nComplete`), true);
+  assert.equal(launchReported(`${intent}\nWarning: Activity not started, intent has been delivered to currently running top-most instance.\nStatus: ok\nLaunchState: UNKNOWN (0)\nActivity: dev.ninelives.fixture/.MainActivity\nWaitTime: 12\nComplete`), true);
+  assert.equal(launchReported(`${intent}\nStatus: timeout\nLaunchState: UNKNOWN (0)\nComplete`), false);
+  assert.equal(launchReported(`${intent}\nError: Activity class {dev.ninelives.fixture/dev.ninelives.fixture.MainActivity} does not exist.`), false);
+  assert.equal(launchReported(`${intent}\nError: Activity not started, unknown error code -96\nStatus: ok`), false);
+  assert.equal(launchReported(''), false);
+});

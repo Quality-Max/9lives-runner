@@ -30,6 +30,36 @@ export function parseWindows(text: string, appPackage: string): WindowState {
   return {windows, focus: focus.some(line => line[1] !== 'null') ? 'foreign' : 'none'};
 }
 
+/** The input dispatcher's focused windows, from `dumpsys input`: the windows
+ * touches and keys go to. A window can be drawn, readable through
+ * accessibility and focused by the window manager while the dispatcher has
+ * not focused it yet; touches sent then never reach it (#276). */
+export const inputFocusPattern = '^ *FocusedWindows:';
+export type InputFocus = 'app' | 'other' | 'none' | 'unknown';
+/** Classifies the dispatcher's focus: the app's window on any display wins,
+ * then any other window; a block that names no window is `none`, and output
+ * without the block is `unknown`, never a reading. */
+export function parseInputFocus(text: string, appPackage: string): InputFocus {
+  const lines = text.split('\n');
+  const start = lines.findIndex(line => /^ *FocusedWindows:/.test(line));
+  if (start < 0) return 'unknown';
+  const owners: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const window = /^ +displayId=[0-9]+, name='[0-9a-f]+ ([^ '/]+)/.exec(line);
+    if (!window) break;
+    owners.push(window[1]);
+  }
+  if (owners.includes(appPackage)) return 'app';
+  return owners.length ? 'other' : 'none';
+}
+
+/** Whether `am start -W` reported the launch: `Status: ok` (a cold start, or
+ * an intent delivered to the running top instance) and no `Error:` line. A
+ * timeout or an activity that was not started is not a launch. */
+export function launchReported(output: string): boolean {
+  return /^Status: ok$/m.test(output) && !/^Error:/m.test(output);
+}
+
 /** The input method UiAutomator2's `hideKeyboard` capability selects on an
  * owned emulator. It draws no window, so it never covers the app, and it does
  * not consume Back: a Back sent to close it reaches the app instead. */

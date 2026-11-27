@@ -68,6 +68,16 @@ SDK versions.
   each observed candidate. An immediately following labeled form field can
   help identify the purpose of a failed click. Proposed edits still require
   isolated verification.
+- Android: `app.reset()` on an owned emulator no longer passes when the app
+  did not come back. It now requires `am start -W` to report the relaunch and
+  waits, within its bound, until the input dispatcher focuses the app's
+  window. Otherwise it fails as `relaunch_failed`, or as
+  `relaunch_focus_other`, `relaunch_focus_none` or `relaunch_focus_unknown`
+  for what the dispatcher last showed. On a slow emulator a relaunch that
+  never happened, or a window that was drawn but never focused, let reset
+  pass while the app was not in front or every later tap went nowhere,
+  though the driver reported the taps done; the test then failed at a later
+  assertion for the wrong reason (#276, #244).
 - Failure attachments, such as the error-context snapshot and screenshot,
   are kept for a project opened through a symlinked directory (macOS `/tmp`
   and `/var/folders`, or a symlinked checkout). Playwright reports resolved

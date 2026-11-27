@@ -329,9 +329,18 @@ the worker process group on outer cancellation/deadline and removes temporary
 native output after the worker exits. The shared adb daemon is preserved.
 
 Reset force-stops the app, requires `pm clear` to report success and relaunches
-it. It clears private app data; it does not revoke server-side sessions or
-assign a new device identity to an AVD. Apps that restore authentication from
-a server or device identity need an app-owned account/session cleanup contract.
+it. The relaunch must be reported by `am start -W` (`Status: ok`) and must reach
+input focus: reset returns once the input dispatcher focuses the app's window
+(`dumpsys input`). Otherwise it fails within its bound as `relaunch_failed`
+when the launch was not reported, or as `relaunch_focus_other`,
+`relaunch_focus_none` or `relaunch_focus_unknown` when the dispatcher last
+showed another window, no window, or a dump that could not be read. On a slow
+emulator a relaunch that never happened, or a window the dispatcher never
+focused, used to let reset pass while the app was not in front or every later
+tap went nowhere, though the driver reported the taps done (#276, #244). It
+clears private app data; it does not revoke server-side sessions or assign a
+new device identity to an AVD. Apps that restore authentication from a server
+or device identity need an app-owned account/session cleanup contract.
 A successful reset command also does not establish that asynchronously loaded
 content is ready: assert the first expected screen with a bounded readiness
 allowance before continuing.
