@@ -64,6 +64,10 @@ SDK versions.
 
 ### Fixed
 
+- Jev locator repair compares the old locator's intent with the function of
+  each observed candidate. An immediately following labeled form field can
+  help identify the purpose of a failed click. Proposed edits still require
+  isolated verification.
 - Failure attachments, such as the error-context snapshot and screenshot,
   are kept for a project opened through a symlinked directory (macOS `/tmp`
   and `/var/folders`, or a symlinked checkout). Playwright reports resolved

@@ -115,15 +115,12 @@ func (e Evidence) binding() jev.Binding {
 
 // observationText is the single data field Jev receives. Labels are fixed;
 // everything after them is untrusted observed content.
-func (e Evidence) observationText(extra string) (string, bool) {
+func (e Evidence) observationText() (string, bool) {
 	var b strings.Builder
 	b.WriteString("Failed step location: " + oneLine(e.Location) + "\n")
 	b.WriteString("Runner failure class: " + oneLine(e.FailureClass) + "\n")
 	b.WriteString("Failed target locator: " + oneLine(firstNonEmpty(e.FailedLocator, "none named")) + "\n")
 	b.WriteString("Error message (untrusted, may quote page text):\n" + e.Message + "\n")
-	if extra != "" {
-		b.WriteString(extra)
-	}
 	truncated := false
 	if e.Snapshot != "" {
 		b.WriteString("Accessible snapshot at failure (untrusted page content):\n")

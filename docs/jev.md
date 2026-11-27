@@ -74,11 +74,17 @@ before any Tier 2 provider. It runs only for a failed direct
 matches, when Tier 1 could not pick a single renamed control. The candidates are
 the distinct accessible names of the same role (or labelled controls) in the
 failure's ARIA snapshot; names shared by several controls are left out. Jev
-answers three typed questions: which listed candidate is the intended control
-(or none), whether the target is present, and whether several candidates
-plausibly match. Candidates are referred to by position; their names stay in
-the observation data. A proposal needs presence of at least 0.7, ambiguity of at
-most 0.3, and choice confidence and probability of at least 0.7.
+uses the old locator's name, candidate labels and accessible page context to
+compare each candidate's function with the intended action, destination or
+input purpose. When the test immediately follows a failed click by filling
+a field with a literal label, Jev can also use that label to infer the
+intended form. The fill value stays in the test. Jev answers three typed
+questions covering the best candidate (or none), whether any candidate serves
+the intended function, and whether the evidence supports multiple candidates
+about equally well. Questions refer to candidates by position, with labels
+kept in observation data. A proposal needs presence of at least 0.7,
+ambiguity of at most 0.3, and choice confidence and probability of at least
+0.7.
 
 Go builds the candidate by replacing only the failed locator's name literal.
 The role, `exact` flag, imports, assertions, comments and other actions stay
@@ -145,6 +151,9 @@ repairable renames (recovery 14%, precision 100%). Goals need a provider and are
 not run. There were zero false greens. These are policy and wiring results,
 not Jev quality measurements; live results are recorded with model, date and
 request counts when they are run.
+
+See the [0.8.0 locator repair validation report](reviews/jev-locator-repair-0.8.0.md)
+for the November 2026 held-out rerun and campaign check.
 
 ## Configuration and API key
 
