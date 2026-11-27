@@ -227,15 +227,32 @@ make the inner jobs fail; only the harness's exact outcome checks qualify them.
 With reset disabled the app is never relaunched, so that final assertion keeps
 the ordinary five-second bound instead of the 90-second cold-relaunch
 allowance: it can only fail, and waiting out the allowance took the test past
-its 240-second budget on a slow hosted emulator.
+its 240-second budget on a slow hosted emulator. The first test's deliberate
+failure keeps the ordinary bound too: a bound that ends before any read has
+completed is an operation timeout rather than an assertion failure, and one
+lookup alone took up to 1.8 seconds on the hosted emulator.
 
 Every case's result line carries its duration and bounded probe facts, also
-when the case does not qualify: read counts, failures and the slowest read per
-route, how many lookups matched nothing, and for `cancel` and `blocked` how the
-checks for the app's in-flight marker ended. A failed semantics case records
-whether the app's window, another window or none had input focus. These are
-counts, durations and fixed words; no screen text, device output or
-identifiers are kept.
+when the case does not qualify: per test, its terminal status, how many target
+steps ran and the first step that did not pass, with its operation and stop
+reason; read counts, failures and the slowest read per route, how many lookups
+matched nothing, and for `cancel` and `blocked` how the checks for the app's
+in-flight marker ended. A failed transfer, semantics or isolation test records
+whether the app's window, another window or none had input focus. Those three
+also read the fixture app's own log with `run-as`, outside the accessibility
+reads the driver uses: that its activity was created and drew its content
+(signed in or out for `isolation`), and which watched click handlers ran, with
+field lengths. A failed text assertion can then be told apart as a tap the app
+never handled, a handler that ran with other field contents, or a read that
+did not see what the app drew. After an operation timeout the driver has
+already stopped the emulator, so the log reads `unreachable` there; `cancel`
+and `blocked` keep their in-flight marker for that case. These are counts,
+durations, lengths and fixed words; no screen text, device output or
+identifiers are kept. The negative controls `defect`, `state-defect`,
+`failure-capture` and `semantics-defect` qualify only when the log shows the
+tapped handler ran: a tap the driver reported done but the app never handled
+fails their assertion for another reason. That happened once to `defect` on a
+local API 35 arm64 emulator while this check was being added.
 
 To check preservation of a preexisting emulator, run
 `node scripts/android-preservation.cjs` after building the healthy fixture.

@@ -1,7 +1,8 @@
 import {createTargetTest} from '@9l/playwright';
-import {androidTargetDriver} from '@9l/playwright/android';
-import {readFileSync} from 'node:fs';
+import {androidDefaults, androidTargetDriver} from '@9l/playwright/android';
+import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {frontWindow, readAppLog} from './device-facts.cjs';
 
 // #244: a failed test must not donate its emulator or private app session to
 // the next test. Deliberately omit logout and explicit close in both bodies:
@@ -26,6 +27,35 @@ const test = createTargetTest({native: target => {
   browser: async () => { throw new Error('native requested a browser'); },
 });
 
+// Qualification-only probe (#244, #323), outside the test bodies so the
+// isolation sequence stays as written: after each test, while its emulator
+// is still up (afterEach runs before fixture teardown), read the app's own
+// log of what it drew (signed in or out) and which clicks it handled, and on
+// a failure which window had input focus. Fixed words and counts only; the
+// smoke prints them per test. It never fails a test.
+let serial = '';
+const originalFetch = globalThis.fetch;
+test.beforeEach(() => {
+  serial = '';
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    return originalFetch(input, init);
+  };
+});
+test.afterEach(async ({}, testInfo) => {
+  globalThis.fetch = originalFetch;
+  const probe = process.env.NINELIVES_ANDROID_PROBE;
+  if (!probe || !serial) return;
+  const adb = resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb');
+  const facts: Record<string, unknown> = {app: await readAppLog(adb, serial, fixture.appPackage)};
+  if (testInfo.status !== testInfo.expectedStatus) facts.front = await frontWindow(adb, serial, fixture.appPackage);
+  try {
+    const recorded = existsSync(probe) ? JSON.parse(readFileSync(probe, 'utf8')) : {};
+    const tests = {...recorded.tests, [testInfo.title.includes('reset after') ? 'second' : 'first']: facts};
+    writeFileSync(probe, JSON.stringify({...recorded, tests}));
+  } catch { /* an unwritable probe leaves the facts absent */ }
+});
+
 test('native isolation: fail while still signed in', async ({app}) => {
   await app.open({timeoutMs: 180000});
   await app.reset();
@@ -33,7 +63,10 @@ test('native isolation: fail while still signed in', async ({app}) => {
   await app.getByTestId('sign-in').tap();
   await app.getByTestId('session.status').toHaveText('Signed in');
   // Intentional unexpected failure: Playwright must tear down this worker.
-  await app.getByTestId('session.status').toHaveText('Signed out', 1000);
+  // The ordinary bound, not 1 s: a bound that ends before any read completed
+  // is an operation timeout, and one lookup alone took up to 1.8 s on the
+  // hosted emulator, which ended this step `operation_timeout` (#323).
+  await app.getByTestId('session.status').toHaveText('Signed out');
 });
 
 test('native isolation: reset after the previous failure clears persisted login', async ({app}) => {

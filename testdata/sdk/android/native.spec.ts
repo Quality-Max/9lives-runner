@@ -5,6 +5,8 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {resolve} from 'node:path';
+// Which window had input focus, and the fixture app's own log (device-facts.cjs).
+import {frontWindow, readAppLog} from './device-facts.cjs';
 
 const mode = process.env.NINELIVES_ANDROID_CASE ?? 'healthy';
 // Attached-device mode (scripts/android-phone-smoke.cjs): the fixture app was
@@ -64,16 +66,6 @@ function observeRead(readTiming: ReadTiming, url: string, pending: Promise<Respo
     try { const found = (await response.clone().json()).value; if (Array.isArray(found) && !found.length) timing.empty!++; } catch { /* no usable answer */ }
   }, () => { timing.errors++; timing.maxMs = Math.max(timing.maxMs, Date.now() - started); });
 }
-// Which window had input focus when a case stopped: the app's own, another
-// one (a system dialog, the launcher) or unknown. A fixed word, never the
-// window's name or any device output.
-async function frontWindow(adb: string, serial: string, appPackage: string): Promise<'app' | 'other' | 'unknown'> {
-  try {
-    const {stdout} = await promisify(execFile)(adb, ['-s', serial, 'shell', 'dumpsys window | grep -m1 mCurrentFocus='], {timeout: 5000, maxBuffer: 4096});
-    const owner = /mCurrentFocus=Window\{\S+ \S+ ([^\s/}]+)/.exec(stdout)?.[1];
-    return owner === undefined ? 'unknown' : owner === appPackage ? 'app' : 'other';
-  } catch { return 'unknown'; }
-}
 
 // failure-capture: the fixture captures and then closes the driver after the
 // test body, so whether the emulator stopped is read after that teardown.
@@ -100,6 +92,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   const originalFetch = globalThis.fetch;
   let stopReason = '', driverReason = '';
   let serial = '', started = false, clickDispatches = 0;
+  let front: 'app' | 'other' | 'unknown' | '' = '';
   // #280: when the marker is not seen, these tell apart a click the device had
   // not performed yet, one it performed that never ran the app's handler, and
   // marker checks that were too slow or could not reach the app. `ack` is the
@@ -199,6 +192,8 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     if (typeof e.reason === 'string' && /^[a-z_]{1,64}$/.test(e.reason)) stopReason = e.reason;
     const cause = e.cause?.message;
     if (typeof cause === 'string' && /^9lives Android: [a-z_]{1,80}$/.test(cause)) driverReason = cause.slice(16);
+    // Read while the emulator is still up; the marker probe reads its own.
+    if (serial && !probe && !attachedSerial) front = await frontWindow(resolve(sdk, 'platform-tools/adb'), serial, fixture.appPackage);
     throw error;
   } finally {
     globalThis.fetch = originalFetch;
@@ -208,6 +203,9 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       markerProbe.checksAtStop = markerProbe.checks; markerProbe.stopMs = Date.now() - dispatchedAt;
       if (!started && serial) markerProbe.front = await frontWindow(resolve(sdk, 'platform-tools/adb'), serial, fixture.appPackage);
     }
+    // #276: whether the app's send handler ran, and with which field
+    // lengths, read from the app's own log before the emulator stops.
+    const appLog = serial && !attachedSerial ? await readAppLog(resolve(sdk, 'platform-tools/adb'), serial, fixture.appPackage) : undefined;
     // A failure capture is taken at fixture teardown, before the fixture
     // closes the driver: a spec that closes it itself gets none.
     if (mode !== 'failure-capture') await app.close();
@@ -221,7 +219,8 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     }
     // Only bounded synthetic probe facts; no serial/handles or device output.
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
-      JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming, ...(probe ? {markerProbe} : {})}));
+      JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming, ...(probe ? {markerProbe} : {}),
+        ...(front ? {front} : {}), ...(appLog ? {app: appLog} : {})}));
   }
 });
 
@@ -366,6 +365,8 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
     throw error;
   } finally {
     globalThis.fetch = originalFetch;
+    // #276: which validate and sign-in handlers ran, from the app's own log.
+    const appLog = serial ? await readAppLog(adb, serial, fixture.appPackage) : undefined;
     await app.close();
     let deviceStopped = false;
     if (serial) {
@@ -373,7 +374,7 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
       catch { deviceStopped = true; }
     }
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
-      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming, ...(front ? {front} : {})}));
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming, ...(front ? {front} : {}), ...(appLog ? {app: appLog} : {})}));
   }
 });
 

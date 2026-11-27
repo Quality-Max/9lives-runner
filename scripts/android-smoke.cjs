@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
+const {stepFacts} = require('./android-step-facts.cjs');
 const root = path.resolve(__dirname, '..');
 const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
@@ -85,13 +86,17 @@ for (const mode of modes) {
   const run = JSON.parse(r.stdout), receipt=run.receipts[0];
   assert.equal(run.receipts.length,1,mode);assert.equal(receipt.attempt,1,`${mode}: mutations must never retry`);
   assert.equal(receipt.agentProvenance.status,'matched',mode);
-  const facts=isolation ? {} : JSON.parse(fs.readFileSync(probe,'utf8'));
+  // The isolation spec's hooks write per-test facts only when they could
+  // read the device; the other cases always write theirs.
+  const facts=isolation ? (fs.existsSync(probe) ? JSON.parse(fs.readFileSync(probe,'utf8')) : {}) : JSON.parse(fs.readFileSync(probe,'utf8'));
   // Both isolation tests share the attempt, each within the config's test budget.
   facts.durationMs=run.durationMs;measured=facts;
   facts.emulatorSetPreserved=emulatorSet()===beforeDevices;assert.equal(facts.emulatorSetPreserved,true,`${mode}: emulator set changed`);
   const raw=receipt.evidence.stdoutPath ? fs.readFileSync(receipt.evidence.stdoutPath,'utf8') : '';
   assert(!['Sent $','Ada','hierarchy','Signed in','Signed out'].some(value=>raw.includes(value)), `${mode}: private content in protocol`);
   const frames=raw.trim().split('\n').filter(Boolean).map(JSON.parse);
+  // Which step each test stopped at, before any case check can fail.
+  facts.steps=stepFacts(frames);
   if (isolation) {
     assert.notEqual(r.status,0,'isolation: intentional assertion failure must fail the job');
     assert.equal(run.outcome,'failed');assert.equal(receipt.validated,true);
@@ -144,6 +149,12 @@ for (const mode of modes) {
   // failure-capture leaves closing to the fixture, after its capture: the
   // stop is read by a hook that runs after that teardown.
   if (mode==='failure-capture') assert.equal(facts.stoppedAfterTeardown,true,'failure-capture: the emulator was checked after the fixture closed the driver');
+  // A negative control proves its assertion caught the defect only if the
+  // app ran the handler that makes it: a tap the driver reported done but the
+  // app never handled fails the same assertion for another reason (#276).
+  const handled=prefix=>Array.isArray(facts.app?.events)&&facts.app.events.some(event=>event.startsWith(prefix));
+  if (mode==='defect' || mode==='state-defect' || mode==='failure-capture') assert(handled('click send '),`${mode}: the app must have handled the send tap`);
+  if (mode==='semantics-defect') assert(handled('click validate '),'semantics-defect: the app must have handled the validate tap');
   if (mode==='defect' || mode==='state-defect') {
     const op=mode==='defect'?'assert-text':'assert-state';
     assert(frames.some(f=>f.operation===op&&f.status==='failed'),`${mode}: relevant assertion must reject defect`);

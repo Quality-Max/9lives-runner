@@ -14,8 +14,25 @@ import android.widget.TextView;
 
 /** Synthetic, offline app. All data is reset when the owned test calls reset. */
 public class MainActivity extends Activity {
+  /** Qualification facts the Android smoke reads with run-as, outside the
+   * accessibility reads the driver uses: that the activity was created and
+   * drew its content, and which watched click handlers ran. One fixed-format
+   * line each, with fixed words and field lengths, never field text. reset
+   * (pm clear) deletes the file with the app's other data, so it covers the
+   * time since the last reset. It never changes what the app shows or does. */
+  private void note(String line) {
+    java.io.File file = new java.io.File(getFilesDir(), "handled");
+    if (file.length() > 2048) return;
+    try (java.io.FileOutputStream out = new java.io.FileOutputStream(file, true)) {
+      out.write((line + "\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+    } catch (java.io.IOException ignored) {
+      // A diagnostic that could not be written is absent, never an app failure.
+    }
+  }
+
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
+    note("create");
     if (FixtureMode.VALUE.equals("isolation")) { isolation(); return; }
     if (FixtureMode.VALUE.equals("semantics-delayed")) {
       // am start -W can finish before asynchronous app content is ready.
@@ -62,6 +79,7 @@ public class MainActivity extends Activity {
     }
     send.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View view) {
+      note("click send " + amount.length() + " " + recipient.length());
       if (FixtureMode.VALUE.equals("blocked")) {
         try { new java.io.File(getFilesDir(), "started").createNewFile(); Thread.sleep(30000); } catch (Exception ignored) { Thread.currentThread().interrupt(); }
       }
@@ -106,6 +124,7 @@ public class MainActivity extends Activity {
     });
     layout.addView(list, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 600));
     setContentView(layout);
+    note("drawn");
   }
 
   /** A bare accessibility identifier, as Flutter's Semantics(identifier:)
@@ -131,12 +150,14 @@ public class MainActivity extends Activity {
     layout.setPadding(32, 80, 32, 32);
     final TextView status = new TextView(this);
     identify(status, "session.status");
-    status.setText(session.getBoolean("signed-in", false) ? "Signed in" : "Signed out");
+    final boolean signedIn = session.getBoolean("signed-in", false);
+    status.setText(signedIn ? "Signed in" : "Signed out");
     Button signIn = new Button(this);
     identify(signIn, "sign-in");
     signIn.setText("Sign in");
     signIn.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View view) {
+        note("click sign-in");
         if (!session.edit().putBoolean("signed-in", true).commit()) throw new IllegalStateException("fixture session not saved");
         status.setText("Signed in");
       }
@@ -144,6 +165,7 @@ public class MainActivity extends Activity {
     layout.addView(signIn);
     layout.addView(status);
     setContentView(layout);
+    note(signedIn ? "drawn in" : "drawn out");
   }
 
   private void semantics() {
@@ -168,6 +190,7 @@ public class MainActivity extends Activity {
     validate.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View view) {
         boolean bad = !email.getText().toString().contains("@");
+        note("click validate " + (bad ? "invalid" : "valid") + " " + email.length());
         // The defect shows the same status but never reports the field error.
         invalid = bad && !FixtureMode.VALUE.equals("semantics-defect");
         if (!FixtureMode.VALUE.equals("semantics-defect")) email.setError(bad ? "Enter an email address" : null);
@@ -179,7 +202,10 @@ public class MainActivity extends Activity {
     login.setText("Sign in");
     identify(login, "login-button");
     login.setOnClickListener(new View.OnClickListener() {
-      @Override public void onClick(View view) { status.setText("Signed in as " + email.getText().toString()); }
+      @Override public void onClick(View view) {
+        note("click login " + email.length());
+        status.setText("Signed in as " + email.getText().toString());
+      }
     });
     layout.addView(login);
     layout.addView(status);
@@ -189,6 +215,7 @@ public class MainActivity extends Activity {
     inbox.setContentDescription("Inbox\n3 unread\nTab 2 of 4 (new)");
     layout.addView(inbox);
     setContentView(layout);
+    note("drawn");
   }
 
   // Sign-in behind the system BiometricPrompt: the prompt is a system window

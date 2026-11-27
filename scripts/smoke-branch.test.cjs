@@ -32,7 +32,7 @@ test('android-smoke --list works on a detached HEAD and a run names the branch r
   const git = (...args) => assert.equal(spawnSync('git', ['-c', 'user.email=smoke@example.invalid', '-c', 'user.name=smoke', ...args], {cwd: dir}).status, 0, args.join(' '));
   try {
     fs.mkdirSync(path.join(dir, 'scripts'));
-    for (const file of ['android-smoke.cjs', 'android-isolation-evidence.cjs', 'smoke-branch.cjs']) {
+    for (const file of ['android-smoke.cjs', 'android-isolation-evidence.cjs', 'android-step-facts.cjs', 'smoke-branch.cjs']) {
       fs.copyFileSync(path.join(__dirname, file), path.join(dir, 'scripts', file));
     }
     git('init', '-q'); git('add', '.'); git('commit', '-q', '-m', 'fixture'); git('checkout', '-q', '--detach');
