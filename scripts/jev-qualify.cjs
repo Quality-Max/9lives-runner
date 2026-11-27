@@ -36,6 +36,14 @@ function sortKeys(value) {
   return value;
 }
 
+// Only whole numbers: a fractional repeat runs more repeats than the paid cap
+// was computed for, and NaN passes every comparison against the cap.
+function wholeNumber(value, name) {
+  const n = /^\d+$/.test(String(value ?? '')) ? Number(value) : NaN;
+  if (!Number.isSafeInteger(n)) throw new Error(`${name} must be a whole number`);
+  return n;
+}
+
 function parseArgs(argv) {
   const options = { mode: 'validate', partition: 'all', lanes: ['diagnose', 'repair', 'goal'], repeat: 1, images: 'off', goalMaxDecisions: 6, confirmPaid: false, maxRequests: 0 };
   for (let i = 0; i < argv.length; i++) {
@@ -43,10 +51,10 @@ function parseArgs(argv) {
     if (arg === '--mode') options.mode = next();
     else if (arg === '--partition') options.partition = next();
     else if (arg === '--lanes') options.lanes = next().split(',');
-    else if (arg === '--repeat') options.repeat = Number(next());
+    else if (arg === '--repeat') options.repeat = wholeNumber(next(), '--repeat');
     else if (arg === '--images') options.images = next();
-    else if (arg === '--goal-max-decisions') options.goalMaxDecisions = Number(next());
-    else if (arg === '--max-requests') options.maxRequests = Number(next());
+    else if (arg === '--goal-max-decisions') options.goalMaxDecisions = wholeNumber(next(), '--goal-max-decisions');
+    else if (arg === '--max-requests') options.maxRequests = wholeNumber(next(), '--max-requests');
     else if (arg === '--confirm-paid') options.confirmPaid = true;
     else throw new Error(`unknown option ${arg}`);
   }
@@ -85,6 +93,15 @@ function renamed(text, oldName, newName) {
   return out;
 }
 
+// Goal cases that must stop have no oracle. Their deterministic probe tries
+// the obvious step, so validation exercises the engine's own stop. Probes sit
+// beside the frozen manifest; they change no case or label.
+function goalScript(c) {
+  if (c.label.oracle) return { kind: 'oracle', file: c.label.oracle };
+  const file = path.join('probes', `${c.id}.json`);
+  return fs.existsSync(path.join(corpus, file)) ? { kind: 'probe', file } : null;
+}
+
 // --- lanes -----------------------------------------------------------------
 
 function diagnoseCase(binary, c, options, receipts) {
@@ -97,9 +114,12 @@ function diagnoseCase(binary, c, options, receipts) {
     outcome: r.json && r.json.outcome, runnerClass: d && d.facts.failureClass, status: d && d.status, disposition: d && d.disposition, reason: d && d.reason,
     family: d && d.inference && d.inference.family, confidence: d && d.inference && d.inference.confidence,
     jevRequests: record ? record.requestCount : 0, jevMs: record ? record.durationMs : null, usage: record && record.usage, model: record && record.model };
+  // A diagnosis needs the CLI's report: exit 0 or 1 with an outcome, and a
+  // diagnosis for a failed run. Anything else cannot be scored.
+  row.unusable = !r.json || typeof row.outcome !== 'string' ? `no report (exit ${r.code})` : ![0, 1].includes(r.code) ? `the run did not complete (exit ${r.code})` : row.outcome === 'failed' && !d ? 'no diagnosis for the failed run' : null;
   row.resultUnchanged = r.code === 1 && row.outcome === 'failed';
   row.correct = row.disposition === row.expected;
-  row.falseGreen = !row.resultUnchanged || (c.label.runnerClass === 'assertion' && row.disposition === 'eligible-for-repair');
+  row.falseGreen = !row.unusable && (!row.resultUnchanged || (c.label.runnerClass === 'assertion' && row.disposition === 'eligible-for-repair'));
   return row;
 }
 
@@ -119,6 +139,10 @@ function repairCase(binary, c, options, receipts) {
     const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expected: c.label.outcome, expectedName: c.label.expectedName,
       state: s.state, reason: s.reason, stage: s.grounded ? 'grounded' : s.tier1 && s.tier1.passed ? 'tier1' : 'none', chosen: decision && decision.chosen, decision: decision && decision.status, decisionReason: decision && decision.reason,
       jevRequests: decision && decision.jev ? decision.jev.requestCount : 0, jevMs: decision && decision.jev ? decision.jev.durationMs : null, usage: decision && decision.jev && decision.jev.usage, model: decision && decision.jev && decision.jev.model };
+    // Scoring needs the session result and an original run that executed the
+    // test with a receipt; a CLI error or zero tests is unusable evidence.
+    const originalRun = s.original;
+    row.unusable = !r.json || typeof s.state !== 'string' ? `no session result (exit ${r.code})` : ![0, 1].includes(r.code) ? `heal exited ${r.code}` : !originalRun || !(originalRun.executedTests > 0) || !originalRun.receipt ? 'the original run has no executed test or receipt' : null;
     row.verified = verified;
     row.verifiedCorrect = verified && saved === expectedText;
     row.falseGreen = verified && (c.label.outcome !== 'verified' || saved !== expectedText);
@@ -130,19 +154,25 @@ function repairCase(binary, c, options, receipts) {
 
 function goalCase(binary, c, options, receipts) {
   const args = ['run', c.spec, '--sdk', '--format', 'json', '--receipt-dir', receipts, '--goal-max-decisions', String(options.goalMaxDecisions)];
+  const script = options.mode === 'validate' ? goalScript(c) : null;
   if (options.mode === 'jev') args.push('--goal-provider', 'jev');
-  else if (options.mode === 'validate' && c.label.oracle) args.push('--goal-script', c.label.oracle);
-  else return { id: c.id, lane: c.lane, partition: c.partition, skipped: options.mode === 'offline' ? 'no goal provider without Jev' : 'no oracle script for a stopping case' };
+  else if (script) args.push('--goal-script', script.file);
+  else return { id: c.id, lane: c.lane, partition: c.partition, skipped: options.mode === 'offline' ? 'no goal provider without Jev' : 'no oracle or probe script' };
   const r = run9l(binary, args);
   const receipt = r.json && r.json.receipts && r.json.receipts[0];
   const goal = receipt && receipt.goals && receipt.goals[0];
-  const decisions = goal ? goal.decisions.length : 0;
-  const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expectedGoal: c.label.goal, expectedTest: c.label.test,
-    goal: goal && goal.status, test: receipt && receipt.status, decisions, actions: goal ? goal.decisions.map(d => d.action).join(',') : '',
-    tokens: goal ? goal.decisions.reduce((n, d) => n + (d.inputTokens || 0) + (d.outputTokens || 0), 0) : 0, jevRequests: options.mode === 'jev' ? decisions : 0 };
+  const decisions = goal && Array.isArray(goal.decisions) ? goal.decisions : [];
+  // Goal receipts record each decision's tokens but neither how many Jev
+  // requests it made (zero to two) nor the model, so those stay unknown.
+  const usage = { inputTokens: decisions.reduce((n, d) => n + (d.inputTokens || 0), 0), outputTokens: decisions.reduce((n, d) => n + (d.outputTokens || 0), 0), available: decisions.length > 0 && decisions.every(d => d.usageAvailable) };
+  const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expectedGoal: c.label.goal, expectedTest: c.label.test, script: script && script.kind,
+    goal: goal && goal.status, test: receipt && receipt.status, decisions: decisions.length, actions: decisions.map(d => d.action).join(','),
+    tokens: usage.inputTokens + usage.outputTokens, usage: options.mode === 'jev' ? usage : null, jevRequests: options.mode === 'jev' ? null : 0, model: null };
+  // Scoring needs a validated terminal receipt and the goal's own record.
+  row.unusable = !r.json || !receipt ? `no run result (exit ${r.code})` : !receipt.validated || !['passed', 'failed'].includes(receipt.status) ? `the run did not complete (${receipt.status})` : !goal || typeof goal.status !== 'string' ? 'the receipt has no goal record' : null;
   row.goalCorrect = c.label.goal.includes(row.goal);
   row.testCorrect = row.test === c.label.test;
-  row.falseGreen = row.test === 'passed' && c.label.test !== 'passed';
+  row.falseGreen = !row.unusable && row.test === 'passed' && c.label.test !== 'passed';
   return row;
 }
 
@@ -172,8 +202,10 @@ function validateCase(binary, c, receipts) {
     return { id: c.id, lane: c.lane, ok, detail: `as written ${failsAsIs.json && failsAsIs.json.outcome}, with the labeled name ${fixed}` };
   }
   const row = goalCase(binary, c, { mode: 'validate', goalMaxDecisions: 6 }, receipts);
-  if (row.skipped) return { id: c.id, lane: c.lane, ok: true, detail: row.skipped };
-  return { id: c.id, lane: c.lane, ok: row.goalCorrect && row.testCorrect, detail: `oracle goal ${row.goal}, test ${row.test}` };
+  // A case whose labels were not exercised is not validated.
+  if (row.skipped) return { id: c.id, lane: c.lane, ok: false, detail: row.skipped };
+  if (row.unusable) return { id: c.id, lane: c.lane, ok: false, detail: `${row.script}: ${row.unusable}` };
+  return { id: c.id, lane: c.lane, ok: row.goalCorrect && row.testCorrect, detail: `${row.script} goal ${row.goal}, test ${row.test}` };
 }
 
 // --- report ----------------------------------------------------------------
@@ -185,40 +217,43 @@ function percentile(values, p) {
 }
 
 function summarize(rows) {
-  const lane = name => rows.filter(r => r.lane === name && !r.skipped);
+  // Unusable rows are counted on their own, never scored as results.
+  const lane = name => rows.filter(r => r.lane === name && !r.skipped && !r.unusable);
+  const unusable = name => rows.filter(r => r.lane === name && r.unusable).length;
   const timing = list => ({ p50Ms: percentile(list.map(r => r.ms), 0.5), p95Ms: percentile(list.map(r => r.ms), 0.95), jevP50Ms: percentile(list.filter(r => r.jevMs != null).map(r => r.jevMs), 0.5), jevP95Ms: percentile(list.filter(r => r.jevMs != null).map(r => r.jevMs), 0.95) });
-  const usage = list => list.reduce((u, r) => ({ requests: u.requests + (r.jevRequests || 0), inputTokens: u.inputTokens + ((r.usage && r.usage.inputTokens) || 0), outputTokens: u.outputTokens + ((r.usage && r.usage.outputTokens) || 0) }), { requests: 0, inputTokens: 0, outputTokens: 0 });
+  // Requests are null when any row could not count them (goal receipts).
+  const usage = list => list.reduce((u, r) => ({ requests: u.requests === null || r.jevRequests === null ? null : u.requests + (r.jevRequests || 0), inputTokens: u.inputTokens + ((r.usage && r.usage.inputTokens) || 0), outputTokens: u.outputTokens + ((r.usage && r.usage.outputTokens) || 0) }), { requests: 0, inputTokens: 0, outputTokens: 0 });
   const d = lane('diagnose'), r = lane('repair'), g = lane('goal');
   const confusion = {};
   for (const row of d) { confusion[row.expected] = confusion[row.expected] || {}; confusion[row.expected][row.disposition] = (confusion[row.expected][row.disposition] || 0) + 1; }
   const repairable = r.filter(x => x.expected === 'verified');
   const verified = r.filter(x => x.verified);
   return {
-    diagnose: { cases: d.length, correct: d.filter(x => x.correct).length, abstained: d.filter(x => x.disposition === 'unresolved').length, errors: d.filter(x => x.status === 'error').length, falseGreens: d.filter(x => x.falseGreen).length, confusion, ...timing(d), usage: usage(d) },
-    repair: { cases: r.length, verified: verified.length, verifiedCorrect: r.filter(x => x.verifiedCorrect).length, precision: verified.length ? r.filter(x => x.verifiedCorrect).length / verified.length : null, recovery: repairable.length ? repairable.filter(x => x.verifiedCorrect).length / repairable.length : null, falseGreens: r.filter(x => x.falseGreen).length, ...timing(r), usage: usage(r) },
-    goal: { cases: g.length, skipped: rows.filter(x => x.lane === 'goal' && x.skipped).length, goalStatusMatched: g.filter(x => x.goalCorrect).length, testVerdictMatched: g.filter(x => x.testCorrect).length, completedButFailed: g.filter(x => x.goal === 'completed' && x.test !== 'passed').length, falseGreens: g.filter(x => x.falseGreen).length, ...timing(g), usage: usage(g) },
+    diagnose: { cases: d.length, unusable: unusable('diagnose'), correct: d.filter(x => x.correct).length, abstained: d.filter(x => x.disposition === 'unresolved').length, errors: d.filter(x => x.status === 'error').length, falseGreens: d.filter(x => x.falseGreen).length, confusion, ...timing(d), usage: usage(d) },
+    repair: { cases: r.length, unusable: unusable('repair'), verified: verified.length, verifiedCorrect: r.filter(x => x.verifiedCorrect).length, precision: verified.length ? r.filter(x => x.verifiedCorrect).length / verified.length : null, recovery: repairable.length ? repairable.filter(x => x.verifiedCorrect).length / repairable.length : null, falseGreens: r.filter(x => x.falseGreen).length, ...timing(r), usage: usage(r) },
+    goal: { cases: g.length, unusable: unusable('goal'), skipped: rows.filter(x => x.lane === 'goal' && x.skipped).length, goalStatusMatched: g.filter(x => x.goalCorrect).length, testVerdictMatched: g.filter(x => x.testCorrect).length, completedButFailed: g.filter(x => x.goal === 'completed' && x.test !== 'passed').length, falseGreens: g.filter(x => x.falseGreen).length, ...timing(g), usage: usage(g) },
   };
 }
 
 function report(meta, rows, summary) {
   const pct = v => v == null ? 'n/a' : `${Math.round(v * 100)}%`;
-  const lines = [`# Jev qualification — ${meta.mode}`, '', `- Date: ${meta.date}`, `- Revision: ${meta.revision}`, `- Corpus: ${meta.corpus} (held-out ${meta.heldout.slice(0, 12)})`, `- Partition: ${meta.partition} · repeats: ${meta.repeat} · images: ${meta.images}`, `- Model: ${meta.models.join(', ') || 'none (no provider calls)'}`, ''];
+  const lines = [`# Jev qualification — ${meta.mode}`, '', `- Date: ${meta.date}`, `- Revision: ${meta.revision}`, `- Corpus: ${meta.corpus} (held-out ${meta.heldout.slice(0, 12)})`, `- Partition: ${meta.partition} · repeats: ${meta.repeat} · images: ${meta.images}`, `- Model: ${meta.models.join(', ') || (meta.mode === 'jev' ? 'not recorded' : 'none (no provider calls)')}${meta.mode === 'jev' && rows.some(r => r.lane === 'goal' && !r.skipped) ? ' (goal receipts record neither the model nor request counts)' : ''}`, ''];
   if (meta.mode !== 'jev') lines.push('**Policy/wiring evidence only.** No provider request was made; these results are not Jev quality measurements.', '');
   if (meta.mode === 'validate') {
     lines.push('| case | labels hold | evidence |', '|---|---|---|', ...rows.map(r => `| ${r.id} | ${r.ok ? 'yes' : '**no**'} | ${r.detail} |`));
     return lines.join('\n') + '\n';
   }
   const s = summary;
-  lines.push('## Diagnosis', '', `${s.diagnose.correct}/${s.diagnose.cases} expected dispositions · ${s.diagnose.abstained} unresolved · ${s.diagnose.errors} errors · **${s.diagnose.falseGreens} false greens** · run p50/p95 ${s.diagnose.p50Ms}/${s.diagnose.p95Ms} ms · Jev p50/p95 ${s.diagnose.jevP50Ms ?? 'n/a'}/${s.diagnose.jevP95Ms ?? 'n/a'} ms · ${s.diagnose.usage.requests} requests`, '',
+  lines.push('## Diagnosis', '', `${s.diagnose.correct}/${s.diagnose.cases} expected dispositions · ${s.diagnose.abstained} unresolved · ${s.diagnose.errors} errors · **${s.diagnose.falseGreens} false greens** · **${s.diagnose.unusable} unusable** · run p50/p95 ${s.diagnose.p50Ms}/${s.diagnose.p95Ms} ms · Jev p50/p95 ${s.diagnose.jevP50Ms ?? 'n/a'}/${s.diagnose.jevP95Ms ?? 'n/a'} ms · ${s.diagnose.usage.requests} requests`, '',
     '| case | expected | disposition | family | conf. | status/reason |', '|---|---|---|---|---|---|',
     ...rows.filter(r => r.lane === 'diagnose').map(r => `| ${r.id} | ${r.expected} | ${r.correct ? '' : '**'}${r.disposition}${r.correct ? '' : '**'} | ${r.family || ''} | ${r.confidence == null ? '' : r.confidence.toFixed(2)} | ${r.status}: ${r.reason} |`), '',
-    '## Repair', '', `${s.repair.verified} verified (${s.repair.verifiedCorrect} correct) · precision ${pct(s.repair.precision)} · recovery ${pct(s.repair.recovery)} · **${s.repair.falseGreens} false greens** · run p50/p95 ${s.repair.p50Ms}/${s.repair.p95Ms} ms · ${s.repair.usage.requests} requests`, '',
+    '## Repair', '', `${s.repair.verified} verified (${s.repair.verifiedCorrect} correct) · precision ${pct(s.repair.precision)} · recovery ${pct(s.repair.recovery)} · **${s.repair.falseGreens} false greens** · **${s.repair.unusable} unusable** · run p50/p95 ${s.repair.p50Ms}/${s.repair.p95Ms} ms · ${s.repair.usage.requests} requests`, '',
     '| case | expected | state | stage | chosen | decision |', '|---|---|---|---|---|---|',
     ...rows.filter(r => r.lane === 'repair').map(r => `| ${r.id} | ${r.expected}${r.expectedName ? ` (${r.expectedName})` : ''} | ${r.state} | ${r.stage} | ${r.chosen || ''} | ${r.decision ? `${r.decision}: ${r.decisionReason}` : ''} |`), '',
-    '## Goals', '', s.goal.cases ? `${s.goal.goalStatusMatched}/${s.goal.cases} goal statuses as labeled · ${s.goal.testVerdictMatched}/${s.goal.cases} test verdicts as labeled · ${s.goal.completedButFailed} completed-but-failed · **${s.goal.falseGreens} false greens** · run p50/p95 ${s.goal.p50Ms}/${s.goal.p95Ms} ms` : `Not run: ${s.goal.skipped} cases need a goal provider.`, '',
+    '## Goals', '', s.goal.cases ? `${s.goal.goalStatusMatched}/${s.goal.cases} goal statuses as labeled · ${s.goal.testVerdictMatched}/${s.goal.cases} test verdicts as labeled · ${s.goal.completedButFailed} completed-but-failed · **${s.goal.falseGreens} false greens** · **${s.goal.unusable} unusable** · run p50/p95 ${s.goal.p50Ms}/${s.goal.p95Ms} ms · requests ${s.goal.usage.requests ?? 'unknown'} · tokens in/out ${s.goal.usage.inputTokens}/${s.goal.usage.outputTokens}` : `Not run: ${s.goal.skipped} cases need a goal provider.`, '',
     '| case | expected goal / test | goal | test | actions |', '|---|---|---|---|---|',
-    ...rows.filter(r => r.lane === 'goal').map(r => r.skipped ? `| ${r.id} | | skipped | | ${r.skipped} |` : `| ${r.id} | ${r.expectedGoal.join(' or ')} / ${r.expectedTest} | ${r.goal} | ${r.test} | ${r.actions} |`), '',
-    'A diagnosis never changes a result; goal completion is never a pass. False greens count any changed failed result, an assertion failure marked eligible for repair, a verified wrong or unlabeled repair, a modified source, or a passing test where the label requires a failure.');
+    ...rows.filter(r => r.lane === 'goal').map(r => r.skipped ? `| ${r.id} | | skipped | | ${r.skipped} |` : `| ${r.id} | ${r.expectedGoal.join(' or ')} / ${r.expectedTest} | ${r.goal} | ${r.test} | ${r.unusable ? `unusable: ${r.unusable}` : r.actions} |`), '',
+    'A diagnosis never changes a result; goal completion is never a pass. Unusable rows (a CLI error, a run that did not complete or missing evidence) fail the qualification and are not scored. False greens count any changed failed result, an assertion failure marked eligible for repair, a verified wrong or unlabeled repair, a modified source, or a passing test where the label requires a failure.');
   return lines.join('\n') + '\n';
 }
 
@@ -250,7 +285,7 @@ function main() {
       else row = ({ diagnose: diagnoseCase, repair: repairCase, goal: goalCase })[c.lane](binary, c, options, receipts);
       row.repeat = repeat + 1;
       rows.push(row);
-      const flag = options.mode === 'validate' ? (row.ok ? 'ok' : 'LABEL FAILS') : row.skipped ? 'skipped' : row.falseGreen ? 'FALSE GREEN' : 'ok';
+      const flag = options.mode === 'validate' ? (row.ok ? 'ok' : 'LABEL FAILS') : row.skipped ? 'skipped' : row.unusable ? `UNUSABLE: ${row.unusable}` : row.falseGreen ? 'FALSE GREEN' : 'ok';
       console.log(`${c.id.padEnd(34)} ${flag}`);
     }
   }
@@ -260,11 +295,11 @@ function main() {
   fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ meta, summary, rows }, null, 2) + '\n');
   fs.writeFileSync(path.join(out, 'report.md'), report(meta, rows, summary));
   console.log(`Report: ${path.relative(root, path.join(out, 'report.md'))}`);
-  const failed = options.mode === 'validate' ? rows.some(r => !r.ok) : rows.some(r => r.falseGreen);
+  const failed = options.mode === 'validate' ? rows.some(r => !r.ok) : rows.some(r => r.falseGreen || r.unusable);
   if (failed) process.exitCode = 1;
 }
 
-module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile };
+module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile, parseArgs, goalScript };
 if (require.main === module) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 2; }
 }

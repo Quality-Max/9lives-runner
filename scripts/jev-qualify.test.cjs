@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { loadManifest, plannedRequests, renamed, summarize, percentile } = require('./jev-qualify.cjs');
+const { loadManifest, plannedRequests, renamed, summarize, percentile, parseArgs, goalScript } = require('./jev-qualify.cjs');
 
 const root = path.resolve(__dirname, '..');
 
@@ -36,6 +36,44 @@ test('paid mode refuses before building or calling anything', () => {
   const manifest = loadManifest();
   assert.equal(plannedRequests(manifest.cases.filter(c => c.lane !== 'goal'), { goalMaxDecisions: 6, repeat: 1 }), 26);
   assert.equal(plannedRequests(manifest.cases.filter(c => c.lane === 'goal'), { goalMaxDecisions: 6, repeat: 2 }), 7 * 12 * 2);
+});
+
+test('repeat, decision and request counts must be whole numbers', () => {
+  // A fractional repeat ran two repeats under a cap computed for 1.5, and NaN
+  // passed the cap comparison.
+  for (const args of [['--repeat', '1.5'], ['--max-requests', 'NaN'], ['--max-requests', ''], ['--goal-max-decisions', '2.5'], ['--repeat', '1e0'], ['--max-requests', '-1'], ['--max-requests', '99999999999999999999']]) {
+    assert.throws(() => parseArgs(args), /whole number/, args.join(' '));
+  }
+  assert.throws(() => parseArgs(['--repeat', '6']), /invalid options/);
+  const options = parseArgs(['--mode', 'jev', '--repeat', '2', '--goal-max-decisions', '3', '--max-requests', '40', '--confirm-paid']);
+  assert.deepEqual([options.repeat, options.goalMaxDecisions, options.maxRequests], [2, 3, 40]);
+});
+
+test('every goal case is exercised by an oracle or a probe', () => {
+  for (const c of loadManifest().cases.filter(x => x.lane === 'goal')) {
+    const script = goalScript(c);
+    assert.ok(script, `${c.id} would be skipped`);
+    const parsed = JSON.parse(fs.readFileSync(path.join(root, 'testdata/jev-corpus', script.file), 'utf8'));
+    assert.equal(parsed.version, '9l.goal/1', c.id);
+    assert.ok(parsed.steps.length > 0, c.id);
+    assert.equal(script.kind, c.label.oracle ? 'oracle' : 'probe', c.id);
+  }
+});
+
+test('unusable rows fail separately and are not scored', () => {
+  const rows = [
+    { lane: 'repair', expected: 'verified', unusable: 'no session result (exit 2)', verified: false, falseGreen: false, ms: 5 },
+    { lane: 'repair', expected: 'verified', verified: true, verifiedCorrect: true, falseGreen: false, ms: 5, jevRequests: 1 },
+    { lane: 'goal', unusable: 'the receipt has no goal record', goal: undefined, test: undefined, falseGreen: false, ms: 5 },
+    { lane: 'goal', goal: 'completed', goalCorrect: true, test: 'passed', testCorrect: true, falseGreen: false, ms: 9, jevRequests: null, usage: { inputTokens: 40, outputTokens: 4, available: true } },
+  ];
+  const s = summarize(rows);
+  assert.deepEqual([s.repair.cases, s.repair.unusable, s.repair.recovery], [1, 1, 1]);
+  assert.deepEqual([s.goal.cases, s.goal.unusable, s.goal.goalStatusMatched], [1, 1, 1]);
+  // Goal receipts do not count Jev requests, so the total stays unknown.
+  assert.equal(s.goal.usage.requests, null);
+  assert.deepEqual([s.goal.usage.inputTokens, s.goal.usage.outputTokens], [40, 4]);
+  assert.equal(s.repair.usage.requests, 1);
 });
 
 test('false greens and metrics are counted from the rows', () => {

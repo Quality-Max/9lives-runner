@@ -26,7 +26,22 @@ quality claims.
 
 A run fails on any **false green**: a changed failed result, an assertion
 failure marked eligible for repair, a verified wrong or unlabeled repair, a
-modified source, or a passing test whose label requires a failure.
+modified source, or a passing test whose label requires a failure. It also
+fails on any **unusable** row, reported on its own and never scored: a CLI
+error, a run that did not complete, or a result without its execution
+evidence (no diagnosis, no original run, no goal record). `--repeat`,
+`--goal-max-decisions` and `--max-requests` take whole numbers only.
+
+Validate mode runs every case. Completing goal cases use their oracle; goal
+cases that must stop (G04–G07) use a deterministic probe in `probes/` that
+tries the obvious step, so the engine's own stop (policy, duplicate controls,
+budget) and the test verdict are exercised. A case that would be skipped
+fails validation. Probes sit beside the frozen manifest and change no case or
+label.
+
+Goal receipts record each decision's tokens but not how many Jev requests it
+made (zero to two) or the model, so paid goal rows report requests and model
+as unknown; the `--max-requests` cap still covers the worst case.
 
 Faults that need a provider or a clock are qualified by offline Go tests, not
 by this browser corpus:

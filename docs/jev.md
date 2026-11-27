@@ -130,9 +130,12 @@ estimated; use the engine's decision and token budgets.
 
 `testdata/jev-corpus` is the frozen, labeled corpus (33 synthetic cases across
 diagnosis, repair and goals, half held out). `npm run qualify:jev -- --mode
-validate` proves the labels with real Chromium runs; `--mode offline` records
-the baseline without Jev; `--mode jev` is the only paid mode and needs
-`--confirm-paid` and a request cap. See `testdata/jev-corpus/README.md`.
+validate` proves the labels with real Chromium runs, including the goal cases
+that must stop, through deterministic probes; `--mode offline` records the
+baseline without Jev; `--mode jev` is the only paid mode and needs
+`--confirm-paid` and a whole-number request cap. A CLI error, an incomplete run
+or missing execution evidence fails the run as unusable instead of being
+scored. See `testdata/jev-corpus/README.md`.
 
 Offline baseline (20 November 2026, darwin): diagnosis reports facts only, so
 all 16 diagnosis cases are `unresolved`. Offline Tier 1 repair verifies 1 of 7
