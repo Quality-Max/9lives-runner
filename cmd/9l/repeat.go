@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -70,6 +71,7 @@ type RepeatSummary struct {
 	Runs       []RepeatMember   `json:"runs"`
 	StartedAt  time.Time        `json:"startedAt"`
 	FinishedAt time.Time        `json:"finishedAt"`
+	JevUsage   *jevcost.Summary `json:"jevUsage,omitempty"`
 }
 
 func newBatchID(now time.Time) string {
@@ -124,6 +126,13 @@ func (s *RepeatSummary) add(result runner.RunSummary, executionFailed bool) Repe
 	member := RepeatMember{RunID: result.RunID, Outcome: outcome, Complete: result.Complete && !executionFailed, Category: memberCategory(result, outcome), DurationMS: result.DurationMS}
 	s.Runs = append(s.Runs, member)
 	s.Executed++
+	if result.JevUsage != nil {
+		totals := result.JevUsage.Totals
+		if s.JevUsage != nil {
+			totals.Add(s.JevUsage.Totals)
+		}
+		s.JevUsage = totals.Summary()
+	}
 	switch outcome {
 	case "passed":
 		s.Passed++
@@ -215,6 +224,7 @@ func printRepeatSummary(out io.Writer, s RepeatSummary, path string) {
 	for _, c := range s.Categories {
 		fmt.Fprintf(out, "  %d× %s\n", c.Runs, c.Category)
 	}
+	printJevUsage(out, s.JevUsage)
 	if path != "" {
 		fmt.Fprintln(out, "Aggregate:", path)
 	}

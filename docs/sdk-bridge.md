@@ -1,7 +1,7 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.7.3`, the same version as the CLI; releases use npm trusted publishing. The
+npm workspace at version `0.8.0`, the same version as the CLI; releases use npm trusted publishing. The
 source CI matrix uses Node 24 with `@playwright/test` 1.61.1 through 1.65.1 and Chromium.
 Node 22 is the declared minimum. The SDK peer range is `>=1.61.1 <2`.
 See the [compatibility matrix](compatibility.md) for the released CLI pairing.

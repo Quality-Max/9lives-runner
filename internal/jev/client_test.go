@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -49,6 +50,47 @@ func fixture(t *testing.T, handler http.HandlerFunc, config Config, limits Limit
 }
 
 func writeNoul(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, goodNoul) }
+
+func TestMetersJevResponsesIndependentlyOfAnswerAndBudget(t *testing.T) {
+	var calls atomic.Int32
+	limits := DefaultLimits()
+	limits.MaxRequests = 4
+	c, b, o, q := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch calls.Add(1) {
+		case 1:
+			writeNoul(w, r)
+		case 2:
+			_, _ = io.WriteString(w, `{"model":"jev-1.14.0","answers":{"present":{"type":"noul","noul":0.97}}}`)
+		case 3:
+			_, _ = io.WriteString(w, strings.Replace(goodNoul, "0.97", "2", 1))
+		case 4:
+			w.WriteHeader(http.StatusTooManyRequests)
+		}
+	}, Config{Enabled: true}, limits)
+	ctx, tracker := jevcost.WithTracker(c.ctx)
+	c.ctx = ctx
+	for _, want := range []string{"answered", "answered", "invalid_response", "provider_error", "budget_exhausted"} {
+		result, _ := c.Decide(context.Background(), b, o, q)
+		if result.Record.Status != want {
+			t.Fatalf("status = %s, want %s", result.Record.Status, want)
+		}
+	}
+	got := tracker.Summary()
+	if want := (jevcost.Totals{Requests: 4, RequestsWithUsage: 2, InputTokens: 244, OutputTokens: 16}); got.Totals != want || calls.Load() != 4 {
+		t.Fatalf("usage = %+v with %d calls, want %+v", got.Totals, calls.Load(), want)
+	}
+	estimate := got.InputRateEstimate
+	if estimate == nil || estimate.EstimatedCostNanoUSD != 10248 {
+		t.Fatalf("wrong Jev cost: %+v", estimate)
+	}
+	savings := map[string]int64{}
+	for _, c := range estimate.Comparisons {
+		savings[c.Model] = c.EstimatedSavingsNanoUSD
+	}
+	if savings["gpt-6-sol"] != 477752 || savings["claude-opus-5-5"] != 965752 {
+		t.Fatalf("wrong savings: %v", savings)
+	}
+}
 
 func TestTypedRequestAndSafeRecord(t *testing.T) {
 	var received map[string]json.RawMessage

@@ -33,7 +33,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.7.3"
+var version = "0.8.0"
 
 func main() {
 	code := run(os.Args[1:], os.Stdout, os.Stderr)
@@ -1085,6 +1085,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 			},
 			BeforeJobs:      beforeJobs,
 			AgentProvenance: agentProvenance,
+			TrackJevUsage:   jevGoals != nil,
 			Verifier:        verifierOption(postconditions),
 			Workers:         *workers, Timeout: *timeout, RunDeadline: runDeadline, MaxAttempts: *maxAttempts, MaxOutputBytes: *maxOutputBytes, PassEnv: passEnv, KeepAttachments: *keepAttachments, LiveOutput: liveOutput, ReceiptDir: *receiptDir, Adapters: availableAdapters, Services: services,
 		})
@@ -1358,6 +1359,7 @@ func printResult(w io.Writer, result runner.RunSummary) {
 	if clearable {
 		fmt.Fprintln(w, "  Attachments are Playwright's own files; the project's next run may delete them. --keep-attachments copies them into the receipt.")
 	}
+	printJevUsage(w, result.JevUsage)
 	failedTests, contradicted := false, false
 	for _, receipt := range result.Receipts {
 		failedTests = failedTests || receipt.FailureCount > 0

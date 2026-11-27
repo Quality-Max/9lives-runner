@@ -1,5 +1,57 @@
 {
   "$defs": {
+    "Comparison": {
+      "properties": {
+        "estimatedCostNanoUSD": {
+          "type": "integer"
+        },
+        "estimatedSavingsNanoUSD": {
+          "type": "integer"
+        },
+        "inputNanoUSDPerToken": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "inputNanoUSDPerToken",
+        "estimatedCostNanoUSD",
+        "estimatedSavingsNanoUSD"
+      ],
+      "type": "object"
+    },
+    "Estimate": {
+      "properties": {
+        "comparisons": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Comparison"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimatedCostNanoUSD": {
+          "type": "integer"
+        },
+        "inputNanoUSDPerToken": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputNanoUSDPerToken",
+        "estimatedCostNanoUSD",
+        "comparisons"
+      ],
+      "type": "object"
+    },
     "RepeatCategory": {
       "properties": {
         "category": {
@@ -41,6 +93,32 @@
         "durationMs"
       ],
       "type": "object"
+    },
+    "Summary": {
+      "properties": {
+        "inputRateEstimate": {
+          "$ref": "#/$defs/Estimate"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "requestsWithUsage": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requests",
+        "requestsWithUsage",
+        "inputTokens",
+        "outputTokens"
+      ],
+      "type": "object"
     }
   },
   "$id": "https://github.com/Quality-Max/9lives-runner/blob/main/docs/contracts/run-repeat.schema.json",
@@ -75,6 +153,9 @@
     },
     "incomplete": {
       "type": "integer"
+    },
+    "jevUsage": {
+      "$ref": "#/$defs/Summary"
     },
     "label": {
       "type": "string"

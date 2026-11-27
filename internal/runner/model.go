@@ -1,7 +1,11 @@
 // Package runner implements the framework-neutral execution core for 9lives.
 package runner
 
-import "time"
+import (
+	"time"
+
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
+)
 
 type Plan struct {
 	Version   int       `json:"version"`
@@ -566,13 +570,14 @@ type RunSummary struct {
 	PlannedJobs   int `json:"plannedJobs"`
 	SkippedInputs int `json:"skippedInputs"`
 	// Skipped explains each skipped input, as in the plan.
-	Skipped  []Skipped `json:"skipped,omitempty"`
-	Passed   int       `json:"passed"`
-	Failed   int       `json:"failed"`
-	Canceled int       `json:"canceled"`
-	TimedOut int       `json:"timedOut"`
-	Errors   int       `json:"errors"`
-	Receipts []Receipt `json:"receipts"`
+	Skipped  []Skipped        `json:"skipped,omitempty"`
+	Passed   int              `json:"passed"`
+	Failed   int              `json:"failed"`
+	Canceled int              `json:"canceled"`
+	TimedOut int              `json:"timedOut"`
+	Errors   int              `json:"errors"`
+	Receipts []Receipt        `json:"receipts"`
+	JevUsage *jevcost.Summary `json:"jevUsage,omitempty"`
 }
 
 type RunStatus struct {

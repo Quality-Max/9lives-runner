@@ -144,7 +144,8 @@ goal that completes against a wrong business outcome still fails. The receipt
 records `jev` as the goal provider and each decision as usual, with the Jev
 requests it made (`requests`: one or two, zero when the engine-built options
 or observation did not fit a request) and the model Jev reported (`model`).
-Cost is not estimated; use the engine's decision and token budgets.
+For aggregate estimates, see [token usage and estimated savings](#token-usage-and-estimated-savings).
+The engine's decision and token budgets still apply.
 
 ## Qualification
 
@@ -165,7 +166,9 @@ not Jev quality measurements; live results are recorded with model, date and
 request counts when they are run.
 
 See the [0.8.0 locator repair validation report](reviews/jev-locator-repair-0.8.0.md)
-for the November 2026 held-out rerun and campaign check.
+for the earlier held-out run and campaign check. The
+[0.8.0 changelog](../CHANGELOG.md#what-the-held-out-run-verified) records the result
+from the merged build.
 
 ## Configuration and API key
 
@@ -292,6 +295,38 @@ Future adapters must reconcile these calls with their owning engine's budgets.
 JSON encoding a `Result`, `Observation` or prepared `Image` excludes raw answers,
 snapshots and image bytes. No artifacts or response bodies are written by the
 client. Hash references identify content without implying a saved image exists.
+
+## Token usage and estimated savings
+
+Jev-enabled `9l run`, `9l diagnose`, and `9l heal` display the number
+of requests that reported usage and their input and output token totals.
+With `--format json`, the same data is under `jevUsage`. Saved run results
+retain it for `9l result`, `9l run --repeat` totals it across member runs,
+and live qualification reports total it across all case runs.
+
+`requestsWithUsage` says how many requests contributed to the token counts.
+A failed or incomplete request can lack usage. Estimates cover only reported
+input and are omitted when no request reports usage. Money in JSON is in
+integer nano-USD (one billionth of a US dollar). The separate provider billing
+availability field in individual decision records still describes billing
+data returned by the provider.
+
+The estimate prices Jev's reported input tokens at each model's published
+standard uncached input rate. TypeSafe charges only for input. The comparison
+uses equal input volume and excludes baseline output, caching, batch discounts,
+and long-context surcharges. Model tokenization and task outcomes can differ.
+
+| Model | USD per million input tokens |
+| --- | ---: |
+| [Jev](https://help.typesafe.ai/articles/5187202169-how-much-does-jev-cost) | 0.042 |
+| [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | 0.10 |
+| [Gemini 3.1 Flash-Lite](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite) | 0.25 |
+| [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | 2.00 |
+| [Claude Opus 5.5](https://platform.claude.com/docs/en/models/opus-5-5/overview) | 4.00 |
+
+Rates checked on 2026-11-27. For cost per successful outcome on a common
+workload, use [TokenHunger's costbench](https://github.com/Desperado/token-hunger)
+with the same cases and assertions for each provider.
 
 ## Validation and upstream references
 

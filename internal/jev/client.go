@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/providerhttp"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -252,6 +253,8 @@ func (c *Client) Decide(ctx context.Context, expected Binding, observation Obser
 	if images {
 		req.Header.Set("TypeSafe-Danger-Zone-Images", "true")
 	}
+	tracker := jevcost.FromContext(c.ctx)
+	tracker.Request()
 	raw, err := providerhttp.Do(req, c.limits.Timeout, 1<<20)
 	if err != nil {
 		result.Record.Status = "provider_error"
@@ -261,6 +264,9 @@ func (c *Client) Decide(ctx context.Context, expected Binding, observation Obser
 		return result, err
 	}
 	answers, model, usage, err := parseResponse(raw, contract)
+	if usage.Available {
+		tracker.Usage(usage.InputTokens, usage.OutputTokens)
+	}
 	if err != nil {
 		result.Record.Status = "invalid_response"
 		return result, err

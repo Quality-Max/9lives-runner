@@ -157,6 +157,58 @@
       ],
       "type": "object"
     },
+    "Comparison": {
+      "properties": {
+        "estimatedCostNanoUSD": {
+          "type": "integer"
+        },
+        "estimatedSavingsNanoUSD": {
+          "type": "integer"
+        },
+        "inputNanoUSDPerToken": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "inputNanoUSDPerToken",
+        "estimatedCostNanoUSD",
+        "estimatedSavingsNanoUSD"
+      ],
+      "type": "object"
+    },
+    "Estimate": {
+      "properties": {
+        "comparisons": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Comparison"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimatedCostNanoUSD": {
+          "type": "integer"
+        },
+        "inputNanoUSDPerToken": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputNanoUSDPerToken",
+        "estimatedCostNanoUSD",
+        "comparisons"
+      ],
+      "type": "object"
+    },
     "Evidence": {
       "properties": {
         "artifacts": {
@@ -928,6 +980,9 @@
           "format": "date-time",
           "type": "string"
         },
+        "jevUsage": {
+          "$ref": "#/$defs/Summary"
+        },
         "outcome": {
           "enum": [
             "passed",
@@ -1028,6 +1083,32 @@
       "required": [
         "input",
         "reason"
+      ],
+      "type": "object"
+    },
+    "Summary": {
+      "properties": {
+        "inputRateEstimate": {
+          "$ref": "#/$defs/Estimate"
+        },
+        "inputTokens": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "requestsWithUsage": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requests",
+        "requestsWithUsage",
+        "inputTokens",
+        "outputTokens"
       ],
       "type": "object"
     },

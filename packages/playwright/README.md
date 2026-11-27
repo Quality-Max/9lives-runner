@@ -10,14 +10,12 @@ completing does not verify that behavior.
 Published on [npm](https://www.npmjs.com/package/@9l/playwright):
 
 ```sh
-npm install --save-dev @9l/playwright@0.7.3 @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.8.0 @playwright/test@1.65.1
 npm exec playwright install chromium
 ```
 
-Use Node 24 (Node 22 minimum) and Chromium. With the 0.7.3 CLI, use
-Playwright 1.61.1 through 1.64.1. The source CI matrix also covers Playwright
-1.65.0 and 1.65.1. Use the CLI and SDK from the same checkout for the new versions.
-The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified runner targets are
+Use Node 24 (Node 22 minimum) and Chromium. With the 0.8.0 CLI, use
+Playwright 1.61.1 through 1.65.1. The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified runner targets are
 macOS, Linux and Windows on amd64 and arm64.
 
 The Go `9l` executable is also required. Use the
@@ -76,7 +74,7 @@ Appium 3.8.0 and UiAutomator2 8.7.0, with the same `app` fixture a web
 target uses. It is qualified on API 35 emulators and one Android 17 phone;
 see [Android setup and qualification limits](https://github.com/Quality-Max/9lives-runner/blob/main/docs/android-driver.md).
 
-1. Install the matching 0.7.3 CLI and `@9l/playwright` together (see
+1. Install the matching 0.8.0 CLI and `@9l/playwright` together (see
    [installation](https://github.com/Quality-Max/9lives-runner/blob/main/docs/install.md)),
    and the pinned automation tooling once, outside your project:
 

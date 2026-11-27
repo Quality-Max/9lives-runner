@@ -6,68 +6,8 @@ SDK versions.
 
 ## Unreleased
 
-### Added
-
-- Goal decision receipts record how many provider requests the decision made
-  (`requests`) and the model the provider reported (`model`), when the
-  provider knows them. Jev reports one or two requests per decision, and zero
-  when the engine-built options or observation did not fit a request; the
-  OpenAI and Anthropic providers report one request and the model their
-  response names. CLI providers and goal scripts leave both out, as does a
-  failed provider call, so an absent `requests` means unknown, never zero.
-  Both fields are optional: receipt, run result and run status stay version
-  2. `npm run qualify:jev -- --mode jev` now totals actual goal requests and
-  reports the model instead of showing them as unknown. Closes #340.
-
-- `9l diagnose <spec>` (experimental) runs one spec once through the normal
-  runner and, when a test fails, reports the observed facts from the
-  receipt: the runner's failure class, the deterministic class, the failed
-  locator and hashes of the attached accessible snapshot and screenshot.
-  With `--jev` it also makes one Jev request within a minute of the run
-  ending, bound to that attempt and the exact source that ran, and maps
-  the typed answers to an engine-owned disposition: `eligible-for-repair`,
-  `investigate-test`, `investigate-app`, `require-new-observation` or
-  `unresolved`. An assertion failure is never eligible for repair, and
-  without a snapshot or an accepted screenshot nothing is asked. Only the
-  error message and a redacted accessible snapshot are sent;
-  `--jev-images synthetic` also sends the failure screenshot, for screens
-  that show test data only. The diagnosis never changes the receipt, retries
-  or acts on the application. It is saved as `diagnosis.json` beside the
-  run's receipts, under `.9lives/diagnoses/` unless `--receipt-dir` names
-  another directory. Like `9l run`, the command exits 0 when the test
-  passed, 1 when a test failed, 2 for a usage error and 3 when the run did
-  not complete. `--jev` refuses before running anything without
-  `TYPESAFE_API_KEY`, or when `--pass-env` would forward it to the test
-  process. Diagnosis quality is not measured: the tests use a scripted Jev
-  and establish wiring and policy only. See [Jev](docs/jev.md).
-- `9l doctor --jev [--jev-model MODEL] [--jev-images off|synthetic|masked]`
-  checks the optional Jev configuration locally. It reports the status,
-  model, image policy and whether the credential is present, never its
-  value. It makes no API request: `connectivity` is always `not_checked`, so
-  availability, authentication and model support stay unverified. It exits
-  2 for `missing_credential` and 0 for `configured` or `disabled`, and does
-  not combine with `--sdk`, `--android`, `--paths` or a spec.
-- An internal, optional Jev decision client (`9l.jev/1`), used by
-  `9l diagnose` and the demo: typed Noul, Choice, fractional Score and Box
-  questions over evidence bound to one attempt and its exact source, with
-  request, question, byte, deadline and evidence-age limits and no retries
-  or redirects. Its records omit raw observations, images, answers and
-  provider error bodies. Ordinary runs never call it, and setting the
-  credential alone does not enable it.
-- A local Jev demo, `npm run demo:jev`: a checkout and a four-level picture
-  hunt in which an ordinary Playwright test, run through the runner, asserts
-  the result while optional Jev judgments interpret what is on screen. It is
-  offline by default and needs no key; `--live --images` makes explicit paid
-  requests. The website's `/hunt.html` is a static copy that replays eight
-  recorded live runs and makes no Jev request. These are individual synthetic
-  checks, not an accuracy benchmark.
-
 ### Fixed
 
-- Jev locator repair compares the old locator's intent with the function of
-  each observed candidate. An immediately following labeled form field can
-  help identify the purpose of a failed click. Proposed edits still require
-  isolated verification.
 - Android: `app.reset()` on an owned emulator no longer passes when the app
   did not come back. It now requires `am start -W` to report the relaunch and
   waits, within its bound, until the input dispatcher focuses the app's
@@ -78,18 +18,94 @@ SDK versions.
   pass while the app was not in front or every later tap went nowhere,
   though the driver reported the taps done; the test then failed at a later
   assertion for the wrong reason (#276, #244).
-- Failure attachments, such as the error-context snapshot and screenshot,
-  are kept for a project opened through a symlinked directory (macOS `/tmp`
-  and `/var/folders`, or a symlinked checkout). Playwright reports resolved
-  paths and the containment check compared them with the unresolved project
-  path, so every attachment there was dropped, which also left `9l heal`
-  without its snapshot. Symlink escapes and traversal are still refused.
 
-### Changed
+## 0.8.0 — 2026-11-27
 
-- Pin the workspace, fixtures and demos to Playwright 1.65.1. Add 1.65.0
-  and 1.65.1 to the compatibility checks and doctor registry checks.
-  Keep the SDK's Playwright 1.61.1 minimum.
+9lives adds optional, experimental Jev assistance for explaining failures, repairing renamed
+Playwright locators and choosing the next action in a test goal. Ordinary
+Playwright runs remain provider-free. Update the CLI and `@9l/playwright`
+together. The engine (`9l.engine/1`), target (`9l.target/6`), and version 2
+receipt, run result and run status contracts keep their versions. The new JSON
+fields are optional.
+
+### Diagnose a failure
+
+Run `9l diagnose <spec>` to run one spec and report the failure class,
+locator and evidence references from the receipt. Add `--jev` to use one
+bounded request with fresh evidence and classify what to investigate. A
+supported assertion mismatch can be routed to application investigation
+locally with `--jev`. Diagnosis keeps the original result and exit code
+and writes a separate `diagnosis.json` beside the receipts. [Jev guide](docs/jev.md#diagnose-a-failed-step)
+
+- Playwright assertion evidence includes the matcher, value kind and
+  mismatch for supported text, equality, count and visibility assertions.
+  Jev can receive expected and observed booleans, visibility states and
+  counts. Arbitrary assertion text and scalar numbers stay local. Assertion
+  failures are ineligible for repair. (#344)
+- Playwright attachments now survive when the project path is a symlink, such
+  as macOS temporary directories. The runner still rejects traversal and
+  symlink escapes. This restores snapshots used by diagnosis and healing.
+  (#266)
+- `9l doctor --jev` checks local configuration and credential presence,
+  without contacting TypeSafe. Each Jev feature is opt-in and uses bounded,
+  attempt-specific evidence. The key stays in the runner and screenshots
+  default to off. (#179)
+
+### Repair a renamed locator
+
+`9l heal <spec> --jev` can compare a failed `getByRole` or `getByLabel` name
+against observed controls when offline healing cannot pick a replacement.
+Jev can use the label of the next field the test fills to identify the
+intended form. The runner changes only the locator name literal and replays
+the original assertions in isolation. It saves a verified candidate as
+`<spec>.healed`. Pass `--yes` to apply it after verification. Missing or
+ambiguous candidates can leave the test unresolved. (#266, #343)
+[Grounded locator repair](docs/jev.md#grounded-locator-repair)
+
+### Use Jev for a goal and see its cost
+
+- `9l run <spec> --sdk --goal-provider jev` chooses among observed controls
+  and bounded actions. The engine retains its limits and stop policies.
+  Playwright assertions still decide whether the test passes. Goal decisions
+  record the provider request count and model when available. OpenAI and Anthropic can also report these fields.
+  An absent count means the runner could not determine it. (#266, #342)
+- Jev-enabled runs, diagnoses and repairs report requests, input and
+  output tokens, estimated Jev cost and input-rate comparisons. The JSON
+  field is `jevUsage`. Saved results, repeated runs and the qualification
+  harness carry the totals. Comparisons cover GPT-6 Luna, Gemini 3.1
+  Flash-Lite, GPT-6 Sol and Claude Opus 5.5 at standard uncached input rates
+  for the same reported input count. They exclude baseline output and
+  discounts and represent pricing estimates for equal token volume. (#346)
+  [Usage and pricing details](docs/jev.md#token-usage-and-estimated-savings)
+
+### Playwright compatibility and examples
+
+- The workspace now pins Playwright **1.65.1**. Chromium qualification and
+  setup diagnostics cover 1.65.0 and 1.65.1 alongside the earlier versions
+  in the matrix. The SDK's minimum stays 1.61.1. (#339)
+  [Compatibility matrix](docs/compatibility.md)
+- The copy-paste agent prompts cover installing 9lives, assessing existing
+  tests and running common workflows. (#338) [Agent prompts](docs/agent-prompts.md)
+- Try the local checkout and picture-hunt demo with `npm run demo:jev`.
+  It defaults to offline mode. The public picture hunt replays recorded
+  synthetic test runs without making live requests. (#179)
+  [Demo guide](demo/jev/README.md)
+
+### What the held-out run verified
+
+The local build of `529ac36` passed deterministic validation on all 16
+frozen synthetic Chromium cases. With `jev-1.14.0`, one attempt per case
+and screenshots off, the live run produced usable evidence for all 16 cases
+and zero false passes. Three of four repairable locators were recovered,
+and the removed target was correctly left unrepaired. The nested-name
+case was missed. Six of eight diagnoses and two of three goal statuses
+matched their labels. All three independent test verdicts matched.
+
+All 20 Jev requests reported usage, totaling 16,233 input and 1,910 output
+tokens.
+The tracker estimated $0.00068 for Jev and input-rate savings of $0.0318
+against GPT-6 Sol and $0.0643 against Claude Opus 5.5. The results describe
+this synthetic run. [Corpus and scoring](testdata/jev-corpus/README.md)
 
 ## 0.7.3 — 2026-11-26
 

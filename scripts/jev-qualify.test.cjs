@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { loadManifest, plannedRequests, renamed, summarize, percentile, parseArgs, goalScript, goalRow } = require('./jev-qualify.cjs');
+const { loadManifest, plannedRequests, renamed, summarize, percentile, parseArgs, goalScript, goalRow, campaignJevUsage } = require('./jev-qualify.cjs');
 
 const root = path.resolve(__dirname, '..');
 
@@ -114,6 +114,19 @@ test('false greens and metrics are counted from the rows', () => {
   assert.equal(s.goal.skipped, 1);
   assert.equal(percentile([1, 2, 3, 4, 100], 0.95), 100);
   assert.equal(percentile([], 0.5), null);
+});
+
+test('campaign usage includes unusable runs and marks incomplete metering', () => {
+  const estimate = { inputNanoUSDPerToken: 42, estimatedCostNanoUSD: 5124, comparisons: [
+    { model: 'gpt-6-sol', inputNanoUSDPerToken: 2000, estimatedCostNanoUSD: 244000, estimatedSavingsNanoUSD: 238876 },
+  ] };
+  const jevUsage = { requests: 2, requestsWithUsage: 1, inputTokens: 122, outputTokens: 8, inputRateEstimate: estimate };
+  const total = campaignJevUsage([{ jevUsage }, { unusable: 'no valid test result', jevUsage }, { unusable: 'no report' }]);
+  assert.deepEqual([total.requests, total.requestsWithUsage, total.inputTokens, total.outputTokens, total.caseRunsWithoutUsageReport], [4, 2, 244, 16, 1]);
+  assert.equal(total.inputRateEstimate.estimatedCostNanoUSD, 10248);
+  assert.equal(total.inputRateEstimate.comparisons[0].estimatedSavingsNanoUSD, 477752);
+  assert.equal(estimate.comparisons[0].estimatedSavingsNanoUSD, 238876);
+  assert.equal(campaignJevUsage([{ jevUsage: { requests: 1, requestsWithUsage: 0, inputTokens: 0, outputTokens: 0 } }]).inputRateEstimate, undefined);
 });
 
 test('labeled renames change only the locator literal', () => {
