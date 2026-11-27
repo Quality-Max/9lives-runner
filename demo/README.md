@@ -31,6 +31,13 @@ Run `npm run smoke:demo` for theme, responsive, evidence and production-CSP
 checks in Chromium. Pass a deployed URL to `node scripts/demo-smoke.cjs URL`
 to repeat the browser checks against the live site.
 
+## README demo: a failing test reported green
+
+The GIF at the top of the repository README: Playwright reports a failed test
+as `1 passed` and exits 0, `9l assess` flags the cause before the run and
+`9l run --sdk` says why the run is green. Every line is real output, and the
+recording is reproducible with VHS. [What it shows and how to record it](readme/README.md).
+
 ## Jev: an interactive checkout story
 
 Run `npm run demo:jev` after installing dependencies and Chromium. Buy a pretend

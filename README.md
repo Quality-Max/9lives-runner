@@ -12,6 +12,12 @@ receipt (`9l run`), and checks that a reproduction fails before a fix and
 passes after it (`9l confirm`). Coding agents get the same tools from
 `9l mcp`. It runs your existing Playwright project locally, with no account.
 
+![A test whose assertion fails: npx playwright test prints a failed test, then 1 passed, and exits 0. 9l assess flags the test.fail() in the afterEach hook before the run, and 9l run --sdk reports that the failed test counts as expected only because test.fail() ran during it.](docs/assets/false-green.gif)
+
+A failing test that Playwright reports green, flagged by `9l assess` before
+the run and by `9l run --sdk` after it. The recording is reproducible from
+[demo/readme](demo/readme).
+
 ## Why not just `npx playwright test`?
 
 Playwright's exit code reports Playwright's verdict. When an agent wrote the
@@ -140,6 +146,10 @@ The full matrix, the native targets and the SDK handshake are in
 [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) ·
 [Discussions](https://github.com/Quality-Max/9lives-runner/discussions) ·
 [Support](SUPPORT.md) · [Security](SECURITY.md)
+
+If 9lives caught a test that should have failed, a star helps other teams
+find it: star the repository on GitHub, or run `9l star --gh` with the
+GitHub CLI.
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party
 components retain their own licenses and notices.
