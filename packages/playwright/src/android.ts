@@ -7,7 +7,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetVersion} from './protocol';
 import {targetCapabilities, failureCaptureLimits, TargetSetupError, type TargetContext, type TargetFailureCapture, type TargetDriver, type TargetHandle, type TargetSetupRecord, type TargetRect, type TargetSize, type TargetDiagnostic, type WindowObservation, type BiometricOutcome} from './targets';
-import {activeDisplay, deviceStatePattern, emulatorVersion, displayPattern, imePattern, packagePattern, parseDeviceState, parseDisplays, parseIme, parseLogicalDisplays, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type Posture} from './android-device';
+import {activeDisplay, deviceStatePattern, emulatorVersion, displayPattern, imePattern, inputFocusPattern, launchReported, packagePattern, parseDeviceState, parseDisplays, parseIme, parseInputFocus, parseLogicalDisplays, parsePackageVersion, parsePosture, parseSigner, parseWindows, posturePattern, windowPattern, type DisplayInfo, type InputFocus, type Posture} from './android-device';
 export {TargetSetupError, type TargetSetupRecord} from './targets';
 
 import {androidVersions, type AndroidRuntime} from './android-runtime';
@@ -286,6 +286,31 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
     if (!dump.endsWith(windowsEnd)) return undefined;
     const windows = parseWindows(dump.slice(0, -windowsEnd.length), options.appPackage);
     return windows.windows === 0 && windows.focus === 'unknown' ? undefined : windows;
+  };
+  // The input dispatcher's focus, read whole or not at all, like the windows.
+  const inputEnd = '9l-input-end';
+  const readInputFocus = async (c: TargetContext): Promise<InputFocus> => {
+    const dump = await adbRun(shell(`{ dumpsys input 2>/dev/null | grep -E -A4 "${inputFocusPattern}"; echo ${inputEnd}; } | head -c 4096`), c);
+    return dump.endsWith(inputEnd) ? parseInputFocus(dump.slice(0, -inputEnd.length), options.appPackage) : 'unknown';
+  };
+  // A relaunched app takes touches only once the dispatcher focuses its
+  // window; before that a tap is reported done and lands nowhere (#276).
+  // Read again only while a wait and a read, half again as slow as the
+  // slowest so far, still fit the bound; a focus that never comes fails the
+  // operation by name rather than leaving later taps to go missing, and the
+  // name says what the dispatcher last showed: another window, none, or a
+  // dump that could not be read.
+  const untilInputFocus = async (c: TargetContext) => {
+    let slowest = 0;
+    for (;;) {
+      const started = Date.now();
+      const focus = await readInputFocus(c);
+      if (focus === 'app') return;
+      slowest = Math.max(slowest, Date.now() - started);
+      if (Date.now() + 100 + slowest * 1.5 >= c.deadlineMs) throw failure(`relaunch_focus_${focus}`);
+      await delay(100, undefined, {signal: c.signal});
+      if (Date.now() >= c.deadlineMs) throw failure(`relaunch_focus_${focus}`);
+    }
   };
   // With diagnostics, the window state before the last gesture; a read that
   // fails leaves the gesture to proceed and the observation absent. The
@@ -911,7 +936,12 @@ export function androidTargetDriver(options: AndroidTargetOptions): TargetDriver
       if (!session) throw failure('session_unavailable');
       await adbRun(['shell', 'am', 'force-stop', options.appPackage], c);
       if (await adbRun(['shell', 'pm', 'clear', options.appPackage], c) !== 'Success') throw failure('reset_failed');
-      await adbRun(launch, c);
+      // The relaunch must be reported and must reach input focus: on a slow
+      // emulator a launch that was never made, or a window the dispatcher
+      // never focused, let reset pass while the app was not in front or
+      // dropped every touch (#276, #244).
+      if (!launchReported(await adbRun(launch, c))) throw failure('relaunch_failed');
+      await untilInputFocus(c);
     },
     async observeTestId(id, c) { return (await matches(id, c)).slice(0, 2).map(() => handle(id)); },
     setup: () => setupRecord,

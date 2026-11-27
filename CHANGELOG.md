@@ -4,6 +4,21 @@ From 0.2.0 the CLI and `@9l/playwright` share one version and are released
 together by one `v<version>` tag. Earlier entries keep their separate CLI and
 SDK versions.
 
+## Unreleased
+
+### Fixed
+
+- Android: `app.reset()` on an owned emulator no longer passes when the app
+  did not come back. It now requires `am start -W` to report the relaunch and
+  waits, within its bound, until the input dispatcher focuses the app's
+  window. Otherwise it fails as `relaunch_failed`, or as
+  `relaunch_focus_other`, `relaunch_focus_none` or `relaunch_focus_unknown`
+  for what the dispatcher last showed. On a slow emulator a relaunch that
+  never happened, or a window that was drawn but never focused, let reset
+  pass while the app was not in front or every later tap went nowhere,
+  though the driver reported the taps done; the test then failed at a later
+  assertion for the wrong reason (#276, #244).
+
 ## 0.8.0 — 2026-11-27
 
 9lives adds optional, experimental Jev assistance for explaining failures, repairing renamed
