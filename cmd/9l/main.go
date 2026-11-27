@@ -27,6 +27,8 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/goals"
 	"github.com/Quality-Max/9lives-runner/internal/healing"
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/jev"
+	"github.com/Quality-Max/9lives-runner/internal/jevassist"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -110,7 +112,7 @@ Usage:
   9l status <run-id> [--receipt-dir DIR]
   9l result <run-id> [--format text|json] [--receipt-dir DIR] [--junit FILE]
   9l cancel <run-id> [--receipt-dir DIR]
-  9l heal <spec> [--provider NAME|none] [--model NAME] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
+  9l heal <spec> [--provider NAME|none] [--model NAME] [--jev [--jev-images off|synthetic]] [--yes] [--run-timeout D] [--pass-env NAME]... [--format json|text]
           # verified locator healing: offline Tier 1, then an agent CLI (its own login) or API (heal-native is an alias)
   9l diagnose <spec> [--jev [--jev-model MODEL] [--jev-images off|synthetic]] [--run-timeout D] [--pass-env NAME]... [--receipt-dir DIR] [--format text|json]
           # experimental: run once; on failure report observed facts and, with --jev, one bounded Jev diagnosis; never changes the result
@@ -730,7 +732,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	failureDetails := fs.Bool("failure-details", false, "with --sdk, record each failed test's title, failing line, error and attachments, from Playwright's JSON reporter beside the evidence stream")
 	headed := fs.Bool("headed", false, "show the browser: run Playwright headed, one job at a time unless --workers is set")
 	agentRecord := fs.String("agent-provenance", "", "require the agent creation branch, commit and source")
-	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic (API key), or claude, codex or opencode (the CLI's own login)")
+	goalProvider := fs.String("goal-provider", "", "explicit goal provider: openai or anthropic (API key), claude, codex or opencode (the CLI's own login), or jev (TYPESAFE_API_KEY; experimental)")
 	goalModel := fs.String("goal-model", "", "provider model for goal decisions")
 	goalScript := fs.String("goal-script", "", "offline scripted goal decisions JSON (qualification only)")
 	goalLimits := goals.Defaults()
@@ -876,6 +878,7 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	var services runner.AttemptServiceFactory
+	var jevGoals *jevassist.GoalProvider
 	if *goalProvider != "" || *goalScript != "" {
 		factory := goals.Factory{Model: *goalModel, Limits: goalLimits, MaxCostMicros: *goalCost, InputMicrosPerMillion: *goalInputPrice, OutputMicrosPerMillion: *goalOutputPrice}
 		if !*sdk || (*goalProvider != "" && *goalScript != "") || factory.ValidateBudget() != nil {
@@ -913,8 +916,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 					return 2
 				}
 				provider = cli
+			case "jev":
+				config := jev.Config{Enabled: true, Model: firstNonEmptyString(*goalModel, jev.DefaultModel)}
+				if preflight, err := jev.CheckConfig(config); err != nil || preflight.Status != "configured" {
+					fmt.Fprintln(errOut, "9l: goal provider jev needs a valid --goal-model and "+jev.CredentialName+" in this process")
+					return 2
+				}
+				jevGoals = &jevassist.GoalProvider{New: newGoalDecider(config, timeout)}
+				provider = jevGoals
 			default:
-				fmt.Fprintln(errOut, "9l: goal provider must be openai, anthropic, claude, codex or opencode")
+				fmt.Fprintln(errOut, "9l: goal provider must be openai, anthropic, claude, codex, opencode or jev")
 				return 2
 			}
 		}
@@ -1011,6 +1022,16 @@ func runCommand(command string, args []string, out, errOut io.Writer) int {
 	if postconditions != nil && (len(plan.Jobs) != 1 || len(plan.Skipped) != 0) {
 		fmt.Fprintln(errOut, "9l: --verify: independent verification requires one exact spec planned as one job")
 		return exitUsage
+	}
+	if jevGoals != nil {
+		// Jev decisions are bound to the exact spec bytes that run.
+		digest, err := planSourceDigest(plan)
+		if err != nil {
+			fmt.Fprintln(errOut, "9l: goal provider jev could not read the planned specs")
+			return 2
+		}
+		jevGoals.SourceSHA256 = digest
+		jevGoals.Revision, _ = sourceRevision(plan.Jobs[0].Spec, digest)
 	}
 	if command == "plan" || *dryRun {
 		return printPlan(out, plan, *format)

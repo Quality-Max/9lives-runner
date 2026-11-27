@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -20,11 +21,27 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
 	"github.com/Quality-Max/9lives-runner/internal/healing"
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
+	"github.com/Quality-Max/9lives-runner/internal/jev"
+	"github.com/Quality-Max/9lives-runner/internal/jevassist"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 // healOptions are the inputs of one native healing session, shared by
 // `9l heal` and the MCP heal_test tool.
+// newRepairDecider builds the attempt-bound Jev client for a grounded
+// proposal. Tests replace it; production always uses the fixed J1 endpoint.
+var newRepairDecider = func(config jev.Config) jevassist.NewDecider {
+	return func(ctx context.Context, identity runner.AttemptIdentity, revision, source string) (jevassist.Decider, func(), error) {
+		limits := jev.DefaultLimits()
+		limits.MaxRequests, limits.MaxQuestions, limits.Timeout, limits.MaxEvidenceAge = 1, 3, 45*time.Second, time.Minute
+		client, err := jev.New(ctx, config, identity, revision, source, limits)
+		if err != nil {
+			return nil, func() {}, err
+		}
+		return client, client.Close, nil
+	}
+}
+
 type healOptions struct {
 	Spec string
 	// Provider proposes Tier 2 candidates; nil heals with offline Tier 1 only.
@@ -37,6 +54,8 @@ type healOptions struct {
 	Apply        bool
 	Interactive  func(context.Context) bool
 	Preview      func(original, candidate string)
+	// Grounded is the optional Jev proposer; nil keeps healing unchanged.
+	Grounded tier2.GroundedProposer
 }
 
 var receiptLabel = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -71,10 +90,16 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 			}
 		}
 		// Read the ARIA snapshot now: the next verification run clears
-		// Playwright's output directory.
-		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath, Snapshot: playwright.PageSnapshot(receipt.Failures)}
+		// Playwright's output directory. For the same reason the original
+		// run's evidence for a grounded proposer is captured here too.
+		result := tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath, Snapshot: playwright.PageSnapshot(receipt.Failures), Attempt: &receipt}
+		if o.Grounded != nil && label == "original" && !result.Passed {
+			captured := jevassist.CaptureFailure(receipt)
+			result.Captured = &captured
+		}
+		return result
 	}
-	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec}, func(source, failure, snapshot string) (string, bool) {
+	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec, Grounded: o.Grounded}, func(source, failure, snapshot string) (string, bool) {
 		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source, AriaSnapshot: snapshot})
 		if old, _ := proposal.Metadata["oldSelector"].(string); healing.EquivalentSelectors(old, fmt.Sprint(proposal.Metadata["newSelector"])) {
 			return "", false // selects the same missing element; skip its verification run
@@ -158,7 +183,11 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	var passEnv envNames
 	fs.Var(&passEnv, "pass-env", "forward this environment variable only to test processes (repeatable or comma-separated)")
 	format := fs.String("format", "json", "json (the session result) or text (state, reason and the candidate diff)")
+	useJev := fs.Bool("jev", false, "after Tier 1, let Jev choose among observed accessible names for a failed getByRole/getByLabel action (one paid request; requires TYPESAFE_API_KEY)")
+	jevModel := fs.String("jev-model", jev.DefaultModel, "explicit Jev model")
+	jevImages := fs.String("jev-images", "off", "off, or synthetic to upload the failure screenshot of test-only data")
 	normalized := flagsFirst(args, map[string]bool{
+		"-jev-model": true, "--jev-model": true, "-jev-images": true, "--jev-images": true,
 		"-provider": true, "--provider": true, "-model": true, "--model": true, "-provider-url": true, "--provider-url": true,
 		"-max-proposals": true, "--max-proposals": true, "-run-timeout": true, "--run-timeout": true, "-deadline": true, "--deadline": true,
 		"-receipt-dir": true, "--receipt-dir": true, "-pass-env": true, "--pass-env": true, "-format": true, "--format": true,
@@ -179,6 +208,28 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	if fs.NArg() != 1 || *maxProposals < 1 || runTimeout <= 0 || *deadline < 0 {
 		fmt.Fprintln(errOut, "9l: heal requires one spec and valid limits")
 		return 2
+	}
+	jevOptions := false
+	fs.Visit(func(f *flag.Flag) { jevOptions = jevOptions || f.Name == "jev-model" || f.Name == "jev-images" })
+	var grounded tier2.GroundedProposer
+	if jevOptions && !*useJev || (*jevImages != "off" && *jevImages != "synthetic") {
+		fmt.Fprintln(errOut, "9l: heal takes --jev with --jev-model and --jev-images off|synthetic")
+		return 2
+	}
+	if *useJev {
+		if forwardsJevCredential(passEnv) {
+			fmt.Fprintln(errOut, "9l: heal --jev keeps "+jev.CredentialName+" in the 9l process; do not forward it with --pass-env; no test was run")
+			return 2
+		}
+		config := jev.Config{Enabled: true, Model: *jevModel, Images: *jevImages}
+		if preflight, err := jev.CheckConfig(config); err != nil || preflight.Status != "configured" {
+			fmt.Fprintln(errOut, "9l: heal --jev needs a valid model and "+jev.CredentialName+" in this process; no test was run")
+			return 2
+		}
+		source, _ := readSource(fs.Arg(0))
+		revision, _ := sourceRevision(fs.Arg(0), hex.EncodeToString(sha256Of(source)))
+		grounded = jevassist.Repairer{New: newRepairDecider(config), Images: *jevImages, Revision: revision}
+		fmt.Fprintf(errOut, "9l: a locator failure may send the error, a redacted accessible snapshot%s to Jev (%s); its choice is verified in an isolated run before any save\n", map[bool]string{true: " and the failure screenshot", false: ""}[*jevImages == "synthetic"], config.Model)
 	}
 	provider, err := resolveHealProvider(*providerName, *model, *providerURL)
 	if err != nil {
@@ -210,7 +261,7 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	if *format == "text" {
 		original, _ = readSource(spec)
 	}
-	result, err := healSpec(ctx, healOptions{Spec: spec, Provider: provider, Model: *model, MaxProposals: *maxProposals, RunTimeout: runTimeout, ReceiptDir: *receipts, PassEnv: passEnv, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut)})
+	result, err := healSpec(ctx, healOptions{Spec: spec, Provider: provider, Model: *model, MaxProposals: *maxProposals, RunTimeout: runTimeout, ReceiptDir: *receipts, PassEnv: passEnv, Grounded: grounded, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut)})
 	if *format == "text" {
 		if writeErr := printHealText(out, spec, original, result); writeErr != nil {
 			return 1

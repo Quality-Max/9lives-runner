@@ -7,8 +7,9 @@ attempt identity and cancellation context. Ordinary Playwright runs remain
 provider-free.
 
 The client is infrastructure for diagnosis, locator repair, semantic checks and
-goal adapters. Failed-step diagnosis (QUA-2229) is available as `9l diagnose`;
-the others are separate work.
+goal adapters. Failed-step diagnosis (QUA-2229) is available as `9l diagnose` and grounded
+locator repair (QUA-2230) as `9l heal --jev`, and goal decisions (QUA-2232) as
+`9l run --sdk --goal-provider jev`. Visual semantic checks are separate work.
 There is no new SDK method or `run --provider jev` option. A schema-valid answer
 is an inference; by itself it cannot create a passing execution receipt or
 execute an action. Live accuracy and model availability have not been qualified here.
@@ -59,6 +60,89 @@ screen shows test data you are allowed to upload. Screenshots require
 `diagnosis.json` beside the run's receipts in `.9lives/diagnoses/`. The
 offline tests establish wiring and policy only; diagnosis quality is measured
 separately (QUA-2233).
+
+## Grounded locator repair
+
+```sh
+9l heal tests/checkout.spec.ts --jev            # save a verified candidate as .healed
+9l heal tests/checkout.spec.ts --jev --yes      # apply it after verification
+```
+
+`--jev` adds one optional stage to native healing, after offline Tier 1 and
+before any Tier 2 provider. It runs only for a failed direct
+`getByRole(...)` or `getByLabel(...)` action whose accessible name no longer
+matches, when Tier 1 could not pick a single renamed control. The candidates are
+the distinct accessible names of the same role (or labelled controls) in the
+failure's ARIA snapshot; names shared by several controls are left out. Jev
+answers three typed questions: which listed candidate is the intended control
+(or none), whether the target is present, and whether several candidates
+plausibly match. Candidates are referred to by position; their names stay in
+the observation data. A proposal needs presence of at least 0.7, ambiguity of at
+most 0.3, and choice confidence and probability of at least 0.7.
+
+Go builds the candidate by replacing only the failed locator's name literal.
+The role, `exact` flag, imports, assertions, comments and other actions stay
+byte-identical, and the session's existing exact-literal check rejects anything
+else before running. The candidate then runs in a fresh isolated copy with its
+own receipt. Only a passing run with the original test count is verified. A
+wrong choice that reaches the test's assertion stays failing (`needs_human`),
+so real application defects and wrong business outcomes are never repaired.
+Without `--yes` a verified candidate is saved as `<spec>.healed`; with `--yes`
+it is applied after the existing file-hash concurrency check. The session JSON
+records the stage as `groundedBy`, `groundedDecision` (Jev's answers and the
+candidate list) and `grounded` (the verification run).
+
+The stage abstains for assertion failures, CSS or text locators, missing or
+stale evidence (older than a minute; it uses the original run's evidence),
+duplicate or missing candidates, a locator inside an assertion, and unclear
+answers. Jev Box localization is not used: Playwright's failure evidence carries
+no control geometry to match a box against. `--jev-images synthetic` also sends
+the failure screenshot of test-only data. As with `9l diagnose --jev`,
+`--pass-env TYPESAFE_API_KEY` is refused before anything runs: the credential
+stays in the `9l` process and never reaches the original or verification run.
+
+## Bounded goal decisions
+
+```sh
+9l run tests/signup.spec.ts --sdk --goal-provider jev [--goal-model jev-1.14.0]
+```
+
+Jev is an experimental provider for the existing `n9l.goal` engine. The engine
+still builds the finite observed controls, and keeps every candidate limit,
+action/decision/token/time budget, cancellation, the destructive/outreach label
+policy, duplicate-control stops and unknown-effect handling. Jev answers one
+typed choice per decision among engine-built options: each allowed action on
+each observed control, plus `wait`, `complete` and `unresolved`. Options are
+referred to by id; observed labels and state stay in the observation data. A
+choice needs confidence and probability of at least 0.7, otherwise the
+decision is `unresolved`. For `fill` or `select` with several named parameters,
+a second typed question picks which parameter name; values never leave the
+browser worker. Jev never produces selectors, URLs, code or input values.
+
+The client is bound to each attempt (run, job, attempt) and to a digest of the
+planned specs' bytes, and is closed with the attempt. `complete` stays
+completed-but-unverified: the test's own assertions decide the result, and a
+goal that completes against a wrong business outcome still fails. The receipt
+records `jev` as the goal provider and each decision as usual. Cost is not
+estimated; use the engine's decision and token budgets.
+
+## Qualification
+
+`testdata/jev-corpus` is the frozen, labeled corpus (33 synthetic cases across
+diagnosis, repair and goals, half held out). `npm run qualify:jev -- --mode
+validate` proves the labels with real Chromium runs, including the goal cases
+that must stop, through deterministic probes; `--mode offline` records the
+baseline without Jev; `--mode jev` is the only paid mode and needs
+`--confirm-paid` and a whole-number request cap. A CLI error, an incomplete run
+or missing execution evidence fails the run as unusable instead of being
+scored. See `testdata/jev-corpus/README.md`.
+
+Offline baseline (20 November 2026, darwin): diagnosis reports facts only, so
+all 16 diagnosis cases are `unresolved`. Offline Tier 1 repair verifies 1 of 7
+repairable renames (recovery 14%, precision 100%). Goals need a provider and are
+not run. There were zero false greens. These are policy and wiring results,
+not Jev quality measurements; live results are recorded with model, date and
+request counts when they are run.
 
 ## Configuration and API key
 

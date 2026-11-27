@@ -177,27 +177,9 @@ var labelledRoles = map[string]bool{"textbox": true, "searchbox": true, "combobo
 // returns "" while the old name still matches, or when no single candidate
 // is left. The candidate is unverified until the spec runs with it.
 func ariaAlternative(call editableLocator, snapshot string) string {
-	if call.method != "getByRole" && call.method != "getByLabel" {
-		return ""
-	}
-	var names []string
-	for _, line := range strings.Split(snapshot, "\n") {
-		m := ariaLine.FindStringSubmatch(unquoteAriaLine(line))
-		if len(m) != 3 || m[2] == "" {
-			continue
-		}
-		role, name := m[1], strings.ReplaceAll(m[2], `\"`, `"`)
-		if call.method == "getByRole" && role != call.role || call.method == "getByLabel" && !labelledRoles[role] {
-			continue
-		}
-		if strings.Contains(strings.ToLower(name), strings.ToLower(call.value)) {
-			return "" // the old name still matches; this is not a rename
-		}
-		// A whitespace-only name would substring-match nearly every named
-		// control; it is not a rename candidate.
-		if strings.TrimSpace(name) != "" && safeAttributeValue(name) && len(name) <= 200 && !strings.Contains(name, "\\") {
-			names = append(names, name)
-		}
+	names, stillMatches := ariaNamedControls(call, snapshot)
+	if stillMatches {
+		return "" // the old name still matches; this is not a rename
 	}
 	if len(names) == 1 {
 		return names[0]
@@ -212,6 +194,66 @@ func ariaAlternative(call editableLocator, snapshot string) string {
 		return sharing[0]
 	}
 	return ""
+}
+
+// ariaNamedControls lists, in snapshot order, the safe accessible names of
+// controls a getByRole or getByLabel locator could be renamed to. stillMatches
+// reports that a control of that kind still contains the old name.
+func ariaNamedControls(call editableLocator, snapshot string) (names []string, stillMatches bool) {
+	if call.method != "getByRole" && call.method != "getByLabel" {
+		return nil, false
+	}
+	for _, line := range strings.Split(snapshot, "\n") {
+		m := ariaLine.FindStringSubmatch(unquoteAriaLine(line))
+		if len(m) != 3 || m[2] == "" {
+			continue
+		}
+		role, name := m[1], strings.ReplaceAll(m[2], `\"`, `"`)
+		if call.method == "getByRole" && role != call.role || call.method == "getByLabel" && !labelledRoles[role] {
+			continue
+		}
+		if strings.Contains(strings.ToLower(name), strings.ToLower(call.value)) {
+			return nil, true
+		}
+		// A whitespace-only name would substring-match nearly every named
+		// control; it is not a rename candidate.
+		if strings.TrimSpace(name) != "" && safeAttributeValue(name) && len(name) <= 200 && !strings.Contains(name, "\\") {
+			names = append(names, name)
+		}
+	}
+	return names, false
+}
+
+// RenameCandidates lists the distinct accessible names a failed getByRole or
+// getByLabel locator could be renamed to, from the page's ARIA snapshot. A
+// name shared by several controls is left out: it would not select one. ok is
+// false for other locator forms and while a control still matches the old
+// name, which is not a rename. Every candidate is unverified.
+func RenameCandidates(failedLocator, snapshot string) (names []string, ok bool) {
+	call, parsed := parseLocatorExpression(failedLocator)
+	if !parsed {
+		return nil, false
+	}
+	all, stillMatches := ariaNamedControls(call, snapshot)
+	if stillMatches || (call.method != "getByRole" && call.method != "getByLabel") {
+		return nil, false
+	}
+	count := map[string]int{}
+	for _, name := range all {
+		count[strings.ToLower(name)]++
+	}
+	for _, name := range all {
+		if count[strings.ToLower(name)] == 1 {
+			names = append(names, name)
+		}
+	}
+	return names, true
+}
+
+// RenameLocator replaces only the name literal of the one direct action that
+// uses failedLocator. The caller must still verify the candidate in isolation.
+func RenameLocator(source, failedLocator, name, framework string) (string, bool) {
+	return replaceSelector(source, failedLocator, name, framework)
 }
 
 // unquoteAriaLine undoes Playwright's YAML quoting of an entry whose text

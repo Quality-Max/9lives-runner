@@ -13,6 +13,7 @@ import (
 
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
 	"github.com/Quality-Max/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
@@ -47,6 +48,32 @@ type Evidence struct {
 // FromReceipt reads the first failed test of a failed receipt. Missing
 // attachments are recorded as limitations, never invented.
 func FromReceipt(receipt runner.Receipt, revision, sourceSHA256 string) (Evidence, []string, error) {
+	return FromCaptured(receipt, CaptureFailure(receipt), revision, sourceSHA256)
+}
+
+// CaptureFailure reads the first failed test's accessible snapshot and failure
+// screenshot now, while its attachment files exist. A later run in the same
+// project clears Playwright's output directory.
+func CaptureFailure(receipt runner.Receipt) tier2.CapturedFailure {
+	if len(receipt.Failures) == 0 {
+		return tier2.CapturedFailure{}
+	}
+	captured := tier2.CapturedFailure{Snapshot: playwright.PageSnapshot(receipt.Failures[:1])}
+	for _, attachment := range receipt.Failures[0].Attachments {
+		if attachment.Name != "screenshot" || (attachment.ContentType != "image/png" && attachment.ContentType != "image/jpeg") || attachment.Bytes > maxScreenshotBytes {
+			continue
+		}
+		if raw, err := playwright.ReadAttachment(attachment.Path, maxScreenshotBytes); err == nil {
+			captured.Screenshot = raw
+			break
+		}
+	}
+	return captured
+}
+
+// FromCaptured is FromReceipt over attachment contents read when the run
+// ended, so evidence does not depend on files a later run may have removed.
+func FromCaptured(receipt runner.Receipt, captured tier2.CapturedFailure, revision, sourceSHA256 string) (Evidence, []string, error) {
 	if receipt.Status == runner.StatusPassed || len(receipt.Failures) == 0 {
 		return Evidence{}, nil, errors.New("receipt has no failed test")
 	}
@@ -66,20 +93,12 @@ func FromReceipt(receipt runner.Receipt, revision, sourceSHA256 string) (Evidenc
 		Test: failure.Title, Location: failure.Location, FailureClass: failure.Class,
 		DeterministicClass: healing.Classify(failure.Message, ""), Message: message,
 		FailedLocator: healing.FailedLocator(failure.Message),
-		Snapshot:      playwright.PageSnapshot(receipt.Failures[:1]),
+		Snapshot:      captured.Snapshot,
+		Screenshot:    captured.Screenshot,
 		ObservedAt:    receipt.FinishedAt,
 	}
 	if e.Snapshot == "" {
 		limitations = append(limitations, "no accessible snapshot was attached to the failure")
-	}
-	for _, attachment := range failure.Attachments {
-		if attachment.Name != "screenshot" || (attachment.ContentType != "image/png" && attachment.ContentType != "image/jpeg") || attachment.Bytes > maxScreenshotBytes {
-			continue
-		}
-		if raw, err := playwright.ReadAttachment(attachment.Path, maxScreenshotBytes); err == nil {
-			e.Screenshot = raw
-			break
-		}
 	}
 	if e.Screenshot == nil {
 		limitations = append(limitations, "no failure screenshot was attached; enable screenshot: 'only-on-failure' to include one")
