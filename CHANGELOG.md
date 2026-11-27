@@ -8,6 +8,17 @@ SDK versions.
 
 ### Added
 
+- Goal decision receipts record how many provider requests the decision made
+  (`requests`) and the model the provider reported (`model`), when the
+  provider knows them. Jev reports one or two requests per decision, and zero
+  when the engine-built options or observation did not fit a request; the
+  OpenAI and Anthropic providers report one request and the model their
+  response names. CLI providers and goal scripts leave both out, as does a
+  failed provider call, so an absent `requests` means unknown, never zero.
+  Both fields are optional: receipt, run result and run status stay version
+  2. `npm run qualify:jev -- --mode jev` now totals actual goal requests and
+  reports the model instead of showing them as unknown. Closes #340.
+
 - `9l diagnose <spec>` (experimental) runs one spec once through the normal
   runner and, when a test fails, reports the observed facts from the
   receipt: the runner's failure class, the deterministic class, the failed
@@ -53,6 +64,10 @@ SDK versions.
 
 ### Fixed
 
+- Jev locator repair compares the old locator's intent with the function of
+  each observed candidate. An immediately following labeled form field can
+  help identify the purpose of a failed click. Proposed edits still require
+  isolated verification.
 - Failure attachments, such as the error-context snapshot and screenshot,
   are kept for a project opened through a symlinked directory (macOS `/tmp`
   and `/var/folders`, or a symlinked checkout). Playwright reports resolved

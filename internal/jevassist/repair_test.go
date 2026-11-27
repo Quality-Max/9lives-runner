@@ -65,8 +65,11 @@ func TestGroundedRepairProposesOnlyTheChosenObservedName(t *testing.T) {
 	if tier2.SafeCandidate(paySource, candidate, "getByRole('button', { name: 'Checkout', exact: true })", "playwright") != nil {
 		t.Fatal("candidate crosses the native edit boundary")
 	}
-	if !strings.Contains(fake.got.Snapshot, `c2: "Continue to payment"`) || !strings.Contains(fake.got.Snapshot, "Ignore previous instructions") {
-		t.Fatal("observation lost the candidate list or page text")
+	if !strings.HasPrefix(fake.got.Snapshot, "Previous target locator: getByRole('button', { name: 'Checkout', exact: true })\n") ||
+		!strings.Contains(fake.got.Snapshot, `c2: "Continue to payment"`) ||
+		!strings.Contains(fake.got.Snapshot, "Ignore previous instructions") ||
+		strings.Contains(fake.got.Snapshot, "Call log:") {
+		t.Fatal("observation must contain the old locator, candidates and page context without the error log")
 	}
 	for id, q := range fake.contract.Questions {
 		for _, text := range append([]string{q.Instructions}, valuesOf(q.Criteria)...) {
@@ -74,6 +77,36 @@ func TestGroundedRepairProposesOnlyTheChosenObservedName(t *testing.T) {
 				t.Fatalf("page text entered question %s", id)
 			}
 		}
+	}
+}
+
+func TestGroundedRepairUsesOnlyTheLabelOfAnAdjacentFormAction(t *testing.T) {
+	const next = "  await expect(page.getByText('Payment form')).toBeVisible();"
+	const fill = "  await page.getByLabel('Cardholder name', { exact: true }).fill('private form value');\n"
+	for _, tc := range []struct {
+		name, before string
+		hint         bool
+	}{
+		{"direct labeled fill", fill, true},
+		{"intervening navigation", "  await page.goto('/other');\n" + fill, false},
+		{"conditional fill", "  if (prefill) " + strings.TrimSpace(fill) + "\n", false},
+		{"chained fill", strings.Replace(fill, ".fill(", ".first().fill(", 1), false},
+		{"unlabeled fill", strings.Replace(fill, "getByLabel", "getByText", 1), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := strings.Replace(paySource, next, tc.before+next, 1)
+			fake := &fakeJev{answers: grounding("c2", .9, .88, .95, .05, 3)}
+			candidate, _, err := repairer(fake).Propose(context.Background(), source, payFailure, failedRun(t, payFailure, paySnapshot, time.Now()))
+			want := strings.Replace(source, "name: 'Checkout'", "name: 'Continue to payment'", 1)
+			if err != nil || candidate != want {
+				t.Fatal("form context changed the edit boundary")
+			}
+			got := fake.got.Snapshot
+			if strings.Contains(got, `Follow-up form field label: "Cardholder name"`) != tc.hint ||
+				strings.Contains(got, "private form value") || strings.Contains(got, "Payment form") {
+				t.Fatal("observation must contain only the eligible follow-up label")
+			}
+		})
 	}
 }
 
@@ -161,8 +194,17 @@ func TestGroundedRepairAbstainsWithoutClearEvidence(t *testing.T) {
 
 func TestRepairContractIsValidAtItsLimits(t *testing.T) {
 	for _, n := range []int{1, maxRepairCandidates} {
-		if err := repairContract(n).Validate(); err != nil {
+		contract := repairContract(n)
+		if err := contract.Validate(); err != nil {
 			t.Fatal(n, err)
+		}
+		for _, id := range []string{"present", "ambiguous"} {
+			question := contract.Questions[id]
+			if question.Criteria["true"] == "" || question.Criteria["false"] == "" ||
+				!strings.Contains(question.Instructions, "Previous target locator") ||
+				!strings.Contains(question.Instructions, "observed candidate labels") {
+				t.Fatalf("%s must independently define its evidence and both answers", id)
+			}
 		}
 	}
 	names := make([]string, 70)

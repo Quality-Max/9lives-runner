@@ -239,6 +239,7 @@ func TestDecisionTransportBoundsAndUsage(t *testing.T) {
 			response := map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"action":"complete"}`}}}}
 			if usage {
 				response["usage"] = map[string]int{"prompt_tokens": 31, "completion_tokens": 7}
+				response["model"] = "fixture-model-2026"
 			}
 			_ = json.NewEncoder(w).Encode(response)
 		}))
@@ -247,6 +248,10 @@ func TestDecisionTransportBoundsAndUsage(t *testing.T) {
 		server.Close()
 		if err != nil || got.UsageAvailable != usage || usage && (got.InputTokens != 31 || got.OutputTokens != 7) {
 			t.Fatal("decision transport usage mismatch")
+		}
+		// One request, no retries; the model only when the response names it.
+		if !got.RequestsAvailable || got.Requests != 1 || usage && got.Model != "fixture-model-2026" || !usage && got.Model != "" {
+			t.Fatalf("decision transport reported %d requests (known %v), model %q", got.Requests, got.RequestsAvailable, got.Model)
 		}
 	}
 }

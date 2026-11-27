@@ -398,6 +398,14 @@ type Completion struct {
 	Text                      string
 	InputTokens, OutputTokens int
 	UsageAvailable            bool
+	// Requests counts the provider requests sent for this completion when
+	// RequestsAvailable is set; zero is then a real count, such as a decision
+	// made without asking. Unset, the count is unknown, never zero.
+	Requests          int
+	RequestsAvailable bool
+	// Model is the model the provider reported answering with, "" when it
+	// named none.
+	Model string
 }
 
 // CompleteDecision reuses the bounded transport for finite goal decisions.
@@ -460,6 +468,7 @@ func (p HTTPProvider) complete(ctx context.Context, prompt, model string, maxTok
 		return Completion{}, err
 	}
 	var responsePayload struct {
+		Model string `json:"model"`
 		Usage struct {
 			Input      *int `json:"input_tokens"`
 			Output     *int `json:"output_tokens"`
@@ -499,7 +508,9 @@ func (p HTTPProvider) complete(ctx context.Context, prompt, model string, maxTok
 	if strings.TrimSpace(content) == "" {
 		return Completion{}, errors.New("provider returned no usable response")
 	}
-	result := Completion{Text: content}
+	// One request answered; there are no retries. Both APIs name the model
+	// that served it.
+	result := Completion{Text: content, Requests: 1, RequestsAvailable: true, Model: responsePayload.Model}
 	in, out := responsePayload.Usage.Input, responsePayload.Usage.Output
 	if in == nil {
 		in, out = responsePayload.Usage.Prompt, responsePayload.Usage.Completion

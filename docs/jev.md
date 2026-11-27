@@ -28,16 +28,16 @@ runner's failure class, the native deterministic class, the failed locator,
 hashes of the attached accessible snapshot and screenshot, and a comparison
 for supported Playwright assertions. With `--jev` and an accessible snapshot
 or accepted screenshot, it makes at most one request within a minute of the
-run ending, bound to that attempt and the exact source that ran. The age is counted from when the job
-finished, not from the moment the step failed, so a spec that keeps running
-after its failure can send older evidence.
+run ending, bound to that attempt and the exact source that ran. Evidence age
+is measured from job completion, so a spec that keeps running after a failure
+can send older evidence.
 
 Jev answers typed questions only: a choice of failure family (locator drift,
 obstructing overlay, transient state, wrong page, application defect or
 unresolved) and independent yes/no observations (overlay, loading, visible
-error and, when a locator is named, target presence). Observed page text is sent
-as data, never as instructions or criteria. Go maps the answers to a
-disposition: `eligible-for-repair`, `investigate-test`, `investigate-app`,
+error and, for a named locator on a non-assertion failure, target presence).
+Observed page text is sent as data, never as instructions or criteria. Go maps
+the answers to a disposition: `eligible-for-repair`, `investigate-test`, `investigate-app`,
 `require-new-observation` or `unresolved`. A family needs confidence and
 probability of at least 0.6; contradictory observations, such as drift with an
 absent target, are unresolved. Missing or stale evidence, provider failure and
@@ -86,11 +86,17 @@ before any Tier 2 provider. It runs only for a failed direct
 matches, when Tier 1 could not pick a single renamed control. The candidates are
 the distinct accessible names of the same role (or labelled controls) in the
 failure's ARIA snapshot; names shared by several controls are left out. Jev
-answers three typed questions: which listed candidate is the intended control
-(or none), whether the target is present, and whether several candidates
-plausibly match. Candidates are referred to by position; their names stay in
-the observation data. A proposal needs presence of at least 0.7, ambiguity of at
-most 0.3, and choice confidence and probability of at least 0.7.
+uses the old locator's name, candidate labels and accessible page context to
+compare each candidate's function with the intended action, destination or
+input purpose. When the test immediately follows a failed click by filling
+a field with a literal label, Jev can also use that label to infer the
+intended form. The fill value stays in the test. Jev answers three typed
+questions covering the best candidate (or none), whether any candidate serves
+the intended function, and whether the evidence supports multiple candidates
+about equally well. Questions refer to candidates by position, with labels
+kept in observation data. A proposal needs presence of at least 0.7,
+ambiguity of at most 0.3, and choice confidence and probability of at least
+0.7.
 
 Go builds the candidate by replacing only the failed locator's name literal.
 The role, `exact` flag, imports, assertions, comments and other actions stay
@@ -135,8 +141,10 @@ The client is bound to each attempt (run, job, attempt) and to a digest of the
 planned specs' bytes, and is closed with the attempt. `complete` stays
 completed-but-unverified: the test's own assertions decide the result, and a
 goal that completes against a wrong business outcome still fails. The receipt
-records `jev` as the goal provider and each decision as usual. Cost is not
-estimated; use the engine's decision and token budgets.
+records `jev` as the goal provider and each decision as usual, with the Jev
+requests it made (`requests`: one or two, zero when the engine-built options
+or observation did not fit a request) and the model Jev reported (`model`).
+Cost is not estimated; use the engine's decision and token budgets.
 
 ## Qualification
 
@@ -155,6 +163,9 @@ repairable renames (recovery 14%, precision 100%). Goals need a provider and are
 not run. There were zero false greens. These are policy and wiring results,
 not Jev quality measurements; live results are recorded with model, date and
 request counts when they are run.
+
+See the [0.8.0 locator repair validation report](reviews/jev-locator-repair-0.8.0.md)
+for the November 2026 held-out rerun and campaign check.
 
 ## Configuration and API key
 

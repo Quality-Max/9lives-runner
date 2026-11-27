@@ -114,7 +114,11 @@ required before an intentional rerun after interruption.
 
 `receipt.json` adds `goals`: goal ID, terminal status/duration, provider name,
 conservative reservations and decisions with IDs, typed action/current target
-ID, outcome and reported usage availability. Instructions, parameter values,
+ID, outcome and reported usage availability. A decision also records how many
+provider requests it made (`requests`) and the model the provider reported
+(`model`) when the provider knows them: `jev`, `openai` and `anthropic` do,
+CLI providers and goal scripts do not, and a failed provider call records
+neither. An absent `requests` means unknown, never zero. Instructions, parameter values,
 page labels and raw provider bodies/errors are not retained. Canonical execution
 receipts preserve their existing schema. A caught unresolved/blocked/failed goal
 still prevents an overall green receipt.
