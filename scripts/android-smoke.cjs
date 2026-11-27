@@ -145,7 +145,14 @@ for (const mode of modes) {
     assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
     if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
   }
-  if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
+  const setupModes=['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'];
+  // A case whose open never completed did not run, and its probe had no
+  // session to check the emulator with: name the stop rather than a survivor.
+  // The emulator-set check above already finds an emulator left behind.
+  const first=facts.steps?.[0]?.failed;
+  const openStop=first?.step===1&&first.operation==='open' ? first.reason ?? 'unknown' : undefined;
+  assert(setupModes.includes(mode)||openStop===undefined,`${mode}: open did not complete (${openStop})`);
+  if (!setupModes.includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
   // failure-capture leaves closing to the fixture, after its capture: the
   // stop is read by a hook that runs after that teardown.
   if (mode==='failure-capture') assert.equal(facts.stoppedAfterTeardown,true,'failure-capture: the emulator was checked after the fixture closed the driver');
