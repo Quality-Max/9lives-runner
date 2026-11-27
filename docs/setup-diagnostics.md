@@ -58,7 +58,8 @@ and its admission is only known at run time. Under `--sdk`, `sdk/faults`
 lists the prove fault kinds the SDK applies and any this CLI can request that
 it does not.
 Browser-file checks use Playwright's registry only for qualified versions
-1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 and 1.64.1. An unknown registry cannot report ready.
+1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1, 1.65.0 and 1.65.1 in this
+checkout. An unknown registry cannot report ready.
 
 Doctor does not download anything, make network requests (under `--android`
 it only asks a running adb server on loopback), launch a browser,
@@ -215,13 +216,13 @@ above and cannot be combined with `--sdk`, `--android`, `--paths` or a spec;
 ## Apply a repair explicitly
 
 Node below 22: install Node 24 LTS and restart the terminal and MCP host.
-Missing test runner: `npm install --save-dev @playwright/test@1.64.1`.
+Missing test runner: `npm install --save-dev @playwright/test@1.65.1`.
 Missing browser: use the version-pinned command doctor prints, for example:
 
 ```sh
-npx --yes playwright@1.64.1 install chromium
+npx --yes playwright@1.65.1 install chromium
 # On Linux, if system libraries are also missing:
-npx --yes playwright@1.64.1 install --with-deps chromium
+npx --yes playwright@1.65.1 install --with-deps chromium
 ```
 
 These commands download packages/browsers; `--with-deps` can install OS

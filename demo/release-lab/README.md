@@ -29,7 +29,7 @@ npm exec playwright install chromium
 npm run demo:lab
 ```
 
-Linux browser dependencies: `npm exec playwright install --with-deps chromium`.
+Linux browser dependencies: `npm exec -- playwright install --with-deps chromium`.
 The script builds the current CLI and SDK, then runs eight chapters. Allow a
 few minutes for repeated browser starts and intentional assertion failures.
 It prints the path to an HTML report, screenshots, JSON results, source

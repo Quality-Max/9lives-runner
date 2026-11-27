@@ -13,11 +13,12 @@ npm install --save-dev @9l/playwright@0.7.3 @playwright/test@1.64.1
 npm exec playwright install chromium
 ```
 
-On Linux use `npm exec playwright install --with-deps chromium`.
-The SDK accepts `@playwright/test` `>=1.61.1 <2`. Qualified versions:
-every published release from 1.61.1 through 1.64.1 (1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 and 1.64.1), with Chromium. Later versions in that range install but are unqualified,
-as are other engines. Preserve the existing project configuration and assertions.
-The [SDK contract](sdk-bridge.md) describes supported settings and limits.
+On Linux use `npm exec -- playwright install --with-deps chromium`.
+The SDK accepts `@playwright/test` `>=1.61.1 <2`. Use Playwright 1.61.1
+through 1.64.1 with the 0.7.3 CLI and Chromium. For Playwright 1.65.0 or 1.65.1,
+use the CLI and SDK from this checkout. See the [compatibility matrix](compatibility.md)
+and [SDK contract](sdk-bridge.md) for the source version pairing and limits.
+Preserve the existing project configuration and assertions.
 
 ## CLI from source
 
@@ -32,6 +33,26 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 If you have set a custom `GOBIN`, add that directory to `PATH` instead.
 For an exact reviewed source revision, replace `@latest` with its commit or
 published CLI version. The public Go install path has been exercised.
+
+### Playwright 1.65 from this checkout
+
+Build the CLI and pack the SDK from the runner repository:
+
+```sh
+npm ci
+npm run build
+mkdir -p .context/local-sdk
+go build -o .context/local-sdk/9l ./cmd/9l
+npm pack --workspace @9l/playwright --pack-destination .context/local-sdk
+```
+
+In your Playwright project, use the path to the tarball produced by `npm pack`:
+
+```sh
+npm install --save-dev /path/to/packed-sdk.tgz @playwright/test@1.65.1
+npm exec playwright install chromium
+/path/to/9lives-runner/.context/local-sdk/9l doctor --sdk
+```
 
 ## Prebuilt CLI releases
 
@@ -122,9 +143,9 @@ before extracting; see [Verify build provenance](#verify-build-provenance).
 Keep `LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` with the binary. Add its directory to your user
 `PATH`, or invoke `9l.exe` by its full path. Install Node 24, project dependencies
 and Chromium as above. Native Windows CI covers both architectures with the
-workspace Playwright pin (1.61.1); later Playwright releases are separately
-qualified on Linux. Go's race detector runs on Windows amd64; Windows arm64
-runs the same Go tests without the race detector. Provider CLI shell
+workspace Playwright pin (1.65.1 in this checkout). The older Playwright
+versions in the compatibility matrix run on Linux CI. Go's race detector runs
+on Windows amd64; Windows arm64 runs the same Go tests without it. Provider CLI shell
 integrations remain unqualified on Windows. Receipt and evidence files inherit
 their directory's Windows ACLs; keep the project and receipt directory under
 your user account. POSIX mode bits do not set Windows ACLs.

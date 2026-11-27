@@ -1043,7 +1043,7 @@ test('hazards have their own budget and never cut assertion analysis short', () 
 // literal false condition are not. A condition, an enclosing branch or an
 // afterAll hook marks it conditional: afterAll follows only the group's last
 // test, so which tests it can affect is not known from source. Playwright
-// 1.61.1 through 1.64.1 apply it to the completed test, so a failed body is
+// 1.61.1 through 1.65.1 apply it to the completed test, so a failed body is
 // reported as an expected failure and the run exits 0.
 test('after-hook test.fail() modifiers are attributed to the suite as conditional or not', () => {
   const facts = analyze(`import {test,expect} from '@playwright/test';

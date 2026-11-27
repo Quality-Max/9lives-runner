@@ -17,7 +17,7 @@ npm run demo:jev
 The command opens `http://127.0.0.1:4175` in your browser. Press Ctrl+C in the
 terminal to stop. For a different port, use `npm run demo:jev -- --port 0`.
 To start without opening a browser, run `go run ./demo/jev --serve`.
-On Linux, install the browser with `npm exec playwright install --with-deps chromium`.
+On Linux, install the browser with `npm exec -- playwright install --with-deps chromium`.
 
 1. **Try the payment.** Click “Place order” in the shop, or the large guided button.
 2. **Check with 9lives.** A real Playwright browser repeats the checkout and asserts

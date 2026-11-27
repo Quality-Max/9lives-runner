@@ -1,5 +1,5 @@
 {
   "name": "9l-release-lab",
   "private": true,
-  "devDependencies": {"@playwright/test": "1.61.1"}
+  "devDependencies": {"@playwright/test": "1.65.1"}
 }

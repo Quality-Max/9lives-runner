@@ -7,12 +7,13 @@ configuration. Neither step needs the SDK, a model key or a QualityMax account.
 ## 1. Check prerequisites
 
 - Use Node 24 (Node 22 minimum) and your project's installed Playwright.
-  The qualified range is Playwright 1.61.1–1.64.1 with Chromium.
+  Check the [compatibility matrix](compatibility.md) for your CLI pairing. To use
+  Playwright 1.65.0 or 1.65.1 with doctor, build the CLI from this checkout.
 - Install your application's dependencies using its existing lockfile and setup
   instructions. Start its local or approved staging server, or let its existing
   Playwright `webServer` configuration start it.
 - Install the browser in that project: `npm exec playwright install chromium`.
-  On Linux, use `npm exec playwright install --with-deps chromium` if needed.
+  On Linux, use `npm exec -- playwright install --with-deps chromium` if needed.
 - Select a spec with explicit assertions and controlled test data. Check that it
   already works with your project's normal Playwright command.
 

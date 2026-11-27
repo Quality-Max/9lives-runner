@@ -9,7 +9,7 @@ function createAnalyzer(ts) {
   if (ts.version !== '5.9.3' || typeof ts.createSourceFile !== 'function') throw new AnalysisError('parser-unavailable');
   const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/;
   // Playwright 1.61.1's locator, page, API response and function async matchers,
-  // unchanged through 1.64.1. The regression suite checks this against the
+  // unchanged through 1.65.1. The regression suite checks this against the
   // installed public type declarations; CI installs each qualified release.
   const asyncMatchers = new Set([
     'toBeAttached', 'toBeChecked', 'toBeDisabled', 'toBeEditable', 'toBeEmpty',
@@ -388,7 +388,7 @@ function createAnalyzer(ts) {
     };
     const isModifier = node => isTestCall(node, ['skip', 'fixme']) && modifierShape(node);
     // test.fail()/test.fail(condition, reason) with the same shapes. Only one in
-    // an after hook is reported: Playwright 1.61.1 through 1.64.1 apply it to
+    // an after hook is reported: Playwright 1.61.1 through 1.65.1 apply it to
     // the test that has just run, so a failed body becomes an expected failure
     // and the run can exit 0 (microsoft/playwright#43738). A declaration or a
     // body-level call is the documented expected-failure form.

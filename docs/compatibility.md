@@ -10,8 +10,8 @@ the [setup and qualification limits](android-driver.md) below.
 
 | Component | Qualified | Boundary |
 | --- | --- | --- |
-| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 | CI runs the unit, browser, assessment and packed-SDK checks on each. Later 1.x releases install (peer range `>=1.61.1 <2`) but are unqualified |
-| `9l assess` matchers | Playwright 1.61.1 through 1.64.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
+| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 with the 0.7.3 release | This checkout adds setup diagnostics and CI coverage for Playwright 1.65.0 and 1.65.1. The SDK peer range is `>=1.61.1 <2` |
+| `9l assess` matchers | Playwright 1.61.1 through 1.65.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
 | CLI | 0.7.3 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
@@ -22,7 +22,7 @@ An experimental [iOS Simulator driver](ios-driver.md) ships since 0.7.0
 (first in `v0.7.0-beta.1`). It is qualified from a source checkout on one Mac
 only and unqualified on hosted CI; it is not part of the support matrix above.
 
-Use the matching CLI and SDK release above for the qualified pairing. The
+Use a matching CLI and SDK from the same release or source checkout. The
 runtime validates `9l.engine/1` and the exact capabilities `steps`,
 `artifact-metadata`, `terminal-outcomes`, `declared-outcomes` (in that order), then validates the
 execution evidence. It does not compare package versions or enforce a

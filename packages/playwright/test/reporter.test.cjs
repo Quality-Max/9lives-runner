@@ -48,7 +48,7 @@ test('a nested expect step is not counted as a second assertion', () => {
 });
 
 // Playwright sets test.expectedStatus from the worker when an attempt ends, so
-// after a runtime test.fail() (in the body or, on 1.61.1 through 1.64.1, in an
+// after a runtime test.fail() (in the body or, on 1.61.1 through 1.65.1, in an
 // after hook) the TestCase reads "failed" from then on. test_begin must keep
 // the status declared before any attempt ran, on every retry, and test_end the
 // final one, so Go can tell a declared expected failure from a relabeled one.

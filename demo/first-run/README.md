@@ -17,7 +17,7 @@ npm run demo:first-run
 ```
 
 On Linux, install browser system dependencies with
-`npm exec playwright install --with-deps chromium`. Dependency installation
+`npm exec -- playwright install --with-deps chromium`. Dependency installation
 needs network access; execution uses only a synthetic localhost shop and makes
 no model calls. Allow for the Go build and nine Chromium test executions.
 

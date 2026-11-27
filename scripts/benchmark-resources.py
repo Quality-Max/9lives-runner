@@ -46,7 +46,8 @@ PROJECT = ROOT / "fixture"
 PROJECT.mkdir(exist_ok=True)
 if not (PROJECT / "node_modules").exists():
     (PROJECT / "node_modules").symlink_to(REPO / "node_modules", target_is_directory=True)
-(PROJECT / "package.json").write_text(json.dumps({"private": True, "devDependencies": {"@playwright/test": "1.61.1"}}))
+playwright_version = json.loads((REPO / "package.json").read_text())["devDependencies"]["@playwright/test"]
+(PROJECT / "package.json").write_text(json.dumps({"private": True, "devDependencies": {"@playwright/test": playwright_version}}))
 (PROJECT / "playwright.config.ts").write_text("""import {defineConfig} from '@playwright/test';
 export default defineConfig({testDir: './tests', workers: 1, retries: 0, timeout: 15000,
   outputDir: './test-results/' + process.pid,

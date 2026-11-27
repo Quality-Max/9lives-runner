@@ -2,9 +2,9 @@
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
 npm workspace at version `0.7.3`, the same version as the CLI; releases use npm trusted publishing. The
-qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.1. Node 22
-is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
-releases install; they and other browser engines remain unqualified.
+source CI matrix uses Node 24 with `@playwright/test` 1.61.1 through 1.65.1 and Chromium.
+Node 22 is the declared minimum. The SDK peer range is `>=1.61.1 <2`.
+See the [compatibility matrix](compatibility.md) for the released CLI pairing.
 
 Use `9l plan ... --sdk` to inspect the command and `9l run ... --sdk` to execute.
 The nearest enclosing Playwright config is selected explicitly and its directory
@@ -78,7 +78,7 @@ Playwright's modifiers can change a test's expected status after its body
 has run. Qualifying them for 9l found two upstream defects, reported as
 [microsoft/playwright#43676](https://github.com/microsoft/playwright/issues/43676)
 and [microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738):
-on 1.61.1 through 1.64.1, `test.skip()` in an `afterEach` hook reports a test
+on 1.61.1 through 1.65.1, `test.skip()` in an `afterEach` hook reports a test
 whose body ran and passed as skipped (`afterAll`: only the group's last test),
 and `test.fail()` in an after hook or fixture teardown turns a failed test into
 an expected failure, so the summary says it passed and the process exits 0.

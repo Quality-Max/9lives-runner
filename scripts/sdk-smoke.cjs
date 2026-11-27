@@ -421,13 +421,10 @@ async function main() {
   const serialFrames = readEvents(serial.summary.receipts[0]);
   assert.equal(serialFrames.filter(frame => frame.type === 'test_begin' && frame.retry === 1).length, 3);
   assert(serialFrames.some(frame => frame.type === 'test_end' && frame.retry === 0 && frame.status === 'skipped'));
-  // Playwright 1.61.1 through 1.64.1 (microsoft/playwright#43738): test.fail()
+  // Playwright 1.61.1 through 1.65.1 (microsoft/playwright#43738): test.fail()
   // in an after hook relabels a completed failing test as expected and exits 0.
   // The receipt keeps that verdict and says the expectation came from a runtime
   // test.fail(); the stream shows the declared and the final expected status.
-  // Playwright 1.65 is expected to make after-hook modifiers throw instead:
-  // when the qualified range moves past 1.64.1, revisit these assertions and
-  // both fixtures, and the "1.61.1 through 1.64.1" wording in the docs.
   const relabeledFailure = invoke('testdata/sdk/tests/after-hook-fail.spec.ts');
   assert.equal(relabeledFailure.code, 0);
   assert.equal(relabeledFailure.summary.outcome, 'passed');

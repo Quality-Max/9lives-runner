@@ -59,7 +59,7 @@ jobs:
         working-directory: .
         run: |
           npm ci
-          npm exec playwright install --with-deps chromium
+          npm exec -- playwright install --with-deps chromium
       - name: Qualify the production homepage and portable overview
         working-directory: .
         run: |
