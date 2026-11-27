@@ -68,6 +68,11 @@ function policy(path) {
         assert.equal(await page.locator(`#journey-${chapter}`).getAttribute('aria-selected'), 'true', `deep link ${chapter}`);
         await page.goBack({ waitUntil: 'networkidle' });
       }
+      if (name === 'home') {
+        await page.getByRole('link', { name: 'Play The Great Little Hunt' }).click();
+        await page.waitForURL('**/hunt.html');
+        await page.getByRole('button', { name: 'Let’s play' }).waitFor();
+      }
       assert.equal(errors, 0, `${name} errors`);
       await context.close();
       const blocked = await browser.newContext({ colorScheme: 'dark' });
@@ -103,6 +108,6 @@ function policy(path) {
     const page = await browser.newPage({ viewport: { width: 1200, height: 630 } });
     await page.goto('file://' + resolve(root, 'website/public/og.svg'));
     await page.screenshot({ path: resolve(root, 'website/public/og.png') });
-    console.log('PASS: 20 responsive views, both pages/themes/fonts/logos, theme persistence and blocked storage, clipboard, all five chapter deep links, two approved embed origins and one rejected origin.');
+    console.log('PASS: 20 responsive views, both pages/themes/fonts/logos, theme persistence and blocked storage, clipboard, game banner, all five chapter deep links, two approved embed origins and one rejected origin.');
   } finally { await browser.close(); await new Promise(done => server.close(done)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
