@@ -23,6 +23,7 @@ on:
       - 'testdata/sdk/android.config.ts'
       - 'scripts/android-smoke.cjs'
       - 'scripts/android-isolation-evidence*.cjs'
+      - 'scripts/android-step-facts*.cjs'
       - 'scripts/android-pass-rate*.cjs'
       - 'scripts/build-android-fixture.cjs'
       - 'tools/android/**'
