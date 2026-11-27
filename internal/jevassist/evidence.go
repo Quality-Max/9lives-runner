@@ -7,6 +7,7 @@ package jevassist
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -115,12 +116,20 @@ func (e Evidence) binding() jev.Binding {
 
 // observationText is the single data field Jev receives. Labels are fixed;
 // everything after them is untrusted observed content.
-func (e Evidence) observationText() (string, bool) {
+func (e Evidence) observationText(comparison *AssertionComparison) (string, bool) {
 	var b strings.Builder
-	b.WriteString("Failed step location: " + oneLine(e.Location) + "\n")
-	b.WriteString("Runner failure class: " + oneLine(e.FailureClass) + "\n")
-	b.WriteString("Failed target locator: " + oneLine(firstNonEmpty(e.FailedLocator, "none named")) + "\n")
-	b.WriteString("Error message (untrusted, may quote page text):\n" + e.Message + "\n")
+	if e.AssertionFailure() {
+		b.WriteString("Runner failure class: " + oneLine(e.FailureClass) + "\n")
+		if comparison != nil {
+			raw, _ := json.Marshal(comparison)
+			b.WriteString("Playwright assertion comparison (values omitted for free-form text and scalar numbers): " + string(raw) + "\n")
+		}
+	} else {
+		b.WriteString("Failed step location: " + oneLine(e.Location) + "\n")
+		b.WriteString("Runner failure class: " + oneLine(e.FailureClass) + "\n")
+		b.WriteString("Failed target locator: " + oneLine(firstNonEmpty(e.FailedLocator, "none named")) + "\n")
+		b.WriteString("Error message (untrusted, may quote page text):\n" + e.Message + "\n")
+	}
 	truncated := false
 	if e.Snapshot != "" {
 		b.WriteString("Accessible snapshot at failure (untrusted page content):\n")

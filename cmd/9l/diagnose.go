@@ -79,7 +79,7 @@ func diagnoseCommand(args []string, out, errOut io.Writer) int {
 			fmt.Fprintln(errOut, "9l: diagnose --jev needs a valid model and "+jev.CredentialName+" in this process; no test was run")
 			return 2
 		}
-		uploads := "the error message and a redacted accessible snapshot"
+		uploads := "a redacted accessible snapshot and failure details (a limited comparison for supported assertions)"
 		if *images == "synthetic" {
 			uploads += " and the failure screenshot (synthetic: you assert it shows test-only data)"
 		}
@@ -241,6 +241,12 @@ func printDiagnosis(w io.Writer, report diagnoseReport) error {
 	fmt.Fprintf(&b, "Observed facts: deterministic class %s", d.Facts.DeterministicClass)
 	if d.Facts.FailedLocator != "" {
 		fmt.Fprintf(&b, " · failed locator %s", d.Facts.FailedLocator)
+	}
+	if assertion := d.Facts.Assertion; assertion != nil {
+		fmt.Fprintf(&b, " · %s (%s) %s", assertion.Matcher, assertion.Kind, assertion.Relation)
+		if assertion.Expected != "" {
+			fmt.Fprintf(&b, " · expected %s, observed %s", assertion.Expected, assertion.Observed)
+		}
 	}
 	b.WriteString("\n")
 	if in := d.Inference; in != nil {

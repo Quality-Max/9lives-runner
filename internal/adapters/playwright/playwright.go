@@ -998,6 +998,32 @@ func ReadAttachment(path string, limit int64) ([]byte, error) {
 
 var pageSnapshotBlock = regexp.MustCompile("(?s)(?:^|\n)# Page snapshot\\s*\n```yaml\n(.*?)\n```")
 
+// Playwright 1.65 puts locator assertion snapshots immediately after the
+// corresponding error, rather than under the standalone Page snapshot heading.
+func matcherSnapshot(raw, message string) string {
+	if message == "" || len(message) > runner.MaxFailureMessageBytes {
+		return ""
+	}
+	const errorBlock = "# Error details\n\n```\n"
+	_, details, ok := strings.Cut("\n"+raw, "\n"+errorBlock)
+	if !ok {
+		return ""
+	}
+	firstError, afterError, ok := strings.Cut(details, "\n```\n")
+	if !ok || failureMessage(firstError) != message {
+		return ""
+	}
+	afterError, ok = strings.CutPrefix(afterError, "\n```yaml\n")
+	if !ok {
+		return ""
+	}
+	snapshot, rest, ok := strings.Cut(afterError, "\n```")
+	if !ok || (rest != "" && !strings.HasPrefix(rest, "\n")) || len(snapshot) > maxPageSnapshotBytes {
+		return ""
+	}
+	return snapshot
+}
+
 // SanitizeAttachmentText prepares page-snapshot text taken from an attachment
 // to leave the machine: values typed into fields are dropped and the rest is
 // redacted like evidence. Callers bound the result.
@@ -1017,13 +1043,13 @@ func PageSnapshot(failures []runner.TestFailure) string {
 			if err != nil {
 				return ""
 			}
-			m := pageSnapshotBlock.FindSubmatch(raw)
-			if m == nil || len(m[1]) > maxPageSnapshotBytes {
-				return ""
+			if m := pageSnapshotBlock.FindSubmatch(raw); m != nil && len(m[1]) <= maxPageSnapshotBytes {
+				return SanitizeAttachmentText(string(m[1]))
 			}
-			// The snapshot leaves the machine in a provider prompt: drop values
-			// typed into fields and redact what looks like a secret.
-			return SanitizeAttachmentText(string(m[1]))
+			if failure.Class == runner.FailureAssertion {
+				return SanitizeAttachmentText(matcherSnapshot(string(raw), failure.Message))
+			}
+			return ""
 		}
 	}
 	return ""
