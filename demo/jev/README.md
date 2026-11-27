@@ -40,15 +40,19 @@ shop. Press **Let’s play**. Finish a level to unlock the next:
 3. **Mice:** six tiny mice among pantry jars and three cheese decoys.
 4. **Striped stranger:** one person in a crowd, with a red-and-white striped shirt
    and hat, round glasses and blue trousers.
+5. **Copycats:** 30 seconds to find six real cats among three toy cats.
+6. **Pantry sprint:** 20 seconds to find all six mice again. A click on cheese
+   or an empty spot takes three seconds off the clock.
 
-Play untimed, or select **Race the clock** before starting a level. Each level
-has a shorter countdown (75, 60, 50 and 40 seconds). Retry a level when time runs
-out. Zoom in for small figures, or use Tab and Enter/Space on the hiding spots.
+Select **Race the clock** before starting any of the first four levels to play
+with a 75, 60, 50 or 40 second countdown, respectively. The last two levels are
+always timed. Retry a level when time runs out. Zoom in for small figures, or
+use Tab and Enter/Space on the hiding spots.
 **Show hiding places** is practice and cannot unlock the next level.
 
 ### Watch 9lives play
 
-Press **Watch 9lives play** to watch a separate browser round. Your game and timer
+On the first four levels, press **Watch 9lives play** to watch a separate browser round. Your game and timer
 pause. Without Jev configured, the **Free demo** uses the known synthetic answer map,
 costs nothing and makes no model request. The introduction explains Jev’s visual
 judgment and 9lives’ browser actions and score checks before the first run. Turn on
@@ -117,9 +121,9 @@ go run ./demo/jev --scenario striped --live --images
 ### The website copy
 
 [9lives.run/hunt.html](https://9lives.run/hunt.html) is a static copy of this
-game. Visitors play every level and the planted bug in their own browser.
-**Watch 9lives play** replays eight recorded live runs (each level, normal and
-bug), showing their screenshots, messages, click outlines and receipts. The page
+game. Visitors play every level in their own browser.
+**Watch 9lives play** replays eight recorded live runs (the first four levels,
+normal and with the planted bug), showing their screenshots, messages, click outlines and receipts. The page
 labels them as recordings. It makes no Jev request and needs no server or key.
 Each visitor's game runs in their own tab. The browser remembers only which
 levels they have unlocked; blocked storage simply starts at level 1.
@@ -128,7 +132,7 @@ levels they have unlocked; blocked storage simply starts at level 1.
 rooms from `cats.html` and `cat-room.html`. The website build runs it, and
 `npm test` fails when the copy is stale. The check also fails if the game changes
 after a run was recorded, so the recordings never show a different game.
-To re-record, run live healthy and bug rounds for every level, then import the
+To re-record, run live healthy and bug rounds for the first four levels, then import the
 eight `.context/jev-hunt-*` directories:
 
 ```sh

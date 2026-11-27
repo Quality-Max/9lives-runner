@@ -35,8 +35,11 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
     const watch = page.getByRole('button', { name: 'Watch 9lives play' });
     await watch.waitFor();
     assert.ok(await watch.isEnabled(), 'Watch is ready without a server');
+    assert.equal(await page.locator('[data-level]').count(), 6);
 
     // The player's own game runs in the framed room under its own policy.
+    const race = page.getByLabel('Race the clock');
+    await race.check();
     await page.getByRole('button', { name: 'Let’s play' }).click();
     const room = page.frame({ url: /\/hunt\/rooms\/cats\.html$/ });
     const real = await room.evaluate(() => window.catGame.targets().filter(p => !p.decoy).map(p => p.id));
@@ -45,6 +48,7 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
 
     // A recorded healthy run: real frames, every check, and a portable receipt.
     await watch.click();
+    assert.equal(await page.locator('#clock').textContent(), 'Your timer is paused');
     await page.locator('#run-title', { hasText: '✓ Every click checked' }).waitFor({ timeout: 60000 });
     assert.match(await page.locator('#run-context').textContent(), /^Recorded live Jev \+ 9lives · Normal round · /);
     assert.equal(await page.locator('#timeline li').count(), 20);
@@ -53,6 +57,7 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
     await page.screenshot({ path: resolve(out, 'hunt-site-passed.png') });
     await page.getByRole('button', { name: 'Back to my game' }).click();
     await page.locator('#counter', { hasText: '1 / 9 cats found' }).waitFor();
+    assert.ok(Number.parseInt(await page.locator('#clock').textContent(), 10) > 65, 'The replay did not spend the player’s time');
 
     // The planted bug restarts the level and the recorded run catches it.
     await page.getByLabel('Plant a bug: one find earns no point').check();
@@ -70,6 +75,7 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
 
     // Finishing a level unlocks the next one, and a reload remembers it.
     await page.getByLabel('Plant a bug: one find earns no point').uncheck();
+    await race.uncheck();
     await page.getByRole('button', { name: 'Let’s play' }).click();
     const cats = page.frame({ url: /\/hunt\/rooms\/cats\.html$/ });
     for (const id of await cats.evaluate(() => window.catGame.targets().filter(p => !p.decoy).map(p => p.id))) await cats.locator(`[data-target="${id}"]`).click();
@@ -78,7 +84,75 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
     assert.ok(await page.getByRole('button', { name: /Dogs/ }).isEnabled(), 'Unlocked level remembered');
     assert.ok(await page.getByRole('button', { name: /Mice/ }).isDisabled(), 'Only finished levels unlock');
 
-    // Every level's recordings load.
+    // Reach both timed levels by playing the existing boards.
+    const start = page.locator('#start');
+    const playRound = async () => {
+      await start.click();
+      const board = page.frameLocator('#scene');
+      const targets = await board.locator('body').evaluate(() => window.catGame.targets());
+      return { targets, spot: id => board.locator(`[data-target="${id}"]`).click() };
+    };
+    const findAll = async ({ targets, spot }) => {
+      for (const target of targets.filter(p => !p.decoy)) await spot(target.id);
+    };
+    const next = () => page.getByRole('button', { name: 'Next level →' }).click();
+    for (const [name, seconds] of [['Dogs', 60], ['Mice', 50], ['Striped stranger', 40]]) {
+      await page.getByRole('button', { name: new RegExp(name) }).click();
+      assert.equal(await page.locator('#time-limit').textContent(), `· ${seconds}s`);
+      await findAll(await playRound());
+      await page.getByRole('button', { name: 'Next level →' }).waitFor();
+    }
+    await next();
+    assert.equal(await page.locator('#picture-note').textContent(), 'Your game · Level 5 of 6');
+    assert.ok(await race.isHidden(), 'The Copycats timer is mandatory');
+    assert.ok(await watch.isHidden(), 'No recorded run is offered for this challenge');
+    const pantry = page.getByRole('button', { name: /Pantry sprint/ });
+    const clock = page.locator('#clock');
+    const feedback = page.locator('#feedback');
+    const startTime = new Date();
+    await page.clock.install({ time: startTime });
+    await page.clock.pauseAt(new Date(startTime.getTime() + 1000));
+    let round = await playRound();
+    assert.match(await clock.textContent(), /^30s left$/);
+    await round.spot(round.targets.find(p => p.decoy).id);
+    await feedback.getByText('That’s a toy cat!', { exact: false }).waitFor();
+    assert.equal(await page.locator('#counter').textContent(), '0 / 6 cats found');
+    await page.clock.fastForward(30_000);
+    await feedback.getByText('Time’s up!', { exact: false }).waitFor();
+    assert.equal(await clock.textContent(), '0s left');
+    assert.ok(await pantry.isDisabled(), 'Timeout did not unlock the next level');
+    await start.click(); // Retry returns to a fresh lobby.
+    await playRound();
+    await page.getByRole('button', { name: 'Show hiding places' }).click();
+    assert.ok(await pantry.isDisabled(), 'Practice did not unlock the next level');
+    await page.getByRole('button', { name: 'Restart level' }).click();
+    await findAll(await playRound());
+    await next();
+
+    round = await playRound();
+    assert.match(await clock.textContent(), /^20s left$/);
+    const cheese = round.targets.find(p => p.decoy);
+    const mouse = round.targets.find(p => !p.decoy);
+    await round.spot(cheese.id);
+    await feedback.getByText('−3s.', { exact: false }).waitFor();
+    assert.equal(await clock.textContent(), '17s left');
+    await round.spot(mouse.id);
+    await round.spot(mouse.id);
+    await feedback.getByText('You already found this one.', { exact: false }).waitFor();
+    assert.equal(await clock.textContent(), '17s left', 'A repeat click did not subtract time');
+    await page.clock.fastForward(15_000);
+    await page.frameLocator('#scene').locator('#room').click({ position: { x: 4, y: 4 } });
+    await feedback.getByText('Time’s up!', { exact: false }).waitFor();
+    assert.equal(await page.locator('#counter').textContent(), '1 / 6 mice found');
+    await start.click();
+    await findAll(await playRound());
+    await page.getByRole('heading', { name: 'Master detective!' }).waitFor();
+    await page.getByRole('button', { name: 'Play from the beginning' }).click();
+    assert.equal(await page.locator('#picture-note').textContent(), 'Your game · Level 1 of 6');
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.ok(await pantry.isEnabled(), 'The sixth level stayed unlocked after reload');
+
+    // All eight published recordings still load.
     for (const scenario of ['cats', 'dogs', 'mice', 'striped']) for (const variant of ['healthy', 'broken']) {
       const base = `${origin}/hunt/replays/${scenario}-${variant}/`;
       const run = await (await page.request.get(base + 'replay.json')).json();
@@ -103,6 +177,6 @@ const types = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
     assert.ok(await privatePage.getByRole('button', { name: /Dogs/ }).isDisabled());
     assert.deepEqual(privateErrors, []);
     await blocked.close();
-    console.log('PASS: website hunt under production headers: framed manual play, recorded healthy and planted-bug runs, portable receipt, stop without result, remembered unlocks and blocked storage, all eight recordings, five widths, no errors.');
+    console.log('PASS: website hunt under production headers: six playable levels, timer pause, expiry, penalties, retry, practice and remembered unlocks, healthy and planted-bug replays, portable receipt, stop without result, all eight recordings, five widths and blocked storage.');
   } finally { await browser.close(); await new Promise(done => server.close(done)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

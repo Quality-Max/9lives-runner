@@ -112,7 +112,7 @@ async function expectShopToFit(page) {
     await expect(page.locator('#check-title')).toHaveText('✓ Notebook order saved', { timeout: 30000 });
     await page.screenshot({ path: path.join(output, 'mobile-success.png'), fullPage: true });
 
-    // Real four-level game and ordinary Playwright runs owned by 9lives.
+    // Six playable levels, with ordinary Playwright runs for the first four.
     await page.setViewportSize({ width: 1440, height: 1050 });
     const beforeCats = runs;
     let hunts = 0;
@@ -223,8 +223,19 @@ async function expectShopToFit(page) {
       await expect(page.locator('#picture-note')).not.toContainText('Bug planted');
       await page.locator('#start').click();
       for(const spot of real)await tapTarget(spot);
-      await expect(page.locator('#card-title')).toHaveText(index===3?'Master detective!':'You found them all!');
-      if(index<3){await expect(page.locator(`[data-level="${index+1}"]`)).toBeEnabled();await page.locator('#start').click()}
+      await expect(page.locator('#card-title')).toHaveText('You found them all!');
+      await expect(page.locator(`[data-level="${index+1}"]`)).toBeEnabled();
+      await page.locator('#start').click();
+    }
+    for (const [scenario, seconds, result] of [['cat-decoys', 30, 'You found them all!'], ['mice', 20, 'Master detective!']]) {
+      await expect(page.frameLocator('#scene').locator('body')).toHaveAttribute('data-scenario', scenario);
+      await expect(page.locator('#watch')).toBeHidden();
+      await expect(page.locator('#timed')).toBeHidden();
+      await page.locator('#start').click();
+      await expect(page.locator('#clock')).toHaveText(`${seconds}s left`);
+      for (const spot of (await targets()).filter(p => !p.decoy)) await tapTarget(spot);
+      await expect(page.locator('#card-title')).toHaveText(result);
+      if (scenario === 'cat-decoys') await page.locator('#start').click();
     }
     assert.equal(hunts,8,'Exactly eight explicit healthy/broken runs');
     await page.screenshot({path:path.join(output,'game-complete.png'),fullPage:true});
@@ -379,7 +390,7 @@ async function expectShopToFit(page) {
     }
     assert.throws(() => captureVariant(working.replace('totalCents: 1200', 'totalCents: 9999'),
       'wrong-total'), 'A visible confirmation cannot pass an order with the wrong total');
-    console.log('PASS: four progressive hunt levels, optional timer, decoys, separate player score, manual bug/repaired scores and mode resets on all four levels, eight real healthy/broken 9lives runs, assertion-attributed failures, real owned cancellation, mobile/zoom, malformed evidence rejection; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
+    console.log('PASS: six progressive hunt levels, optional and mandatory timers, decoys, separate player score, manual bug/repaired scores and mode resets on the four recorded scenarios, eight real healthy/broken 9lives runs, assertion-attributed failures, real owned cancellation, mobile/zoom, malformed evidence rejection; independent order assertions survive changed/misleading messages and reject wrong totals; no status labels; live shop fit at five widths, stable capture/button alignment, real failed and successful checkout assertions, saved evidence, offline continuation, theme persistence, mobile layout, cancellation controls; synthetic AI presentation only. No provider calls.');
     console.log('Screenshots:', output);
   } finally {
     await browser?.close();
