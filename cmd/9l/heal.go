@@ -23,6 +23,7 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/jevassist"
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -249,6 +250,10 @@ func healCommand(args []string, out, errOut io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var usage *jevcost.Tracker
+	if grounded != nil {
+		ctx, usage = jevcost.WithTracker(ctx)
+	}
 	if *deadline > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, *deadline)
@@ -262,6 +267,7 @@ func healCommand(args []string, out, errOut io.Writer) int {
 		original, _ = readSource(spec)
 	}
 	result, err := healSpec(ctx, healOptions{Spec: spec, Provider: provider, Model: *model, MaxProposals: *maxProposals, RunTimeout: runTimeout, ReceiptDir: *receipts, PassEnv: passEnv, Grounded: grounded, Apply: *yes, Interactive: terminalApproval(os.Stdin, errOut), Preview: previewDiff(errOut)})
+	result.JevUsage = usage.Summary()
 	if *format == "text" {
 		if writeErr := printHealText(out, spec, original, result); writeErr != nil {
 			return 1
@@ -322,6 +328,7 @@ func printHealText(w io.Writer, spec string, original []byte, result tier2.Sessi
 		fmt.Fprintln(&out, "provider:", result.Provider)
 		fmt.Fprintln(&out, "provider calls:", result.ProviderCalls)
 	}
+	printJevUsage(&out, result.JevUsage)
 	fmt.Fprintln(&out, "original:", describeRun(&result.Original))
 	fmt.Fprintln(&out, "tier1:", describeRun(result.Tier1))
 	fmt.Fprintln(&out, "verified:", describeRun(result.Verified))

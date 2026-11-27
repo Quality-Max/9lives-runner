@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -107,6 +108,18 @@ func TestRepeatPassesOnlyWhenEveryMemberPassed(t *testing.T) {
 	if code != exitPassed || !strings.Contains(stdout.String(), "Repeat: 3 of 3 runs passed (pass rate 100.0%), 0 failed, 0 incomplete; outcome passed") ||
 		!strings.Contains(stdout.String(), "3× passed") || strings.Count(stdout.String(), "repeat ") != 3 {
 		t.Fatalf("exit %d:\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRepeatJevUsageIncludesIncompleteMembers(t *testing.T) {
+	summary := RepeatSummary{}
+	complete := jevcost.Totals{Requests: 1, RequestsWithUsage: 1, InputTokens: 122, OutputTokens: 8}
+	incomplete := jevcost.Totals{Requests: 2, RequestsWithUsage: 1, InputTokens: 244, OutputTokens: 16}
+	summary.add(runner.RunSummary{Complete: true, JevUsage: complete.Summary()}, false)
+	summary.add(runner.RunSummary{JevUsage: incomplete.Summary()}, true)
+	want := jevcost.Totals{Requests: 3, RequestsWithUsage: 2, InputTokens: 366, OutputTokens: 24}
+	if got := summary.JevUsage; got == nil || got.Totals != want || got.InputRateEstimate == nil || got.InputRateEstimate.EstimatedCostNanoUSD != 15372 {
+		t.Fatalf("repeat usage = %+v, want %+v and 15372 nano-USD", got, want)
 	}
 }
 

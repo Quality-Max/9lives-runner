@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/jevassist"
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -24,6 +26,7 @@ type observingJev struct {
 	steps []struct{ action, label string }
 	asked int
 	texts []string
+	usage *jevcost.Tracker
 }
 
 var observedControl = regexp.MustCompile(`(?m)^(target-\d+): \S+ "([^"]*)"`)
@@ -32,6 +35,8 @@ func (o *observingJev) Decide(_ context.Context, b jev.Binding, obs jev.Observat
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.asked++
+	o.usage.Request()
+	o.usage.Usage(122, 8)
 	o.texts = append(o.texts, obs.Snapshot)
 	criteria := c.Questions["next"].Criteria
 	choice := "unresolved"
@@ -91,8 +96,9 @@ func TestRunSDKGoalWithJevKeepsIndependentAssertions(t *testing.T) {
 			var bound runner.AttemptIdentity
 			previous := newGoalDecider
 			newGoalDecider = func(jev.Config, time.Duration) jevassist.NewDecider {
-				return func(_ context.Context, identity runner.AttemptIdentity, _, source string) (jevassist.Decider, func(), error) {
+				return func(ctx context.Context, identity runner.AttemptIdentity, _, source string) (jevassist.Decider, func(), error) {
 					bound = identity
+					fake.usage = jevcost.FromContext(ctx)
 					if len(source) != 64 {
 						t.Errorf("not bound to the spec bytes: %q", source)
 					}
@@ -100,7 +106,8 @@ func TestRunSDKGoalWithJevKeepsIndependentAssertions(t *testing.T) {
 				}
 			}
 			t.Cleanup(func() { newGoalDecider = previous })
-			args := []string{"run", "testdata/sdk/tests/goal.spec.ts", "--sdk", "--goal-provider", "jev", "--format", "json", "--receipt-dir", t.TempDir()}
+			receipts := t.TempDir()
+			args := []string{"run", "testdata/sdk/tests/goal.spec.ts", "--sdk", "--goal-provider", "jev", "--format", "json", "--receipt-dir", receipts}
 			if tc.defect {
 				t.Setenv("NINELIVES_SMOKE_DEFECT", "1")
 				args = append(args, "--pass-env", "NINELIVES_SMOKE_DEFECT")
@@ -129,6 +136,18 @@ func TestRunSDKGoalWithJevKeepsIndependentAssertions(t *testing.T) {
 			}
 			if requests != fake.asked {
 				t.Fatalf("the receipt counts %d Jev requests; %d were answered", requests, fake.asked)
+			}
+			usage := summary.JevUsage
+			if usage == nil || usage.Requests != int64(requests) || usage.RequestsWithUsage != int64(requests) || usage.InputTokens != int64(122*requests) || usage.OutputTokens != int64(8*requests) {
+				t.Fatalf("run usage = %+v for %d calls", usage, requests)
+			}
+			var stored bytes.Buffer
+			if code := run([]string{"result", summary.RunID, "--format", "json", "--receipt-dir", receipts}, &stored, &errOut); code != 0 {
+				t.Fatalf("result exit %d: %s", code, errOut.String())
+			}
+			var saved runner.RunSummary
+			if err := json.Unmarshal(stored.Bytes(), &saved); err != nil || !reflect.DeepEqual(saved.JevUsage, usage) {
+				t.Fatalf("persisted usage = %+v, err = %v", saved.JevUsage, err)
 			}
 			wantStatus := runner.StatusPassed
 			if tc.defect {

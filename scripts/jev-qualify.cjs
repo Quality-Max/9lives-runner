@@ -113,7 +113,7 @@ function diagnoseCase(binary, c, options, receipts) {
   const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expected: c.label.disposition, expectedFamily: c.label.family,
     outcome: r.json && r.json.outcome, runnerClass: d && d.facts.failureClass, status: d && d.status, disposition: d && d.disposition, reason: d && d.reason,
     family: d && d.inference && d.inference.family, confidence: d && d.inference && d.inference.confidence,
-    jevRequests: record ? record.requestCount : 0, jevMs: record ? record.durationMs : null, usage: record && record.usage, model: record && record.model };
+    jevRequests: record ? record.requestCount : 0, jevMs: record ? record.durationMs : null, usage: record && record.usage, model: record && record.model, jevUsage: r.json?.jevUsage };
   // A diagnosis needs the CLI's report: exit 0 or 1 with an outcome, and a
   // diagnosis for a failed run. Anything else cannot be scored.
   row.unusable = !r.json || typeof row.outcome !== 'string' ? `no report (exit ${r.code})` : ![0, 1].includes(r.code) ? `the run did not complete (exit ${r.code})` : row.outcome === 'failed' && !d ? 'no diagnosis for the failed run' : null;
@@ -138,7 +138,7 @@ function repairCase(binary, c, options, receipts) {
     const expectedText = c.label.expectedName ? renamed(original, c.label.failedName, c.label.expectedName) : null;
     const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expected: c.label.outcome, expectedName: c.label.expectedName,
       state: s.state, reason: s.reason, stage: s.grounded ? 'grounded' : s.tier1 && s.tier1.passed ? 'tier1' : 'none', chosen: decision && decision.chosen, decision: decision && decision.status, decisionReason: decision && decision.reason,
-      jevRequests: decision && decision.jev ? decision.jev.requestCount : 0, jevMs: decision && decision.jev ? decision.jev.durationMs : null, usage: decision && decision.jev && decision.jev.usage, model: decision && decision.jev && decision.jev.model };
+      jevRequests: decision && decision.jev ? decision.jev.requestCount : 0, jevMs: decision && decision.jev ? decision.jev.durationMs : null, usage: decision && decision.jev && decision.jev.usage, model: decision && decision.jev && decision.jev.model, jevUsage: s.jevUsage };
     // Scoring needs the session result and an original run that executed the
     // test with a receipt; a CLI error or zero tests is unusable evidence.
     const originalRun = s.original;
@@ -173,7 +173,7 @@ function goalRow(c, options, r, script = null) {
   const models = [...new Set(decisions.map(d => d.model).filter(m => typeof m === 'string' && m))];
   const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expectedGoal: c.label.goal, expectedTest: c.label.test, script: script && script.kind,
     goal: goal && goal.status, test: receipt && receipt.status, decisions: decisions.length, actions: decisions.map(d => d.action).join(','),
-    tokens: usage.inputTokens + usage.outputTokens, usage: options.mode === 'jev' ? usage : null, jevRequests: options.mode === 'jev' ? requests : 0, model: options.mode === 'jev' ? models.join(', ') || null : null };
+    tokens: usage.inputTokens + usage.outputTokens, usage: options.mode === 'jev' ? usage : null, jevRequests: options.mode === 'jev' ? requests : 0, model: options.mode === 'jev' ? models.join(', ') || null : null, jevUsage: r.json?.jevUsage };
   // Scoring needs a validated terminal receipt and the goal's own record.
   row.unusable = !r.json || !receipt ? `no run result (exit ${r.code})` : !receipt.validated || !['passed', 'failed'].includes(receipt.status) ? `the run did not complete (${receipt.status})` : !goal || typeof goal.status !== 'string' ? 'the receipt has no goal record' : null;
   row.goalCorrect = c.label.goal.includes(row.goal);
@@ -241,6 +241,34 @@ function summarize(rows) {
   };
 }
 
+function campaignJevUsage(rows) {
+  const totals = { requests: 0, requestsWithUsage: 0, inputTokens: 0, outputTokens: 0, caseRunsWithoutUsageReport: 0 };
+  for (const { jevUsage: usage } of rows) {
+    if (!usage) {
+      totals.caseRunsWithoutUsageReport++;
+      continue;
+    }
+    totals.requests += usage.requests;
+    totals.requestsWithUsage += usage.requestsWithUsage;
+    totals.inputTokens += usage.inputTokens;
+    totals.outputTokens += usage.outputTokens;
+    const estimate = usage.inputRateEstimate;
+    if (!estimate) continue;
+    if (!totals.inputRateEstimate) {
+      totals.inputRateEstimate = { ...estimate, comparisons: estimate.comparisons.map(c => ({ ...c })) };
+      continue;
+    }
+    const aggregate = totals.inputRateEstimate;
+    aggregate.estimatedCostNanoUSD += estimate.estimatedCostNanoUSD;
+    // Every case runs the same binary, so rates and model order match.
+    for (const [index, c] of estimate.comparisons.entries()) {
+      aggregate.comparisons[index].estimatedCostNanoUSD += c.estimatedCostNanoUSD;
+      aggregate.comparisons[index].estimatedSavingsNanoUSD += c.estimatedSavingsNanoUSD;
+    }
+  }
+  return totals;
+}
+
 function report(meta, rows, summary) {
   const pct = v => v == null ? 'n/a' : `${Math.round(v * 100)}%`;
   const lines = [`# Jev qualification — ${meta.mode}`, '', `- Date: ${meta.date}`, `- Revision: ${meta.revision}`, `- Corpus: ${meta.corpus} (held-out ${meta.heldout.slice(0, 12)})`, `- Partition: ${meta.partition} · repeats: ${meta.repeat} · images: ${meta.images}`, `- Model: ${meta.models.join(', ') || (meta.mode === 'jev' ? 'not recorded' : 'none (no provider calls)')}`, ''];
@@ -250,13 +278,22 @@ function report(meta, rows, summary) {
     return lines.join('\n') + '\n';
   }
   const s = summary;
-  lines.push('## Diagnosis', '', `${s.diagnose.correct}/${s.diagnose.cases} expected dispositions · ${s.diagnose.abstained} unresolved · ${s.diagnose.errors} errors · **${s.diagnose.falseGreens} false greens** · **${s.diagnose.unusable} unusable** · run p50/p95 ${s.diagnose.p50Ms}/${s.diagnose.p95Ms} ms · Jev p50/p95 ${s.diagnose.jevP50Ms ?? 'n/a'}/${s.diagnose.jevP95Ms ?? 'n/a'} ms · ${s.diagnose.usage.requests} requests`, '',
+  if (s.jevUsage) {
+    const u = s.jevUsage;
+    const usd = nano => `$${(nano / 1e9).toFixed(9)}`;
+    lines.push('## Jev usage and estimated savings', '', `${u.requestsWithUsage} of ${u.requests} recorded requests reported tokens · ${u.caseRunsWithoutUsageReport} case runs had no usage report.`, '');
+    if (u.inputRateEstimate) {
+      lines.push(`${u.inputTokens} input and ${u.outputTokens} output tokens reported. Estimated Jev cost ${usd(u.inputRateEstimate.estimatedCostNanoUSD)} USD. Savings apply standard uncached input rates to the same reported token count.`, '',
+        ...u.inputRateEstimate.comparisons.map(c => `- ${c.model} · ${usd(c.estimatedSavingsNanoUSD)} USD estimated savings`), '');
+    }
+  }
+  lines.push('## Diagnosis', '', `${s.diagnose.correct}/${s.diagnose.cases} expected dispositions · ${s.diagnose.abstained} unresolved · ${s.diagnose.errors} errors · **${s.diagnose.falseGreens} false greens** · **${s.diagnose.unusable} unusable** · run p50/p95 ${s.diagnose.p50Ms}/${s.diagnose.p95Ms} ms · Jev p50/p95 ${s.diagnose.jevP50Ms ?? 'n/a'}/${s.diagnose.jevP95Ms ?? 'n/a'} ms`, '',
     '| case | expected | disposition | family | conf. | status/reason |', '|---|---|---|---|---|---|',
     ...rows.filter(r => r.lane === 'diagnose').map(r => `| ${r.id} | ${r.expected} | ${r.correct ? '' : '**'}${r.disposition}${r.correct ? '' : '**'} | ${r.family || ''} | ${r.confidence == null ? '' : r.confidence.toFixed(2)} | ${r.status}: ${r.reason} |`), '',
-    '## Repair', '', `${s.repair.verified} verified (${s.repair.verifiedCorrect} correct) · precision ${pct(s.repair.precision)} · recovery ${pct(s.repair.recovery)} · **${s.repair.falseGreens} false greens** · **${s.repair.unusable} unusable** · run p50/p95 ${s.repair.p50Ms}/${s.repair.p95Ms} ms · ${s.repair.usage.requests} requests`, '',
+    '## Repair', '', `${s.repair.verified} verified (${s.repair.verifiedCorrect} correct) · precision ${pct(s.repair.precision)} · recovery ${pct(s.repair.recovery)} · **${s.repair.falseGreens} false greens** · **${s.repair.unusable} unusable** · run p50/p95 ${s.repair.p50Ms}/${s.repair.p95Ms} ms`, '',
     '| case | expected | state | stage | chosen | decision |', '|---|---|---|---|---|---|',
     ...rows.filter(r => r.lane === 'repair').map(r => `| ${r.id} | ${r.expected}${r.expectedName ? ` (${r.expectedName})` : ''} | ${r.state} | ${r.stage} | ${r.chosen || ''} | ${r.decision ? `${r.decision}: ${r.decisionReason}` : ''} |`), '',
-    '## Goals', '', s.goal.cases ? `${s.goal.goalStatusMatched}/${s.goal.cases} goal statuses as labeled · ${s.goal.testVerdictMatched}/${s.goal.cases} test verdicts as labeled · ${s.goal.completedButFailed} completed-but-failed · **${s.goal.falseGreens} false greens** · **${s.goal.unusable} unusable** · run p50/p95 ${s.goal.p50Ms}/${s.goal.p95Ms} ms · requests ${s.goal.usage.requests ?? 'unknown'} · tokens in/out ${s.goal.usage.inputTokens}/${s.goal.usage.outputTokens}` : `Not run: ${s.goal.skipped} cases need a goal provider.`, '',
+    '## Goals', '', s.goal.cases ? `${s.goal.goalStatusMatched}/${s.goal.cases} goal statuses as labeled · ${s.goal.testVerdictMatched}/${s.goal.cases} test verdicts as labeled · ${s.goal.completedButFailed} completed-but-failed · **${s.goal.falseGreens} false greens** · **${s.goal.unusable} unusable** · run p50/p95 ${s.goal.p50Ms}/${s.goal.p95Ms} ms` : `Not run: ${s.goal.skipped} cases need a goal provider.`, '',
     '| case | expected goal / test | goal | test | actions |', '|---|---|---|---|---|',
     ...rows.filter(r => r.lane === 'goal').map(r => r.skipped ? `| ${r.id} | | skipped | | ${r.skipped} |` : `| ${r.id} | ${r.expectedGoal.join(' or ')} / ${r.expectedTest} | ${r.goal} | ${r.test} | ${r.unusable ? `unusable: ${r.unusable}` : r.actions} |`), '',
     'A diagnosis never changes a result; goal completion is never a pass. Unusable rows (a CLI error, a run that did not complete or missing evidence) fail the qualification and are not scored. False greens count any changed failed result, an assertion failure marked eligible for repair, a verified wrong or unlabeled repair, a modified source, or a passing test where the label requires a failure.');
@@ -296,6 +333,7 @@ function main() {
     }
   }
   const summary = options.mode === 'validate' ? null : summarize(rows);
+  if (options.mode === 'jev') summary.jevUsage = campaignJevUsage(rows);
   const models = [...new Set(rows.flatMap(r => (r.model || '').split(', ')).filter(Boolean))];
   const meta = { version: '9l.jev-qualification/1', mode: options.mode, date: new Date().toISOString(), revision, corpus: manifest.version, heldout: manifest.heldoutSHA256, partition: options.partition, repeat: options.repeat, images: options.images, models, platform: `${process.platform}/${process.arch}` };
   fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ meta, summary, rows }, null, 2) + '\n');
@@ -305,7 +343,7 @@ function main() {
   if (failed) process.exitCode = 1;
 }
 
-module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile, parseArgs, goalScript, goalRow };
+module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile, parseArgs, goalScript, goalRow, campaignJevUsage };
 if (require.main === module) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 2; }
 }

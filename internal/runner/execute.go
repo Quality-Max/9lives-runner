@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 )
 
 type ExecuteOptions struct {
@@ -62,6 +64,8 @@ type ExecuteOptions struct {
 	Store      Store
 	Executor   ProcessExecutor
 	Services   AttemptServiceFactory
+	// TrackJevUsage collects usage across every provider call in this run.
+	TrackJevUsage bool
 }
 
 // SetupError is a plan or option problem found before any process starts.
@@ -162,6 +166,10 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	}
 	if opts.OnStarted != nil {
 		opts.OnStarted()
+	}
+	var usage *jevcost.Tracker
+	if opts.TrackJevUsage {
+		ctx, usage = jevcost.WithTracker(ctx)
 	}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
@@ -299,6 +307,7 @@ func Execute(ctx context.Context, plan Plan, opts ExecuteOptions) (RunSummary, e
 	summary.FinishedAt = time.Now().UTC()
 	summary.DurationMS = summary.FinishedAt.Sub(started).Milliseconds()
 	summary.Outcome = classifyRun(summary, runCtx.Err() != nil)
+	summary.JevUsage = usage.Summary()
 	if err := store.Finalize(summary); err != nil {
 		summary.Outcome = OutcomeIncomplete
 		return summary, err

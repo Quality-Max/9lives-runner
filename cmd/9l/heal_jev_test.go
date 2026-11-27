@@ -12,6 +12,7 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/jevassist"
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -38,10 +39,13 @@ test('pay', async ({page}) => {
 type scriptedGrounding struct {
 	choice string
 	calls  int
+	usage  *jevcost.Tracker
 }
 
 func (s *scriptedGrounding) Decide(_ context.Context, b jev.Binding, _ jev.Observation, c jev.Contract) (jev.Result, error) {
 	s.calls++
+	s.usage.Request()
+	s.usage.Usage(122, 8)
 	one := func(v float64) *float64 { return &v }
 	probabilities := map[string]float64{}
 	for id := range c.Questions["target"].Criteria {
@@ -59,7 +63,8 @@ func useScriptedGrounding(t *testing.T, choice string) *scriptedGrounding {
 	fake := &scriptedGrounding{choice: choice}
 	previous := newRepairDecider
 	newRepairDecider = func(jev.Config) jevassist.NewDecider {
-		return func(context.Context, runner.AttemptIdentity, string, string) (jevassist.Decider, func(), error) {
+		return func(ctx context.Context, _ runner.AttemptIdentity, _, _ string) (jevassist.Decider, func(), error) {
+			fake.usage = jevcost.FromContext(ctx)
 			return fake, func() {}, nil
 		}
 	}
@@ -103,6 +108,9 @@ func TestHealJevGroundsThenVerifiesInIsolation(t *testing.T) {
 		session, code := healJSON(t)
 		if code != 1 || session.State != "needs_human" || session.SavedPath != "" || session.Applied || session.Grounded == nil || session.Grounded.Passed {
 			t.Fatalf("exit %d, session %+v", code, session)
+		}
+		if usage := session.JevUsage; usage == nil || usage.Totals != (jevcost.Totals{Requests: 1, RequestsWithUsage: 1, InputTokens: 122, OutputTokens: 8}) {
+			t.Fatalf("unsuccessful healing usage = %+v", usage)
 		}
 	})
 	t.Run("grounding keeps the original evidence after a failed Tier 1 run", func(t *testing.T) {

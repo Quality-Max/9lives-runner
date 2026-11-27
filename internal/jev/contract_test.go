@@ -121,8 +121,15 @@ func TestResponseRequiresExactFieldNames(t *testing.T) {
 							t.Fatal(err)
 						}
 						answers, model, usage, err := parseResponse(raw, contract)
-						if err == nil || answers != nil || model != "" || usage != (Usage{}) {
-							t.Fatal("malformed field names produced a response")
+						if err == nil || answers != nil || model != "" {
+							t.Fatal("malformed field names produced an answer")
+						}
+						wantUsage := Usage{}
+						if tc.name == "noul" {
+							wantUsage.Available = true // The separate usage object is still valid.
+						}
+						if usage != wantUsage {
+							t.Fatalf("usage = %+v, want %+v", usage, wantUsage)
 						}
 					})
 				}

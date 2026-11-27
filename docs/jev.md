@@ -293,6 +293,38 @@ JSON encoding a `Result`, `Observation` or prepared `Image` excludes raw answers
 snapshots and image bytes. No artifacts or response bodies are written by the
 client. Hash references identify content without implying a saved image exists.
 
+## Token usage and estimated savings
+
+Jev-enabled `9l run`, `9l diagnose`, and `9l heal` display the number
+of requests that reported usage and their input and output token totals.
+With `--format json`, the same data is under `jevUsage`. Saved run results
+retain it for `9l result`, `9l run --repeat` totals it across member runs,
+and live qualification reports total it across all case runs.
+
+`requestsWithUsage` says how many requests contributed to the token counts.
+A failed or incomplete request can lack usage. Estimates cover only reported
+input and are omitted when no request reports usage. Money in JSON is in
+integer nano-USD (one billionth of a US dollar). The separate provider billing
+availability field in individual decision records still describes billing
+data returned by the provider.
+
+The estimate prices Jev's reported input tokens at each model's published
+standard uncached input rate. TypeSafe charges only for input. The comparison
+uses equal input volume and excludes baseline output, caching, batch discounts,
+and long-context surcharges. Model tokenization and task outcomes can differ.
+
+| Model | USD per million input tokens |
+| --- | ---: |
+| [Jev](https://help.typesafe.ai/articles/5187202169-how-much-does-jev-cost) | 0.042 |
+| [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) | 0.10 |
+| [Gemini 3.1 Flash-Lite](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite) | 0.25 |
+| [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol) | 2.00 |
+| [Claude Opus 5.5](https://platform.claude.com/docs/en/models/opus-5-5/overview) | 4.00 |
+
+Rates checked on 2026-11-27. For cost per successful outcome on a common
+workload, use [TokenHunger's costbench](https://github.com/Desperado/token-hunger)
+with the same cases and assertions for each provider.
+
 ## Validation and upstream references
 
 Offline HTTP fixtures exercise typed requests and responses, auth headers,

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/jevassist"
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -18,10 +19,13 @@ type scriptedDiagnosis struct {
 	family string
 	calls  int
 	got    jev.Observation
+	usage  *jevcost.Tracker
 }
 
 func (s *scriptedDiagnosis) Decide(_ context.Context, b jev.Binding, o jev.Observation, c jev.Contract) (jev.Result, error) {
 	s.calls++
+	s.usage.Request()
+	s.usage.Usage(122, 8)
 	s.got = o
 	one := func(v float64) *float64 { return &v }
 	probabilities := map[string]float64{}
@@ -45,7 +49,8 @@ func useScriptedDiagnosis(t *testing.T, family string) *scriptedDiagnosis {
 	t.Helper()
 	fake := &scriptedDiagnosis{family: family}
 	previous := newDiagnosisDecider
-	newDiagnosisDecider = func(context.Context, jev.Config, runner.AttemptIdentity, string, string) (jevassist.Decider, func(), error) {
+	newDiagnosisDecider = func(ctx context.Context, _ jev.Config, _ runner.AttemptIdentity, _, _ string) (jevassist.Decider, func(), error) {
+		fake.usage = jevcost.FromContext(ctx)
 		return fake, func() {}, nil
 	}
 	t.Cleanup(func() { newDiagnosisDecider = previous })
@@ -142,6 +147,9 @@ func TestDiagnoseRealFailuresKeepTheirResult(t *testing.T) {
 		d := report.Diagnosis
 		if code != 1 || report.Outcome != "failed" || d == nil || d.Status != "diagnosed" || d.Disposition != jevassist.EligibleForRepair || fake.calls != 1 {
 			t.Fatalf("exit %d, report %+v, diagnosis %+v", code, report, report.Diagnosis)
+		}
+		if usage := report.JevUsage; usage == nil || usage.Totals != (jevcost.Totals{Requests: 1, RequestsWithUsage: 1, InputTokens: 122, OutputTokens: 8}) {
+			t.Fatalf("diagnosis usage = %+v", usage)
 		}
 		if d.Facts.FailedLocator != "getByRole('button', { name: 'Checkout' })" || d.Facts.ScreenshotSHA256 == "" || d.Facts.SnapshotSHA256 == "" {
 			t.Fatalf("facts not observed: %+v", d.Facts)

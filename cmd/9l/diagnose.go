@@ -21,6 +21,7 @@ import (
 	"github.com/Quality-Max/9lives-runner/internal/adapters/playwright"
 	"github.com/Quality-Max/9lives-runner/internal/jev"
 	"github.com/Quality-Max/9lives-runner/internal/jevassist"
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -41,6 +42,7 @@ type diagnoseReport struct {
 	Outcome   string               `json:"outcome"`
 	Receipt   string               `json:"receipt,omitempty"`
 	Diagnosis *jevassist.Diagnosis `json:"diagnosis,omitempty"`
+	JevUsage  *jevcost.Summary     `json:"jevUsage,omitempty"`
 }
 
 func diagnoseCommand(args []string, out, errOut io.Writer) int {
@@ -93,7 +95,12 @@ func diagnoseCommand(args []string, out, errOut io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var usage *jevcost.Tracker
+	if *useJev {
+		ctx, usage = jevcost.WithTracker(ctx)
+	}
 	report, code := diagnoseSpec(ctx, spec, source, config, runTimeout, *receipts, passEnv)
+	report.JevUsage = usage.Summary()
 	if code == 2 {
 		fmt.Fprintln(errOut, "9l: diagnose: the run did not complete; check the spec and its Playwright project")
 		return 2
@@ -229,6 +236,7 @@ func printDiagnosis(w io.Writer, report diagnoseReport) error {
 			outcome = "did not complete (" + outcome + ")"
 		}
 		fmt.Fprintf(&b, "9l diagnose: %s %s; nothing to diagnose.\n", report.Spec, outcome)
+		printJevUsage(&b, report.JevUsage)
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
@@ -261,6 +269,7 @@ func printDiagnosis(w io.Writer, report diagnoseReport) error {
 		b.WriteString("Limit: " + limitation + "\n")
 	}
 	fmt.Fprintf(&b, "Result unchanged: %s. Receipt: %s\n", report.Outcome, report.Receipt)
+	printJevUsage(&b, report.JevUsage)
 	_, err := io.WriteString(w, b.String())
 	return err
 }
