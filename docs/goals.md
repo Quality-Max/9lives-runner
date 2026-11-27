@@ -128,7 +128,9 @@ covered in-flight click, Playwright retry suppression and worker/browser cleanup
 Go tests qualify strict decisions, ownership, shared budgets, cancellation,
 usage/error privacy and uncertain-action abstention. Live provider accuracy,
 representative drift, measured latency/billing, independent behavioral
-verification and replay admission remain follow-up qualification.
+verification of goal outcomes and replay admission remain follow-up
+qualification. The experimental [`9l run --verify`](verify.md) checks HTTP
+postconditions after an attempt; it does not verify that a goal completed.
 
 The grounding contracts are ported from an existing application's
 `services/ai_crawl/discovery_grounding.py`, `step_evidence.py` and

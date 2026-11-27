@@ -5,6 +5,9 @@ const path = require('node:path');
 const {createHash} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+// No branch is needed here: provenance is recorded in a throwaway repository
+// below, so this smoke also runs on a detached checkout such as CI's.
+const {provenanceFailure} = require('./smoke-branch.cjs');
 const work = path.join(root, '.context', 'target-contract', `smoke-${Date.now()}`);
 fs.mkdirSync(work, {recursive: true});
 const engine = path.join(work, process.platform === 'win32' ? '9l.exe' : '9l');
@@ -32,7 +35,7 @@ const spec = path.join(project, 'targets/shared.spec.ts');
 const config = path.join(project, 'targets.config.ts');
 const provenance = path.join(work, 'creation.json');
 const creation = sync(engine, ['provenance', spec, '--agent', 'codex']);
-assert.equal(creation.status, 0);
+assert.equal(creation.status, 0, provenanceFailure(creation));
 fs.writeFileSync(provenance, creation.stdout, {mode: 0o600});
 const cases = [];
 function invoke(mode, {targets = ['android-fake:finance'], grep = 'one deterministic scenario', file = spec, extra = []} = {}) {
@@ -173,6 +176,16 @@ assert.equal(validation.summary.receipts[0].targetAssertions, 3);
 const noInvalid = invoke('validation-native', {targets: ['android-fake:finance'], grep: 'validation state', file: operations, extra: ['--failure-details']});
 assert.notEqual(noInvalid.code, 0);
 assert(noInvalid.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_state'), 'validation: a handle without the invalid read is unsupported, never another state');
+const errorText = invoke('validation-error', {targets: ['web:finance'], grep: 'validation error', file: operations});
+assert.equal(errorText.code, 0, 'validation-error: the web reads the aria-errormessage text');
+assert.equal(errorText.summary.receipts[0].targetAssertions, 1, 'validation-error: one assertion');
+const wrongError = invoke('wrong-error', {targets: ['web:finance'], grep: 'validation error', file: operations, extra: ['--failure-details']});
+assert.notEqual(wrongError.code, 0, 'wrong-error: another text cannot pass');
+assert(wrongError.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'wrong-error: a plain assertion failure');
+assert(!JSON.stringify(wrongError.summary).includes('Flagged for review'), 'wrong-error: the shown error text is never recorded');
+const noError = invoke('validation-error-native', {targets: ['android-fake:finance'], grep: 'validation error', file: operations, extra: ['--failure-details']});
+assert.notEqual(noError.code, 0);
+assert(noError.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_state'), 'validation-error: a handle without the error read is unsupported');
 // Queries: a control that is absent or not yet shown answers false without
 // ending the session, and the test's later steps still run. They are
 // executed actions, never assertions; ambiguity still fails.
@@ -182,8 +195,34 @@ for (const receipt of queries.summary.receipts) {
   const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse).filter(f => f.operation);
   const native = receipt.target.startsWith('android-fake:');
   assert.deepEqual(frames.map(f => `${f.operation}:${f.category}:${f.status}`), ['open:action:passed', 'query-visible:action:passed', 'query-visible:action:passed', 'bounds:action:passed', 'tap-at:action:passed', 'query-visible:action:passed',
-    ...(native ? ['foreground:action:passed'] : []), 'assert-text:assertion:passed'], receipt.target);
+    ...(native ? ['foreground:action:passed'] : []), 'query-text:action:passed', 'assert-text:assertion:passed'], receipt.target);
   assert.equal(receipt.targetAssertions, 1, `${receipt.target}: queries are not assertions`);
+  // Like other passing steps the text read carries no test ID, and the value
+  // it returned to the spec is nowhere in the evidence.
+  assert.equal(frames.find(f => f.operation === 'query-text').control, undefined, `${receipt.target}: a passing read names no control`);
+  for (const file of [receipt.evidence.stdoutPath, receipt.receiptPath]) {
+    assert(!fs.readFileSync(file, 'utf8').includes('tapped'), `${receipt.target}: the value read stays out of ${path.basename(file)}`);
+  }
+}
+// The web driver reads what a user sees, and refuses what a user cannot read.
+const readText = path.join(project, 'targets/read-text.spec.ts');
+const readsSeen = invoke('read-seen', {targets: ['web:finance'], grep: 'text reads what a user sees', file: readText});
+assert.equal(readsSeen.code, 0, 'read-seen: a field value, a chosen option and visible text are read');
+for (const [mode, grep, reason] of [['read-hidden', 'text of a hidden control', 'missing_test_id'],
+  ['read-password', 'text of a password field', 'unsupported_state'], ['read-long', 'text over the bound', 'invalid_property']]) {
+  const refused = invoke(mode, {targets: ['web:finance'], grep, file: readText, extra: ['--failure-details']});
+  assert.notEqual(refused.code, 0, mode);
+  const failed = refused.summary.receipts[0].failureSummary.tests[0];
+  assert.deepEqual([failed.operation, failed.reason], ['query-text', reason], mode);
+  // Nothing the page holds reaches the receipt or the failure details.
+  const written = fs.readFileSync(path.join(work, `${mode}.json`), 'utf8');
+  for (const value of ['hunter2', 'not shown', 'xxxxxxxxxx']) assert(!written.includes(value), `${mode}: page text in the result`);
+}
+const missingText = invoke('missing-text', {targets: ['web:finance', 'android-fake:finance'], grep: 'a text read needs its control', file: operations, extra: ['--failure-details']});
+assert.notEqual(missingText.code, 0, 'missing-text: reading an absent control fails');
+for (const receipt of missingText.summary.receipts) {
+  assert.equal(receipt.failureSummary.tests[0].operation, 'query-text', `${receipt.target}: the failed step is the text read`);
+  assert.equal(receipt.failureSummary.tests[0].reason, 'missing_test_id', `${receipt.target}: an absent control is missing, not empty text`);
 }
 const ambiguousQuery = invoke('ambiguous-query', {targets: ['android-fake:finance'], grep: 'queries', file: operations, extra: ['--failure-details']});
 assert.notEqual(ambiguousQuery.code, 0);
@@ -193,6 +232,18 @@ assert.equal(foreign.code, 0, 'foreign: a system window in front is read, and th
 const fingerprint = invoke('fingerprint', {targets: ['android-fake:finance'], grep: 'fingerprint signs in', file: operations});
 assert.equal(fingerprint.code, 0, 'fingerprint: the enrolled finger signs in on the native target');
 assert.equal(fingerprint.summary.receipts[0].targetAssertions, 1, 'fingerprint: the touch is an action, the sign-in an assertion');
+const biometric = invoke('biometric', {targets: ['android-fake:finance'], grep: 'biometric signs in', file: operations});
+assert.equal(biometric.code, 0, 'biometric: the enrolled face or finger signs in on the native target');
+assert.equal(biometric.summary.receipts[0].targetAssertions, 1, 'biometric: the presentations are actions, the sign-in an assertion');
+const webBiometric = invoke('biometric-web', {targets: ['web:finance'], grep: 'biometric signs in', file: operations, extra: ['--failure-details']});
+assert.notEqual(webBiometric.code, 0, 'biometric-web: the web has no biometric prompt');
+assert(webBiometric.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'biometric-web: no prompt, a stable reason');
+const alertAnswered = invoke('answer-alert', {targets: ['android-fake:finance'], grep: 'system alert is answered', file: operations});
+assert.equal(alertAnswered.code, 0, 'answer-alert: the named button answers the native alert');
+assert.equal(alertAnswered.summary.receipts[0].targetAssertions, 1, 'answer-alert: the answer is an action, its effect an assertion');
+const webAlert = invoke('answer-alert-web', {targets: ['web:finance'], grep: 'system alert is answered', file: operations, extra: ['--failure-details']});
+assert.notEqual(webAlert.code, 0, 'answer-alert-web: the web has no system alerts');
+assert(webAlert.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'answer-alert-web: a stable reason');
 const webFingerprint = invoke('fingerprint-web', {targets: ['web:finance'], grep: 'fingerprint signs in', file: operations, extra: ['--failure-details']});
 assert.notEqual(webFingerprint.code, 0);
 assert(webFingerprint.summary.receipts[0].failures[0].message.includes('9lives target stopped: unsupported_operation'), 'fingerprint-web: no sensor, a stable reason');
@@ -238,6 +289,72 @@ assert.equal(stalled.code, 1);
 assert.equal(stalled.summary.receipts[0].status, 'failed', 'stalled-diagnose: a worker-side failure, not the engine deadline');
 assert(stalled.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), 'stalled-diagnose: plain assertion failure');
 assert.equal(stalled.summary.receipts[0].targetDiagnostics, undefined);
+// Opt-in failure capture (a driver option; the fake opts in by mode), run
+// under a real `android:` target name so the engine's native private output
+// and retention path run end to end. The engine tells the worker whether the
+// attempt keeps a capture: only with --failure-details --keep-attachments on
+// an android target. Then a failed test attaches one PNG and one view tree,
+// and only those two files leave the private output, copied into the receipt
+// directory (the view tree redacted), although the config also keeps a trace
+// there. The receipt never holds the image or the XML; the stream only counts.
+const captureNames = ['9l.failure-screenshot', '9l.failure-view-tree'];
+const keep = ['--failure-details', '--keep-attachments'];
+// On android-fake the project's own Playwright files (error context) are
+// referenced as before; the native private output's never are.
+const noCaptureContent = (receipt, label, native = true) => {
+  for (const file of [receipt.receiptPath, receipt.evidence.stdoutPath]) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const leaked of ['synthetic fake screen', 'synthetic view tree', 'synthetic-capture-secret', '<hierarchy', ...(native ? ['trace.zip', 'error-context'] : [])]) assert(!text.includes(leaked), `${label}: ${path.basename(file)} carries ${leaked}`);
+  }
+};
+const captureKept = invoke('capture', {targets: ['android:finance'], extra: keep});
+assert.equal(captureKept.code, 1, 'capture: the test still fails');
+assert.deepEqual(captureKept.mutations, ['mutation', 'capture'], 'capture: asked once, after the test');
+{
+  const receipt = captureKept.summary.receipts[0];
+  assert.equal(receipt.status, 'failed');
+  assert.equal(receipt.validated, true, 'capture: the evidence validates');
+  assert(receipt.failures[0].message.includes('9lives target stopped: assertion_failed'), 'capture: the failure is unchanged');
+  const files = receipt.failures[0].attachments;
+  assert.deepEqual(files.map(a => [a.name, a.contentType, a.retained]), [['9l.failure-screenshot', 'image/png', true], ['9l.failure-view-tree', 'text/xml', true]], 'capture: only the two capture files are kept');
+  assert.deepEqual([receipt.failureAttachments, receipt.retainedAttachments], [2, 2]);
+  for (const file of files) assert(file.path.startsWith(path.join(work, 'capture')) && /^[a-f0-9]{64}$/.test(file.sha256), 'capture: copied into the receipt directory with a digest');
+  assert.deepEqual(fs.readdirSync(path.dirname(files[0].path)).length, 2, 'capture: nothing else in the receipt directory');
+  assert(fs.readFileSync(files[0].path).subarray(0, 8).equals(Buffer.from('\x89PNG\r\n\x1a\n', 'latin1')), 'capture: the PNG is retained as is');
+  const tree = fs.readFileSync(files[1].path, 'utf8');
+  assert(tree.includes('synthetic view tree') && !tree.includes('synthetic-capture-secret'), 'capture: the retained view tree is redacted');
+  noCaptureContent(receipt, 'capture');
+  const frames = fs.readFileSync(receipt.evidence.stdoutPath, 'utf8').trim().split('\n').map(JSON.parse);
+  const artifacts = frames.find(f => f.type === 'test_end').artifacts;
+  // The capture's image and tree plus the trace the config kept, counted only.
+  assert.equal(artifacts.filter(a => a.kind === 'image').length, 1, 'capture: one image counted');
+  assert(artifacts.length >= 3, `capture: the trace was produced beside the capture, got ${artifacts.length} attachments`);
+  assert(artifacts.every(a => a.retained === false && Object.keys(a).length === 3), 'capture: counted, never carried');
+}
+// Not kept, so not taken: failure details alone, no flags, or the same
+// flags on a target that is not android. Nothing is read or referenced.
+for (const [mode, targets, extra] of [['capture-details', ['android:finance'], ['--failure-details']], ['capture-bare', ['android:finance'], []],
+  ['capture-retain-only', ['android:finance'], ['--keep-attachments']], ['capture-fake', ['android-fake:finance'], keep]]) {
+  const skipped = invoke(mode, {targets, extra});
+  assert.equal(skipped.code, 1, `${mode}: the test still fails`);
+  assert(!skipped.mutations.includes('capture'), `${mode}: nothing captured when it would not be kept`);
+  const receipt = skipped.summary.receipts[0];
+  assert.equal(receipt.validated, true, mode);
+  assert.deepEqual((receipt.failures?.[0]?.attachments ?? []).filter(a => captureNames.includes(a.name)), [], `${mode}: nothing referenced`);
+  if (targets[0] === 'android:finance') assert.equal(receipt.failures?.[0]?.attachments, undefined, `${mode}: nothing from the private output is referenced`);
+  noCaptureContent(receipt, mode, targets[0] === 'android:finance');
+}
+const capturePass = invoke('capture-pass', {targets: ['android:finance'], extra: keep});
+assert.equal(capturePass.code, 0, 'capture-pass: a passing test passes');
+assert(!capturePass.mutations.includes('capture'), 'capture-pass: a passing test captures nothing');
+for (const mode of ['capture-stalled', 'capture-oversized']) {
+  const skipped = invoke(mode, {targets: ['android:finance'], extra: keep});
+  assert.equal(skipped.code, 1, `${mode}: the test still fails`);
+  assert.equal(skipped.summary.receipts[0].status, 'failed', `${mode}: a worker-side failure, not the engine deadline`);
+  assert(skipped.summary.receipts[0].failures[0].message.includes('9lives target stopped: assertion_failed'), `${mode}: the failure is unchanged`);
+  assert.deepEqual(skipped.summary.receipts[0].failures[0].attachments, undefined, `${mode}: nothing attached, and no trace kept`);
+  assert(skipped.mutations.includes('capture'), `${mode}: the capture was asked for`);
+}
 // Every attempt that did not pass keeps a bounded, metadata-only failure
 // summary in its receipt, with or without --failure-details, so different
 // causes can be told apart without a rerun. It carries no message text.
@@ -334,5 +451,5 @@ assert.deepEqual(driftReceipt.agentProvenance.dependencyChanges, [{path: 'target
 assert(!fs.existsSync(driftEffects), 'helper drift: the worker never started');
 cases.push({mode: 'helper-drift', file: path.basename(spec), outcome: driftSummary.outcome, statuses: [driftReceipt.status], attempts: [driftReceipt.attempt]});
 fs.writeFileSync(path.join(work, 'results.json'), JSON.stringify({version: 1, cases, ordinaryPlaywright: 'passed'}, null, 2));
-console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
+console.log('Target contract: web + fake native passed; exact-result defect, ambiguous/missing locators, incompatible drivers, caught failures, forged steps, unpinned skips and pending cancellation/timeout/deadline rejected; locked-device and lock-during-assertion classified as setup, recovered dirty baseline passed with its record; an opted-in failure capture taken only when kept (--failure-details --keep-attachments on an android target), only its two files retained from the native output (view tree redacted, trace not), skipped when stalled or oversized; distinct metadata-only failure summaries retained without --failure-details; pinned skip, re-rendered web control and plain listing passed; a helper edited after the creation snapshot refused before execution with the helper named; one attempt each.');
 console.log(`Bounded receipts: ${path.relative(root, work)}`);

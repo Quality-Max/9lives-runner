@@ -5,8 +5,9 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertIsolationEvidence} = require('./android-isolation-evidence.cjs');
 const root = path.resolve(__dirname, '..');
+const {requireBranch, provenanceFailure} = require('./smoke-branch.cjs');
 const allModes = ['healthy','defect','state-defect','missing','ambiguous','cancel','blocked','disconnect','install-fail','unavailable','digest','version',
-  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus','misfill'];
+  'operations','diagnostics','width-mismatch','version-mismatch','semantics','semantics-defect','semantics-delayed','isolation','isolation-defect','focus','misfill','failure-capture'];
 // `--list` prints the cases (CI checks its job groups cover them); an unknown
 // case is refused before anything is built or booted.
 // Biometric cases need a dedicated AVD prepared by
@@ -14,6 +15,8 @@ const allModes = ['healthy','defect','state-defect','missing','ambiguous','cance
 // they run only when requested and are not in the default list.
 const biometricModes = ['biometric', 'biometric-unenrolled'];
 if (process.argv[2] === '--list') { console.log(allModes.join('\n')); process.exit(0); }
+// Listing needs no branch; a run records provenance in this checkout and does.
+requireBranch(root, 'smoke:android');
 const unknownModes = process.argv.slice(2).filter(mode => !allModes.includes(mode) && !biometricModes.includes(mode));
 if (process.argv.slice(2).some(mode => biometricModes.includes(mode)) && !process.env.NINELIVES_ANDROID_BIOMETRIC_AVD) throw Error('biometric cases need NINELIVES_ANDROID_BIOMETRIC_AVD: run scripts/prepare-biometric-avd.cjs first');
 if (unknownModes.length) throw Error(`unknown cases: ${unknownModes.join(', ')}`);
@@ -39,7 +42,7 @@ for (const name of ['appium','appium-uiautomator2-driver']) {
 const provenances = new Map();
 for (const spec of [nativeSpec, isolationSpec]) {
   const creation = sync(engine,['provenance',spec,'--agent','codex']);
-  assert.equal(creation.status,0);
+  assert.equal(creation.status,0,provenanceFailure(creation));
   const provenance = path.join(work,`${path.basename(spec)}-creation.json`);
   fs.writeFileSync(provenance,creation.stdout,{mode:0o600});
   provenances.set(spec, provenance);
@@ -74,6 +77,8 @@ for (const mode of modes) {
   const r = sync(engine,['run',spec,'--sdk','--config',config,'--target','android:finance','--agent-provenance',provenance,
     '--grep',isolation?'native isolation':operationModes.includes(mode)?'native operations':mode.startsWith('semantics')?'native semantics':mode.startsWith('biometric')?'native biometrics':mode==='focus'?'native focus':'native transfer',
     '--timeout',isolation?'8m':'4m','--deadline',isolation?'9m':'5m','--attempts','3','--receipt-dir',path.join(work,mode),'--format','json',
+    // The opt-in capture is kept only when copied into the receipt directory.
+    ...(mode==='failure-capture'?['--failure-details','--keep-attachments']:[]),
     '--pass-env','NINELIVES_ANDROID_CASE,NINELIVES_ANDROID_PROBE,NINELIVES_ANDROID_AVD,NINELIVES_ANDROID_BIOMETRIC_AVD,NINELIVES_ANDROID_BIOMETRIC_SNAPSHOT,ANDROID_HOME,ANDROID_SDK_ROOT,HOMEBREW_PREFIX,JAVA_HOME'],
     {timeout:isolation?600000:330000,env:{...process.env,NINELIVES_ANDROID_CASE:mode,NINELIVES_ANDROID_PROBE:probe}});
   fs.writeFileSync(path.join(work, `${mode}.json`),r.stdout,{mode:0o600});
@@ -123,20 +128,42 @@ for (const mode of modes) {
     assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,2);assert.equal(receipt.verifiedAssertions,0);
   } else if (mode==='semantics'||mode==='semantics-delayed') {
     assert.equal(r.status,0,'semantics: Flutter-shaped controls pass');assert.equal(run.outcome,'passed');
-    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8);assert.equal(receipt.verifiedAssertions,0);
+    // Nine, with the field's error text read by toHaveError.
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,9);assert.equal(receipt.verifiedAssertions,0);
+    assert(frames.some(f=>f.operation==='assert-error'&&f.status==='passed'),`${mode}: the field's error text matched`);
   } else if (mode==='operations') {
+    // Eight: six operations checks, plus the focused field still visible and
+    // no keyboard after hideKeyboard under the emulator's empty input method.
     assert.equal(r.status,0,'operations: native operations pass');assert.equal(run.outcome,'passed');
-    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,6);assert.equal(receipt.verifiedAssertions,0);
+    assert.equal(receipt.validated,true);assert.equal(receipt.targetAssertions,8,'operations: target assertions');assert.equal(receipt.verifiedAssertions,0);
   } else {
     assert.notEqual(r.status,0,mode);assert.notEqual(run.outcome,'passed',mode);
     if (rejectionReasons[mode]) assert.equal(facts.driverReason,rejectionReasons[mode],`${mode}: unexpected Android rejection stage`);
   }
   if (!['install-fail','unavailable','digest','version','width-mismatch','version-mismatch'].includes(mode)) assert.equal(facts.deviceStopped,true, `${mode}: owned emulator survived`);
+  // failure-capture leaves closing to the fixture, after its capture: the
+  // stop is read by a hook that runs after that teardown.
+  if (mode==='failure-capture') assert.equal(facts.stoppedAfterTeardown,true,'failure-capture: the emulator was checked after the fixture closed the driver');
   if (mode==='defect' || mode==='state-defect') {
     const op=mode==='defect'?'assert-text':'assert-state';
     assert(frames.some(f=>f.operation===op&&f.status==='failed'),`${mode}: relevant assertion must reject defect`);
     assert.equal(receipt.validated,true);assert.equal(facts.clickDispatches,1);
     assert.equal(facts.stopReason,'assertion_failed',`${mode}: setup/deadline failure is inconclusive`);
+  }
+  if (mode==='failure-capture') {
+    // The opted-in capture of the failed transfer: one PNG of the emulator's
+    // display and one UiAutomator2 view tree, retained (the tree redacted)
+    // in the receipt directory. receipt.json holds references only.
+    assert(frames.some(f=>f.operation==='assert-text'&&f.status==='failed'),'failure-capture: the defect still fails its assertion');
+    assert.equal(facts.stopReason,'assertion_failed','failure-capture: the outcome is unchanged');
+    const files=(receipt.failures?.[0]?.attachments??[]).filter(a=>a.name.startsWith('9l.failure-'));
+    assert.deepEqual(files.map(a=>[a.name,a.contentType,a.retained]),[['9l.failure-screenshot','image/png',true],['9l.failure-view-tree','text/xml',true]],'failure-capture: one PNG and one view tree retained');
+    const image=fs.readFileSync(files[0].path), tree=fs.readFileSync(files[1].path,'utf8');
+    assert(image.subarray(0,8).equals(Buffer.from('\x89PNG\r\n\x1a\n','latin1'))&&image.length<=8*1024*1024,'failure-capture: a bounded PNG');
+    assert(/^\s*</.test(tree)&&tree.includes('<hierarchy')&&Buffer.byteLength(tree)<=2*1024*1024,'failure-capture: a bounded view tree');
+    const persisted=fs.readFileSync(receipt.receiptPath,'utf8');
+    assert(!persisted.includes('<hierarchy')&&!persisted.includes('Sent $'),'failure-capture: the receipt holds no capture content');
+    facts.capture={screenshotBytes:image.length,viewTreeBytes:Buffer.byteLength(tree)};
   }
   if (mode==='cancel'||mode==='blocked') {
     assert.equal(facts.started,true,`${mode}: app onClick must actually be in flight`);
@@ -151,9 +178,9 @@ for (const mode of modes) {
   }
   if (mode==='operations') {
     const ops=new Set(frames.filter(f=>f.operation).map(f=>f.operation));
-    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate','query-visible','foreground']) assert(ops.has(op),`operations: ${op} ran`);
+    for (const op of ['viewport','bounds','tap-at','back','scroll','assert-hidden','assert-keyboard','hide-keyboard','terminate','activate','query-visible','query-text','foreground']) assert(ops.has(op),`operations: ${op} ran`);
     // Queries are executed actions, never assertions.
-    assert(frames.filter(f=>f.operation==='query-visible'||f.operation==='foreground').every(f=>f.category==='action'&&f.status==='passed'),'operations: queries are passed actions');
+    assert(frames.filter(f=>['query-visible','query-text','foreground'].includes(f.operation)).every(f=>f.category==='action'&&f.status==='passed'),'operations: queries are passed actions');
   }
   if (mode==='diagnostics') {
     // The hidden assertion against the open dialog fails as an assertion,

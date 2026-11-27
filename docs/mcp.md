@@ -36,7 +36,8 @@ In the host's MCP inspector, compare the `initialize` response's
 `9lives` and `serverInfo.title` is `9lives Go runner`. Then refresh its tool
 list (`tools/list`). Go runner releases from 0.4.0 expose these seven tools:
 `run_test`, `heal_test`, `assess_test`, `confirm_finding`, `scan_url`,
-`inspect_page`, `generate_playwright_repro`.
+`inspect_page`, `generate_playwright_repro`. Releases from 0.7.2 add an eighth,
+`inspect_screen`.
 
 If only four appear, the host may still be running a Go release from before
 0.4.0 or displaying cached discovery. Recheck the configured absolute path,
@@ -53,10 +54,11 @@ selected or its tool cache.
 | --- | --- | --- |
 | `run_test` | `spec`, optional `run_timeout` (seconds) | `status` `passed`, `failed` or `incomplete`; test counts; `reason`; bounded `failure` context; `failures` (each failed test's title, failing line, error start, `expectedStatus`, last `status` and attachments; a `test.fail()` test that passed has `status` `passed` and the message `Expected to fail, but passed.`); `failureContext` (the first failure's Playwright `error-context.md`, redacted, at most 8 KiB); receipt path |
 | `heal_test` | `spec`, optional `apply` (default false), `max_proposals` (1–5, default 1), `run_timeout` | Native healing session: `state`, run results (`original`, and `tier1` and `verified`, each `null` when that stage was not attempted), `savedPath` or `applied`, `diff`, and a `note` for `needs_human` |
-| `assess_test` | `path` (spec or directory), optional `requirements` | The [assessment](test-assessment.md) report under `report`; a suite with unassessed files also carries `error` |
+| `assess_test` | `path` (spec or directory), optional `requirements`, `screens` (saved inspect results to [check test IDs against](test-assessment.md#test-ids-against-inspected-screens)) | The [assessment](test-assessment.md) report under `report`; a suite with unassessed files also carries `error` |
 | `confirm_finding` | `spec`, `unfixed` (Git revision), optional `fixed` (default the working tree), `finding_id`, `finding`, `run_timeout` (seconds, per run) | The [confirmation](confirm.md) report under `report` and its `reportPath`; only `verdict` `confirmed` means the reproduction failed before and passed after |
 | `scan_url` | `url`, optional `checks`, `max_links` (0–250, default 50), `baseline` (a previous result or a path to one), `weight_budget`, `viewport`, `screenshot`, `allow_private_network`, `storage_state_path` with `acknowledge_private_content: true`, `format` (`json`, `markdown`, `issue`), `min_severity`, `timeout` (seconds) | The [scan](cli.md) result: `score` with `scoring` (scale, severity weights, grade thresholds and grade), `findings` with stable `id`s, reproduction steps and fixes, `metrics`, and with a baseline a `delta` of `new`, `fixed` and `unchanged`. `markdown` and `issue` return the rendered text instead of JSON |
 | `inspect_page` | `url`, optional `include_accessibility_tree`, `include_forms`, `viewport`, `allow_private_network`, `storage_state_path` with `acknowledge_private_content: true`, `format` (`json`, `markdown`), `timeout` | Title, headings, forms and `interactive` controls with ranked `recommendedLocator`, `stability` and the page testability verdict; optionally Chromium's accessibility tree |
+| `inspect_screen` | `platform` (`android` or `ios`); for Android optional `serial` (required when several devices are attached) and `package`; for iOS optional `udid` (required when several simulators are booted); optional `format` (`json`, `markdown`), `timeout` (seconds) | `controls` ranked by handle (`stable`, `repeated`, `copy`, `none`; Android copy controls carry their `controls` alias), `apps`, `testability` with the share of controls that have a unique test ID, and `warnings`. Android reads the active window with one `uiautomator dump`; iOS reads the booted Simulator's foreground app through a private Appium session that names no app, and needs `NINELIVES_IOS_TOOLS` and, to start in seconds, `NINELIVES_IOS_WDA_PRODUCTS`. See [page checks](scan.md#test-ids-on-an-android-screen) |
 | `generate_playwright_repro` | `url`, optional `goal`, `finding` (a `scan_url` finding), `test_name`, `output_path`, `overwrite`, `sdk` | `filePath` (relative), `code` and `assumptions`. Nothing is run |
 
 Each result is the JSON text content of the tool result, with `version: 1`.

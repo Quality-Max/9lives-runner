@@ -49,7 +49,8 @@ const mcpInstructions = "9lives Go runner. run_test executes one Playwright spec
 	"and passed after, and even that does not show the spec tests the finding. scan_url loads a page once in Chromium and reports " +
 	"console, link, accessibility, Core Web Vitals, SEO, security-header, cookie, mixed-content and page-weight findings; " +
 	"inspect_page returns the page's structure and ranked role/name locators. Both are observations, not authorization to change " +
-	"a site; loopback targets need allow_private_network. generate_playwright_repro writes a deterministic spec for a finding, URL " +
+	"a site; loopback targets need allow_private_network. inspect_screen ranks the controls on an attached Android device's or " +
+	"booted iOS Simulator's screen by their test IDs; it taps and types nothing. generate_playwright_repro writes a deterministic spec for a finding, URL " +
 	"or goal and runs nothing; run it with run_test, or generate it with sdk true and use confirm_finding. Paths must be inside " +
 	"the server's working directory."
 
@@ -94,6 +95,7 @@ var mcpTools = []map[string]any{
 			"properties": map[string]any{
 				"path":         map[string]any{"type": "string", "description": "Spec file or directory"},
 				"requirements": map[string]any{"type": "string", "description": "Optional reviewed requirement contract JSON"},
+				"screens":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 64, "description": "Optional saved inspect_screen or `9l inspect --format json` results; target tests' test IDs are checked against them"},
 			},
 			"required":             []string{"path"},
 			"additionalProperties": false,
@@ -161,6 +163,25 @@ var mcpTools = []map[string]any{
 				"format":                     map[string]any{"type": "string", "enum": []string{"json", "markdown"}, "default": "json"},
 			}),
 			"required":             []string{"url"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		"name":        "inspect_screen",
+		"title":       "Inspect a device screen",
+		"description": "Rank each control on a device screen by the handle the 9lives driver would find it with: stable (a unique test ID, used with app.getByTestId), repeated (an ID other elements share, which getByTestId refuses as ambiguous), copy (only its text or label; on Android with the controls alias that reaches it, on iOS unreachable for the 9lives driver) or none (coordinates only), plus the share with a unique test ID. android reads the active window of an attached device with one uiautomator dump over adb, installs nothing and fails while an Appium or UiAutomator2 session holds uiautomator. ios reads the foreground app of a booted Simulator through a private Appium session that names no app, so the app is not launched, reset or terminated; WebDriverAgent is installed on the simulator, needs the pinned iOS tools (NINELIVES_IOS_TOOLS) and starts in seconds with NINELIVES_IOS_WDA_PRODUCTS, minutes without. Nothing is tapped or typed; the result quotes on-screen text.",
+		"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"platform": map[string]any{"type": "string", "enum": []string{"android", "ios"}},
+				"serial":   map[string]any{"type": "string", "description": "Android: adb serial; required when several devices are attached"},
+				"package":  map[string]any{"type": "string", "description": "Android: report only controls of this package"},
+				"udid":     map[string]any{"type": "string", "description": "iOS: simulator UDID; required when several simulators are booted"},
+				"format":   map[string]any{"type": "string", "enum": []string{"json", "markdown"}, "default": "json"},
+				"timeout":  map[string]any{"type": "integer", "minimum": 1, "description": "Seconds"},
+			},
+			"required":             []string{"platform"},
 			"additionalProperties": false,
 		},
 	},
@@ -596,12 +617,13 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 			spec: spec, unfixed: args.Unfixed, fixed: args.Fixed, finding: args.Finding, findingID: args.FindingID,
 			workers: 1, timeout: timeout, maxOutputBytes: 4 << 20, passEnv: s.passEnv, receiptDir: s.receiptDir,
 		})
-	case "scan_url", "inspect_page", "generate_playwright_repro":
+	case "scan_url", "inspect_page", "inspect_screen", "generate_playwright_repro":
 		return s.browserTool(ctx, name, raw)
 	default:
 		var args struct {
-			Path         string `json:"path"`
-			Requirements string `json:"requirements"`
+			Path         string   `json:"path"`
+			Requirements string   `json:"requirements"`
+			Screens      []string `json:"screens"`
 		}
 		if err := decodeArguments(name, raw, &args); err != nil {
 			return nil, err
@@ -616,7 +638,15 @@ func (s *mcpServer) runTool(ctx context.Context, name string, raw json.RawMessag
 				return nil, err
 			}
 		}
-		return s.assessTest(ctx, path, requirements)
+		screens := make([]string, 0, len(args.Screens))
+		for _, screen := range args.Screens {
+			contained, err := s.contained(screen, false)
+			if err != nil {
+				return nil, err
+			}
+			screens = append(screens, contained)
+		}
+		return s.assessTest(ctx, path, requirements, screens)
 	}
 }
 
@@ -775,10 +805,13 @@ func boundedRun(run *tier2.RunResult) *tier2.RunResult {
 	return &copied
 }
 
-func (s *mcpServer) assessTest(ctx context.Context, path, requirements string) (any, error) {
+func (s *mcpServer) assessTest(ctx context.Context, path, requirements string, screens []string) (any, error) {
 	args := []string{path, "--format", "json"}
 	if requirements != "" {
 		args = append(args, "--requirements", requirements)
+	}
+	for _, screen := range screens {
+		args = append(args, "--screens", screen)
 	}
 	var out, errOut bytes.Buffer
 	code := assessContext(ctx, args, &out, &errOut)

@@ -232,7 +232,9 @@ func executeHunt(ctx context.Context, config jev.Config, input huntInput, dir st
 	if err = os.WriteFile(filepath.Join(absolute, "input.json"), raw, 0600); err != nil {
 		return runner.RunSummary{}, err
 	}
-	revision, err := exec.CommandContext(ctx, "git", "rev-parse", "HEAD").Output()
+	revisionCmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	revisionCmd.Env = demoEnvironment() // never the provider credential
+	revision, err := revisionCmd.Output()
 	if err != nil {
 		return runner.RunSummary{}, err
 	}

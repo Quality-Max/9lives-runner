@@ -135,6 +135,16 @@ func TestUnresolvedAndErrorStatesMakeNoClaim(t *testing.T) {
 			t.Fatal("diagnosed without usable evidence")
 		}
 	})
+	t.Run("a refused screenshot without a snapshot asks nothing", func(t *testing.T) {
+		// A 1920x1080 viewport is wider than the 1568-pixel upload limit.
+		fake := &fakeJev{answers: answers("locator_drift", .9, .9, .02, .02, .02, .9)}
+		bare := e
+		bare.Snapshot, bare.Screenshot = "", pngBytes(t, 1920, 1080)
+		d := Diagnose(context.Background(), fake, bare, "synthetic", nil)
+		if d.Status != "unresolved" || d.Reason != "insufficient_evidence" || d.Disposition != Unresolved || d.Inference != nil || fake.calls != 0 {
+			t.Fatalf("asked Jev without page evidence: %+v, %d calls", d, fake.calls)
+		}
+	})
 	t.Run("stale evidence asks nothing", func(t *testing.T) {
 		fake := &fakeJev{}
 		stale := e

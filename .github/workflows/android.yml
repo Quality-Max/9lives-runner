@@ -1,11 +1,18 @@
 name: Android
 
 # Real-emulator qualification of the experimental Android target: the
-# synthetic fixture app on an owned API 35 emulator, every case of
-# `npm run smoke:android`. Hosted Linux runners provide KVM for the emulator.
+# synthetic fixture app on an owned API 35 emulator. Hosted Linux runners
+# provide KVM for the emulator.
+#
+# Pull requests and pushes to main run a fast subset of cases that have been
+# stable on hosted runners. Every case of `npm run smoke:android` runs nightly
+# and on demand, repeated, and the summary job reports a pass rate per case,
+# so an intermittent case is measured instead of re-run until green.
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '0 3 * * *'
   pull_request:
     paths:
       - 'packages/playwright/src/**'
@@ -16,37 +23,80 @@ on:
       - 'testdata/sdk/android.config.ts'
       - 'scripts/android-smoke.cjs'
       - 'scripts/android-isolation-evidence*.cjs'
+      - 'scripts/android-pass-rate*.cjs'
       - 'scripts/build-android-fixture.cjs'
       - 'tools/android/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'fast: the pull-request subset; full: every case'
+        type: choice
+        options: [full, fast]
+        default: full
+      repeat:
+        description: 'How many times to run each group (1-5)'
+        type: choice
+        options: ['1', '2', '3', '4', '5']
+        default: '3'
   workflow_call:
 
 permissions:
   contents: read
 
+# The event is part of the group, so a push to main never cancels the nightly
+# run and the nightly run never cancels a push's.
 concurrency:
-  group: android-${{ github.ref }}
+  group: android-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   # Each test owns a cold emulator, so the cases run as parallel groups.
-  # The groups must cover `scripts/android-smoke.cjs --list` exactly; the
-  # coverage job below fails otherwise.
+  # The full groups must cover `scripts/android-smoke.cjs --list` exactly and
+  # the fast groups must name only listed cases; this job fails otherwise.
   coverage:
     runs-on: ubuntu-24.04
     outputs:
       groups: ${{ steps.groups.outputs.groups }}
+      repeats: ${{ steps.groups.outputs.repeats }}
+      scope: ${{ steps.groups.outputs.scope }}
+      cases: ${{ steps.groups.outputs.cases }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Define the emulator groups and check they cover every case once
+      - name: Define the emulator groups and check they cover the cases
         id: groups
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_SCOPE: ${{ inputs.scope }}
+          INPUT_REPEAT: ${{ inputs.repeat }}
         run: |
-          groups='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version semantics semantics-defect semantics-delayed","operations diagnostics width-mismatch version-mismatch","isolation isolation-defect focus misfill"]'
-          node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" ").split(" ").sort().join("\n") + "\n")' "$groups" > groups.txt
+          export LC_ALL=C
+          full='["healthy defect state-defect missing","ambiguous cancel blocked disconnect","install-fail unavailable digest version semantics semantics-defect semantics-delayed","operations diagnostics width-mismatch version-mismatch failure-capture","isolation isolation-defect focus misfill"]'
+          # One end-to-end pass, ambiguity and cancellation, and the cheap
+          # rejection and setup-mismatch paths. None of these failed on hosted
+          # runners in the November sample; the cases named in the hosted
+          # flake issues (#258, #276, #278, #280, #281) run nightly.
+          fast='["healthy ambiguous cancel misfill","width-mismatch digest install-fail"]'
+          node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" ").split(" ").sort().join("\n") + "\n")' "$full" > groups.txt
           node scripts/android-smoke.cjs --list | sort > cases.txt
           diff -u cases.txt groups.txt
-          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+          node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" ").split(" ").sort().join("\n") + "\n")' "$fast" > fast.txt
+          if [ -n "$(comm -23 fast.txt cases.txt)" ]; then echo "fast groups name unknown cases:"; comm -23 fast.txt cases.txt; exit 1; fi
+          case "$EVENT" in
+            schedule) scope=full; repeat=3 ;;
+            workflow_dispatch) scope="${INPUT_SCOPE:-full}"; repeat="${INPUT_REPEAT:-3}" ;;
+            *) scope=fast; repeat=1 ;;
+          esac
+          if [ "$scope" = full ]; then groups="$full"; else groups="$fast"; fi
+          repeats=$(node -e 'process.stdout.write(JSON.stringify(Array.from({length: Number(process.argv[1])}, (_, i) => i + 1)))' "$repeat")
+          cases=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).join(" "))' "$groups")
+          {
+            echo "groups=$groups"
+            echo "repeats=$repeats"
+            echo "scope=$scope"
+            echo "cases=$cases"
+          } >> "$GITHUB_OUTPUT"
+          echo "Android scope: $scope, $repeat run(s) of each group" >> "$GITHUB_STEP_SUMMARY"
 
   emulator:
     needs: coverage
@@ -54,7 +104,8 @@ jobs:
       fail-fast: false
       matrix:
         group: ${{ fromJSON(needs.coverage.outputs.groups) }}
-    name: emulator (${{ matrix.group }})
+        repeat: ${{ fromJSON(needs.coverage.outputs.repeats) }}
+    name: emulator (${{ matrix.group }})${{ needs.coverage.outputs.repeats != '[1]' && format(' run {0}', matrix.repeat) || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -99,7 +150,33 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: android-qualification-${{ github.sha }}-${{ strategy.job-index }}
+          name: android-qualification-${{ github.sha }}-${{ github.run_attempt }}-${{ strategy.job-index }}
           path: .context/android-qualification/
           if-no-files-found: ignore
           include-hidden-files: true
+
+  # Pass rate per case over every group and repeat of this run. It never fails
+  # the run: the emulator jobs already do when a case does not qualify.
+  pass-rate:
+    needs: [coverage, emulator]
+    if: ${{ always() && needs.coverage.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: android-qualification-${{ github.sha }}-${{ github.run_attempt }}-*
+          path: artifacts
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Report the pass rate per case
+        env:
+          CASES: ${{ needs.coverage.outputs.cases }}
+        run: |
+          # shellcheck disable=SC2086
+          node scripts/android-pass-rate.cjs artifacts --expect $CASES | tee pass-rate.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-pass-rate-${{ github.sha }}-${{ github.run_attempt }}
+          path: pass-rate.md

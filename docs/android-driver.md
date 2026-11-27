@@ -12,7 +12,7 @@ uses. It is qualified on API 35 emulators and one Android 17 phone;
 [Set up a host](#set-up-a-host) has the details and
 [Run the opt-in qualification](#run-the-opt-in-qualification) the limits.
 
-1. Install the matching 0.6.1 CLI and `@9l/playwright` together (see
+1. Install the matching 0.7.3 CLI and `@9l/playwright` together (see
    [installation](install.md)), and the pinned automation
    tooling once, outside your project:
 
@@ -101,7 +101,11 @@ Appium provides the native execution engine. The local wrapper owns its server
 and an ephemeral, read-only emulator session. It requests exact resource IDs,
 rejects ambiguity, reads fresh native properties and never retries mutations.
 Server output, page source, screenshots, video and device logs are not retained.
-Only bounded version/build/runtime metadata may enter execution evidence.
+Only bounded version/build/runtime metadata may enter execution evidence. The
+one exception is opt-in: a spec that sets
+[`diagnostics: {failureCapture: true}`](#failure-screenshot-and-view-tree-opt-in)
+gets a screenshot and the page source of a failed test as Playwright
+attachments, taken only in a run that keeps them.
 UiAutomator2's supported `hideKeyboard` capability installs its empty input
 method on this owned emulator. This keeps the fixture deterministic without
 keyboard-state dumps or back navigation. Software-keyboard behavior and layout
@@ -198,6 +202,15 @@ The default suite can take several minutes because each case owns a cold
 emulator; selected cases can be run with
 `node scripts/android-smoke.cjs healthy defect` after `npm run build`.
 
+In CI, pull requests that touch the Android paths and pushes to `main` run a
+fast subset: `healthy`, `ambiguous`, `cancel`, `misfill`, `width-mismatch`,
+`digest` and `install-fail`. Every case runs nightly and on demand, three
+times by default, and the run's pass-rate job lists how often each case
+qualified and why it did not. The cases that have been intermittent on the
+hosted x86_64 emulator run only there, so they are measured rather than
+re-run until green. Dispatch the full matrix with
+`gh workflow run android.yml -f scope=full -f repeat=3`.
+
 `semantics-delayed` draws the synthetic semantics content eight seconds after
 launch. Its first visibility assertion uses the same 90-second cold-relaunch
 bound as the operations case; later assertions keep their ordinary bounds.
@@ -280,7 +293,15 @@ a force-stop of the configured package (`am force-stop`, then a bounded wait unt
 (a force-stop that keeps the app's data, then a relaunch). The keyboard is
 read from `mInputShown` of `dumpsys input_method`; `hideKeyboard` presses
 Back only while it is shown and reads the result back, so the selected input
-method is never changed and no keyboard capability is set on a phone. An
+method is never changed and no keyboard capability is set on a phone. On an
+owned emulator the selected method is Appium's empty one
+(`io.appium.settings/.EmptyIME`), which draws no window: while a field has
+focus Android still reports it as shown, but nothing covers the app and a
+Back would reach the app instead of closing it. That method therefore reads
+as hidden: `toHaveKeyboard(false)` holds and `hideKeyboard()` sends nothing.
+The selected method is read from `mCurMethodId` (API 35) or
+`mSelectedMethodId` (API 36, where the field was renamed); the behaviour is
+qualified on the documented API 35 emulators. An
 unreadable keyboard state fails the operation rather than guessing. Nothing
 is retried.
 Open is bounded at 180 seconds; `reset`, `terminate` and `activate`
@@ -326,7 +347,9 @@ sourced M2 outcome mapping is
 in `testdata/android/requirements.json`; annotations are claims to review.
 
 Native Playwright output is forced into attempt-owned temporary storage and
-removed. Screenshot, video and trace recording are off in the supplied config;
+removed. An opted-in [failure capture](#failure-screenshot-and-view-tree-opt-in)
+is taken only when `--failure-details --keep-attachments` will copy its
+two files out of it; nothing else there is ever copied. Screenshot, video and trace recording are off in the supplied config;
 Appium logcat capture and page-source-on-error are disabled. Application values
 and transient native responses stay in memory. Arbitrary custom fixtures or
 user code can still write their own files and must follow the same privacy
@@ -360,6 +383,144 @@ the unchanged native driver. This is combined per-case evidence, not one final
 all-green matrix. The local index is `.context/android-qualification-summary.json`.
 That emulator matrix does not qualify physical devices, iOS, semantic screen
 checks, verified replay or the combined finance demo.
+
+## Failure screenshot and view tree (opt-in)
+
+By default the driver keeps no screen content, hierarchy or text, and
+nothing below happens. With `diagnostics: {failureCapture: true}` a test that
+failed also gets a screenshot of the target display and the UiAutomator2 view
+hierarchy as Playwright attachments, the evidence a person reaches for first
+when a native assertion fails. The capture is taken only in a run that keeps
+it:
+
+```ts
+androidTargetDriver({
+  appId: target.appId, avd: 'Pixel_API_35', apk, apkSHA256, appPackage, activity,
+  diagnostics: {failureCapture: true}, // may sit beside gestures: true
+});
+```
+
+```sh
+9l run tests/transfer.spec.ts --sdk --config playwright.config.ts \
+  --target android:finance --failure-details --keep-attachments
+```
+
+The option is off by default; there is no run flag that turns it on for a
+spec that did not ask for it. `diagnostics` must name at least one of
+`gestures`, `failureCapture` and `onPhone`, each a boolean; anything else
+(`{}`, a string, another key) is rejected as `invalid_configuration` when
+the driver is constructed.
+
+**Attached phones need their own confirmation.** An attached phone is a
+person's device: its screen can show other apps' notifications and windows,
+messages and accounts that have nothing to do with the test. There
+`failureCapture: true` alone captures nothing; the capture also needs
+`onPhone: true`:
+
+```ts
+androidTargetDriver({..., deviceSerial, diagnostics: {failureCapture: true, onPhone: true}});
+```
+
+`onPhone` is accepted only with `failureCapture: true` and only with
+`deviceSerial`; on an owned emulator, or without `failureCapture`, it is
+`invalid_configuration`. Owned emulators need only `failureCapture`. Before
+setting it, make sure the phone holds test accounts only, and consider what
+its notifications can show.
+
+**When.** Once per test, when the test body has ended and before the fixture
+closes the driver, and only for a test whose Playwright status is `failed`
+or `timedOut` (target tests cannot use `test.fail()`). The engine tells the
+worker, per attempt, whether this attempt keeps a capture: only a run with
+`--sdk --failure-details --keep-attachments` on an `android:` target does.
+Otherwise nothing is read from the device, since the files would only be
+deleted. A test that passed, was skipped or was interrupted reads nothing.
+Nothing is read either when the driver is no longer open: an operation that
+ran into its deadline or a cancellation releases it at once, an operation
+still pending when the test timed out keeps the session busy, and a spec
+that calls `app.close()` itself has closed it. The SDK takes the capture
+only from the target fixture. A spec is the user's own code and can still
+reach the driver or the process environment to read the device or skip
+the capture; what is kept is decided by the run's flags in the engine,
+which a spec cannot change. A failed operation
+that ended by itself leaves the driver open, so its capture shows the
+screen as it was when the test gave up.
+
+**What.** One PNG of the targeted display (`adb exec-out screencap -p -d
+<display>`, the display `screenDigest()` reads) and UiAutomator2's page
+source (`GET /session/<id>/source`), the XML hierarchy of every window on
+that display: text, content descriptions, hints, resource IDs, classes,
+bounds and state attributes. Both show the whole display, not only the app:
+the status bar, an open notification shade, the keyboard and other apps'
+windows are included.
+
+**Limits.** The screenshot is read with an 8 MiB output bound and the view
+tree must be at most 2 MiB (its JSON response at most 4 MiB). The capture as
+a whole gets at most 10 seconds and at most half of the test's Playwright
+timeout, since teardown shares one time slot with closing the driver, and
+never runs past the attempt deadline. A driver hook still running 250 ms
+after that bound is abandoned. Each part that fails, times out, exceeds its
+limit or is not a PNG (respectively markup) is left out on its own; nothing
+is retried. A capture never throws, never changes the test's outcome or the
+run's result, and never delays teardown beyond that bound.
+
+**Attachments and evidence.** The SDK attaches the parts it validated as
+files named `9l.failure-screenshot` (`image/png`) and `9l.failure-view-tree`
+(`text/xml`); Playwright copies each into its output directory. These names
+are reserved: the engine reporter refuses, as invalid evidence, either one
+on a test that did not fail, on a web target, twice, or as an inline body.
+The evidence stream and the receipt never carry the image or the XML: the
+stream lists each attachment only as an opaque `artifacts` entry (`kind`
+`image` or `other`, `retained: false`), as for every Playwright attachment.
+
+**Retention.** A native target's Playwright output is the attempt's private
+scratch in the system temporary directory, removed when the attempt ends.
+With `--sdk --failure-details --keep-attachments` the capture's two files,
+and only they, are copied from it into
+`<receipt-dir>/<run>/<job>/<attempt>/attachments/` by the existing
+[retention](cli.md) rules (at most 32 MiB per file and 128 MiB per
+attempt); the receipt's `failures[].attachments` names each with its path,
+size and SHA-256, and `retainedAttachments` counts them. Everything else in
+that output is never referenced or copied and is deleted with it as
+before: a trace (which embeds the attachments, the view tree unredacted),
+an error context, videos and screenshots that the project's `use` options
+produce. A capture file that cannot be retained (over a limit) is not
+referenced either. Without all three flags no capture is taken.
+
+The retained view tree is text, so it is redacted like other text
+evidence: authorization headers, bearer tokens, URL credentials and values
+after `token`, `secret`, `password` or `api_key` become `[REDACTED]`. That
+also rewrites UiAutomator2's `password="false"` attribute to
+`password="[REDACTED]"`. Redaction targets credential-shaped strings only;
+names, messages, addresses, balances and any other on-screen text remain.
+The PNG is copied byte for byte; an image cannot be redacted.
+
+**Privacy.** Turning this on retains screen content, which 9l otherwise
+never does. A screenshot and a view tree hold whatever was on the display
+when the test failed: personal data, account details, messages, one-time
+codes, a credential a field or a dialog shows, and on an attached phone the
+notifications and windows of other apps on a person's real device. Use it
+with test accounts and synthetic data, and treat receipt directories made
+with `--keep-attachments` as sensitive as the screens they show. Spec
+authors who attach their own screenshots remain responsible for them, as
+before.
+
+On the web, Playwright's own `screenshot: 'only-on-failure'` (and `trace`)
+in the project's `use` options already covers this and follows the same
+`--keep-attachments` rules; 9l adds nothing there. The iOS driver has no
+failure capture.
+
+The capture is tested against a stubbed device transport through the
+target fixture (`packages/playwright/test/android.test.cjs`) and end to end
+through the engine's native retention path with the fake driver under an
+`android:` target (`npm run smoke:targets`, whose config also keeps a trace
+there). The emulator case `failure-capture`
+(`node scripts/android-smoke.cjs failure-capture`) runs it against the
+synthetic defect APK with `--failure-details --keep-attachments`. On
+2026-11-26 it qualified in three of three runs on the documented API 35
+emulator, with the engine's keep signal and the post-teardown stop check:
+an 85 KB PNG and a 14 KB view tree were retained each time, the receipt
+held only their references, and the emulator had stopped after teardown.
+An attached phone, and with it the phone confirmation, is not qualified.
 
 ## Biometrics on an owned emulator
 
@@ -397,6 +558,10 @@ read-only and discards when the test closes, the policy is:
   `fingerprint` action, never as an assertion, so a biometric sign-in still
   needs an assertion to pass. On a phone, on the web, or without the opt-in
   it fails as `unsupported_operation` before touching anything.
+- **Portable form.** `app.biometric('match')` touches finger 1, the one the
+  snapshot enrolled, and `app.biometric('nomatch')` finger 2, through the
+  same touch, recorded as a `biometric` action. The same call presents a face
+  on an owned iOS Simulator.
 
 The system `BiometricPrompt` is another package's window, so
 `app.foreground()` reads `foreign` while it is in front and `app` after it
@@ -469,7 +634,9 @@ may not contain a backslash. A hint alias, typically a Flutter text field
 with no label, is found with one generated package-scoped XPath, since
 UiSelector has no hint matcher. Aliases remain package-scoped and must
 resolve uniquely before each operation. They do not perform semantic screen
-analysis.
+analysis. `9l assess` reports each use of such an alias as a suspected
+`fragile-selector` (`copy-alias`, `partial-copy-alias` or `data-alias`), and
+`9l inspect --android` lists the controls on a screen that lack a resource ID.
 
 `toHaveState('invalid', boolean)` reads the node's `content-invalid` flag,
 the accessibility error a validation failure reports (Flutter's field
@@ -482,6 +649,15 @@ counts only when both resolutions return the same element (element IDs are
 stable per node) and any flagged node is that element; a control that
 vanished, was replaced or became ambiguous in between is a failed read that
 the assertion polls past, never a state. The error text itself is not read.
+
+`toHaveError(text)` checks that text. UiAutomator2 8.7.0 writes a node's
+accessibility error (`AccessibilityNodeInfo.getError()`, which Flutter's
+`errorText` and `TextView.setError` set) as the hierarchy's `error`
+attribute, also not as an element attribute. The read is bracketed the same
+way, with the expected text inside the package-scoped XPath
+(`[@error="…"]`): the comparison happens on the device and only whether the
+control matched comes back, so the text the app shows is never returned to
+the worker or recorded.
 
 Before any application operation the driver reads the keyguard and
 wakefulness markers of `dumpsys window` and `dumpsys power`, filtered on the
@@ -538,7 +714,9 @@ the opt-in, and the diagnostic keeps the window counts either way. A control
 in a window that is still listed, or any failure outside that sequence, is a
 real failure. A window dump that cannot be read counts as unobserved, never
 as zero windows. No screenshot, hierarchy, text or log is
-captured, and the reads are off without the opt-in.
+captured, and the reads are off without the opt-in; the separate
+[failure capture](#failure-screenshot-and-view-tree-opt-in) opt-in is the one
+that captures a screenshot and the hierarchy.
 
 At attachment the driver reads the physical displays (`DisplayDeviceInfo`
 lines of `dumpsys display`: id, size, density, power state) and the committed

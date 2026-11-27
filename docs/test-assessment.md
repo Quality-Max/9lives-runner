@@ -33,6 +33,10 @@ helper several tests call, count once, and an outcome unmapped in the file
 counts once per requirement and outcome. `--titles` adds literal test titles (first 200
 characters; computed titles are omitted) to the text and JSON report for local
 use. Text output quotes them so control characters are not written raw.
+Each test's line shows only the dimensions the assessment could judge; one
+whose dimensions are all `unknown`, as they are without a requirements
+contract, provenance or a run, shows its location alone. The JSON report
+always carries all five.
 
 Analysis limits repeat for every test that calls the same unresolved helper
 or passes the same callback, so on a large suite they would crowd out the
@@ -56,6 +60,42 @@ tests and says so: `unrecognizedTestImports` names the modules (package-like
 names only; anything else is `(unnamed module)`), and an
 `unrecognized-test-import` limit explains that its tests were not assessed,
 instead of a silent "0 tests, 0 findings".
+
+### Test IDs against inspected screens
+
+A spec can name a test ID the app doesn't have, or one that several elements
+share, and that only shows at run time as a missing or ambiguous control.
+Save what the app's screens hold with `9l inspect` and check the specs
+against it:
+
+```sh
+9l inspect --android --format json --out screens/bookings.json
+9l inspect --ios --format json --out screens/login.json
+.context/9l assess tests/ --screens 'screens/*.json'
+```
+
+`--screens` takes a saved `9l inspect --android` or `--ios` JSON result, or a
+glob of them, and can be repeated (at most 64 screens, 4 MiB each). The MCP
+`assess_test` tool takes the same as `screens`, paths inside the server's
+working directory. Each literal test ID a target test passes to
+`app.getByTestId(...)` (not an Android `controls` alias, nor a template or
+variable) is looked up in every screen's `testIds`, which counts every element
+carrying the ID, interactive or not:
+
+- `screen-test-id/unobserved-test-id` (informational): no screen holds the
+  ID. It may be on a screen that wasn't inspected, so it is never a concern on
+  its own.
+- `screen-test-id/repeated-test-id` (suspected): a screen holds the ID on more
+  than one element, so `getByTestId` refuses it as ambiguous while they are
+  all shown.
+
+The report's `screens` lists each screen's path, SHA-256, platform, app and
+number of test IDs, and names them in the text report, so a finding can be
+traced to what it was computed from. A screen with more test IDs than inspect
+keeps (`testIdsTruncated`) adds a limit, since an ID missing from it may still
+be on it. Only IDs and counts are read; labels and copy are not. A result
+without `testIds`, from a 9l before this policy, is refused: inspect the
+screen again. Findings are advisory and change no verdict.
 
 ### Suites
 
@@ -242,7 +282,21 @@ with no recognized assertion still produces a suspected absence finding.
 
 Target tests are recognized too. A file-level `const` initialized with
 `createTargetTest(...)` imported from `@9l/playwright`, under any alias and
-optionally followed by `.extend(...)` calls, declares tests like `test`. In
+optionally followed by `.extend(...)` calls, declares tests like `test`. A
+spec may also import `test` from a relative module (as
+`import {test} from './fixtures'`, or `'./fixtures.js'` for `fixtures.ts`);
+`9l assess` then reads that module, and when it declares and exports `test`
+that way (`export const test = ...` or an export list naming such a `const`),
+the spec's tests are target tests too. Because any local module a spec loads
+can replace a shared fixture's `app` with a top-level `test.use`, the credit
+holds only while the spec loads no local code except named imports from such
+modules (no namespace, default or side-effect import, other relative import,
+re-export, `require` or dynamic `import()`), and the fixture module loads no
+local code and exports its fixture only as `test`; otherwise its tests are
+recognized without target credit. The module is only read and analysed for its
+exports, within the source limit and the file's time budget; the report names
+each module read and its SHA-256 as a `target-fixture-module` limit. One that
+cannot be resolved, read or recognized leaves the import unrecognized. In
 such a test the `app` fixture (also when renamed, as in `{app: phone}`) is the
 target app, and these calls are asynchronous assertions with the same await,
 catch, outcome and absence rules as a Playwright matcher: `toBeVisible`,
@@ -296,7 +350,7 @@ stays `unknown` because nothing is executed.
 | Absence assertion first after a fixed wait (`absence-after-wait`) | suspected | A slow application also passes it; assert a positive completion signal first. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
 | Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
-| `test.fail()` in an `afterEach`/`afterAll` hook (`after-hook-fail`) | demonstrated only for an unconditional `afterEach` call; suspected otherwise | Playwright 1.61.1 through 1.64.1 count a failed test as an expected failure and exit 0; a real failure reports green. |
+| `test.fail()` in an `afterEach`/`afterAll` hook (`after-hook-fail`) | demonstrated only for an unconditional `afterEach` call; suspected otherwise | Playwright 1.61.1 through 1.65.1 count a failed test as an expected failure and exit 0; a real failure reports green. |
 | Suite modifier whose condition reads `process.env` | suspected | The test may not run in some environments, such as CI; confirm a required run still executes it. |
 | Unknown requirement or unsupported analysis | unsupported | Supply reviewed intent or inspect manually. |
 
@@ -311,11 +365,11 @@ recognized test in that suite, including tests declared before them.
 ignored; any other condition, a modifier under a branch, or one in an
 `afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
 location. After hooks run once test bodies have run: Playwright 1.61.1 through
-1.64.1 report a passing test skipped from `afterEach` and only some results
+1.65.1 report a passing test skipped from `afterEach` and only some results
 skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
 cannot be attributed from source and are ignored. A `test.fail()` modifier
 with the same call shapes is reported only in an `afterEach`/`afterAll` hook,
-as `after-hook-fail` at the call: Playwright 1.61.1 through 1.64.1 apply it to
+as `after-hook-fail` at the call: Playwright 1.61.1 through 1.65.1 apply it to
 the test that has just run ([microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738)),
 so a failed body becomes an expected failure and the run exits 0. Unconditional
 (`test.fail()`, `test.fail(true, reason)`) in an `afterEach` hook it is
@@ -346,7 +400,7 @@ and any other matcher negated with `.not`; negating an absence matcher, such as
 between the wait and the absence check counts as a completion signal. An
 unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the Playwright 1.61.1 API, whose matchers are
-unchanged through 1.64.1 (CI checks each release's type declarations),
+unchanged through 1.65.1 (CI checks each release's type declarations),
 including locator, page, API-response and function assertions, any
 matcher chained through `resolves` or `rejects`, and any matcher on
 `expect.poll(...)`, including one called on an `expect.configure(...)` chain.
@@ -435,6 +489,19 @@ opening parentheses. CSS order pseudo-classes such as `:nth-child`,
 `:first-child` and `:last-of-type` are `positional-css`; `nth=`,
 `:nth-match()`, `first()`, `last()` and `nth()` with a literal index are
 `position`. Template selectors with substitutions are not checked.
+In target tests, four more codes mark native locators tied to on-screen copy
+or position. `app.getByTestId(name)` whose name is an Android `controls`
+alias (declared under an `androidTargetDriver` call from
+`@9l/playwright/android`, in the spec or in the fixture module it imports
+`test` from, directly or through a top-level const) is `copy-alias` for an
+exact `text`, `accessibilityId` or `hint`, `partial-copy-alias` for an
+`accessibilityIdSuffix` or `accessibilityIdContains`, and `data-alias` when
+the copy contains a digit, such as a count, date or tab position; an alias
+declared with several matchers carries the most fragile one. `app.tapAt` with
+a numeric literal `x` or `y` is `literal-coordinates`; a point computed from a
+control's `bounds()` is not. Aliases behind spreads or computed names, and a
+driver imported from elsewhere, are not read. `9l inspect --android` shows
+which controls on a screen lack a resource ID.
 Role locators without a `name` are not findings: the role can be unique by
 design. Debugging and selector findings have their own budget of 512 per file,
 separate from assertion and wait facts. Beyond it, the rest are dropped and the report
@@ -443,7 +510,15 @@ failure, not a finding.
 
 Findings carry locations, requirement/outcome IDs, rationale and suggested
 action. Reports bind source, contract, TypeScript and policy versions; changed
-inputs invalidate prior assessments. Policy `assessment-source-v16` recognizes
+inputs invalidate prior assessments. Policy `assessment-source-v18` adds the
+`screen-test-id` rule (`unobserved-test-id`, `repeated-test-id`) for
+`--screens`, the per-test `testIds` fact and the report's optional `screens`;
+the helper version is 15, report version 3 and suite version 1 are unchanged.
+Policy `assessment-source-v17` adds the
+`copy-alias`, `partial-copy-alias`, `data-alias` and `literal-coordinates`
+codes of `fragile-selector` for target tests, and a fixture module's
+`aliases` in the analyzer's exports; the helper version is 14, report
+version 3 and suite version 1 are unchanged. Policy `assessment-source-v16` recognizes
 `createTargetTest` declarations and credits target assertions as
 `target:<matcher>`; the helper version is 13, report version 3 and suite
 version 1 are unchanged. Policy `assessment-source-v15` adds the

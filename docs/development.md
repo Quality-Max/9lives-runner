@@ -2,19 +2,19 @@
 
 Use Go 1.27.3 or newer, Node 24, and Chromium. Node 22 is the SDK minimum;
 Node 24 is the CI-qualified runtime. CI pins Go 1.27.3, and the workspace pins
-Playwright 1.61.1. The `playwright-compat` CI job repeats the unit, assessment,
-browser and packed-consumer checks on 1.62.0, 1.62.1, 1.63.0, 1.64.0 and
-1.64.1, after `scripts/select-playwright.cjs` repins every workspace and fixture and verifies
-that each resolves exactly that release. To reproduce one locally:
+Playwright 1.65.1. The `playwright-compat` CI job repeats the unit, assessment,
+browser and packed-consumer checks on 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0,
+1.64.1 and 1.65.0. The version selector updates the workspace and test fixtures
+and verifies the installed versions of `@playwright/test`, `playwright` and
+`playwright-core` from each consumer. To check another version in a scratch checkout:
 
 ```sh
-node scripts/select-playwright.cjs 1.64.1
+node scripts/select-playwright.cjs 1.65.0
 npm install && npm install --prefix testdata/playwright
-node scripts/select-playwright.cjs --check 1.64.1
+node scripts/select-playwright.cjs --check 1.65.0
 ```
 
-Restore the pins with `git checkout -- package.json package-lock.json testdata/`
-and `npm ci`.
+For the default pin, run these commands from the original checkout:
 
 ```sh
 npm ci
@@ -31,7 +31,7 @@ npm run smoke:contracts
 ```
 
 On Linux install browser system dependencies with
-`npm exec playwright install --with-deps chromium`.
+`npm exec -- playwright install --with-deps chromium`.
 The SDK smoke runs a real Chromium checkout, rejects a business defect, and
 verifies that timeout and cancellation terminate the owned worker and browser.
 It also checks that a failed goal in one test cannot hide a sibling browser

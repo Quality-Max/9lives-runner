@@ -97,6 +97,14 @@ func Run(parent context.Context, request Request, options Options) (Response, er
 	if err := materialize(dir); err != nil {
 		return Response{}, err
 	}
+	// Scratch for files a check writes outside the browser (the iOS
+	// inspection's Appium home and WebDriverAgent copy). It is removed with
+	// dir once the helper's process tree has stopped, including on timeout
+	// or cancellation, when the helper's own cleanup may not run.
+	scratch := filepath.Join(dir, "scratch")
+	if err := os.Mkdir(scratch, 0o700); err != nil {
+		return Response{}, err
+	}
 	ctx, cancel := context.WithTimeout(parent, options.Timeout)
 	defer cancel()
 	command := exec.Command("node", filepath.Join(dir, "helper.js"))
@@ -107,6 +115,7 @@ func Run(parent context.Context, request Request, options Options) (Response, er
 			command.Env = append(command.Env, name+"="+value)
 		}
 	}
+	command.Env = append(command.Env, "NINELIVES_HELPER_SCRATCH="+scratch)
 	command.Stdin = bytes.NewReader(input)
 	output := &boundedWriter{limit: maxOutput, cancel: cancel}
 	stderr := &tailWriter{limit: maxStderr}

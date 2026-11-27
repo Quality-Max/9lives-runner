@@ -8,6 +8,7 @@ project:
 9l doctor --sdk --format json
 9l doctor --sdk tests/checkout.spec.ts   # also check one spec for prove
 9l doctor --android                      # also check the optional Android target
+9l doctor --jev                          # only the optional Jev configuration, locally
 ```
 
 The command checks which `9l` PATH selects, Node (22 minimum, 24
@@ -24,7 +25,8 @@ Exit 0 means no required prerequisite is missing; warnings and unverified
 checks still apply. Exit 2 means setup is missing or diagnostics could not
 complete. `--sdk` makes the otherwise optional SDK required and, with a spec
 path after it, adds the [spec checks](#check-a-spec-for-prove). `--android`
-adds the [Android checks](#check-the-android-target).
+adds the [Android checks](#check-the-android-target). `--jev` runs only the
+[Jev configuration check](#check-the-optional-jev-configuration).
 
 The `executable` check compares the file doctor runs from with the `9l` that
 PATH resolves to, without running either. Usually they are the same file.
@@ -56,7 +58,8 @@ and its admission is only known at run time. Under `--sdk`, `sdk/faults`
 lists the prove fault kinds the SDK applies and any this CLI can request that
 it does not.
 Browser-file checks use Playwright's registry only for qualified versions
-1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0 and 1.64.1. An unknown registry cannot report ready.
+1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1, 1.65.0 and 1.65.1 in this
+checkout. An unknown registry cannot report ready.
 
 Doctor does not download anything, make network requests (under `--android`
 it only asks a running adb server on loopback), launch a browser,
@@ -193,16 +196,33 @@ unverified.
 Without `--android`, `9l doctor --sdk <spec>` adds a `spec/android` warning
 when the spec imports `@9l/playwright/android`, pointing to `--android`.
 
+## Check the optional Jev configuration
+
+```sh
+9l doctor --jev --format json
+9l doctor --jev --jev-model jev-1.14.0 --jev-images masked
+```
+
+`--jev` is a separate, local-only check for the optional
+[Jev client](jev.md#configuration-and-api-key) that `9l diagnose --jev`
+uses. It reports the status, model, image policy and whether
+`TYPESAFE_API_KEY` is present, never its value. It sends no request, so
+`connectivity` is always `not_checked`: availability, authentication and
+model support stay unverified. It exits 2 for `missing_credential` and 0 for
+`configured` or `disabled` (`--jev=false`). It runs none of the Node checks
+above and cannot be combined with `--sdk`, `--android`, `--paths` or a spec;
+`--jev-model` and `--jev-images` require `--jev`.
+
 ## Apply a repair explicitly
 
 Node below 22: install Node 24 LTS and restart the terminal and MCP host.
-Missing test runner: `npm install --save-dev @playwright/test@1.64.1`.
+Missing test runner: `npm install --save-dev @playwright/test@1.65.1`.
 Missing browser: use the version-pinned command doctor prints, for example:
 
 ```sh
-npx --yes playwright@1.64.1 install chromium
+npx --yes playwright@1.65.1 install chromium
 # On Linux, if system libraries are also missing:
-npx --yes playwright@1.64.1 install --with-deps chromium
+npx --yes playwright@1.65.1 install --with-deps chromium
 ```
 
 These commands download packages/browsers; `--with-deps` can install OS

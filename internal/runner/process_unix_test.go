@@ -143,7 +143,10 @@ while [ ! -s "$0" ]; do sleep 0.01; done
 // the pipe readable forever. The drain must still return within its bounds
 // and report incomplete output rather than wait for it or claim success.
 func TestOwnedCommandBoundsAnEscapedWriterThatNeverStops(t *testing.T) {
-	shortenOutputDrain(t, 200*time.Millisecond)
+	// The window must outlast `yes` starting: the leader exits once the
+	// escaped writer has its PID, and a loaded host could still be starting
+	// `yes` after a 200 ms window, leaving the pipe quiet (#232).
+	shortenOutputDrain(t, 2*time.Second)
 	limitOutputBacklog(t, 2*time.Second, 256<<10)
 	command := escapedWriter(t, `exec "yes"`, "echo leader")
 	stdout := &slowSink{delay: 20 * time.Millisecond}

@@ -3,6 +3,8 @@ package playwrightsdk
 import (
 	"strings"
 	"testing"
+
+	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
 func iosRuntimeFrame() map[string]any {
@@ -73,5 +75,32 @@ func TestIOSRuntimeRequiredAndBoundToAttemptTestAndPlatform(t *testing.T) {
 		if _, err := New().ValidateAttempt(stream(f), identity); err == nil {
 			t.Fatal("cross-platform runtime accepted")
 		}
+	}
+}
+
+// CFBundleVersion and CFBundleShortVersionString of shipped apps are often CI
+// build numbers or dates; the os and xcode fields keep their tighter bound.
+func TestIOSRuntimeAcceptsRealAppBuildNumbers(t *testing.T) {
+	base := runner.IOSRuntime{BundleID: "dev.ninelives.fixture", AppSHA256: strings.Repeat("a", 64), Version: "1.0", Build: "1",
+		Runtime: "com.apple.CoreSimulator.SimRuntime.iOS-18-5", DeviceType: "com.apple.CoreSimulator.SimDeviceType.iPhone-16", OS: "18.5",
+		Architecture: "arm64", Xcode: "16.4", Appium: "3.8.0", XCUITest: "10.43.1", Worker: strings.Repeat("b", 64), ViewportWidth: "390", ViewportHeight: "844"}
+	for _, value := range []string{"1234", "20261121", "2026.11.0", "1.2.3.4", "4294967295"} {
+		r := base
+		r.Build, r.Version = value, value
+		if !validIOSRuntime(r) {
+			t.Fatalf("version/build %q rejected", value)
+		}
+	}
+	for _, value := range []string{"", "1.2.3.4.5", "12345678901", "1a", "1..2", "1.0 (42)"} {
+		r := base
+		r.Build = value
+		if validIOSRuntime(r) {
+			t.Fatalf("build %q accepted", value)
+		}
+	}
+	r := base
+	r.OS, r.Runtime = "1800.5", "com.apple.CoreSimulator.SimRuntime.iOS-1800-5"
+	if validIOSRuntime(r) {
+		t.Fatal("os keeps its tighter bound")
 	}
 }

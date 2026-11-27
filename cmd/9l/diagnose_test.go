@@ -75,6 +75,27 @@ func TestDiagnoseRefusesUnsafeOptionsBeforeRunning(t *testing.T) {
 	}
 }
 
+func TestDiagnoseKeepsTheJevCredentialOutOfTestProcesses(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "a.spec.ts")
+	writeTestFile(t, spec, "// never runs\n")
+	t.Setenv(jev.CredentialName, "fixture-presence-only")
+	for _, names := range []string{jev.CredentialName, "BASE_URL," + strings.ToLower(jev.CredentialName)} {
+		receipts := filepath.Join(dir, "receipts")
+		var out, errOut bytes.Buffer
+		code := run([]string{"diagnose", spec, "--jev", "--pass-env", names, "--receipt-dir", receipts}, &out, &errOut)
+		if code != 2 || out.Len() != 0 || !strings.Contains(errOut.String(), "--pass-env") {
+			t.Fatalf("--pass-env %s: exit %d, stderr %q", names, code, errOut.String())
+		}
+		if _, err := os.Stat(receipts); !os.IsNotExist(err) {
+			t.Fatalf("--pass-env %s ran the test", names)
+		}
+	}
+	if env := withoutEnv([]string{"PATH=/bin", strings.ToLower(jev.CredentialName) + "=x", jev.CredentialName + "=y", "HOME=/h"}, jev.CredentialName); strings.Join(env, " ") != "PATH=/bin HOME=/h" {
+		t.Fatalf("credential left in a child environment: %v", env)
+	}
+}
+
 const renamedButtonSpec = `import {test} from '@playwright/test';
 test('checkout', async ({page}) => {
   await page.setContent('<h1>Your cart</h1><button>Continue to payment</button>');
@@ -96,6 +117,7 @@ func diagnosisProject(t *testing.T) string {
 	writeTestFile(t, filepath.Join(root, "renamed.spec.ts"), renamedButtonSpec)
 	writeTestFile(t, filepath.Join(root, "price.spec.ts"), wrongPriceSpec)
 	writeTestFile(t, filepath.Join(root, "pass.spec.ts"), "import {test, expect} from '@playwright/test';\ntest('ok', async ({page}) => { await page.setContent('<p>ok</p>'); await expect(page.getByText('ok')).toBeVisible(); });\n")
+	writeTestFile(t, filepath.Join(root, "hang.spec.ts"), "import {test} from '@playwright/test';\ntest('waits', async ({page}) => { await page.setContent('<p>wait</p>'); await new Promise(() => {}); });\n")
 	t.Chdir(root)
 	return root
 }
@@ -159,6 +181,14 @@ func TestDiagnoseRealFailuresKeepTheirResult(t *testing.T) {
 		}
 		if !strings.Contains(errOut.String(), "never changed") {
 			t.Fatal("no upload notice before the run")
+		}
+	})
+	t.Run("a run that times out is incomplete, not a failure", func(t *testing.T) {
+		fake := useScriptedDiagnosis(t, "locator_drift")
+		var out, errOut bytes.Buffer
+		code := run([]string{"diagnose", "hang.spec.ts", "--jev", "--run-timeout", "3s"}, &out, &errOut)
+		if code != exitIncomplete || fake.calls != 0 || !strings.Contains(out.String(), "did not complete (timed_out); nothing to diagnose") {
+			t.Fatalf("exit %d, %d Jev calls, stdout %q", code, fake.calls, out.String())
 		}
 	})
 	t.Run("a passing test is not diagnosed", func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -22,12 +23,12 @@ func TestMCPListsTheBrowserTools(t *testing.T) {
 		tool := tool.(map[string]any)
 		names[tool["name"].(string)] = tool
 	}
-	for _, name := range []string{"run_test", "heal_test", "assess_test", "confirm_finding", "scan_url", "inspect_page", "generate_playwright_repro"} {
+	for _, name := range []string{"run_test", "heal_test", "assess_test", "confirm_finding", "scan_url", "inspect_page", "inspect_screen", "generate_playwright_repro"} {
 		if names[name] == nil {
 			t.Fatalf("tools/list lacks %s", name)
 		}
 	}
-	if names["inspect_page"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["generate_playwright_repro"]["annotations"].(map[string]any)["destructiveHint"] != true {
+	if names["inspect_page"]["annotations"].(map[string]any)["readOnlyHint"] != true || names["inspect_screen"]["annotations"].(map[string]any)["destructiveHint"] != false || names["generate_playwright_repro"]["annotations"].(map[string]any)["destructiveHint"] != true {
 		t.Fatal("browser tool annotations changed")
 	}
 }
@@ -66,6 +67,14 @@ func TestMCPBrowserToolArgumentsAreRefusedBeforeABrowserStarts(t *testing.T) {
 		{"inspect_page", map[string]any{"url": page, "storage_state_path": "missing.json", "acknowledge_private_content": true}, "existing file"},
 		{"inspect_page", map[string]any{"url": page, "viewport": map[string]any{"width": 100, "height": 800}}, "viewport width"},
 		{"inspect_page", map[string]any{"url": page, "format": "issue"}, "format must be json or markdown"},
+		{"inspect_screen", map[string]any{}, "platform must be android"},
+		{"inspect_screen", map[string]any{"platform": "windows"}, "platform must be android or ios"},
+		{"inspect_screen", map[string]any{"platform": "ios", "serial": "emulator-5554"}, "apply only to platform android"},
+		{"inspect_screen", map[string]any{"platform": "android", "udid": "x"}, "applies only to platform ios"},
+		{"inspect_screen", map[string]any{"platform": "ios", "wda_products": "/tmp"}, "invalid arguments for inspect_screen"},
+		{"inspect_screen", map[string]any{"platform": "android", "format": "issue"}, "format must be json or markdown"},
+		{"inspect_screen", map[string]any{"platform": "android", "timeout": 0}, "timeout must be at least 1 second"},
+		{"inspect_screen", map[string]any{"platform": "android", "url": page}, "invalid arguments for inspect_screen"},
 		{"generate_playwright_repro", map[string]any{"url": page, "output_path": "../x.spec.ts"}, "escapes the project root"},
 	} {
 		payload, isError := h.toolCall(t, i+1, call.name, call.args)
@@ -230,6 +239,14 @@ func TestScanAndInspectFlagsAreRefusedBeforeABrowserStarts(t *testing.T) {
 		{[]string{"scan", "https://example.com/", "--weight-budget", "total=1"}, "NAME=VALUE"},
 		{[]string{"scan", "https://example.com/", "--weight-budget", "total_bytes=0"}, "weight_budget"},
 		{[]string{"scan", "https://example.com/", "--fail-on-new"}, "needs --baseline"},
+		{[]string{"inspect", "--android", "https://example.com/"}, "takes no URL"},
+		{[]string{"inspect", "--android", "--viewport", "390x844"}, "--viewport: only for a URL"},
+		{[]string{"inspect", "--android", "--format", "issue"}, "markdown or json"},
+		{[]string{"inspect", "https://example.com/", "--serial", "emulator-5554"}, "only with --android"},
+		{[]string{"inspect", "--android", "--ios"}, "choose one of --android and --ios"},
+		{[]string{"inspect", "--android", "--udid", "x"}, "only with --ios"},
+		{[]string{"inspect", "--ios", "--package", "com.example.app"}, "only with --android"},
+		{[]string{"inspect", "--ios", "--allow-private-network"}, "--allow-private-network: only for a URL, not with --ios"},
 	} {
 		var out, errOut bytes.Buffer
 		if code := run(tc.args, &out, &errOut); code != exitUsage || !strings.Contains(errOut.String(), tc.want) {
@@ -277,5 +294,82 @@ func TestScanNamesTheInstallCommandForAMissingBrowser(t *testing.T) {
 	code := run([]string{"inspect", browserServer(t), "--allow-private-network"}, &out, &errOut)
 	if code != exitIncomplete || (!strings.Contains(errOut.String(), "npx --yes playwright@") || !strings.Contains(errOut.String(), " install chromium")) || strings.Contains(errOut.String(), "╔") {
 		t.Fatalf("exit %d: %q", code, errOut.String())
+	}
+}
+
+// A fake adb on a fake SDK: one ready emulator whose active window has a
+// test ID, a copy-only switch and an unlabelled button.
+func fakeAndroidSDK(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not installed")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake adb is a shell script")
+	}
+	sdk := t.TempDir()
+	tools := filepath.Join(sdk, "platform-tools")
+	if err := os.MkdirAll(tools, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	node := func(attributes string) string {
+		return `<node resource-id="" text="" content-desc="" class="android.view.View" package="com.example.app" clickable="true" ` + attributes + ` />`
+	}
+	xml := `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node class="android.widget.FrameLayout" package="com.example.app">` +
+		node(`resource-id="booking_join" content-desc="Join"`) + node(`class="android.widget.Switch" checkable="true" content-desc="Alerts"`) +
+		node(`bounds="[1,2][3,4]"`) + `</node></hierarchy>`
+	script := "#!/bin/sh\nif [ \"$1\" = devices ]; then printf 'List of devices attached\\nemulator-5554\\tdevice\\n'; exit 0; fi\n" +
+		"[ \"$2\" = emulator-5554 ] && [ \"$5\" = dump ] || exit 9\ncat <<'XML'\n" + xml + "UI hierchary dumped to: /dev/tty\nXML\n"
+	if err := os.WriteFile(filepath.Join(tools, "adb"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ANDROID_HOME", sdk)
+}
+
+func TestInspectAndroidRanksAnAttachedScreen(t *testing.T) {
+	fakeAndroidSDK(t)
+	t.Chdir(t.TempDir())
+	var out, errOut bytes.Buffer
+	if code := run([]string{"inspect", "--android", "--format", "json"}, &out, &errOut); code != exitPassed {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var result struct {
+		Controls []struct {
+			Stability, Locator string
+		}
+		Testability struct{ Controls, Stable, Copy, None, Score int }
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("%v: %s", err, out.String())
+	}
+	if result.Testability.Controls != 3 || result.Testability.Stable != 1 || result.Testability.Copy != 1 || result.Testability.None != 1 || result.Testability.Score != 33 {
+		t.Fatalf("testability %+v", result.Testability)
+	}
+	if result.Controls[0].Stability != "none" || result.Controls[2].Locator != `app.getByTestId("booking_join")` {
+		t.Fatalf("controls %+v", result.Controls)
+	}
+	out.Reset()
+	if code := run([]string{"inspect", "--android", "--serial", "emulator-5554"}, &out, &errOut); code != exitPassed || !strings.Contains(out.String(), "Testability: 33 / 100") {
+		t.Fatalf("markdown exit %d: %s", code, out.String())
+	}
+	if code := run([]string{"inspect", "--android", "--serial", "other"}, &out, &errOut); code != exitIncomplete || !strings.Contains(errOut.String(), "no UI hierarchy") {
+		t.Fatalf("unknown serial exit %d: %s", code, errOut.String())
+	}
+}
+
+func TestMCPInspectScreenRanksAnAttachedAndroidScreen(t *testing.T) {
+	fakeAndroidSDK(t)
+	h := startMCP(t, t.TempDir())
+	payload, isError := h.toolCall(t, 1, "inspect_screen", map[string]any{"platform": "android", "package": "com.example.app"})
+	if isError {
+		t.Fatalf("inspect_screen: %v", payload)
+	}
+	testability := payload["testability"].(map[string]any)
+	if payload["version"] != float64(1) || payload["platform"] != "android" || testability["score"] != float64(33) || testability["stable"] != float64(1) {
+		t.Fatalf("inspect_screen result %v", payload)
+	}
+	payload, isError = h.toolCall(t, 2, "inspect_screen", map[string]any{"platform": "android", "serial": "other"})
+	if !isError || !strings.Contains(payload["error"].(string), "no UI hierarchy") {
+		t.Fatalf("unknown serial: %v", payload)
 	}
 }

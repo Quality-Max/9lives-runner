@@ -68,7 +68,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	serve := fs.Bool("serve", false, "open the interactive local demo server")
 	port := fs.Int("port", 4175, "loopback port for --serve (0 chooses a free port)")
 	open := fs.Bool("open", false, "open the interactive demo in your browser")
-	scenario := fs.String("scenario", "declined", "synthetic scene: declined, success, cats or cat-decoys")
+	scenario := fs.String("scenario", "declined", "synthetic scene: declined, success, cats, cat-decoys, dogs, mice or striped")
 	model := fs.String("model", jev.DefaultModel, "explicit Jev model")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -77,7 +77,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if fs.NArg() != 0 || !validScenario(*scenario) || *port < 0 || *port > 65535 || (*open && !*serve) {
-		fmt.Fprintln(errOut, "Use --serve [--open] [--port 4175], --live, --images, --model and --scenario declined|success|cats|cat-decoys.")
+		fmt.Fprintln(errOut, "Use --serve [--open] [--port 4175], --live, --images, --model and --scenario declined|success|cats|cat-decoys|dogs|mice|striped.")
 		return 2
 	}
 	config := jev.Config{Enabled: *live, Model: *model, Images: "off"}
@@ -127,6 +127,7 @@ func executeDemo(ctx context.Context, config jev.Config, scenario string) (strin
 		return "", report{}, errors.New("Cat scenes require --images for live Jev requests.")
 	}
 	revisionCmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	revisionCmd.Env = demoEnvironment() // never the provider credential
 	revision, err := revisionCmd.Output()
 	if err != nil {
 		return "", report{}, errors.New("Run this demo from the repository root with Git available.")
@@ -283,9 +284,14 @@ func writeReport(dir string, r report) error {
 	return t.Execute(f, r)
 }
 
+// fixtureHTML is the page for a fixed scenario name, or nil for any other
+// value, so no caller can place markup in the data-scenario attribute.
 func fixtureHTML(scenario string) []byte {
 	if isCatScenario(scenario) {
 		return catFixture(scenario)
+	}
+	if !validScenario(scenario) {
+		return nil
 	}
 	return bytes.Replace(checkout, []byte(`data-scenario="declined"`), []byte(`data-scenario="`+scenario+`"`), 1)
 }

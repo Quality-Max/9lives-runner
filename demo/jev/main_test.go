@@ -43,6 +43,29 @@ printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,
 	}
 }
 
+func TestRevisionLookupCannotInheritProviderCredential(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	bin := t.TempDir()
+	// The fake git fails when the credential is present; no value is printed.
+	git := "#!/bin/sh\nif [ \"${TYPESAFE_API_KEY+x}\" = x ]; then exit 1; fi\necho 0123456789abcdef0123456789abcdef01234567\n"
+	node := `#!/bin/sh
+printf '%s' '{"snapshot":"button Try again","bounds":{"x":20,"y":30,"width":100,"height":40},"assertionFailed":true,"assertionPassed":false,"orderCount":0,"scenario":"declined","observedAt":"2026-10-24T10:00:00Z"}'
+`
+	for name, script := range map[string]string{"git": git, "node": node} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(jev.CredentialName, "present") // non-credential presence sentinel
+	t.Chdir(t.TempDir())
+	if _, _, err := executeDemo(context.Background(), jev.Config{}, "declined"); err != nil && strings.Contains(err.Error(), "Git available") {
+		t.Fatal("the revision lookup inherited the provider credential")
+	}
+}
+
 func TestIllustrativeReportExcludesRawObservation(t *testing.T) {
 	dir := t.TempDir()
 	p := 0.98

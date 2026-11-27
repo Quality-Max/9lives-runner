@@ -1,10 +1,10 @@
 # Local SDK and engine bridge
 
 `@9l/playwright` is the chosen package name. This repository builds it as an
-npm workspace at version `0.6.1`, the same version as the CLI; releases use npm trusted publishing. The
-qualified runtime is Node 24 with `@playwright/test` 1.61.1 through 1.64.1. Node 22
-is the declared minimum. The peer range `>=1.61.1 <2` lets later Playwright 1.x
-releases install; they and other browser engines remain unqualified.
+npm workspace at version `0.7.3`, the same version as the CLI; releases use npm trusted publishing. The
+source CI matrix uses Node 24 with `@playwright/test` 1.61.1 through 1.65.1 and Chromium.
+Node 22 is the declared minimum. The SDK peer range is `>=1.61.1 <2`.
+See the [compatibility matrix](compatibility.md) for the released CLI pairing.
 
 Use `9l plan ... --sdk` to inspect the command and `9l run ... --sdk` to execute.
 The nearest enclosing Playwright config is selected explicitly and its directory
@@ -21,7 +21,7 @@ cannot corrupt it. The fixture requires a supported engine identity when
 ## Contract
 
 Matching CLI and SDK release versions are the qualified pairing; see the
-[compatibility table](../README.md#compatibility). Runtime admission checks
+[compatibility table](compatibility.md). Runtime admission checks
 the protocol and capabilities below, not npm/CLI package versions or a
 same-minor constraint. Different `0.4.x` package versions alone do not reject
 a run, but mixed release pairs are unqualified. Align versions first when
@@ -78,7 +78,7 @@ Playwright's modifiers can change a test's expected status after its body
 has run. Qualifying them for 9l found two upstream defects, reported as
 [microsoft/playwright#43676](https://github.com/microsoft/playwright/issues/43676)
 and [microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738):
-on 1.61.1 through 1.64.1, `test.skip()` in an `afterEach` hook reports a test
+on 1.61.1 through 1.65.1, `test.skip()` in an `afterEach` hook reports a test
 whose body ran and passed as skipped (`afterAll`: only the group's last test),
 and `test.fail()` in an after hook or fixture teardown turns a failed test into
 an expected failure, so the summary says it passed and the process exits 0.
@@ -149,11 +149,15 @@ installed; the spec does not have to import it for the counts.
 ## Privacy and artifacts
 
 Test IDs and skip keys are SHA-256 hashes. Step labels, test titles, locators, URLs, page content,
-worker console output and raw error strings are omitted. Attachments record an
+worker console output and raw error strings are never persisted. Attachments record an
 opaque ID, coarse kind and `retained: false`; bodies, names and file paths are not
 copied. These records describe attachments produced by Playwright without
 claiming that the attachment contents were retained or verified. File attachments
 can remain in Playwright's own output directory under the user's configuration.
+An Android driver's opt-in failure capture (`9l.failure-screenshot`,
+`9l.failure-view-tree`) is such a pair of file attachments; the reporter
+accepts it only on a failed native test, once each, and never forwards its
+contents. See [Android](android-driver.md#failure-screenshot-and-view-tree-opt-in).
 
 A failed typed target step (see [targets](targets.md)) also sends its stop
 reason, a `[a-z_]{1,64}` token taken only from the fixture's own
@@ -174,9 +178,16 @@ evidence.
 
 The runner persists validated bounded protocol output beside its local and
 canonical execution receipts and applies its existing output redaction. The
-worker's own stdout is not evidence and is not retained. Invalid/interrupted
+worker's own stdout is not evidence and is never persisted. Invalid/interrupted
 streams and arbitrary stderr are omitted before persistence; the receipt keeps
-the safe validation/termination reason. Core attempt progress remains in run events;
+the safe validation/termination reason. `9l run --sdk --reporter list --show-output`
+lets a person watch the worker's stdout and stderr, including a spec's
+`console.log`, on 9l's stderr while it runs (redacted best effort, see
+[the CLI reference](cli.md)). The engine reporter itself prints nothing, so a
+spec's console output reaches the stream only through a terminal reporter
+such as `list`; that view is never
+persisted, validated or returned in results, so receipts are the same with and
+without it. Core attempt progress remains in run events;
 step progress is in the attempt evidence stream after persistence.
 
 ## Prove channel
@@ -201,19 +212,23 @@ each run. See [Prove](prove.md).
 
 Real-browser smoke validates checkout assertions, a defective outcome and owned
 worker/browser cleanup on timeout and explicit cancellation. Protocol regressions
-cover malformed, duplicate, foreign, late and incomplete evidence. Live provider accuracy,
-verified replay and independent behavioral verification have separate milestones.
+cover malformed, duplicate, foreign, late and incomplete evidence. An
+experimental first slice of independent behavioral verification,
+[`9l run --verify`](verify.md), checks HTTP postconditions from the engine
+process and uses no part of this protocol. Live provider accuracy, verified
+replay and broader independent verification have separate milestones.
 
 The opt-in [shared target contract](targets.md) extends this stream with
-`9l.target/3`, a target identity digest, a declared test list, typed
+`9l.target/6`, a target identity digest, a declared test list, typed
 deterministic operation outcomes and, from a native driver, at most one
 `target_setup` classification per attempt (`blocked`, `dirty`, `mismatch` or
 `unknown`, a closed reason, the stage and a recorded recovery), kept in the
 receipt as `targetSetup`. Ordinary SDK jobs retain the original handshake.
 
-The unreleased owned Simulator path adds a closed `ios_runtime` frame containing
+The experimental owned Simulator path adds a closed `ios_runtime` frame containing
 only the fields described in [iOS setup](ios-driver.md). It is accepted only for
 an active test on an `ios:` target, once per test attempt. A passing iOS test
 requires that frame and a successful target assertion. The receipt stores the
 record under `iosRuntimes`; neither runtime attribution nor a target assertion
-increments independent `verifiedAssertions`.
+increments independent `verifiedAssertions`. Only a check the engine verified
+itself with [`--verify`](verify.md) does.

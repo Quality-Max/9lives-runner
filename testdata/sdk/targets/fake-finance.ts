@@ -2,6 +2,7 @@ import {appendFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {targetCapabilities, TargetSetupError, type TargetDriver, type TargetHandle, type TargetIdentity, type TargetContext, type TargetSetupRecord} from '@9l/playwright';
+import {androidVersions} from '@9l/playwright/android';
 
 // Protocol fixture only. This does not communicate with an Android device.
 export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver {
@@ -13,9 +14,23 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
   const effect = (event: string) => {
     if (process.env.NINELIVES_TARGET_EFFECTS) appendFileSync(process.env.NINELIVES_TARGET_EFFECTS, event + '\n');
   };
+  // Opt-in failure capture as a device driver returns it: a synthetic PNG and
+  // view tree, one that never answers, or one over the SDK's size limits.
+  const png = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.from('synthetic fake screen')]);
+  const capture = async () => {
+    effect('capture');
+    if (mode === 'capture-stalled') return new Promise<undefined>(() => {});
+    if (mode === 'capture-oversized') return {screenshot: Buffer.concat([png, Buffer.alloc(9 * 1024 * 1024)]), viewTree: `<hierarchy>${'x'.repeat(3 * 1024 * 1024)}</hierarchy>`};
+    return {screenshot: png, viewTree: '<hierarchy><node resource-id="receipt" text="synthetic view tree"/><node text="token=synthetic-capture-secret"/></hierarchy>'};
+  };
   return {
-    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/3' : '9l.target/3',
+    ...target, version: mode === 'version' ? '9l.target/99' as '9l.target/6' : '9l.target/6',
     capabilities: mode === 'capabilities' ? [] : targetCapabilities,
+    // Under an `android:` target the SDK requires runtime metadata: a fixed
+    // synthetic record, which names no real emulator or build.
+    runtime: () => target.kind === 'android' ? {appPackage: 'dev.ninelives.fixture', apkSHA256: 'a'.repeat(64), versionCode: '1', versionName: '1.0.0', signer: 'unknown',
+      api: '35', release: '15', abi: 'arm64-v8a', display: 'unknown', displayWidth: '0', displayHeight: '0', density: '0', posture: 'unknown',
+      emulator: '36.4.9', ...androidVersions, worker: 'b'.repeat(64)} : undefined,
     // Setup classifications a real device driver would make: a locked phone
     // before any operation, a leaked window recovered by a declared Back, and
     // a phone that locked while an assertion was polling.
@@ -33,6 +48,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     // A stalled hook (stalled-diagnose) never answers and ignores its signal.
     diagnose: async failure => mode === 'stalled-diagnose' ? new Promise<undefined>(() => {}) : mode === 'observer' ? {operation: failure.operation, reason: failure.reason, elapsedMs: failure.elapsedMs, ...(failure.point ? {x: failure.point.x, y: failure.point.y, point: true} : {}),
       viewportWidth: 400, viewportHeight: 800, windowsBefore: 2, windowsAfter: 1, focusBefore: 'app', focusAfter: 'app'} : undefined,
+    ...(mode.startsWith('capture') ? {captureFailure: capture} : {}),
     reset: async () => { amount = ''; status = ''; keyboard = false; }, close: async () => { closed = true; },
     back: async () => { status = keyboard ? status : 'back'; keyboard = false; },
     keyboardShown: async () => keyboard,
@@ -48,6 +64,12 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
     foreground: async () => mode === 'foreign' ? 'foreign' : 'app',
     // An emulator's virtual sensor: finger 1 is enrolled and signs in.
     fingerprint: async finger => { status = finger === 1 ? 'authenticated' : status; },
+    biometric: async outcome => { status = outcome === 'match' ? 'authenticated' : status; },
+    // A system permission alert offering Allow and Don't Allow.
+    answerAlert: async button => {
+      if (button !== 'Allow' && button !== 'Don’t Allow') throw new Error('9lives fake: missing_alert_button');
+      status = button === 'Allow' ? 'notifications on' : 'notifications off';
+    },
     terminate: async () => { running = false; status = ''; },
     activate: async () => { running = true; status = amount ? `draft ${amount}` : ''; },
     observeTestId: async (id: string) => {
@@ -62,7 +84,7 @@ export function fakeFinance(target: TargetIdentity, mode: string): TargetDriver 
           if (mode === 'late') { effect('started'); await delay(150, undefined, {signal: context.signal}); }
           context.signal.throwIfAborted();
           if (closed) throw new Error('closed');
-          effect('mutation'); status = mode === 'defect' || mode === 'lock-recheck' || mode === 'recovered-then-lock' ? 'Sent $50' : `Sent $${amount}`;
+          effect('mutation'); status = mode === 'defect' || mode === 'lock-recheck' || mode === 'recovered-then-lock' || (mode.startsWith('capture') && mode !== 'capture-pass') ? 'Sent $50' : `Sent $${amount}`;
         },
         fill: async value => { if (id !== 'amount') throw new Error('unsupported'); amount = value; keyboard = true; },
         visible: async () => mode === 'malformed-visibility' ? undefined as unknown as boolean : id === 'receipt' || id === 'status' ? !!status : true,

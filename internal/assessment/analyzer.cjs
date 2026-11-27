@@ -9,7 +9,7 @@ function createAnalyzer(ts) {
   if (ts.version !== '5.9.3' || typeof ts.createSourceFile !== 'function') throw new AnalysisError('parser-unavailable');
   const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/;
   // Playwright 1.61.1's locator, page, API response and function async matchers,
-  // unchanged through 1.64.1. The regression suite checks this against the
+  // unchanged through 1.65.1. The regression suite checks this against the
   // installed public type declarations; CI installs each qualified release.
   const asyncMatchers = new Set([
     'toBeAttached', 'toBeChecked', 'toBeDisabled', 'toBeEditable', 'toBeEmpty',
@@ -30,10 +30,10 @@ function createAnalyzer(ts) {
     'toEqual', 'toHaveLength', 'toHaveProperty', 'toMatch', 'toMatchObject',
     'toStrictEqual', 'toThrow', 'toThrowError', 'toMatchSnapshot',
   ]);
-  // @9l/playwright target assertions (9l.target/3): on a control from
+  // @9l/playwright target assertions (9l.target/6): on a control from
   // app.getByTestId(...), and the app-level keyboard check. Each polls the
   // driver and rejects when the state is not reached, so it is asynchronous.
-  const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState']);
+  const targetControlMatchers = new Set(['toBeVisible', 'toBeHidden', 'toHaveText', 'toHaveState', 'toHaveError']);
   const targetAppMatchers = new Set(['toHaveKeyboard']);
   // Page, frame, locator, handle and context methods whose function arguments
   // Playwright serializes and runs in the browser.
@@ -112,10 +112,55 @@ function createAnalyzer(ts) {
     // Target tests: a file-level `const test = createTargetTest(...)` from
     // @9l/playwright declares a test whose `app` fixture drives a target.
     const tests = new Set(), expects = new Set(), foreignTests = new Set(), factories = new Set(), targetTests = new Set();
+    const declaredTargets = new Set();
+    const targetModules = options.targetModules;
+    // Local code can replace a shared fixture's `app` out of sight: a
+    // top-level test.use in any module this file loads applies to this
+    // file's tests. So a fixture from another module, and a fixture module
+    // itself, are trusted only when the file loads no local module except
+    // through `import {…} from` a known fixture module: no namespace, default
+    // or side-effect import, no other relative import or re-export, and no
+    // dynamic import() or require() of a relative path.
+    const relative = specifier => specifier.startsWith('./') || specifier.startsWith('../');
+    const loadsOnlyKnownModules = (() => {
+      for (const statement of file.statements) {
+        if ((ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier
+          && ts.isStringLiteralLike(statement.moduleSpecifier) && relative(statement.moduleSpecifier.text)) {
+          if (ts.isExportDeclaration(statement)) return false;
+          const clause = statement.importClause;
+          if (!targetModules || !Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)) return false;
+          if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false;
+        }
+      }
+      let dynamic = false;
+      (function visit(node) {
+        if (dynamic) return;
+        if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+          || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
+          const target = node.arguments[0];
+          if (!target || !ts.isStringLiteralLike(target) || relative(target.text)) dynamic = true;
+        }
+        if (ts.isImportEqualsDeclaration(node)) dynamic = true;
+        ts.forEachChild(node, visit);
+      })(file);
+      return !dynamic;
+    })();
     for (const statement of file.statements) {
       if (!ts.isImportDeclaration(statement)) continue;
       const bindings = statement.importClause?.namedBindings;
       if (!bindings || !ts.isNamedImports(bindings)) continue;
+      const targetModule = targetModules && Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)
+        ? targetModules[statement.moduleSpecifier.text] : undefined;
+      if (targetModule) {
+        // A local fixture module whose exported `test` the caller found to be
+        // a createTargetTest fixture: its `test` declares target tests here too.
+        for (const binding of bindings.elements) {
+          if ((binding.propertyName || binding.name).text !== 'test') continue;
+          tests.add(binding.name.text);
+          if (targetModule.app === true && loadsOnlyKnownModules) targetTests.add(binding.name.text);
+        }
+        continue;
+      }
       if (!['@playwright/test', '@9l/playwright'].includes(statement.moduleSpecifier.text)) {
         // A `test` from another module (a fixture package, another test runner) is
         // not assessed; only its module name, if package-like, is reported.
@@ -160,6 +205,7 @@ function createAnalyzer(ts) {
         const factory = declaration.initializer && targetFactory(declaration.initializer);
         if (!ts.isIdentifier(declaration.name) || !factory) continue;
         tests.add(declaration.name.text);
+        declaredTargets.add(declaration.name.text);
         if (factory.app) targetTests.add(declaration.name.text);
       }
     }
@@ -167,11 +213,12 @@ function createAnalyzer(ts) {
     // it. test.use(...) that may set `app` replaces the fixture for some of its
     // tests, and any other use (an alias, an element access such as
     // test['use'], an argument) lets it be overridden out of sight: in either
-    // case none of its tests is trusted.
+    // case none of its tests is trusted. Naming it in an export list cannot
+    // change it.
     (function references(node) {
       if (ts.isIdentifier(node) && targetTests.has(node.text) && !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)
         && !((ts.isPropertyAccessExpression(node.parent) || ts.isPropertyAssignment(node.parent)) && node.parent.name === node)
-        && !ts.isImportSpecifier(node.parent)) {
+        && !ts.isImportSpecifier(node.parent) && !ts.isExportSpecifier(node.parent)) {
         const parent = node.parent;
         const called = ts.isCallExpression(parent) && parent.expression === node;
         const read = ts.isPropertyAccessExpression(parent) && parent.expression === node;
@@ -181,6 +228,116 @@ function createAnalyzer(ts) {
       }
       ts.forEachChild(node, references);
     })(file);
+    // Android `controls` aliases declared in this file: an alias name that
+    // app.getByTestId(...) resolves through on-screen copy instead of a
+    // resource ID. Read from object literals under a call to androidTargetDriver
+    // imported from @9l/playwright/android, directly or through a top-level
+    // const; spreads and computed names are not read. The code is the most
+    // fragile matcher an alias is declared with.
+    const aliasRank = { 'copy-alias': 1, 'partial-copy-alias': 2, 'data-alias': 3 };
+    const aliases = new Map();
+    const declareAlias = (name, code) => {
+      if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(name)) return;
+      if ((aliasRank[code] || 0) <= (aliasRank[aliases.get(name)] || 0)) return;
+      if (!aliases.has(name) && aliases.size >= 256) return;
+      aliases.set(name, code);
+    };
+    const drivers = new Set();
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.text !== '@9l/playwright/android') continue;
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const binding of bindings.elements) if ((binding.propertyName || binding.name).text === 'androidTargetDriver') drivers.add(binding.name.text);
+      }
+    }
+    if (drivers.size) {
+      const constants = new Map();
+      for (const statement of file.statements) {
+        if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (ts.isIdentifier(declaration.name) && declaration.initializer) constants.set(declaration.name.text, declaration.initializer);
+        }
+      }
+      const literal = node => {
+        while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression?.(node))) node = node.expression;
+        if (node && ts.isIdentifier(node) && constants.has(node.text)) node = constants.get(node.text);
+        while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression?.(node))) node = node.expression;
+        return node && ts.isObjectLiteralExpression(node) ? node : null;
+      };
+      const propertyName = property => property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) ? property.name.text : null;
+      const readControls = object => {
+        for (const property of object.properties) {
+          const name = propertyName(property);
+          const matchers = ts.isPropertyAssignment(property) ? literal(property.initializer) : null;
+          if (!name || !matchers) continue;
+          for (const entry of matchers.properties) {
+            const matcher = propertyName(entry);
+            if (!ts.isPropertyAssignment(entry) || !['text', 'accessibilityId', 'accessibilityIdSuffix', 'accessibilityIdContains', 'hint'].includes(matcher)) continue;
+            const value = ts.isStringLiteralLike(entry.initializer) ? entry.initializer.text : null;
+            declareAlias(name, value !== null && /[0-9]/.test(value) ? 'data-alias'
+              : ['accessibilityIdSuffix', 'accessibilityIdContains'].includes(matcher) ? 'partial-copy-alias' : 'copy-alias');
+          }
+        }
+      };
+      (function findDrivers(node) {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && drivers.has(node.expression.text)) {
+          for (const argument of node.arguments) {
+            (function findControls(child) {
+              if ((ts.isPropertyAssignment(child) || ts.isShorthandPropertyAssignment(child)) && propertyName(child) === 'controls') {
+                const object = literal(ts.isPropertyAssignment(child) ? child.initializer : child.name);
+                if (object) readControls(object);
+              }
+              ts.forEachChild(child, findControls);
+            })(literal(argument) || argument);
+          }
+        }
+        ts.forEachChild(node, findDrivers);
+      })(file);
+    }
+    // Aliases a fixture module this spec imports its target test from declares.
+    for (const statement of file.statements) {
+      if (!ts.isImportDeclaration(statement) || !targetModules || !Object.prototype.hasOwnProperty.call(targetModules, statement.moduleSpecifier.text)) continue;
+      const declared = targetModules[statement.moduleSpecifier.text].aliases;
+      if (declared && typeof declared === 'object') for (const [name, code] of Object.entries(declared)) if (aliasRank[code]) declareAlias(name, code);
+    }
+    // Exports mode: whether this module exports a `test` declared here with
+    // createTargetTest, so a spec importing it can be assessed as a target
+    // test. Only `export const test = ...` and `export {name as test}` of a
+    // const declared in this file are read; a re-export from elsewhere is not.
+    if (options.exports === true) {
+      // Every name each local binding is exported under, so a fixture exported
+      // as `test` and also under another name (or as default) is not trusted:
+      // a spec could reach it through the other name and override it.
+      const exportNames = new Map();
+      const exportAs = (local, name) => exportNames.set(local, [...(exportNames.get(local) || []), name]);
+      let wholesale = false;
+      for (const statement of file.statements) {
+        const exportedStatement = statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
+        if (ts.isVariableStatement(statement) && exportedStatement) {
+          for (const declaration of statement.declarationList.declarations) {
+            if (ts.isIdentifier(declaration.name)) exportAs(declaration.name.text, declaration.name.text);
+          }
+        }
+        if (ts.isExportDeclaration(statement)) {
+          if (statement.moduleSpecifier || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) wholesale = true;
+          else for (const element of statement.exportClause.elements) exportAs((element.propertyName || element.name).text, element.name.text);
+        }
+        if (ts.isExportAssignment(statement)) {
+          if (ts.isIdentifier(statement.expression)) exportAs(statement.expression.text, 'default');
+          else wholesale = true;
+        }
+      }
+      let exported = null;
+      for (const [local, names] of exportNames) {
+        if (!names.includes('test') || !declaredTargets.has(local)) continue;
+        // The module itself must load no local code, and its fixture must be
+        // reachable only as `test`; otherwise it declares tests without credit.
+        exported = { app: targetTests.has(local) && names.length === 1 && !wholesale && loadsOnlyKnownModules,
+          ...(aliases.size ? { aliases: Object.fromEntries([...aliases].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) } : {}) };
+      }
+      // Strict JSON on the Go side has no null: a module without one omits it.
+      return { version: 15, compiler: ts.version, ...(exported ? { targetTest: exported } : {}) };
+    }
     const location = node => {
       const pos = file.getLineAndCharacterOfPosition(node.getStart(file));
       return { line: pos.line + 1, column: pos.character + 1 };
@@ -231,7 +388,7 @@ function createAnalyzer(ts) {
     };
     const isModifier = node => isTestCall(node, ['skip', 'fixme']) && modifierShape(node);
     // test.fail()/test.fail(condition, reason) with the same shapes. Only one in
-    // an after hook is reported: Playwright 1.61.1 through 1.64.1 apply it to
+    // an after hook is reported: Playwright 1.61.1 through 1.65.1 apply it to
     // the test that has just run, so a failed body becomes an expected failure
     // and the run can exit 0 (microsoft/playwright#43738). A declaration or a
     // body-level call is the documented expected-failure form.
@@ -423,7 +580,7 @@ function createAnalyzer(ts) {
           const callback = node.arguments[node.arguments.length - 1];
           const statement = ts.isExpressionStatement(node.parent) ? node.parent : node;
           const disabled = inheritedDisabled || (ts.isPropertyAccessExpression(expr) && ['skip', 'fixme'].includes(expr.name.text));
-          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], conditionalSkips: [], afterHookFails: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
+          const fact = { ...location(node), requirements: annotations(statement, 'requirement'), assertions: [], sleeps: [], hazards: [], testIds: [], conditionalSkips: [], afterHookFails: [], disabled, exclusive: ts.isPropertyAccessExpression(expr) && expr.name.text === 'only', unsupported: false, limits: [] };
           // Titles are source text; include literal ones only when requested.
           if (options.titles && node.arguments[0] && (ts.isStringLiteral(node.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(node.arguments[0]))) fact.title = [...node.arguments[0].text].slice(0, 200).join('');
           factScopes.set(fact, scopes);
@@ -746,6 +903,29 @@ function createAnalyzer(ts) {
                 return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'getByTestId'
                   && targetKind(node.expression.expression) === 'app' ? 'control' : undefined;
               };
+              // Native locators tied to on-screen copy or position: a control
+              // reached through a `controls` alias, and a tap at literal
+              // coordinates. Coordinates computed from a control's bounds() are
+              // not literals and are not reported.
+              const targetHazards = child => {
+                if (!ts.isCallExpression(child) || !ts.isPropertyAccessExpression(child.expression)) return [];
+                const method = child.expression.name.text, first = child.arguments[0];
+                if (targetKind(child.expression.expression) !== 'app') return [];
+                if (method === 'getByTestId' && first && ts.isStringLiteralLike(first) && aliases.has(first.text)) return [{ node: first, kind: aliases.get(first.text) }];
+                if (method !== 'tapAt' || !first || !ts.isObjectLiteralExpression(first)) return [];
+                const numeric = node => ts.isNumericLiteral(node) || (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand));
+                return first.properties.some(property => ts.isPropertyAssignment(property) && ['x', 'y'].includes(property.name?.text) && numeric(property.initializer))
+                  ? [{ node: child.expression.name, kind: 'literal-coordinates' }] : [];
+              };
+              // A literal test ID passed to app.getByTestId(...) that is not a
+              // controls alias: what `9l assess --screens` checks against
+              // inspected screens.
+              const targetTestId = child => {
+                if (!ts.isCallExpression(child) || !ts.isPropertyAccessExpression(child.expression) || child.expression.name.text !== 'getByTestId') return null;
+                const first = child.arguments[0];
+                if (!first || !ts.isStringLiteralLike(first) || aliases.has(first.text) || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(first.text)) return null;
+                return targetKind(child.expression.expression) === 'app' ? { node: first, id: first.text } : null;
+              };
               // A target assertion's matcher, or null for any other call.
               const targetMatcher = call => {
                 if (!ts.isPropertyAccessExpression(call.expression)) return null;
@@ -796,13 +976,16 @@ function createAnalyzer(ts) {
                 // Hazards are present in source whether or not their code runs, so
                 // they do not make a nested function a limit. A location is
                 // reported once per test, at its first call site.
-                for (const hazard of hazards(child, roots)) {
+                for (const hazard of [...hazards(child, roots), ...targetHazards(child)]) {
                   const here = location(hazard.node);
                   if (fact.hazards.some(h => h.line === here.line && h.column === here.column)) continue;
                   if (hazardBudget.left === 0) { hazardBudget.truncated = true; continue; }
                   hazardBudget.left--;
                   fact.hazards.push({ ...at(hazard.node), kind: hazard.kind });
                 }
+                // Each test ID once per test, at its first use, bounded.
+                const testId = targetTestId(child);
+                if (testId && fact.testIds.length < 128 && !fact.testIds.some(t => t.id === testId.id)) fact.testIds.push({ ...at(testId.node), id: testId.id });
                 if (ts.isCallExpression(child)) {
                   // Body-level skips can depend on runtime conditions or fixture
                   // values. Do not infer their disabled state from source alone.
@@ -850,7 +1033,7 @@ function createAnalyzer(ts) {
                         if (ts.isIdentifier(parameter.name) && kind) helperTargets.set(parameter.name.text, kind);
                       });
                       const settled = consumed(child);
-                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
+                      const saved = { assertions: fact.assertions.length, sleeps: fact.sleeps.length, hazards: fact.hazards.length, testIds: fact.testIds.length, hazardBudget: { ...hazardBudget }, limits: [...fact.limits], unsupported: fact.unsupported, waited: order.waited, facts: budget.facts };
                       try {
                         scanFunction(helper.fn, helperRoots, helper.fn, { site: ctx.site || location(child), floating: ctx.floating || (isAsync(helper.fn) && !settled),
                           returned: settled, depth: ctx.depth + 1, stack: new Set([...ctx.stack, helper.fn]),
@@ -860,6 +1043,7 @@ function createAnalyzer(ts) {
                         fact.assertions.length = saved.assertions;
                         fact.sleeps.length = saved.sleeps;
                         fact.hazards.length = saved.hazards;
+                        fact.testIds.length = saved.testIds;
                         Object.assign(hazardBudget, saved.hazardBudget);
                         fact.limits = saved.limits;
                         fact.unsupported = saved.unsupported;
@@ -972,7 +1156,7 @@ function createAnalyzer(ts) {
     const modifiers = new Set(results.flatMap(f => [...f.conditionalSkips, ...f.afterHookFails].map(s => `${s.line}:${s.column}`)));
     if (results.reduce((n, f) => n + f.assertions.length + f.sleeps.length + f.limits.length, modifiers.size) > 2048) throw new AnalysisError('limit');
     const unrecognized = tests.size === 0 ? [...foreignTests].sort().slice(0, 8) : [];
-    return { version: 13, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
+    return { version: 15, compiler: ts.version, tests: results, ...(hazardBudget.truncated ? { hazardsTruncated: true } : {}), ...(unrecognized.length ? { unrecognizedTestImports: unrecognized } : {}) };
   }
 
   return analyze;
@@ -991,11 +1175,13 @@ async function main(parserPath = process.argv[1]) {
       chunks.push(chunk);
     }
     const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true, javascript: request.javascript === true })));
+    const targetModules = request.targetModules && typeof request.targetModules === 'object' ? request.targetModules : undefined;
+    process.stdout.write(JSON.stringify(analyze(request.source, { titles: request.titles === true, javascript: request.javascript === true,
+      exports: request.exports === true, targetModules })));
   } catch (error) {
     // Diagnostics may contain literal source or credentials. Emit no raw errors.
     const code = error instanceof AnalysisError ? error.code : 'helper-failed';
-    process.stdout.write(JSON.stringify({ version: 13, error: code }));
+    process.stdout.write(JSON.stringify({ version: 15, error: code }));
     process.exitCode = 2;
   }
 }

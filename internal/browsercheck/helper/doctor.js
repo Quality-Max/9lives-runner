@@ -11,7 +11,8 @@ const node_module_1 = require("node:module");
 const node_fs_1 = require("node:fs");
 const node_path_1 = __importDefault(require("node:path"));
 const source_text_1 = require("./source-text");
-const qualified = new Set(['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1']);
+const recommendedPlaywright = '1.65.1';
+const qualified = new Set(['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1', '1.65.0', recommendedPlaywright]);
 const safeVersion = /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/;
 const safeToken = /^[a-z0-9][a-z0-9./-]{0,63}$/;
 function names(value) {
@@ -309,7 +310,7 @@ function diagnose(args, root = process.cwd(), android) {
     const runtime = metadata(load, 'playwright') ?? testRuntime;
     checks.push({ name: 'playwright-test', status: !test ? 'missing' : qualified.has(test.version) ? 'ok' : 'warning',
         message: test ? `@playwright/test ${test.version}${qualified.has(test.version) ? ' is qualified.' : ' is outside the qualified matrix.'}` : '@playwright/test is not installed locally.',
-        ...(!test ? { fix: 'npm install --save-dev @playwright/test@1.64.1' } : {}) });
+        ...(!test ? { fix: `npm install --save-dev @playwright/test@${recommendedPlaywright}` } : {}) });
     const sdk = metadata(load, '@9l/playwright');
     const align = args.cliVersion && safeVersion.test(args.cliVersion) ? { fix: `npm install --save-dev @9l/playwright@${args.cliVersion}` } : {};
     if (!sdk) {
@@ -381,5 +382,5 @@ function diagnose(args, root = process.cwd(), android) {
         ready: !checks.some(check => check.status === 'missing' || check.name.endsWith('/browser')), checks,
         unverified: ['Browser launch and Linux system libraries', 'Project config, target reachability and authentication', 'MCP host binary selection and agent/provider login',
             ...(spec ? ['testDir and testMatch unless literal'] : []), ...(android?.unverified ?? [])],
-        next: 'Start your app, then run: 9l scan http://localhost:<port> --allow-private-network. No account is required.' };
+        next: "Next: 9l assess 'tests/**/*.spec.ts' reviews your specs without an app or a browser. Then start your app and run one spec: 9l run tests/<name>.spec.ts. No account is required." };
 }

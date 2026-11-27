@@ -1,15 +1,17 @@
 import {test as base, type Locator, type Page, type TestInfo} from '@playwright/test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
 import {engineIdentity, selectedTarget, targetStepFile, targetVersion} from './protocol';
 import {validIOSRuntime, iosRuntimeType, type IOSRuntime} from './ios-runtime';
 import {validAndroidRuntime, androidRuntimeType, type AndroidRuntime} from './android-runtime';
-import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
-export {TargetSetupError, validTargetSetup, validTargetDiagnostic, type TargetSetupRecord, type SetupClassification, type TargetDiagnostic, type WindowObservation} from './target-setup';
+import {TargetSetupError, targetSetupType, validTargetSetup, targetDiagnosticType, validTargetDiagnostic, failureCaptureLimits, failureCaptureAttachments, type TargetSetupRecord, type TargetDiagnostic} from './target-setup';
+export {TargetSetupError, validTargetSetup, validTargetDiagnostic, failureCaptureLimits, failureCaptureAttachments, type TargetSetupRecord, type SetupClassification, type SetupPhase, type TargetDiagnostic, type WindowObservation} from './target-setup';
 
 export const targetCapabilities = ['open', 'reset', 'test-id', 'tap', 'fill', 'visible', 'text', 'state',
   'back', 'keyboard', 'scroll', 'tap-at', 'bounds', 'viewport', 'terminate', 'activate', 'screen-digest',
-  'foreground', 'device-serial', 'fingerprint'] as const;
+  'foreground', 'device-serial', 'fingerprint', 'biometric', 'answer-alert'] as const;
 export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 /** Integer device coordinates: physical pixels on Android, CSS pixels in the web viewport. */
 export type TargetPoint = {x: number; y: number};
@@ -21,8 +23,15 @@ export type TargetContext = {signal: AbortSignal; deadlineMs: number};
  * content-invalid; on the web aria-invalid or failed constraint validation). */
 export type TargetState = 'enabled' | 'checked' | 'invalid';
 export type TargetForeground = 'app' | 'foreign' | 'none';
+/** What a person presents at a biometric prompt: the enrolled face or
+ * finger, or one that is not enrolled. */
+export type BiometricOutcome = 'match' | 'nomatch';
 /** Per-call bound, capped by Go's worker deadline. */
 export type TargetOperationOptions = {timeoutMs?: number};
+/** Opt-in failure capture: the target display's image as PNG bytes and the
+ * native view hierarchy as XML, each optional. Screen content: a driver
+ * returns it only when its user opted in. */
+export type TargetFailureCapture = {screenshot?: Uint8Array; viewTree?: string};
 
 /** Handles stay in the worker. Drivers must stop pending work on abort/close,
  * honor the context deadline, must not retry mutations, and must never act on
@@ -36,6 +45,12 @@ export interface TargetHandle {
   /** Whether the control reports a validation error. A handle without it
    * fails `toHaveState('invalid', …)` as unsupported_state. */
   invalid?(context: TargetContext): Promise<boolean>;
+  /** Whether the control reports exactly this validation error text: the
+   * accessibility error of a native field, the error message an element
+   * names on the web. The driver compares on its side and answers only
+   * true or false; the text it read is never returned. A handle without it
+   * fails `toHaveError` as unsupported_state. */
+  hasError?(text: string, context: TargetContext): Promise<boolean>;
   /** Press the keyboard's action key in this field, as a user finishing it
    * would: Enter on the web, the input method's done action on Android. A
    * handle without it fails `fill(value, {submit: true})` as
@@ -44,6 +59,11 @@ export interface TargetHandle {
   /** One bounded scroll gesture inside this element; percent of its size. */
   scroll?(direction: ScrollDirection, percent: number, context: TargetContext): Promise<void>;
   bounds?(context: TargetContext): Promise<TargetRect>;
+  /** What `text()` returns: the text a user reads in this control. A driver
+   * whose `text` already reads that (a native control's text) omits it; the
+   * web driver reads a field's current value and an element's visible text,
+   * where `text`, kept for toHaveText, reads textContent. */
+  readText?(context: TargetContext): Promise<unknown>;
 }
 export interface TargetDriver extends TargetIdentity {
   version: typeof targetVersion;
@@ -56,10 +76,14 @@ export interface TargetDriver extends TargetIdentity {
   // stable reason unsupported_operation; it never substitutes another action.
   /** Platform back: Android's Back key, the browser's history. */
   back?(context: TargetContext): Promise<void>;
-  /** Software keyboard visibility; an unreadable state throws. Android only. */
+  /** Software keyboard visibility; an unreadable state throws. Android and iOS. */
   keyboardShown?(context: TargetContext): Promise<boolean>;
-  /** Dismiss the keyboard without changing the input method. Android only. */
+  /** Dismiss the keyboard without changing the input method or acting on
+   * the app. A keyboard that stays up fails. Android and iOS. */
   hideKeyboard?(context: TargetContext): Promise<void>;
+  /** Answer the system alert in front of the app with the named button,
+   * once. No alert within the bound, or no such button, fails. iOS only. */
+  answerAlert?(button: string, context: TargetContext): Promise<void>;
   /** One touch down/up at device coordinates. */
   tapAt?(point: TargetPoint, context: TargetContext): Promise<void>;
   viewport?(context: TargetContext): Promise<TargetSize>;
@@ -73,6 +97,10 @@ export interface TargetDriver extends TargetIdentity {
    * deliberately unenrolled) finger. Owned emulators with declared
    * biometrics only. */
   fingerprint?(finger: number, context: TargetContext): Promise<void>;
+  /** Present a matching or non-matching biometric at the system prompt:
+   * Face ID or Touch ID on an owned Simulator, enrolled finger 1 or
+   * unenrolled finger 2 on an owned emulator. Declared biometrics only. */
+  biometric?(outcome: BiometricOutcome, context: TargetContext): Promise<void>;
   /** SHA-256 of a screenshot of the target display, computed in memory. The
    * image itself is never returned, written or attached. */
   screenDigest?(context: TargetContext): Promise<string>;
@@ -92,6 +120,12 @@ export interface TargetDriver extends TargetIdentity {
   /** Opt-in: describe a failed operation as bounded metadata, captured before
    * fixture teardown. Read-only; errors are ignored; one record per test. */
   diagnose?(failure: {operation: string; reason: string; elapsedMs: number; point?: TargetPoint}, context: TargetContext): Promise<TargetDiagnostic | undefined>;
+  /** Opt-in (the driver's own option decides; without it, answer undefined
+   * and read nothing): after a failed test, while the driver is still open,
+   * capture the target display and the view hierarchy once. Read-only; an
+   * item that fails or exceeds its limit is left out; errors and answers
+   * after the bound are ignored and never change the outcome. */
+  captureFailure?(context: TargetContext): Promise<TargetFailureCapture | undefined>;
 }
 
 const defaultOperationMs = 5_000;
@@ -126,6 +160,17 @@ const recheckMs = 5_000;
 const attachSetup = (record: TargetSetupRecord) => base.info().attach('9l.target-setup', {body: Buffer.from(JSON.stringify(record)), contentType: targetSetupType});
 const attachDiagnostic = (record: TargetDiagnostic) => base.info().attach('9l.target-diagnostic', {body: Buffer.from(JSON.stringify(record)), contentType: targetDiagnosticType});
 const boundedText = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max;
+const pngSignature = Buffer.from('\x89PNG\r\n\x1a\n', 'latin1');
+const validScreenshot = (value: unknown): value is Uint8Array => value instanceof Uint8Array && value.length > pngSignature.length &&
+  value.length <= failureCaptureLimits.screenshotBytes && Buffer.from(value.buffer, value.byteOffset, pngSignature.length).equals(pngSignature);
+// Markup, not arbitrary text: it starts with a tag and holds no NUL.
+const validViewTree = (value: unknown): value is string => boundedText(value, failureCaptureLimits.viewTreeBytes) && /^\s*</.test(value) && !value.includes('\u0000');
+
+type FailureCaptureInfo = Pick<TestInfo, 'status' | 'expectedStatus' | 'timeout' | 'outputPath' | 'attach'>;
+// Set by TargetApp's static block; module-private, so only the fixture runs it.
+let captureFailureOf: (app: TargetApp, info: FailureCaptureInfo) => Promise<void>;
+/** Set by the engine per attempt: "1" when it keeps a failure capture. */
+const failureCaptureKeptEnv = 'NINELIVES_FAILURE_CAPTURE_KEPT';
 
 /** Deterministic shared operations; browser/device handles stay in the worker. */
 export class TargetApp {
@@ -135,6 +180,7 @@ export class TargetApp {
   private reason = 'canceled';
   private closing?: Promise<void>;
   private diagnosed = false;
+  private captured = false;
   private externalAbort = () => this.stop('canceled');
 
   constructor(private driver: TargetDriver, expected: TargetIdentity, private options: {deadlineMs: number; signal?: AbortSignal}) {
@@ -197,6 +243,64 @@ export class TargetApp {
     } catch { record = undefined; }
     if (record === late) return;
     if (record !== undefined && validTargetDiagnostic(record)) await attachDiagnostic(record);
+  }
+
+  // Only the target fixture can reach this, through captureFailureOf below:
+  // a spec cannot call it early, out of turn or twice. Once the test body
+  // has ended and before the driver closes, a test that failed (status
+  // `failed` or `timedOut`) on a driver that opted in, in an attempt whose
+  // engine keeps the capture, attaches one PNG of the target display and one
+  // view-tree XML, each validated against failureCaptureLimits, as
+  // Playwright file attachments. A released driver (a deadline or
+  // cancellation closed it), an operation still pending, a hook that fails,
+  // answers late or returns anything out of bounds attaches nothing. It
+  // never throws and never changes the outcome.
+  async #attachFailureCapture(info: FailureCaptureInfo) {
+    try {
+      // Native targets only: the web has Playwright's own failure screenshots.
+      if (this.captured || this.driver.kind === 'web' || typeof this.driver.captureFailure !== 'function') return;
+      this.captured = true;
+      if ((info.status !== 'failed' && info.status !== 'timedOut') || info.expectedStatus !== 'passed' || this.closing || this.busy) return;
+      // Go says whether this attempt keeps it (--failure-details
+      // --keep-attachments); a capture that would only be deleted is not taken.
+      if (process.env[failureCaptureKeptEnv] !== '1') return;
+      // Teardown has its own Playwright time slot, shared with close and any
+      // afterEach hook: the capture takes at most half of the test's timeout.
+      const share = info.timeout > 0 ? Math.floor(info.timeout / 2) : failureCaptureLimits.ms;
+      const bound = Math.min(this.options.deadlineMs, Date.now() + Math.min(failureCaptureLimits.ms, share));
+      if (bound - Date.now() < 1) return;
+      const signal = AbortSignal.timeout(Math.max(1, bound - Date.now()));
+      // A hook that ignores its signal is abandoned shortly after the bound.
+      const abandon = AbortSignal.timeout(Math.max(1, bound - Date.now()) + settleMs);
+      const late = Symbol('late');
+      const capture: unknown = await Promise.race([
+        this.driver.captureFailure({signal, deadlineMs: bound}),
+        new Promise<typeof late>(resolve => abandon.addEventListener('abort', () => resolve(late), {once: true})),
+      ]);
+      if (capture === late || !capture || typeof capture !== 'object') return;
+      const {screenshot, viewTree} = capture as Record<string, unknown>;
+      const items: {name: string; contentType: string; file: string; body: Buffer}[] = [];
+      if (validScreenshot(screenshot)) items.push({...failureCaptureAttachments.screenshot, body: Buffer.from(screenshot)});
+      if (validViewTree(viewTree)) items.push({...failureCaptureAttachments.viewTree, body: Buffer.from(viewTree, 'utf8')});
+      if (items.length === 0) return;
+      // Attached by path, so Playwright copies each into its own output, where
+      // 9l can retain it; the staging copy is removed.
+      let staging: string | undefined;
+      try {
+        staging = await mkdtemp(join(info.outputPath(), '.9l-failure-capture-'));
+        for (const item of items) {
+          const path = join(staging, item.file);
+          await writeFile(path, item.body, {mode: 0o600});
+          await info.attach(item.name, {path, contentType: item.contentType});
+        }
+      } finally {
+        if (staging) await rm(staging, {recursive: true, force: true}).catch(() => {});
+      }
+    } catch { /* what was attached stays; the rest is skipped */ }
+  }
+
+  static {
+    captureFailureOf = (app, info) => app.#attachFailureCapture(info);
   }
 
   private get maxMs() { return (this.driver.kind === 'android' || this.driver.kind === 'ios') ? nativeMaxMs : maxOperationMs; }
@@ -374,7 +478,7 @@ export class TargetApp {
     }
   }
 
-  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint'>(name: K): NonNullable<TargetDriver[K]> {
+  private optional<K extends 'back' | 'keyboardShown' | 'hideKeyboard' | 'tapAt' | 'viewport' | 'terminate' | 'activate' | 'screenDigest' | 'foreground' | 'fingerprint' | 'biometric' | 'answerAlert'>(name: K): NonNullable<TargetDriver[K]> {
     const method = this.driver[name];
     if (typeof method !== 'function') throw stopped('unsupported_operation');
     return method.bind(this.driver) as NonNullable<TargetDriver[K]>;
@@ -382,9 +486,24 @@ export class TargetApp {
 
   /** Platform back: Android's Back key, the browser's history. */
   back(options: TargetOperationOptions = {}) { return this.perform('back', context => this.optional('back')(context), options.timeoutMs); }
-  /** Dismiss the software keyboard, keeping the selected input method. Android only. */
+  /** Dismiss the software keyboard, keeping the selected input method. On
+   * iOS only where the keyboard can close without a control of the app (an
+   * iPad hide key); an iPhone keyboard that stays up fails. */
   hideKeyboard(options: TargetOperationOptions = {}) { return this.perform('hide-keyboard', context => this.optional('hideKeyboard')(context), options.timeoutMs); }
-  /** Android only: assert the software keyboard is shown or hidden. */
+  /** Answer the system alert in front of the app, such as a permission
+   * request or a save-password sheet, with the button named exactly as
+   * shown (`'Allow'`, `'Not Now'`). Waits within the bound for an alert,
+   * taps that button once and waits for the alert to close; never another
+   * button and never an alert the test did not ask for. iOS only; elsewhere
+   * unsupported_operation. Recorded as an executed action; the button text
+   * is not recorded. */
+  answerAlert(button: string, options: TargetOperationOptions = {}) {
+    return this.perform('answer-alert', async context => {
+      if (typeof button !== 'string' || !button || button.length > 64 || /[\u0000-\u001f]/.test(button)) throw stopped('invalid_value');
+      await this.optional('answerAlert')(button, context);
+    }, options.timeoutMs);
+  }
+  /** Assert the software keyboard is shown or hidden. Android and iOS. */
   toHaveKeyboard(visible: boolean, timeoutMs?: number) {
     if (typeof visible !== 'boolean') return this.assertLoop('assert-keyboard', async () => { throw stopped('invalid_value'); }, timeoutMs);
     return this.assertLoop('assert-keyboard', async context => await this.optional('keyboardShown')(context) === visible, timeoutMs);
@@ -445,6 +564,20 @@ export class TargetApp {
     return this.perform('fingerprint', async context => {
       if (!Number.isInteger(finger) || finger < 1 || finger > 10) throw stopped('invalid_value');
       await this.optional('fingerprint')(finger, context);
+    }, options.timeoutMs);
+  }
+
+  /** Present the enrolled face or finger (`match`), or one that is not
+   * enrolled (`nomatch`), at the system's biometric prompt, as a person
+   * would. Face ID or Touch ID on an owned iOS Simulator and finger 1 or 2
+   * on an owned Android emulator, where the driver declares biometrics;
+   * elsewhere this fails as unsupported_operation before touching the
+   * device. Call it once the prompt is on screen. Recorded as an executed
+   * action, never an assertion: the sign-in it leads to still needs one. */
+  biometric(outcome: BiometricOutcome, options: TargetOperationOptions = {}) {
+    return this.perform('biometric', async context => {
+      if (outcome !== 'match' && outcome !== 'nomatch') throw stopped('invalid_value');
+      await this.optional('biometric')(outcome, context);
     }, options.timeoutMs);
   }
 
@@ -543,6 +676,26 @@ export class TargetApp {
           return result.held;
         }, bound);
       },
+      /** The control's text, read once after it appears, for a value a later
+       * step needs (a code shown on screen, a generated identifier). It waits
+       * within its bound like an action; absence is missing_test_id and
+       * ambiguity fails. Recorded as an executed action, never an assertion;
+       * the text is returned to the spec and never recorded, so a value a
+       * spec puts in its own error message is the spec's to keep private. */
+      text: (options: TargetOperationOptions = {}) => step('query-text', async context => {
+        // Waits like an action, but for a control that is shown: a hidden
+        // control is not one a user can read, and native drivers report
+        // off-screen nodes as absent, so every driver answers alike.
+        let found: TargetHandle | undefined;
+        const result = await this.poll(context, async context => {
+          found = await observe(context);
+          return found !== undefined && await visibility(found, context);
+        }, Math.max(1, context.deadlineMs - Date.now()), maxObservations, () => {}, true);
+        if (!result.held || !found) throw stopped(context.deadlineMs >= this.options.deadlineMs ? 'deadline' : 'missing_test_id');
+        const value: unknown = found.readText ? await found.readText(context) : await found.text(context);
+        if (!boundedText(value, 4096)) throw stopped('invalid_property');
+        return value;
+      }, options.timeoutMs),
       toBeVisible: (timeoutMs?: number) => assertion('assert-visible', async (handle, context) => await visibility(handle, context), timeoutMs),
       /** Passes when the control is absent or not displayed. */
       toBeHidden: (timeoutMs?: number) => assertion('assert-hidden', async (handle, context) => !await visibility(handle, context), timeoutMs, true),
@@ -551,6 +704,18 @@ export class TargetApp {
         return assertion('assert-text', async (handle, context) => {
           const actual = await handle.text(context);
           return boundedText(actual, 4096) && actual === value;
+        }, timeoutMs);
+      },
+      /** Passes when the control reports exactly this validation error, such
+       * as a field's "Enter an email address". Compared by the driver; only
+       * the result is kept, never the text. */
+      toHaveError: (text: string, timeoutMs?: number) => {
+        if (!boundedText(text, 1024) || text === '') return assertion('assert-error', async () => { throw stopped('invalid_value'); }, timeoutMs);
+        return assertion('assert-error', async (handle, context) => {
+          if (typeof handle.hasError !== 'function') throw stopped('unsupported_state');
+          const matched: unknown = await handle.hasError(text, context);
+          if (typeof matched !== 'boolean') throw stopped('invalid_property');
+          return matched;
         }, timeoutMs);
       },
       toHaveState: (name: TargetState, value: boolean, timeoutMs?: number) => {
@@ -593,11 +758,37 @@ function locatorHandle(locator: Locator): TargetHandle {
     submit: async context => { await locator.press('Enter', {timeout: remaining(context)}); },
     visible: async context => { remaining(context); return locator.isVisible(); },
     text: async context => await locator.textContent({timeout: remaining(context)}) ?? '',
+    // A field's current value (textContent is its default), a select's chosen
+    // option, and otherwise the visible text, without scripts or hidden
+    // children. A password field is refused rather than read.
+    readText: async context => {
+      const read = await locator.evaluate(element => {
+        if (element instanceof HTMLInputElement) return element.type === 'password' ? null : element.value;
+        if (element instanceof HTMLTextAreaElement) return element.value;
+        if (element instanceof HTMLSelectElement) return element.selectedOptions[0]?.text ?? '';
+        return element instanceof HTMLElement ? element.innerText : element.textContent ?? '';
+      }, undefined, {timeout: remaining(context)});
+      if (read === null) throw stopped('unsupported_state');
+      return read;
+    },
     state: async (name, context) => name === 'enabled' ? locator.isEnabled({timeout: remaining(context)}) : locator.isChecked({timeout: remaining(context)}),
     invalid: async context => locator.evaluate(element => {
       const aria = element.getAttribute('aria-invalid');
       return (aria !== null && aria !== '' && aria !== 'false') || element.matches(':invalid');
     }, undefined, {timeout: remaining(context)}),
+    // An invalid element's error: the text of the element its
+    // aria-errormessage names, or the browser's constraint-validation
+    // message. Compared in the page; only the boolean leaves it.
+    hasError: async (text, context) => locator.evaluate((element, expected) => {
+      const aria = element.getAttribute('aria-invalid');
+      const invalid = (aria !== null && aria !== '' && aria !== 'false') || element.matches(':invalid');
+      if (!invalid) return false;
+      const named = element.getAttribute('aria-errormessage');
+      const messages = (named ?? '').split(/\s+/).filter(Boolean).map(id => element.ownerDocument.getElementById(id))
+        .map(node => node?.innerText.trim() ?? '');
+      const validation = 'validationMessage' in element ? String((element as HTMLInputElement).validationMessage) : '';
+      return messages.includes(expected) || validation === expected;
+    }, text, {timeout: remaining(context)}),
     scroll: async (direction, percent, context) => {
       remaining(context);
       await locator.evaluate((element, {direction, percent}) => {
@@ -654,11 +845,13 @@ type TargetOptions = {
  * Specs load without 9l (listing, editors); using `app` requires 9l run --sdk --target. */
 export function createTargetTest(options: TargetOptions) {
   const resolve = () => { engineIdentity(); return selectedTarget(); };
-  const useApp = async (target: ReturnType<typeof selectedTarget>, driver: TargetDriver, use: (app: TargetApp) => Promise<void>) => {
+  const useApp = async (target: ReturnType<typeof selectedTarget>, driver: TargetDriver, use: (app: TargetApp) => Promise<void>, info: TestInfo) => {
     let app: TargetApp | undefined;
     try {
       app = new TargetApp(driver, target, {deadlineMs: Number(process.env.NINELIVES_TARGET_DEADLINE_MS)});
       await use(app);
+      // The test has ended; a failed one may leave an opted-in capture.
+      await captureFailureOf(app, info);
     } finally {
       if (app) await app.close();
       else { try { await driver.close(); } catch { throw stopped('cleanup_failed'); } }
@@ -672,13 +865,13 @@ export function createTargetTest(options: TargetOptions) {
       const target = resolve();
       owned(target, info);
       if (!options.web) throw stopped('unsupported_target');
-      await useApp(target, webTargetDriver(page, target.appId, options.web), use);
+      await useApp(target, webTargetDriver(page, target.appId, options.web), use, info);
     }});
   }
   return base.extend<TargetFixtures>({app: async ({}, use, info) => {
     const target = resolve();
     owned(target, info);
     if ((target.kind !== 'android-fake' && target.kind !== 'android' && target.kind !== 'ios') || !options.native) throw stopped('unsupported_target');
-    await useApp(target, options.native(target), use);
+    await useApp(target, options.native(target), use, info);
   }});
 }

@@ -35,6 +35,19 @@
   The plan shows each job's `selection`, the receipt's evidence command
   records the filter, and a selection that matches no test leaves the run
   incomplete with a reason naming the selection, never green.
+- Independent postcondition checks (experimental): `9l run <one spec>
+  --verify <checks.json>` makes the `9l` process probe the HTTP
+  postconditions declared in a reviewed checks file, after the test process
+  tree has stopped, and record each as `verified`, `contradicted`,
+  `unreachable` or `not_run` in the receipt's `verifications`. Nothing about
+  the checks is passed to the test process. A test that reported itself
+  passed is `failed` (exit 1) when a check is contradicted and incomplete
+  (exit 3) when a check could not be completed or the checks file changed
+  during the attempt; a failing test stays failed. The run must plan exactly
+  one job, and a malformed checks file is a usage error (exit 2) before
+  anything runs. The text output names each check and its result. It covers
+  only state an HTTP `GET` or `HEAD` can reach; see [Verify](verify.md) for
+  the file format, bounds and limits.
 - Readiness: `--wait-for <url|host:port>` (repeatable) waits, inside the
   started run and before any test process starts, until an http(s) target
   answers without a server error (a status below 500 other than 429) or a
@@ -67,6 +80,24 @@
   `N test(s) passed only on a Playwright retry inside this attempt` under the
   job, so a flaky pass is not read as a clean one. Target jobs (`--target`)
   already run without retries and refuse `--retries`.
+- Flake measurement: `--repeat <n>` (1–1000) runs the same job that many
+  times, one complete run after another, and reports how often it passed.
+  Each member is an ordinary run with its own run ID, result and receipts.
+  The batch needs `--deadline`, which bounds it as a whole; each member gets
+  what is left, and the deadline or a cancellation ends the batch after the
+  member it stopped, with a partial result. Repeats measure single attempts,
+  so `--attempts` above 1 is refused, and Playwright runs with `--retries 0`
+  unless `--retries` names another count: a retry would hide the failure
+  being counted. `--junit` and `--verify` describe one run and are refused.
+  `--label "1s pre-tap wait"` names the batch, to compare experiment arms.
+  The aggregate (`--format json`, and `repeats/<batchId>.json` in the receipt
+  directory; [schema](contracts/run-repeat.schema.json)) gives the pass rate,
+  each member's run ID, outcome and category, and a histogram of categories:
+  `passed`, or the failure summary's metadata tokens (stop, class, step,
+  operation, reason, `@control`), never messages, titles or app text. Its
+  outcome is `passed` only when every requested member ran and passed,
+  `failed` when any member failed, otherwise `incomplete`; the exit code
+  follows it (0, 1, 3).
 - Config and projects: `--config <file>` runs the specs with that Playwright
   config instead of the one Playwright finds (with `--sdk` it replaces the
   detected config), and `--project <name>` (repeatable, up to 16) runs only
@@ -82,6 +113,39 @@
   evidence reporter, so the HTML report is still written; `json` is reserved.
   Traces and screenshots do not need this: they follow the config's `use`
   settings either way.
+- Live output: `9l run --show-output` streams each test process's stdout and
+  stderr (a spec's `console.log`, configuration and hook output, Playwright's
+  own reporter output) to 9l's stderr while it runs, with or without `--sdk`.
+  Each line is prefixed with its job and stream, such as
+  `[job-001 stdout] `, so parallel workers stay readable. stdout is untouched,
+  so `--format json` still prints only the result there. It is off by
+  default, also in CI; only the flag turns it on, and under `CI` 9l prints one
+  line saying the stream goes into the CI log. The stream is never persisted:
+  receipts, `stdout.log`, `stderr.log`, `events.jsonl`, run results and MCP
+  responses are the same with and without it, and it is never evidence.
+  Terminal escape sequences and control characters are removed and the
+  evidence redaction (tokens, passwords, authorization headers, URL
+  credentials) is applied to every line, but that redaction is best effort:
+  application data and secrets in other shapes pass through, so treat the
+  stream as private and do not publish it or paste it into an issue. A line
+  longer than 16 KiB is split, which can also split a secret past redaction.
+  The stream never holds a run back: when the terminal or pipe reading 9l's
+  stderr falls behind, 9l drops output and prints
+  `[job-001] [9l: N bytes of output dropped]`. When an attempt ends and its
+  queued lines have not reached stderr within two seconds, the rest of that
+  attempt's lines are skipped with
+  `[job-001] [9l: the rest of this attempt's output was not shown in time]`,
+  and later attempts still stream. A stderr that fails, or a single write to
+  it stuck for a second or more, turns the stream off for the rest of the
+  run. None of this changes any result. With `--sdk`, 9l's engine reporter keeps
+  worker output out of Playwright's own printing, so a spec's `console.log`
+  reaches the stream only through a terminal reporter (`list`, `line` or
+  `dot`); output from the config, `globalSetup` and a `webServer` shows
+  without one, and 9l prints a reminder when none is given. Use
+  `9l run tests/login.spec.ts --sdk --reporter list --show-output`, which
+  also shows Playwright's per-test lines. Plain runs show a spec's console
+  output without an extra reporter. Not available on `plan`, `prove`,
+  `confirm`, `heal` or MCP tools.
 - Test annotations: receipts carry each test's annotations from its last
   attempt (`annotations`: test title, type, description; up to 100 per job,
   descriptions capped at 256 bytes and redacted), including ones a test pushes
@@ -114,6 +178,11 @@
   opt-in diagnostics, a failed operation also records `targetDiagnostics`
   (timing, requested point, viewport, window counts), printed as
   `diagnostic <operation>: ...`. See [Android](android-driver.md).
+- Native resources left by a stopped worker: a registered iOS Simulator
+  lives outside the worker's process tree. When a worker ends without
+  releasing one, the engine removes it and the receipt lists the result as
+  `targetCleanup` (`removed`, `absent` or `unconfirmed`). An attempt with an
+  unconfirmed entry cannot pass. See [iOS](ios-driver.md).
 - Failed tests: below each failed job, `9l run` and `9l result` name every
   failed test (up to 20 per job) with its failing line, the first lines of its
   error and the files Playwright attached to it, such as `error-context.md`
@@ -142,13 +211,23 @@
   project's next run may delete, and 9l does not retain page content unless
   asked. `--keep-attachments` copies them into the attempt's receipt
   directory with a SHA-256 digest (text redacted; at most 32 MiB per file and
-  128 MiB per attempt; only regular files inside the project). The receipt
+  128 MiB per attempt; only regular files inside the project, with one
+  exception: the two files of an Android driver's opt-in
+  [failure capture](android-driver.md#failure-screenshot-and-view-tree-opt-in)
+  in a native target's private Playwright output, referenced only when
+  copied. Nothing else from that output, which is deleted with the attempt,
+  is referenced or copied). The receipt
   records the request as `keepAttachments`, how many attachment files the
   listed failures reference as `failureAttachments` (inline bodies and files
   outside the project are never referenced) and how many were copied as
   `retainedAttachments`; when retention was requested and the listed
   failures reference none, such as a `test.fail()` pin that passed, `9l run`
-  and `9l result` say so under the job. With `--sdk`
+  and `9l result` say so under the job. A run of one job writes to the
+  project's own Playwright `outputDir`. A run of several jobs gives each job
+  `test-results/9l-<job id>` in its project instead, because Playwright
+  clears its output directory when a run starts and jobs sharing one would
+  delete each other's traces; the planned command shows the `--output`
+  argument. With `--sdk`
   the engine protocol carries no titles or errors by design, so failures are
   reported only with `--failure-details`: Playwright's JSON reporter then
   writes a separate private report beside the evidence stream, which explains
@@ -158,7 +237,9 @@
   `test_failed`, `goal_failed` (only a goal's own test failed), `deadline`,
   `canceled`, `invalid_evidence`, `evidence_truncated`,
   `exit_without_failure` (the process failed but no test did),
-  `provenance_changed`, `not_started` or `infrastructure`. `failedTests`
+  `provenance_changed`, `not_started` or `infrastructure`, and with
+  `--verify` also `verification_contradicted`, `verification_incomplete` or
+  `verification_changed` (see [Verify](verify.md)). `failedTests`
   counts the failed tests in validated evidence and `tests` describes up to
   20 of them (`testsTruncated` when more failed). With `--sdk` each entry
   has the engine's SHA-256 `testId` (the one `targetSetup`,
@@ -185,6 +266,69 @@
   `9l run` and `9l result` print each entry, as `✗ test 1a2b3c4d5e6f
   [assertion] in assert-text: assertion_failed`. Each attempt has its own
   receipt directory, so a later run never overwrites an earlier summary.
+- Test list: a validated receipt lists each test's terminal outcome in
+  `tests`, at most 2000 entries (`testsTruncated` when the attempt had more;
+  failed tests are kept first). An entry has a `status` (`passed`, `failed`,
+  `skipped` or `flaky`: failed, then passed on a Playwright retry inside the
+  attempt, which counts as passed), the failure `class` of a failed test,
+  and, for a plain Playwright run, the `title` (describe path and name, with
+  the project in brackets; one line, redacted, at most 512 bytes) and
+  `durationMs` over all of the test's Playwright attempts. With `--sdk` the
+  engine stream carries digests and no timing, so an entry has the test's
+  SHA-256 `testId` and no duration; a `title` is added only with
+  `--failure-details`, and only for a test Playwright's own report
+  identifies by the same digest (a spec that ran in several projects in one
+  job keeps digests). An attempt that did not validate lists no tests. Go
+  validates the list as a closed record against the receipt's counts, and
+  `9l result` and `9l status` withhold a saved list that is not one.
+- JUnit report: `9l run <specs> --junit <file>` also writes a JUnit XML
+  report of the run, and `9l result <run-id> --junit <file>` rebuilds it
+  from a stored run. It is written atomically, readable by a CI uploader
+  (mode 0644), on every outcome of a run that started; a usage or setup
+  error (exit 2), `9l plan` and `--dry-run` write none. The path is checked
+  before any test process starts: one that names a directory, lies below a
+  file or cannot be written exits 2. Missing parent directories are
+  created. If the report cannot be written after the run, `9l` says so on
+  stderr and exits 3 where it would have exited 0; a non-zero exit code is
+  never changed. The document has one `<testsuite>` per job, from its final
+  attempt, with the run, job and attempt IDs, status and counts as
+  properties. Suites and classnames are named by the spec, relative to the
+  working directory and with forward slashes when the spec is below it, so
+  the names are the same on every machine. Each test is reported as:
+
+  | Receipt | JUnit |
+  | --- | --- |
+  | Passed test | `<testcase>` |
+  | Flaky test (passed on a Playwright retry) | passing `<testcase>` with the property `flaky=true` |
+  | Skipped test | `<testcase>` with `<skipped>` |
+  | Failed test, class `assertion`, `timeout`, `action-timeout`, `unexpected-pass` or `other` | `<failure type="<class>">` |
+  | Failed test, class `setup` or `environment` | `<error type="<class>">`: the test could not reach the behavior |
+  | Failed test of a job whose only failures belong to a goal that did not complete | `<error type="goal_failed">` |
+  | Attempt that did not validate, or ended `canceled`, `timed_out` or `error` | one `<error>` whose `type` is the failure summary's `stop` token, and no test's testcase |
+  | `--verify` check, verified | passing `<testcase>` named `verify <id>` with the properties `verification=verified` and `observedBy=engine` |
+  | `--verify` check, contradicted | `<failure type="verification_contradicted">` |
+  | `--verify` check, unreachable or not run in a validated attempt | `<error type="verification_unreachable">` or `<error type="verification_not_run">` |
+  | Input the plan skipped | `<error type="skipped_input">` in the suite `9l skipped inputs` |
+
+  A failure's `message` is the first line of the reported error when the
+  receipt has one (a plain run, or `--sdk` with `--failure-details`),
+  otherwise the class with the target operation, control and stop reason
+  from `failureSummary`; the element text adds the failing line and the
+  bounded error. A plain run names testcases by title and reports `time`.
+  An `--sdk` run names them `test <first 12 digits of the digest>`, with
+  the full digest as the property `testId`, and omits `time` on testcases
+  instead of inventing one; `--failure-details` adds titles as above. Tests
+  a truncated list left out, and the tests of a result written before
+  receipts listed them, are accounted for by one testcase per outcome, such
+  as `3 more failed test(s), not listed individually` (a `<failure>`), so a
+  long list cannot hide a failure. Whenever the run outcome is `incomplete`
+  the document contains at least one `<error>`, also when no receipt
+  explains why (a run interrupted after its last job, or a planned job
+  without a receipt), so a dashboard cannot show an incomplete run green.
+  All text is redacted again and stripped of terminal escapes and of
+  characters XML 1.0 forbids. The report holds what the receipts hold and
+  nothing more; it is not available through `9l mcp`, `prove`, `confirm` or
+  `heal`.
 - Honest completeness: execution and report validation are separate;
   unexplained skips, canceled, failed or unvalidated jobs prevent an overall
   green result.
@@ -236,6 +380,17 @@
   candidate from offline Tier 1 or a Tier 2 provider in isolation, and save it
   or apply it with approval. `heal-native` is an alias. See
   [Native Tier 2](native-tier2.md).
+- Experimental `9l diagnose <spec>`: run one spec once and, when a test
+  fails, report the observed facts from its receipt (failure class,
+  deterministic class, failed locator, snapshot and screenshot hashes). With
+  `--jev`, one bounded Jev request within a minute of the run ending maps
+  typed answers to a disposition such as `eligible-for-repair` or
+  `investigate-app`; an assertion failure is never eligible for repair. The
+  receipt is never changed. Exits 0 when the test passed, 1 when a test
+  failed, 2 for a usage error and 3 when the run did not complete, as `run`
+  does; `diagnosis.json` is saved beside the receipts in
+  `.9lives/diagnoses/` (`--receipt-dir`).
+  See [Jev](jev.md#diagnose-a-failed-step).
 - `9l mcp`: serve `run_test`, `heal_test`, `assess_test`,
   `confirm_finding`, `scan_url`, `inspect_page` and
   `generate_playwright_repro` to coding agents over MCP stdio. See
@@ -267,6 +422,19 @@
   `--accessibility-tree` adds Chromium's accessibility tree. A control is
   quoted by its accessible name only; a `name` attribute is shown as
   `[name=…] (no accessible name)`.
+- `9l inspect --ios [--udid UDID] [--wda-products DIR]`: the same ranking
+  for the app in front on a booted iOS Simulator, by the identifiers the iOS
+  driver matches, through a private Appium session that names no app. Needs
+  the pinned iOS tools (`NINELIVES_IOS_TOOLS`); `--wda-products` (or
+  `NINELIVES_IOS_WDA_PRODUCTS`) skips compiling WebDriverAgent. See
+  [page checks](scan.md#test-ids-on-an-ios-simulator-screen).
+- `9l inspect --android [--serial SERIAL] [--package PKG]`: the controls
+  on the active window of an attached Android device, ranked by the handle
+  the Android driver would find them with (a unique resource ID, a shared
+  ID, a copy-only `controls` alias or coordinates only), and the share with
+  a unique test ID, from one read-only `uiautomator dump`. `--serial` is
+  required when several devices are attached; `--package` keeps one app's
+  controls. The page flags do not apply. See [page checks](scan.md#test-ids-on-an-android-screen).
 
 Both take `--viewport WIDTHxHEIGHT` (default 1366x900) and, for a page behind
 a login, `--storage-state <file>` with `--acknowledge-private-content`: the

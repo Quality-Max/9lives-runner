@@ -134,7 +134,7 @@ func TestMCPProtocolFraming(t *testing.T) {
 	for _, tool := range h.next(t)["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "run_test,heal_test,assess_test,confirm_finding,scan_url,inspect_page,generate_playwright_repro" {
+	if strings.Join(names, ",") != "run_test,heal_test,assess_test,confirm_finding,scan_url,inspect_page,inspect_screen,generate_playwright_repro" {
 		t.Fatalf("tools %v", names)
 	}
 	for line, code := range map[string]float64{
@@ -213,8 +213,27 @@ func TestMCPAssessTestReturnsTheReport(t *testing.T) {
 	h := startMCP(t, root)
 	payload, isError := h.toolCall(t, 1, "assess_test", map[string]any{"path": "a.spec.ts"})
 	report, _ := payload["report"].(map[string]any)
-	if isError || report == nil || report["policy"] != "assessment-source-v16" || !strings.Contains(mustJSON(t, report), `"fixed-wait"`) {
+	if isError || report == nil || report["policy"] != "assessment-source-v18" || !strings.Contains(mustJSON(t, report), `"fixed-wait"`) {
 		t.Fatalf("assess_test %v", payload)
+	}
+	// Screens are read inside the root only, and checked like the CLI's.
+	target := "import {createTargetTest} from '@9l/playwright';\nconst test = createTargetTest({});\ntest('t', async ({app}) => { await app.getByTestId('booking_join').tap(); });\n"
+	if os.WriteFile(filepath.Join(root, "b.spec.ts"), []byte(target), 0o600) != nil ||
+		os.WriteFile(filepath.Join(root, "home.json"), []byte(`{"platform":"ios","apps":[],"controls":[],"testIds":{"booking_join":2}}`), 0o600) != nil {
+		t.Fatal("fixture")
+	}
+	payload, isError = h.toolCall(t, 2, "assess_test", map[string]any{"path": "b.spec.ts", "screens": []string{"home.json"}})
+	report, _ = payload["report"].(map[string]any)
+	if isError || report == nil || !strings.Contains(mustJSON(t, report), `"repeated-test-id"`) || !strings.Contains(mustJSON(t, report["screens"]), `"platform":"ios"`) {
+		t.Fatalf("assess_test with screens %v", payload)
+	}
+	outside := filepath.Join(t.TempDir(), "x.json")
+	if os.WriteFile(outside, []byte(`{}`), 0o600) != nil {
+		t.Fatal("fixture")
+	}
+	payload, isError = h.toolCall(t, 3, "assess_test", map[string]any{"path": "b.spec.ts", "screens": []string{outside}})
+	if !isError || !strings.Contains(payload["error"].(string), "outside") {
+		t.Fatalf("outside screen accepted %v", payload)
 	}
 }
 

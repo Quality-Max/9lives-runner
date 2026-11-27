@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -42,6 +43,70 @@ func retainAttachments(directory string, failures []TestFailure) {
 			total += size
 			attachment.Path, attachment.SHA256, attachment.Bytes, attachment.Retained = path, sum, size, true
 		}
+	}
+}
+
+// FailureCaptureKeptEnv tells a target worker whether this attempt retains
+// an opted-in failure capture: "1" or "0", set by the engine per attempt.
+const FailureCaptureKeptEnv = "NINELIVES_FAILURE_CAPTURE_KEPT"
+
+// The files an Android failure capture leaves in Playwright's output: the
+// SDK's reserved attachment name, its content type, and the name Playwright
+// gives the copy (`attachments/<sanitized name>-<sha1><extension>`).
+var nativeCaptures = map[string]struct {
+	contentType string
+	file        *regexp.Regexp
+}{
+	"9l.failure-screenshot": {"image/png", regexp.MustCompile(`^9l-failure-screenshot-[0-9a-f]{40}\.png$`)},
+	"9l.failure-view-tree":  {"text/xml", regexp.MustCompile(`^9l-failure-view-tree-[0-9a-f]{40}\.xml$`)},
+}
+
+// keepNativeCaptures removes every attachment under output except a failure
+// capture's two files, at most one of each per failure. Attachments outside
+// output are left as they are.
+func keepNativeCaptures(failures []TestFailure, output string) {
+	for i := range failures {
+		kept, seen := failures[i].Attachments[:0], map[string]bool{}
+		for _, attachment := range failures[i].Attachments {
+			if !insideDirectory(output, attachment.Path) {
+				kept = append(kept, attachment)
+				continue
+			}
+			capture, ok := nativeCaptures[attachment.Name]
+			if !ok || seen[attachment.Name] || attachment.ContentType != capture.contentType ||
+				filepath.Base(filepath.Dir(attachment.Path)) != "attachments" || !capture.file.MatchString(filepath.Base(attachment.Path)) {
+				continue
+			}
+			seen[attachment.Name] = true
+			kept = append(kept, attachment)
+		}
+		if len(kept) == 0 {
+			kept = nil
+		}
+		failures[i].Attachments = kept
+	}
+}
+
+func insideDirectory(directory, path string) bool {
+	relative, err := filepath.Rel(directory, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+// dropScratchReferences removes the attachments under scratch that were not
+// retained: the scratch is deleted with the attempt, so a reference to it
+// would name a file that no longer exists.
+func dropScratchReferences(failures []TestFailure, scratch string) {
+	for i := range failures {
+		kept := failures[i].Attachments[:0]
+		for _, attachment := range failures[i].Attachments {
+			if attachment.Retained || !insideDirectory(scratch, attachment.Path) {
+				kept = append(kept, attachment)
+			}
+		}
+		if len(kept) == 0 {
+			kept = nil
+		}
+		failures[i].Attachments = kept
 	}
 }
 

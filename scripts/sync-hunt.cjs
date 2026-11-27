@@ -52,15 +52,22 @@ function expected() {
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const readJSON = file => JSON.parse(readFileSync(file, 'utf8'));
 
-// Published JSON must not reveal local machine paths.
+// Published JSON must not reveal local machine paths anywhere in a string:
+// absolute POSIX paths, drive-letter and UNC paths, also inside a message.
+// URLs such as http://127.0.0.1:4175/cats are not local paths.
+const localPath = /(?:^|[\s"'`(=,;[])\/(?!\/)[^\s"'`/]+\/|(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]|\\\\[^\\\s]+\\/;
 function assertPortable(value, where) {
-  if (typeof value === 'string') assert.ok(!value.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(value) && !value.includes('/Users/') && !value.includes('/home/'), `${where} contains a local path`);
+  if (typeof value === 'string') assert.ok(!value.startsWith('/') && !value.includes('/Users/') && !value.includes('/home/') && !localPath.test(value), `${where} contains a local path`);
   else if (value && typeof value === 'object') for (const [key, item] of Object.entries(value)) assertPortable(item, `${where}.${key}`);
 }
 
-function checkReplays() {
+// Only the fields the page shows; a JSON round trip drops absent ones.
+const receiptSummary = r => JSON.parse(JSON.stringify({ status: r.status, validated: r.validated, executedTests: r.executedTests, failureCount: r.failureCount, durationMs: r.durationMs }));
+const jevSummary = r => JSON.parse(JSON.stringify({ status: r.status, model: r.model, requestCount: r.requestCount, questionCount: r.questionCount, usage: r.usage }));
+
+function checkReplays(base = replays) {
   for (const scenario of scenarios) for (const variant of variants) {
-    const dir = join(replays, `${scenario}-${variant}`), name = `${scenario}-${variant}`;
+    const dir = join(base, `${scenario}-${variant}`), name = `${scenario}-${variant}`;
     const run = readJSON(join(dir, 'replay.json'));
     assert.equal(run.scenario, scenario, name);
     assert.equal(run.broken, variant === 'broken', name);
@@ -73,6 +80,17 @@ function checkReplays() {
     for (const step of run.steps) assert.ok(/^frame-\d+\.png$/.test(step.image) && existsSync(join(dir, step.image)), `${name} ${step.image}`);
     assert.equal(readdirSync(dir).filter(file => file.endsWith('.png')).length, run.steps.length, `${name} frames`);
     for (const file of ['replay.json', 'receipt.json', 'jev-record.json']) assertPortable(readJSON(join(dir, file)), `${name}/${file}`);
+    // The published receipt and Jev record must be this run's own and agree
+    // with what the page replays.
+    const receipt = readJSON(join(dir, 'receipt.json')), record = readJSON(join(dir, 'jev-record.json'));
+    const [only] = receipt.receipts;
+    assert.ok(receipt.runId === run.runId && receipt.outcome === run.outcome && receipt.receipts.length === 1, `${name} receipt.json is not this run's receipt`);
+    assert.deepEqual(receiptSummary(only), run.receipts[0], `${name} receipt.json differs from the replay`);
+    if (run.broken) assert.ok(only.failures?.length === 1 && only.failures[0].class === 'assertion', `${name} did not fail on an attributed assertion`);
+    else assert.equal(receipt.complete, true, `${name} run is incomplete`);
+    assert.deepEqual(jevSummary(record), run.jev, `${name} jev-record.json differs from the replay`);
+    const binding = record.binding || {};
+    assert.ok(binding.runId === run.runId && binding.jobId === only.jobId && binding.attemptId === only.attemptId && binding.sourceSHA256 === run.fixtureSHA256, `${name} jev-record.json belongs to another run or game`);
   }
 }
 
@@ -127,11 +145,14 @@ async function importRuns(dirs) {
       mkdirSync(out, { recursive: true });
       for (const step of steps) copyFileSync(join(dir, step.image), join(out, step.image));
       const receipt = portable(summary);
+      const replay = { version: 1, scenario: input.scenario, broken: input.broken, recordedAt: summary.finishedAt, runId: summary.runId, outcome: summary.outcome, fixtureSHA256: input.fixtureSHA256, jev: jevSummary(record), receipts: receipt.receipts.map(receiptSummary), steps };
+      // Refuse before writing anything that would reveal a local path.
+      assertPortable(receipt, `${name}/receipt.json`);
+      assertPortable(record, `${name}/jev-record.json`);
+      assertPortable(replay, `${name}/replay.json`);
       writeFileSync(join(out, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n');
       writeFileSync(join(out, 'jev-record.json'), JSON.stringify(record, null, 2) + '\n');
-      const receipts = receipt.receipts.map(({ status, validated, executedTests, failureCount, durationMs }) => ({ status, validated, executedTests, failureCount, durationMs }));
-      const jev = { status: record.status, model: record.model, requestCount: record.requestCount, questionCount: record.questionCount, usage: record.usage };
-      writeFileSync(join(out, 'replay.json'), JSON.stringify({ version: 1, scenario: input.scenario, broken: input.broken, recordedAt: summary.finishedAt, runId: summary.runId, outcome: summary.outcome, fixtureSHA256: input.fixtureSHA256, jev, receipts, steps }, null, 2) + '\n');
+      writeFileSync(join(out, 'replay.json'), JSON.stringify(replay, null, 2) + '\n');
       console.log(`Imported ${name} from ${relative(root, dir)}`);
     }
   } finally { await browser.close(); }
@@ -152,5 +173,5 @@ async function main(args) {
   }
 }
 
-module.exports = { expected, checkReplays, room };
+module.exports = { expected, checkReplays, room, assertPortable };
 if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });

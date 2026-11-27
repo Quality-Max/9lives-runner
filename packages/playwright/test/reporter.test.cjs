@@ -48,7 +48,7 @@ test('a nested expect step is not counted as a second assertion', () => {
 });
 
 // Playwright sets test.expectedStatus from the worker when an attempt ends, so
-// after a runtime test.fail() (in the body or, on 1.61.1 through 1.64.1, in an
+// after a runtime test.fail() (in the body or, on 1.61.1 through 1.65.1, in an
 // after hook) the TestCase reads "failed" from then on. test_begin must keep
 // the status declared before any attempt ran, on every retry, and test_end the
 // final one, so Go can tell a declared expected failure from a relabeled one.
@@ -166,6 +166,48 @@ test('a target diagnostic attachment becomes one bounded target_diagnostic frame
     ['android:finance', [attachment({...record, x: undefined, y: undefined})]],
   ]) {
     assert.deepEqual(run(target, attachments).map(f => f.type), ['engine_error'], target);
+  }
+});
+
+// An opted-in failure capture crosses the bridge only as two counted,
+// unretained artifacts of a failed native test; its contents never do.
+test('a failure capture is counted on a failed native test only and its contents stay out of the stream', () => {
+  const run = (target, status, attachments) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), '9l-reporter-'));
+    const events = path.join(dir, 'events.ndjson');
+    const saved = {...process.env};
+    Object.assign(process.env, {
+      NINELIVES_ENGINE_PROTOCOL: '9l.engine/1', NINELIVES_RUN_ID: 'run-1', NINELIVES_JOB_ID: 'job-001',
+      NINELIVES_ATTEMPT_ID: 'job-001-attempt-001', NINELIVES_ENGINE_EVENTS: events, NINELIVES_TARGET: target,
+    });
+    try {
+      const Reporter = require('../dist/reporter.js').default;
+      new Reporter().onTestEnd({id: 'test-1', expectedStatus: 'passed'}, {retry: 0, status, attachments});
+      return fs.readFileSync(events, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+      Object.assign(process.env, saved);
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  };
+  const screenshot = {name: '9l.failure-screenshot', contentType: 'image/png', path: '/output/attachments/9l-failure-screenshot-1.png'};
+  const viewTree = {name: '9l.failure-view-tree', contentType: 'text/xml', path: '/output/attachments/9l-failure-view-tree-1.xml'};
+  for (const status of ['failed', 'timedOut']) {
+    const frames = run('android:finance', status, [screenshot, viewTree]);
+    assert.deepEqual(frames.map(f => f.type), ['test_end'], status);
+    assert.deepEqual(frames[0].artifacts, [{id: 'artifact-1', kind: 'image', retained: false}, {id: 'artifact-2', kind: 'other', retained: false}]);
+    assert(!JSON.stringify(frames).includes('/output'), 'no attachment path in the stream');
+  }
+  for (const [target, status, attachments] of [
+    ['android:finance', 'passed', [screenshot]],
+    ['android:finance', 'skipped', [viewTree]],
+    ['android:finance', 'interrupted', [screenshot, viewTree]],
+    ['web:finance', 'failed', [screenshot]],
+    ['android:finance', 'failed', [screenshot, screenshot]],
+    ['android:finance', 'failed', [{...viewTree, contentType: 'application/xml'}]],
+    ['android:finance', 'failed', [{name: screenshot.name, contentType: 'image/png', body: Buffer.from('inline')}]],
+  ]) {
+    assert.deepEqual(run(target, status, attachments).map(f => f.type), ['engine_error'], `${target} ${status} ${attachments.length}`);
   }
 });
 

@@ -1,17 +1,19 @@
-# iOS Simulator (experimental, unreleased)
+# iOS Simulator (experimental)
 
-This source checkout adds a deterministic iOS driver. It is qualified from
-source on one host only; unit tests use a synthetic transport and do not
-establish iOS support by themselves. No published CLI or SDK version is changed
-by this work.
+A deterministic iOS driver, first released in 0.7.0-beta.1 and included since
+0.7.0; 0.6.x does not include it. It is qualified from a source checkout on one host
+only; unit tests use a synthetic transport and do not establish iOS support by
+themselves. The package ships the driver, but setup needs this repository's
+pinned tools (`tools/ios`) and `scripts/build-ios-wda.cjs`.
 
 | Qualified | Not qualified |
 | --- | --- |
 | iOS 18.6 iPhone 16 Simulator on an Apple silicon Mac (M5 Pro, macOS 26.6.2, Xcode 27.2), with Appium 3.8.0 and XCUITest driver 10.43.1 | GitHub-hosted macOS runners, Intel Macs, other Xcode or iOS versions, other device types, real iPhones, goals, healing and verified replay |
 
-On that host all nine smoke cases qualified: the healthy transfer passed with
-three target assertions in 39 seconds, a new simulator was usable 15 to 19
-seconds after boot, and every owned device was removed. The smoke records the
+On that host all twelve smoke cases qualified: the healthy transfer passed with
+three target assertions in 39 seconds, a new simulator was usable 15 to 30
+seconds after boot, and every owned device was removed, by its worker or,
+when the worker was stopped first, by the engine. The smoke records the
 host's Xcode version and requires the receipt to match it. This is the owned
 Simulator foundation of
 [QUA-2167](https://linear.app/quality-max/issue/QUA-2167), using build identity,
@@ -30,6 +32,9 @@ npm ci
 npm ci --prefix tools/ios --ignore-scripts
 npm run smoke:ios
 ```
+
+The smoke records `9l provenance`, which needs a branch. A release tag checkout
+is a detached HEAD: run `git switch -c <name>` at the same commit first.
 
 Before any case the smoke compiles the pinned WebDriverAgent for the Simulator
 once (`scripts/build-ios-wda.cjs`, reused while the tools and Xcode are
@@ -56,12 +61,19 @@ too little of the bound, and it varied from 180 to 263 seconds on the same
 runner type. The `iOS Simulator` workflow is therefore manual and qualifies
 nothing. Expect `open` to time out on these runners.
 
-The smoke then builds an isolated UIKit fixture and runs nine cases: a healthy
-transfer, a deliberately wrong receipt, missing and duplicate controls, a
-label-only decoy, a changed build digest, an unavailable runtime, cancellation,
-and a held response that reaches its operation timeout. Cancellation and timeout
-must start the actual native mutation, dispatch it once and remove the owned
-device. Every case checks that an unrelated simulator survives. A healthy run
+The smoke then builds an isolated UIKit fixture and runs twelve cases. Nine end
+inside a worker that finishes its own teardown: a healthy transfer, a
+deliberately wrong receipt, missing and duplicate controls, a label-only decoy,
+a changed build digest, an unavailable runtime, cancellation, and a held
+response that reaches its operation timeout. Cancellation and timeout must
+start the actual native mutation, dispatch it once and remove the owned device.
+
+Three stop the worker from outside while it holds a booted device, so its
+teardown never runs: the engine is interrupted (`runner-cancel`), the attempt
+reaches its timeout (`attempt-timeout`), and the worker process is killed
+(`worker-kill`). Each requires the receipt to say the engine removed the
+device, the device and every process of that attempt to be gone, and the run
+not to pass. Every case checks that an unrelated simulator survives. A healthy run
 must have three successful target assertions; the defect must fail the exact
 receipt assertion. Sanitized receipts and probe facts live under
 `.context/ios-qualification/`. A setup failure does not qualify the scenario.
@@ -125,14 +137,19 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   files and physical-device builds are unsupported. The copied artifact and
   installed tree must match the declared digest, including after reset.
 - One newly created Simulator, Appium process group and private automation home
-  per driver. No attachment to an existing device, automatic permission grants,
-  onboarding recovery or reuse of another session. Reset uninstalls and installs
+  per driver. No attachment to an existing device, onboarding recovery or reuse
+  of another session, and no automatic permission grants except Face ID for
+  the app under test when `biometrics: {enrolled: true}` is declared (see
+  [biometrics](#biometrics-on-the-owned-simulator)). Reset uninstalls and installs
   the frozen build again; it does not preserve app data.
-- Tap, fill, visibility, text equality and `enabled` state through the shared
-  target API. Each action re-observes its control and requires one match.
-  Mutations have no driver retries. Back, gestures, keyboard control, lifecycle
-  commands outside reset, screenshots, bounds and coordinate actions are not
-  implemented; optional operations stop as unsupported.
+- Tap, fill (with `submit` for the Return key), visibility, text equality and
+  `enabled` state through the shared target API, plus `toHaveKeyboard()`,
+  `hideKeyboard()` and `answerAlert()` (see
+  [keyboard and system alerts](#keyboard-and-system-alerts)). Each action
+  re-observes its control and requires one match. Mutations have no driver
+  retries. Back, gestures, lifecycle commands outside reset, screenshots,
+  bounds and coordinate actions are not implemented; optional operations stop
+  as unsupported.
 - Controls use exact accessibility identifiers restricted to the shared test-ID
   alphabet. WDA exposes `name = identifier || label`, without a raw identifier
   attribute. The predicate also excludes matching labels, so a label-only decoy
@@ -146,9 +163,39 @@ open Simulator window to close when a test starts. WebDriverAgent listens on
   `create` returned, so a slow inventory cannot cost deletion its turn; an
   inventory locates the device only when that identifier was lost. A cleanup
   failure fails the test; it cannot produce a passing receipt.
-  Runner cancellation, attempt timeout and abrupt worker termination still need
-  surviving Simulator cleanup and qualification. Do not rely on device cleanup
-  when the worker cannot finish teardown.
+- A failed open records which phase failed in the receipt's `targetSetup`
+  (`phase`, e.g. `install` or `session`). A rejected app reads as `mismatch`
+  with a closed reason: `build-digest` (the copy differs from `appSHA256`),
+  `build-installed` (the installed tree's names or bytes differ from that
+  copy), `build-tree` (unsupported entries or over the 4,096-entry/256 MiB
+  limits), `build-platform` (wrong bundle identifier or not a Simulator build)
+  or `runtime-metadata` (version, build or runtime outside the recorded shape).
+  These come only from the phases that handle the app (`artifact`, `install`,
+  `metadata`); the same tree limits on prebuilt WebDriverAgent products are a
+  `wda` failure, not a rejected app. Anything else in open is `unknown` /
+  `device-state-unknown` with its phase.
+- A Simulator is registered with CoreSimulator, outside the worker's process
+  tree, so stopping the worker does not remove it. Before `simctl create` the
+  driver writes a small ownership record (the unguessable device name, runtime
+  and device type) into the attempt's private scratch, and deletes it once the
+  device is confirmed gone. When the worker's process tree has stopped, after
+  a normal finish, a cancellation, an attempt timeout or a killed worker, the
+  engine reads any record that is left and removes exactly that device: one
+  device with the recorded name, in the recorded runtime, of the recorded
+  type, never a device chosen by its state. A fresh inventory decides the
+  result, which the receipt lists as `targetCleanup` with `removed`, `absent`
+  or `unconfirmed`. An unconfirmed device may still exist; that attempt cannot
+  pass, and a record the engine cannot trust is never acted on. Removal uses
+  the same per-command bounds within a two-minute budget for all records, and
+  the engine stops waiting for a `simctl` that has not exited two seconds after
+  its bound (its device is then `unconfirmed`), so a stopped attempt can take up
+  to about two minutes longer to return when `simctl` hangs. Its status is decided when its
+  worker stops, so that time never turns a finished attempt into a timeout. A
+  scratch directory that cannot be read counts as unconfirmed.
+- The engine itself must survive to do this. If the `9l` process is killed
+  outright (`SIGKILL`, a crash or a host shutdown), the device stays
+  registered; remove it with `xcrun simctl delete <udid>`. Owned devices are
+  named `9l-ios-<uuid>`.
 
 The receipt's closed `iosRuntimes` metadata records bundle/build version, app
 digest, runtime and device type, OS, preferred architecture advertised by the
@@ -159,6 +206,97 @@ pass. These are worker-reported facts, not independent behavior verification.
 No app content, device UUID, Appium log, hierarchy or attachment body is retained
 by this driver. Provider credentials are not passed to the native server.
 
+## Keyboard and system alerts
+
+The keyboard stays up after a fill and can cover controls at the bottom of
+the screen, and system alerts (a permission request, iOS offering to save a
+password) appear over the app. WebDriverAgent taps a control's hit point even
+when one of them lies over it, so the tap lands on the keyboard or the alert
+and is still reported done. The driver handles both explicitly:
+
+- **Submit.** `fill(value, {submit: true})` types the field's Return key once
+  after the value. What Return does is the app's choice: it may log in, move
+  to the next field, or leave the keyboard up.
+- **Keyboard state.** `toHaveKeyboard(boolean)` reads whether the app's
+  hierarchy holds a keyboard.
+- **Hiding it.** An iPhone keyboard has no key that only closes it, and
+  WebDriverAgent knows no general way to close one. `hideKeyboard()` tries
+  WebDriverAgent's own dismissal, which works where the keyboard has a hide
+  key (iPad), and fails as `keyboard_not_hidden` when the keyboard is still up
+  two seconds later. It never taps a control of the app to close it; use
+  `submit` or the app's own control instead.
+- **Covered taps are refused.** Before a tap, a control WebDriverAgent reports
+  as not hittable is checked for the two covers: the keyboard over its
+  rectangle fails the tap as `covered_by_keyboard`, a system alert in front as
+  `covered_by_system_alert`, before any click is sent. A control that is not
+  hittable for another reason is tapped as before.
+- **Answering an alert.** `app.answerAlert('Allow')` waits within its bound
+  for a system alert, reads its buttons, requires the named button among them
+  exactly, taps it once and waits for the alert to close. A missing alert
+  fails as `missing_alert`, a button the alert does not offer as
+  `missing_alert_button`, an alert that stays as `alert_not_answered`. Nothing
+  is dismissed automatically, and the button text is not recorded.
+
+Three smoke cases qualify this on the host above, with an `iOS login` test in
+the fixture app's `login` variant: `login` (Return logs in, the keyboard is
+read, a notification permission alert is answered with `Allow`; four target
+assertions), `login-covered` (a tap on a button under the keyboard is refused
+as `covered_by_keyboard` with no click sent) and `login-hide` (hiding an
+iPhone keyboard fails as `keyboard_not_hidden` with no click sent):
+
+```sh
+node scripts/ios-smoke.cjs login login-covered login-hide
+```
+
+The save-password sheet itself was not reproduced: a synthetic app signed
+without a team does not get it, and one carrying the Associated Domains
+entitlement does not launch on the simulator. It is answered through the same
+alert interface when WebDriverAgent reports it as an alert; that is
+unverified.
+
+## Biometrics on the owned simulator
+
+Apps that sign in with Face ID or Touch ID can be tested on the owned
+simulator. The policy:
+
+- **Opt-in.** The driver declares `biometrics: {enrolled: boolean}`; without
+  it nothing changes and `app.biometric()` fails as `unsupported_operation`.
+- **Set before the app runs, on that device only.** After the app is
+  installed and before the session launches it, and again after `reset()`
+  reinstalls it, the driver sets the simulator's biometric enrollment with
+  the notification Simulator's Features menu posts
+  (`com.apple.BiometricKit.enrollmentChanged`). When enrolled, it also
+  records Face ID permission for `bundleId` in that simulator's privacy
+  database (`kTCCServiceFaceID` in `Library/TCC/TCC.db`, read back before
+  the session starts) and restarts its privacy daemon, because
+  `simctl privacy` has no Face ID service and the first-use alert would
+  otherwise stand in front of the prompt. The simulator was created for
+  this test and is deleted after it; no other device is touched. A grant
+  that does not read back fails open in the `install` phase.
+- **Recorded, not hidden.** `app.biometric('match' | 'nomatch')` waits,
+  within its bound, until two display captures 250 ms apart are equal (a
+  prompt drops a presentation that arrives while it is still animating in;
+  each capture is hashed and deleted at once), then posts the Face ID and
+  the Touch ID match or non-match notification once; only the sensor the
+  device type has responds. It is recorded as an executed `biometric`
+  action, never as an assertion, so the sign-in still needs one.
+
+A face that is not enrolled does not end the request: as on a device, the
+system prompt offers another attempt, so the app's sign-in assertion fails
+on its bound rather than on an error.
+
+Three smoke cases qualify this on the host above, with an `iOS biometrics`
+test in the fixture app's `biometric` variant: `biometric` (the enrolled face
+signs in, two target assertions), `biometric-nomatch` and
+`biometric-unenrolled` (the sign-in assertion fails):
+
+```sh
+node scripts/ios-smoke.cjs biometric biometric-nomatch biometric-unenrolled
+```
+
+Real iPhones, passcode fallback and the first-use permission alert itself
+are not covered.
+
 ## Reuse assessment
 
 The platform reference was assessed at commit
@@ -168,6 +306,6 @@ The platform reference was assessed at commit
 `services/flutter_appium_runtime.py`. The useful contracts are finite grounded
 controls, exact unique matches, matching build/platform, and an owned loopback
 Appium session with cancellation and cleanup. This implementation applies those
-contracts to the existing `9l.target/3` fixtures and receipt validator. It does
+contracts to the existing `9l.target/6` fixtures and receipt validator. It does
 not duplicate the hosted mobile DSL, discovery/planning or provider engine, and
 does not require a platform account.

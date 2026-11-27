@@ -139,6 +139,12 @@ func Diagnose(ctx context.Context, decider Decider, e Evidence, images string, l
 			observation.Image = image
 		}
 	}
+	// Jev must see the page: labels and an error message alone are not an
+	// observation, so a refused screenshot without a snapshot asks nothing.
+	if e.Snapshot == "" && observation.Image == nil {
+		d.Reason = "insufficient_evidence"
+		return d
+	}
 	result, err := decider.Decide(ctx, binding, observation, diagnosisContract(e.FailedLocator != ""))
 	record := result.Record
 	d.Jev = &record
