@@ -211,6 +211,10 @@ func healCommand(args []string, out, errOut io.Writer) int {
 		return 2
 	}
 	if *useJev {
+		if forwardsJevCredential(passEnv) {
+			fmt.Fprintln(errOut, "9l: heal --jev keeps "+jev.CredentialName+" in the 9l process; do not forward it with --pass-env; no test was run")
+			return 2
+		}
 		config := jev.Config{Enabled: true, Model: *jevModel, Images: *jevImages}
 		if preflight, err := jev.CheckConfig(config); err != nil || preflight.Status != "configured" {
 			fmt.Fprintln(errOut, "9l: heal --jev needs a valid model and "+jev.CredentialName+" in this process; no test was run")

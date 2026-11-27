@@ -97,7 +97,9 @@ stale evidence (older than a minute; it uses the original run's evidence),
 duplicate or missing candidates, a locator inside an assertion, and unclear
 answers. Jev Box localization is not used: Playwright's failure evidence carries
 no control geometry to match a box against. `--jev-images synthetic` also sends
-the failure screenshot of test-only data.
+the failure screenshot of test-only data. As with `9l diagnose --jev`,
+`--pass-env TYPESAFE_API_KEY` is refused before anything runs: the credential
+stays in the `9l` process and never reaches the original or verification run.
 
 ## Bounded goal decisions
 

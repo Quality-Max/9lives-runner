@@ -105,6 +105,24 @@ func TestHealJevGroundsThenVerifiesInIsolation(t *testing.T) {
 	})
 }
 
+func TestHealJevKeepsTheCredentialOutOfTestProcesses(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "a.spec.ts")
+	writeTestFile(t, spec, "// never runs\n")
+	t.Setenv(jev.CredentialName, "fixture-presence-only")
+	for _, names := range []string{jev.CredentialName, "BASE_URL," + strings.ToLower(jev.CredentialName)} {
+		receipts := filepath.Join(dir, "receipts")
+		var out, errOut bytes.Buffer
+		code := run([]string{"heal", spec, "--provider", "none", "--jev", "--pass-env", names, "--receipt-dir", receipts}, &out, &errOut)
+		if code != 2 || out.Len() != 0 || !strings.Contains(errOut.String(), "--pass-env") {
+			t.Fatalf("--pass-env %s: exit %d, stderr %q", names, code, errOut.String())
+		}
+		if _, err := os.Stat(receipts); !os.IsNotExist(err) {
+			t.Fatalf("--pass-env %s ran the spec", names)
+		}
+	}
+}
+
 func TestHealJevRefusesWithoutCredentialOrWithUnsafeOptions(t *testing.T) {
 	spec := filepath.Join(t.TempDir(), "a.spec.ts")
 	writeTestFile(t, spec, "// never runs\n")

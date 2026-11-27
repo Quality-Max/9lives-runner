@@ -70,12 +70,9 @@ func diagnoseCommand(args []string, out, errOut io.Writer) int {
 	}
 	config := jev.Config{Enabled: *useJev, Model: *model, Images: *images}
 	if *useJev {
-		// The Jev credential stays in the 9l process, never in a test process.
-		for _, name := range passEnv {
-			if strings.EqualFold(name, jev.CredentialName) {
-				fmt.Fprintln(errOut, "9l: diagnose --jev keeps "+jev.CredentialName+" in the 9l process; do not forward it with --pass-env; no test was run")
-				return 2
-			}
+		if forwardsJevCredential(passEnv) {
+			fmt.Fprintln(errOut, "9l: diagnose --jev keeps "+jev.CredentialName+" in the 9l process; do not forward it with --pass-env; no test was run")
+			return 2
 		}
 		preflight, err := jev.CheckConfig(config)
 		if err != nil || preflight.Status != "configured" {
@@ -199,6 +196,18 @@ func sourceRevision(spec, sourceSHA string) (string, []string) {
 }
 
 func sha256Of(raw []byte) []byte { sum := sha256.Sum256(raw); return sum[:] }
+
+// forwardsJevCredential reports whether --pass-env names the Jev credential.
+// It stays in the 9l process, never in a test process; names compare
+// case-insensitively, as Windows treats them.
+func forwardsJevCredential(passEnv []string) bool {
+	for _, name := range passEnv {
+		if strings.EqualFold(name, jev.CredentialName) {
+			return true
+		}
+	}
+	return false
+}
 
 // withoutEnv drops a variable from an environment list. Names compare
 // case-insensitively, as Windows treats them.
