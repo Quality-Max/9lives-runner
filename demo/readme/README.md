@@ -1,8 +1,28 @@
-# README demo
+# README demos
 
-`docs/assets/false-green.gif`, shown at the top of the repository README,
-is recorded from `project/`. That project has one test that fails its
-assertion while a shared `afterEach` hook calls `test.fail()`.
+The repository README opens with two recordings. Both are reproducible
+from this directory.
+
+## The great little hunt
+
+`docs/assets/hunt.gif` is the website's hunt game,
+[9lives.run/hunt.html](https://9lives.run/hunt.html). It is recorded from the
+page in `website/public`. 9lives plays a recorded round, checking every
+click against the score. Then the planted bug makes a correct click earn no
+point, and the test fails. The page replays the committed recordings in
+`website/public/hunt`, so recording it makes no AI request. Run this from
+the repository root after `npm ci`, with Chromium installed and ffmpeg on
+your PATH:
+
+```sh
+node demo/readme/record-hunt.cjs
+```
+
+## A failing test reported green
+
+`docs/assets/false-green.gif` is recorded from `project/`. That project has
+one test that fails its assertion while a shared `afterEach` hook calls
+`test.fail()`.
 
 1. On Playwright 1.61.1 through 1.65.1, `npx playwright test` marks the test
    failed, then reports `1 passed` and exits 0

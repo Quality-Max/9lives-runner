@@ -4,7 +4,12 @@
 [![CI](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/Quality-Max/9lives-runner/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[![9lives by QualityMax: open-source testing framework for coding agents](docs/assets/9lives-overview.svg)](https://9lives.run)
+[![The great little hunt: 9lives plays a recorded round of a hidden-cats game in a real browser and checks every click against the score, then a planted bug makes a correct click earn no point and the test fails](docs/assets/hunt.gif)](https://9lives.run/hunt.html)
+
+**[Play the great little hunt in your browser](https://9lives.run/hunt.html).**
+Find the hidden cats yourself, then watch 9lives test the same game and
+catch a planted bug. It replays recorded runs, so there is nothing to
+install and no account.
 
 9lives (`9l`) checks Playwright tests written by coding agents. It reviews a
 spec before it runs (`9l assess`), runs it and writes a validated execution
