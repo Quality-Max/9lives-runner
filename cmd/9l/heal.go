@@ -90,8 +90,14 @@ func healSpec(ctx context.Context, o healOptions) (tier2.Session, error) {
 			}
 		}
 		// Read the ARIA snapshot now: the next verification run clears
-		// Playwright's output directory.
-		return tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath, Snapshot: playwright.PageSnapshot(receipt.Failures), Attempt: &receipt}
+		// Playwright's output directory. For the same reason the original
+		// run's evidence for a grounded proposer is captured here too.
+		result := tier2.RunResult{Passed: receipt.Status == runner.StatusPassed && receipt.Validated && receipt.ExecutedTests > 0, ExecutedTests: receipt.ExecutedTests, Failure: failure, Receipt: receipt.ReceiptPath, Snapshot: playwright.PageSnapshot(receipt.Failures), Attempt: &receipt}
+		if o.Grounded != nil && label == "original" && !result.Passed {
+			captured := jevassist.CaptureFailure(receipt)
+			result.Captured = &captured
+		}
+		return result
 	}
 	return tier2.Heal(ctx, tier2.SessionOptions{Spec: o.Spec, Framework: "playwright", Model: o.Model, MaxProposals: o.MaxProposals, Apply: o.Apply, Interactive: o.Interactive, Preview: o.Preview, Provider: o.Provider, Run: runSpec, Grounded: o.Grounded}, func(source, failure, snapshot string) (string, bool) {
 		proposal := healing.Heal(healing.Request{Version: healing.Version, Framework: "playwright", ErrorMessage: failure, FailedSelector: healing.FailedLocator(failure), TestCode: source, AriaSnapshot: snapshot})

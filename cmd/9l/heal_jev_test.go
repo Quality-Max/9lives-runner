@@ -23,6 +23,18 @@ test('pay', async ({page}) => {
 });
 `
 
+// Tier 1 picks "Order help", the only control sharing a word with the old
+// name; its run then fails on the next locator, so grounding runs after that
+// run cleared Playwright's output directory.
+const tier1TrapSpec = `import {test, expect} from '@playwright/test';
+test('pay', async ({page}) => {
+  await page.setContent('<h1>Your cart</h1><button>Order help</button><button id="go">Continue to payment</button><script>document.getElementById("go").onclick = () => { const b = document.createElement("button"); b.textContent = "Confirm"; b.onclick = () => { const p = document.createElement("p"); p.textContent = "Payment form"; document.body.append(p); }; document.body.append(b); };</script>');
+  await page.getByRole('button', { name: 'Pay order' }).click();
+  await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(page.getByText('Payment form')).toBeVisible();
+});
+`
+
 type scriptedGrounding struct {
 	choice string
 	calls  int
@@ -92,6 +104,20 @@ func TestHealJevGroundsThenVerifiesInIsolation(t *testing.T) {
 		if code != 1 || session.State != "needs_human" || session.SavedPath != "" || session.Applied || session.Grounded == nil || session.Grounded.Passed {
 			t.Fatalf("exit %d, session %+v", code, session)
 		}
+	})
+	t.Run("grounding keeps the original evidence after a failed Tier 1 run", func(t *testing.T) {
+		writeTestFile(t, filepath.Join(root, "pay.spec.ts"), tier1TrapSpec)
+		t.Cleanup(func() { writeTestFile(t, filepath.Join(root, "pay.spec.ts"), groundedPaySpec) })
+		fake := useScriptedGrounding(t, "c2")
+		session, code := healJSON(t)
+		decision, _ := json.Marshal(session.GroundedDecision)
+		if session.Tier1 == nil || session.Tier1.Passed {
+			t.Fatalf("Tier 1 did not run and fail first: %+v", session.Tier1)
+		}
+		if code != 0 || session.State != "verified" || fake.calls != 1 || !strings.Contains(string(decision), `"chosen":"Continue to payment"`) {
+			t.Fatalf("exit %d, session %+v, decision %s", code, session, decision)
+		}
+		os.Remove(session.SavedPath)
 	})
 	t.Run("approval applies a verified choice", func(t *testing.T) {
 		useScriptedGrounding(t, "c2")

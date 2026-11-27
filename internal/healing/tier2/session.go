@@ -34,6 +34,18 @@ type RunResult struct {
 	// Attempt is the run's receipt, for proposers that need its attempt-bound
 	// evidence. It is never part of the session result.
 	Attempt *runner.Receipt `json:"-"`
+	// Captured is the first failed test's attachment contents, read as soon
+	// as the run ended: the next run in the same project clears Playwright's
+	// output directory and the attachment files with it. Page content, never
+	// part of the session result.
+	Captured *CapturedFailure `json:"-"`
+}
+
+// CapturedFailure is a failed test's accessible snapshot and failure
+// screenshot, read from its attachments while they still exist.
+type CapturedFailure struct {
+	Snapshot   string
+	Screenshot []byte
 }
 
 // GroundedProposer proposes a new literal for the failed locator from the

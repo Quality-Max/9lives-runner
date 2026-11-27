@@ -77,6 +77,48 @@ func TestGroundedRepairProposesOnlyTheChosenObservedName(t *testing.T) {
 	}
 }
 
+func TestGroundedRepairUsesEvidenceCapturedWhenTheOriginalRunEnded(t *testing.T) {
+	original := failedRun(t, payFailure, paySnapshot, time.Now())
+	screenshot := filepath.Join(t.TempDir(), "test-failed-1.png")
+	if err := os.WriteFile(screenshot, pngBytes(t, 640, 400), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original.Attempt.Failures[0].Attachments = append(original.Attempt.Failures[0].Attachments, runner.TestAttachment{Name: "screenshot", ContentType: "image/png", Path: screenshot, Bytes: 100})
+	captured := CaptureFailure(*original.Attempt)
+	if captured.Snapshot == "" || captured.Screenshot == nil {
+		t.Fatal("the original run's evidence was not captured")
+	}
+	// A Tier 1 verification run in the same project clears Playwright's output
+	// directory, and the original run's attachment files with it.
+	for _, attachment := range original.Attempt.Failures[0].Attachments {
+		if err := os.Remove(attachment.Path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("without a capture the evidence is gone", func(t *testing.T) {
+		fake := &fakeJev{answers: grounding("c2", .9, .88, .95, .05, 3)}
+		_, raw, _ := repairer(fake).Propose(context.Background(), paySource, payFailure, original)
+		if d := raw.(RepairDecision); d.Status != "abstained" || d.Reason != "insufficient_evidence" || fake.calls != 0 {
+			t.Fatalf("decision %+v", d)
+		}
+	})
+	t.Run("the captured evidence still grounds the repair", func(t *testing.T) {
+		withCapture := original
+		withCapture.Captured = &captured
+		fake := &fakeJev{answers: grounding("c2", .9, .88, .95, .05, 3)}
+		r := repairer(fake)
+		r.Images = "synthetic"
+		candidate, raw, err := r.Propose(context.Background(), paySource, payFailure, withCapture)
+		d := raw.(RepairDecision)
+		if err != nil || d.Status != "proposed" || d.Chosen != "Continue to payment" || candidate == "" || fake.calls != 1 {
+			t.Fatalf("decision %+v", d)
+		}
+		if !strings.Contains(fake.got.Snapshot, `c2: "Continue to payment"`) || fake.got.Image == nil {
+			t.Fatal("the request lost the captured snapshot or screenshot")
+		}
+	})
+}
+
 func TestGroundedRepairAbstainsWithoutClearEvidence(t *testing.T) {
 	now := time.Now()
 	for _, tc := range []struct {

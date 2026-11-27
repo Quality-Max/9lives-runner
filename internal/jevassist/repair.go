@@ -64,7 +64,13 @@ func (r Repairer) Propose(ctx context.Context, source, failure string, original 
 		return "", d, nil
 	}
 	sourceSHA := digest([]byte(source))
-	e, limitations, err := FromReceipt(*original.Attempt, firstNonEmpty(r.Revision, sourceSHA), sourceSHA)
+	// Use what the original run captured: a Tier 1 verification run in the
+	// same project has cleared its attachment files by now.
+	captured := CaptureFailure(*original.Attempt)
+	if original.Captured != nil {
+		captured = *original.Captured
+	}
+	e, limitations, err := FromCaptured(*original.Attempt, captured, firstNonEmpty(r.Revision, sourceSHA), sourceSHA)
 	if err != nil {
 		d.Reason = "no_failed_test"
 		return "", d, nil
