@@ -66,6 +66,13 @@ function observeRead(readTiming: ReadTiming, url: string, pending: Promise<Respo
     try { const found = (await response.clone().json()).value; if (Array.isArray(found) && !found.length) timing.empty!++; } catch { /* no usable answer */ }
   }, () => { timing.errors++; timing.maxMs = Math.max(timing.maxMs, Date.now() - started); });
 }
+// #276: how long each element click request took to answer, in order (at most
+// eight): a fill's focus click and a tap alike. Durations only, no bodies.
+function observeClick(clickMs: number[], url: string, init: RequestInit | undefined, pending: Promise<Response>) {
+  if (!/\/element\/[^/]+\/click$/.test(url) || init?.method !== 'POST') return;
+  const sent = Date.now();
+  void pending.then(() => { if (clickMs.length < 8) clickMs.push(Date.now() - sent); }, () => {});
+}
 
 // failure-capture: the fixture captures and then closes the driver after the
 // test body, so whether the emulator stopped is read after that teardown.
@@ -105,6 +112,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
   // transfer's dispatch.
   const sendRefs = new Set<string>();
   const readTiming: ReadTiming = {};
+  const clickMs: number[] = [];
   const sdk = androidDefaults().sdkRoot ?? '';
   const command = promisify(execFile);
   let probe: Promise<void> | undefined;
@@ -124,6 +132,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
       });
     }
     observeRead(readTiming, url, pending);
+    observeClick(clickMs, url, init, pending);
     if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST' && sendRefs.has(/\/element\/([^/]+)\/click$/.exec(url)![1])) {
       clickDispatches++;
       dispatchedAt = Date.now();
@@ -219,7 +228,7 @@ test('native transfer has fresh exact text and state', async ({app}) => {
     }
     // Only bounded synthetic probe facts; no serial/handles or device output.
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
-      JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming, ...(probe ? {markerProbe} : {}),
+      JSON.stringify({started, clickDispatches, deviceStopped, stopReason, driverReason, readTiming, clickMs, ...(probe ? {markerProbe} : {}),
         ...(front ? {front} : {}), ...(appLog ? {app: appLog} : {})}));
   }
 });
@@ -323,6 +332,7 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
   // #281: a failed read is told apart by whether lookups matched nothing,
   // reads did not answer, or another window was in front of the app.
   const readTiming: ReadTiming = {};
+  const clickMs: number[] = [];
   let front: 'app' | 'other' | 'unknown' | '' = '';
   const adb = resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb');
   const originalFetch = globalThis.fetch;
@@ -330,6 +340,7 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
     if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
     const pending = originalFetch(input, init);
     observeRead(readTiming, String(input), pending);
+    observeClick(clickMs, String(input), init, pending);
     return pending;
   };
   try {
@@ -374,7 +385,7 @@ test('native semantics: bare ids, hints, merged labels and validation state', as
       catch { deviceStopped = true; }
     }
     if (process.env.NINELIVES_ANDROID_PROBE) writeFileSync(process.env.NINELIVES_ANDROID_PROBE,
-      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming, ...(front ? {front} : {}), ...(appLog ? {app: appLog} : {})}));
+      JSON.stringify({started: false, clickDispatches: 0, deviceStopped, stopReason, driverReason, readTiming, clickMs, ...(front ? {front} : {}), ...(appLog ? {app: appLog} : {})}));
   }
 });
 

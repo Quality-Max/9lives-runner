@@ -30,16 +30,25 @@ const test = createTargetTest({native: target => {
 // Qualification-only probe (#244, #323), outside the test bodies so the
 // isolation sequence stays as written: after each test, while its emulator
 // is still up (afterEach runs before fixture teardown), read the app's own
-// log of what it drew (signed in or out) and which clicks it handled, and on
-// a failure which window had input focus. Fixed words and counts only; the
-// smoke prints them per test. It never fails a test.
+// log of what it drew (signed in or out), which touches reached it and which
+// clicks it handled, how long each click request took to answer, and on a
+// failure which window had input focus. Fixed words, counts and durations
+// only; the smoke prints them per test. It never fails a test.
 let serial = '';
+let clickMs: number[] = [];
 const originalFetch = globalThis.fetch;
 test.beforeEach(() => {
   serial = '';
+  clickMs = [];
   globalThis.fetch = async (input, init) => {
-    if (String(input).endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
-    return originalFetch(input, init);
+    const url = String(input);
+    if (url.endsWith('/session') && init?.method === 'POST') serial = JSON.parse(String(init.body)).capabilities.alwaysMatch['appium:udid'];
+    const pending = originalFetch(input, init);
+    if (/\/element\/[^/]+\/click$/.test(url) && init?.method === 'POST') {
+      const sent = Date.now();
+      void pending.then(() => { if (clickMs.length < 8) clickMs.push(Date.now() - sent); }, () => {});
+    }
+    return pending;
   };
 });
 test.afterEach(async ({}, testInfo) => {
@@ -47,7 +56,7 @@ test.afterEach(async ({}, testInfo) => {
   const probe = process.env.NINELIVES_ANDROID_PROBE;
   if (!probe || !serial) return;
   const adb = resolve(androidDefaults().sdkRoot ?? '', 'platform-tools/adb');
-  const facts: Record<string, unknown> = {app: await readAppLog(adb, serial, fixture.appPackage)};
+  const facts: Record<string, unknown> = {app: await readAppLog(adb, serial, fixture.appPackage), clickMs};
   if (testInfo.status !== testInfo.expectedStatus) facts.front = await frontWindow(adb, serial, fixture.appPackage);
   try {
     const recorded = existsSync(probe) ? JSON.parse(readFileSync(probe, 'utf8')) : {};

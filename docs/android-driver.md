@@ -241,14 +241,17 @@ in-flight marker ended. A failed transfer, semantics or isolation test records
 whether the app's window, another window or none had input focus. Those three
 also read the fixture app's own log with `run-as`, outside the accessibility
 reads the driver uses: that its activity was created and drew its content
-(signed in or out for `isolation`), and which watched click handlers ran, with
-field lengths. A failed text assertion can then be told apart as a tap the app
-never handled, a handler that ran with other field contents, or a read that
-did not see what the app drew. After an operation timeout the driver has
-already stopped the emulator, so the log reads `unreachable` there; `cancel`
-and `blocked` keep their in-flight marker for that case. These are counts,
-durations, lengths and fixed words; no screen text, device output or
-identifiers are kept. The negative controls `defect`, `state-defect`,
+(signed in or out for `isolation`), when its window gained or lost focus,
+which watched control each touch that reached its window landed on (or
+`other`), and which watched click handlers ran, with field lengths. They also
+record how long each element click request took to answer. A failed text
+assertion can then be told apart as a tap that never reached the app, one that
+landed elsewhere, one whose handler did not run, a handler that ran with other
+field contents, or a read that did not see what the app drew. After an
+operation timeout the driver has already stopped the emulator, so the log
+reads `unreachable` there; `cancel` and `blocked` keep their in-flight marker
+for that case. These are counts, durations, lengths and fixed words; no screen
+text, device output or identifiers are kept. The negative controls `defect`, `state-defect`,
 `failure-capture` and `semantics-defect` qualify only when the log shows the
 tapped handler ran: a tap the driver reported done but the app never handled
 fails their assertion for another reason. That happened once to `defect` on a

@@ -12,17 +12,20 @@ test('the fixture grammar is kept in order', () => {
     ['create', 'drawn out', 'click sign-in', 'create', 'drawn in']);
   assert.deepEqual(parseAppLog('create\ndrawn\nclick validate invalid 3\nclick validate valid 16\nclick login 16\n').events,
     ['create', 'drawn', 'click validate invalid 3', 'click validate valid 16', 'click login 16']);
+  // A tap the app never handled: the touch landed on `send`, or nowhere watched.
+  assert.deepEqual(parseAppLog('create\ndrawn\nfocus in\ntouch down send\ntouch up send\nclick send 1 3\ntouch down other\ntouch cancel other\nfocus out\n').events,
+    ['create', 'drawn', 'focus in', 'touch down send', 'touch up send', 'click send 1 3', 'touch down other', 'touch cancel other', 'focus out']);
 });
 
 test('anything outside the grammar is counted, never kept', () => {
-  const facts = parseAppLog('create\nSent $5 to Ada\nclick send 1 3 Ada\nclick validate maybe 3\ndrawn sideways\n\n');
-  assert.deepEqual(facts, {log: 'read', events: ['create'], other: 4});
-  assert.doesNotMatch(JSON.stringify(facts), /Sent|Ada|maybe|sideways/);
+  const facts = parseAppLog('create\nSent $5 to Ada\nclick send 1 3 Ada\nclick validate maybe 3\ndrawn sideways\ntouch down 540,565\ntouch up Ada\nfocus maybe\n\n');
+  assert.deepEqual(facts, {log: 'read', events: ['create'], other: 7});
+  assert.doesNotMatch(JSON.stringify(facts), /Sent|Ada|maybe|sideways|540/);
 });
 
-test('at most sixteen events are kept and truncation is explicit', () => {
-  const facts = parseAppLog('create\n'.repeat(20));
-  assert.equal(facts.events.length, 16);
+test('at most forty events are kept and truncation is explicit', () => {
+  const facts = parseAppLog('create\n'.repeat(45));
+  assert.equal(facts.events.length, 40);
   assert.equal(facts.truncated, true);
   assert.deepEqual(parseAppLog(''), {log: 'read', events: []});
 });
@@ -46,7 +49,7 @@ test('a missing log, a stalled read and an unreachable device are facts, not err
   assert.deepEqual(await readAppLog(fakeAdb(t, 'echo "cat: files/handled: No such file or directory" >&2; exit 1'), 's', 'p'), {log: 'missing'});
   assert.deepEqual(await readAppLog(fakeAdb(t, 'exec sleep 5'), 's', 'p', 200), {log: 'timeout'});
   assert.deepEqual(await readAppLog(fakeAdb(t, "echo \"error: device 's' not found\" >&2; exit 1"), 's', 'p'), {log: 'unreachable'});
-  assert.deepEqual(await readAppLog(fakeAdb(t, 'head -c 5000 /dev/zero | tr "\\0" "x"'), 's', 'p'), {log: 'oversized'});
+  assert.deepEqual(await readAppLog(fakeAdb(t, 'head -c 10000 /dev/zero | tr "\\0" "x"'), 's', 'p'), {log: 'oversized'});
   assert.deepEqual(await readAppLog(path.join(os.tmpdir(), '9l-no-such-adb'), 's', 'p'), {log: 'unreachable'});
 });
 

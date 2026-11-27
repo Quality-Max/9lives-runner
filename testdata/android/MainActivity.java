@@ -22,12 +22,44 @@ public class MainActivity extends Activity {
    * time since the last reset. It never changes what the app shows or does. */
   private void note(String line) {
     java.io.File file = new java.io.File(getFilesDir(), "handled");
-    if (file.length() > 2048) return;
+    if (file.length() > 4096) return;
     try (java.io.FileOutputStream out = new java.io.FileOutputStream(file, true)) {
       out.write((line + "\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
     } catch (java.io.IOException ignored) {
       // A diagnostic that could not be written is absent, never an app failure.
     }
+  }
+
+  /** The watched controls by name, for the touch facts below. */
+  private final java.util.Map<String, View> watched = new java.util.LinkedHashMap<String, View>();
+
+  /** Each touch that reached this window, by the watched control it landed on
+   * (or `other`), and window focus changes: a tap that never reached the app
+   * is told apart from one that landed elsewhere and from one whose handler
+   * did not run. A fixed word, never a coordinate. */
+  @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+    int action = event.getActionMasked();
+    String name = action == android.view.MotionEvent.ACTION_DOWN ? "down"
+      : action == android.view.MotionEvent.ACTION_UP ? "up"
+      : action == android.view.MotionEvent.ACTION_CANCEL ? "cancel" : null;
+    if (name != null) note("touch " + name + " " + hit(event.getRawX(), event.getRawY()));
+    return super.dispatchTouchEvent(event);
+  }
+
+  private String hit(float x, float y) {
+    int[] at = new int[2];
+    for (java.util.Map.Entry<String, View> entry : watched.entrySet()) {
+      View view = entry.getValue();
+      if (!view.isShown()) continue;
+      view.getLocationOnScreen(at);
+      if (x >= at[0] && x < at[0] + view.getWidth() && y >= at[1] && y < at[1] + view.getHeight()) return entry.getKey();
+    }
+    return "other";
+  }
+
+  @Override public void onWindowFocusChanged(boolean hasFocus) {
+    super.onWindowFocusChanged(hasFocus);
+    note(hasFocus ? "focus in" : "focus out");
   }
 
   @Override public void onCreate(Bundle state) {
@@ -77,6 +109,9 @@ public class MainActivity extends Activity {
       duplicate.setText("Duplicate send");
       layout.addView(duplicate);
     }
+    watched.put("recipient", recipient);
+    watched.put("amount", amount);
+    watched.put("send", send);
     send.setOnClickListener(new View.OnClickListener() {
       @Override public void onClick(View view) {
       note("click send " + amount.length() + " " + recipient.length());
@@ -162,6 +197,7 @@ public class MainActivity extends Activity {
         status.setText("Signed in");
       }
     });
+    watched.put("sign-in", signIn);
     layout.addView(signIn);
     layout.addView(status);
     setContentView(layout);
@@ -208,6 +244,9 @@ public class MainActivity extends Activity {
       }
     });
     layout.addView(login);
+    watched.put("email", email);
+    watched.put("validate", validate);
+    watched.put("login", login);
     layout.addView(status);
     TextView inbox = new TextView(this);
     inbox.setText("Inbox");
