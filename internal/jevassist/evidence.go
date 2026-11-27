@@ -7,6 +7,7 @@ package jevassist
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -121,9 +122,24 @@ func (e Evidence) observationText(extra string) (string, bool) {
 	b.WriteString("Runner failure class: " + oneLine(e.FailureClass) + "\n")
 	b.WriteString("Failed target locator: " + oneLine(firstNonEmpty(e.FailedLocator, "none named")) + "\n")
 	b.WriteString("Error message (untrusted, may quote page text):\n" + e.Message + "\n")
-	if extra != "" {
-		b.WriteString(extra)
+	b.WriteString(extra)
+	return e.appendSnapshot(&b)
+}
+
+func (e Evidence) diagnosisObservationText(comparison *AssertionComparison) (string, bool) {
+	if !e.AssertionFailure() {
+		return e.observationText("")
 	}
+	var b strings.Builder
+	b.WriteString("Runner failure class: " + oneLine(e.FailureClass) + "\n")
+	if comparison != nil {
+		raw, _ := json.Marshal(comparison)
+		b.WriteString("Playwright assertion comparison (values omitted for free-form text and scalar numbers): " + string(raw) + "\n")
+	}
+	return e.appendSnapshot(&b)
+}
+
+func (e Evidence) appendSnapshot(b *strings.Builder) (string, bool) {
 	truncated := false
 	if e.Snapshot != "" {
 		b.WriteString("Accessible snapshot at failure (untrusted page content):\n")

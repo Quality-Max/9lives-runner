@@ -24,10 +24,11 @@ execute an action. Live accuracy and model availability have not been qualified 
 
 `9l diagnose` runs the spec once through the normal runner. A passing test is
 not diagnosed. On failure it reports **observed facts** from the receipt: the
-runner's failure class, the native deterministic class, the failed locator and
-hashes of the attached accessible snapshot and screenshot. With `--jev` it also
-asks one bounded Jev request within a minute of the run ending, bound to that
-attempt and the exact source that ran. The age is counted from when the job
+runner's failure class, the native deterministic class, the failed locator,
+hashes of the attached accessible snapshot and screenshot, and a comparison
+for supported Playwright assertions. With `--jev` and an accessible snapshot
+or accepted screenshot, it makes at most one request within a minute of the
+run ending, bound to that attempt and the exact source that ran. The age is counted from when the job
 finished, not from the moment the step failed, so a spec that keeps running
 after its failure can send older evidence.
 
@@ -40,9 +41,13 @@ disposition: `eligible-for-repair`, `investigate-test`, `investigate-app`,
 `require-new-observation` or `unresolved`. A family needs confidence and
 probability of at least 0.6; contradictory observations, such as drift with an
 absent target, are unresolved. Missing or stale evidence, provider failure and
-malformed answers are explicit `unresolved` or `error` states; without an
-accessible snapshot or an accepted screenshot no request is made
-(`insufficient_evidence`).
+malformed answers are explicit `unresolved` or `error` states. A supported
+assertion mismatch routes to `investigate-app`, meaning the observed behavior
+and the test expectation need review. When the inferred family is transient
+and the page shows strong evidence of loading, the disposition is
+`require-new-observation`. A comparison alone routes locally with `--jev`.
+Without a supported comparison, accessible snapshot, or accepted screenshot,
+diagnosis returns `insufficient_evidence`.
 
 An assertion failure, such as a wrong price, quantity or status, is never
 eligible for repair, even when the page looks plausible or Jev suggests drift.
@@ -53,7 +58,14 @@ on the application. As with `9l run`, the command exits 0 when the test passed,
 is unavailable, the observed facts are still reported. `--jev` refuses
 `--pass-env TYPESAFE_API_KEY`: the credential stays in the `9l` process.
 
-By default only the error message and a redacted accessible snapshot are sent.
+By default the request uses a redacted accessible snapshot, including the
+matcher snapshot where Playwright attaches one. For assertion failures,
+supported comparisons (`toBe`, `toHaveText`, `toHaveCount`, `toBeVisible`
+and `toBeHidden`) carry the matcher, value kind and mismatch. Boolean values,
+visibility states and element counts can carry the expected and observed
+values. Arbitrary text and scalar numbers stay out of the comparison. The
+request omits raw assertion errors and selectors. Other failures send the
+bounded error and locator details.
 `--jev-images synthetic` also sends the failure screenshot; use it only when the
 screen shows test data you are allowed to upload. Screenshots require
 `screenshot: 'only-on-failure'` in the Playwright config. The record is saved as

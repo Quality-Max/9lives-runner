@@ -99,7 +99,9 @@ func TestLabeledSyntheticDiagnoses(t *testing.T) {
 		{"model abstains", runner.FailureActionTimeout, locatorTimeout, shopSnapshot, answers("unresolved", .9, .9, .02, .02, .02, .5), "unresolved", Unresolved, "uncertain"},
 		{"wrong price with a drift suggestion stays an app question", runner.FailureAssertion, priceAssertion, "- text: \"$24.00\"", answers("locator_drift", .9, .9, .02, .02, .02, .95), "diagnosed", InvestigateApp, "assertion_failed"},
 		{"wrong price on a plausible page", runner.FailureAssertion, priceAssertion, "- text: \"$24.00\"", answers("application_defect", .6, .62, .01, .01, .01, .9), "diagnosed", InvestigateApp, "assertion_failed"},
+		{"wrong price even when the model abstains", runner.FailureAssertion, priceAssertion, "- text: \"$24.00\"", answers("unresolved", .9, .9, .01, .01, .01, .9), "diagnosed", InvestigateApp, "assertion_failed"},
 		{"assertion during loading", runner.FailureAssertion, priceAssertion, "- progressbar", answers("transient_state", .8, .8, .02, .92, .02, .5), "diagnosed", RequireNewObservation, "transient_state"},
+		{"assertion with uncorroborated loading", runner.FailureAssertion, priceAssertion, "- text: \"$24.00\"", answers("transient_state", .8, .8, .02, .4, .02, .5), "diagnosed", InvestigateApp, "assertion_failed"},
 		{"drift without an editable locator", runner.FailureOther, "Error: page.goto: net::ERR_ABORTED", shopSnapshot, answers("locator_drift", .8, .8, .02, .02, .02, .9), "diagnosed", InvestigateTest, "no_editable_locator"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -249,9 +251,46 @@ func TestFromReceiptReadsOnlyAttachedEvidence(t *testing.T) {
 }
 
 func TestContractIsValid(t *testing.T) {
-	for _, named := range []bool{true, false} {
-		if err := diagnosisContract(named).Validate(); err != nil {
+	for _, i := range [][2]bool{{true, false}, {false, false}, {false, true}} {
+		if err := diagnosisContract(i[0], i[1]).Validate(); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+func TestAssertionComparisonWithoutPageEvidence(t *testing.T) {
+	const scalar = "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"expected-fixture-marker\"\nReceived: \"received-fixture-marker\""
+	e := evidence(runner.FailureAssertion, scalar, "")
+	fake := &fakeJev{}
+	d := Diagnose(context.Background(), fake, e, "off", nil)
+	if d.Status != "diagnosed" || d.Disposition != InvestigateApp || d.Facts.Outcome != "failed" || fake.calls != 0 || d.Inference != nil || d.Jev != nil {
+		t.Fatalf("comparison-only diagnosis: %+v", d)
+	}
+	if a := d.Facts.Assertion; a == nil || a.Kind != "text" || a.Relation != "different" || a.Expected != "" || a.Observed != "" {
+		t.Fatalf("comparison facts: %+v", a)
+	}
+	e.Snapshot = "- heading \"Reservations\""
+	fake.answers = answers("unresolved", .9, .9, .01, .01, .01, .01)
+	Diagnose(context.Background(), fake, e, "off", nil)
+	if fake.calls != 1 || !strings.Contains(fake.got.Snapshot, `"kind":"text"`) || strings.Contains(fake.got.Snapshot, "fixture-marker") {
+		t.Fatal("Jev observation should carry the comparison without the raw operands")
+	}
+	if _, asked := fake.contract.Questions["targetVisible"]; asked {
+		t.Fatal("an assertion failure was evaluated for target drift")
+	}
+}
+
+func TestAssertionComparisonRequiresRecognizedMismatch(t *testing.T) {
+	for _, message := range []string{
+		"Error: arbitrary throw\n\nExpected: 1\nReceived: 2",
+		"Error: expect(received).toMatch(expected)\n\nExpected pattern: /sent/\nReceived string: \"queued\"",
+		"Error: expect(locator).toHaveValue(expected) failed\n\nLocator: getByLabel('Token')\nExpected: \"example\"\nReceived: \"other\"",
+		"Error: expect(received).toBe(expected)\n\nExpected: 1\nReceived:",
+	} {
+		fake := &fakeJev{}
+		e := evidence(runner.FailureAssertion, message, "")
+		if d := Diagnose(context.Background(), fake, e, "off", nil); d.Reason != "insufficient_evidence" || d.Facts.Assertion != nil || fake.calls != 0 {
+			t.Fatalf("unsupported comparison was used: %+v", d)
 		}
 	}
 }

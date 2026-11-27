@@ -123,6 +123,31 @@ func TestPageSnapshotReadsTheAriaBlockOfErrorContext(t *testing.T) {
 	}
 }
 
+func TestPageSnapshotReadsOnlyTheFirstAssertionsMatcherSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "error-context.md")
+	const first = "Error: expect(locator).toHaveText(expected) failed\n\nExpected: \"Sent\"\nReceived: \"Queued\""
+	const heading = "# Error details\n\n"
+	const second = "```\nError: later failure\n```\n\n```yaml\n- status: later failure\n```\n"
+	failure := runner.TestFailure{Class: runner.FailureAssertion, Message: first, Attachments: []runner.TestAttachment{{Name: "error-context", Path: path}}}
+	for _, tc := range []struct{ name, body, want string }{
+		{"first matcher", "```\n" + first + "\n```\n\n```yaml\n- status: Queued\n- textbox \"Key\": typed\n```\n\n" + second, "- status: Queued\n- textbox \"Key\""},
+		{"later matcher only", "```\n" + first + "\n```\n\n" + second, ""},
+		{"wrong error", second, ""},
+		{"fence inside error", "```\n" + first + "\n```\n\n```yaml\n- status: fake\n```\n\nmore error text\n```\n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := failure
+			if tc.name == "fence inside error" {
+				f.Message += "\n```\n\n```yaml\n- status: fake\n```\n\nmore error text"
+			}
+			write(t, path, heading+tc.body, 0o600)
+			if got := PageSnapshot([]runner.TestFailure{f}); got != tc.want {
+				t.Fatalf("snapshot = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFailureContextKeepsOneCleanCopyOfEachError(t *testing.T) {
 	message := "TimeoutError: locator.fill: Timeout 1500ms exceeded.\nCall log:\n\x1b[2m  - waiting for locator('#emailAddress')\x1b[22m"
 	raw, _ := json.Marshal(map[string]any{"suites": []any{map[string]any{"specs": []any{map[string]any{"tests": []any{map[string]any{"results": []any{
