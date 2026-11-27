@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { Brand } from './brand';
 import { CopyButton } from './copy-button';
 import { ThemeToggle } from './theme-toggle';
@@ -58,6 +59,16 @@ export default function Home() {
       <ThemeToggle />
     </header>
     <main id="main">
+      <div className="wrap">
+        <a className="hunt-banner" href="/hunt.html" aria-label="Play The Great Little Hunt" aria-describedby="hunt-banner-description">
+          <Image src="/hunt/replays/cats-healthy/frame-0.png" alt="" width={850} height={600} unoptimized />
+          <div className="hunt-banner-copy">
+            <strong>The Great Little Hunt</strong>
+            <p id="hunt-banner-description">Find the hidden cats and see how 9lives and Jev catch a scoring bug.</p>
+          </div>
+          <span className="hunt-banner-cta">Play <span aria-hidden="true">→</span></span>
+        </a>
+      </div>
       <section className="hero wrap" aria-labelledby="hero-title">
         <div className="hero-content">
           <p className="eyebrow">9lives by QualityMax / Open-source e2e testing for coding agents</p>
@@ -65,7 +76,6 @@ export default function Home() {
           <p className="hero-copy">Run your Playwright tests, connect your coding agent, and inspect the evidence behind each result. Extend the framework to Android with experimental Appium support. Start locally or use 9lives in QualityMax Cloud.</p>
           <div className="actions"><a className="button primary" href="#start">Run it yourself <span aria-hidden="true">↓</span></a><a className="button secondary" href="/demo.html#proof">Inspect a real test run <span aria-hidden="true">↗</span></a></div>
           <p><a className="text-link" href="https://youtu.be/O5cpuKBSGsQ">Watch the 60-second launch film <span aria-hidden="true">↗</span></a></p>
-          <p><a className="text-link" href="/hunt.html">Play the great little hunt: Jev looks, 9lives checks <span aria-hidden="true">↗</span></a></p>
           <p className="small-note">No account needed · Apache-2.0 · macOS, Linux &amp; Windows</p>
         </div>
         <div className="evidence-card" aria-label="Recorded fix confirmation">

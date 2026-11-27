@@ -36,6 +36,13 @@ code { font-family: var(--font-code); font-size: .86em; }
 .hero { display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 64px; padding-block: 82px 86px; border-top: 1px solid var(--border-default); }
 .hero h1 span { color: var(--accent-primary); }
 .hero-copy { color: var(--text-secondary); font-size: 17px; max-width: 520px; margin-top: 25px; }
+.hunt-banner { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; align-items: center; gap: 16px; margin-bottom: 16px; padding: 10px 20px 10px 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--info-bg); }
+.hunt-banner:hover { border-color: var(--accent-primary); color: var(--text-primary); }
+.hunt-banner img { display: block; width: 100%; height: auto; border-radius: 7px; }
+.hunt-banner-copy strong { display: block; font: 600 clamp(18px, 2vw, 23px)/1.2 var(--font-heading); letter-spacing: -.035em; }
+.hunt-banner-copy p { margin-top: 4px; color: var(--text-secondary); font-size: 13px; line-height: 1.4; }
+.hunt-banner-cta { color: var(--text-link); font-size: 13px; font-weight: 700; }
+.hunt-banner:hover .hunt-banner-cta, .hunt-banner:focus-visible .hunt-banner-cta { text-decoration: underline; text-underline-offset: 3px; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-block: 30px 18px; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 16px; border-radius: 8px; padding: 13px 18px; min-height: 48px; font-size: 13px; font-weight: 600; }
 .primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); border: 1px solid transparent; }
@@ -163,6 +170,8 @@ footer details { color: var(--text-secondary); font-size: 11px; margin-bottom: 1
   .site-header nav { gap: 16px; font-size: 11px; }
   .theme-toggle { padding: 8px; }
   .theme-toggle span:last-child { display: none; }
+  .hunt-banner { grid-template-columns: 76px minmax(0, 1fr); gap: 4px 12px; padding: 10px; }
+  .hunt-banner img { grid-row: span 2; }
   .hero { grid-template-columns: 1fr; gap: 32px; padding-block: 44px; }
   h1 { font-size: clamp(38px, 8vw, 52px); }
   .hero-copy { font-size: 15px; }
