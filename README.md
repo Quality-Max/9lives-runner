@@ -124,8 +124,8 @@ shows recorded before/after receipts on one synthetic app.
 
 | Component | Qualified |
 | --- | --- |
-| CLI and `@9l/playwright` | 0.7.3, released together; install matching versions |
-| `@playwright/test` | 1.61.1 through 1.64.1 with 0.7.3, through 1.65.1 from this checkout |
+| CLI and `@9l/playwright` | 0.8.0, released together; install matching versions |
+| `@playwright/test` | 1.61.1 through 1.65.1 with 0.8.0 |
 | Browser | Chromium; other engines are unqualified |
 | Node | 24 (22 minimum) |
 | Platforms | macOS, Linux and Windows on amd64 and arm64 |

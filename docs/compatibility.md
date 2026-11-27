@@ -5,17 +5,17 @@ experimental native targets. Update this page when a qualified pairing
 changes.
 
 The experimental Android target (Appium with UiAutomator2) ships since 0.6.0.
-Install the matching 0.7.3 CLI and SDK together; Android remains opt-in with
+Install the matching 0.8.0 CLI and SDK together; Android remains opt-in with
 the [setup and qualification limits](android-driver.md) below.
 
 | Component | Qualified | Boundary |
 | --- | --- | --- |
-| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1 with the 0.7.3 release | This checkout adds setup diagnostics and CI coverage for Playwright 1.65.0 and 1.65.1. The SDK peer range is `>=1.61.1 <2` |
+| `@playwright/test` | 1.61.1, 1.62.0, 1.62.1, 1.63.0, 1.64.0, 1.64.1, 1.65.0, 1.65.1 with the 0.8.0 release | The SDK peer range is `>=1.61.1 <2` |
 | `9l assess` matchers | Playwright 1.61.1 through 1.65.1 | The async matchers are identical across that range. A matcher outside it is reported as an `unknown-matcher` limit, not guessed |
 | Browser | Chromium | Other engines are unqualified |
 | Node | 24 (22 minimum) | |
-| CLI | 0.7.3 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
-| SDK | `@9l/playwright` 0.7.3, released with the CLI | Installing the SDK does not install the CLI or browsers |
+| CLI | 0.8.0 on macOS, Linux and Windows, amd64 and arm64 | Provider CLI shell integrations on Windows are unqualified |
+| SDK | `@9l/playwright` 0.8.0, released with the CLI | Installing the SDK does not install the CLI or browsers |
 | Android (experimental) | Appium 3.8.0 with UiAutomator2 8.7.0; API 35 emulators (arm64 on macOS, x86_64 in Linux CI); one Android 17 foldable in attached mode | Other phones and Android versions, fold transitions, cancellation on a phone, Windows hosts and iOS are unqualified |
 
 An experimental [iOS Simulator driver](ios-driver.md) ships since 0.7.0
