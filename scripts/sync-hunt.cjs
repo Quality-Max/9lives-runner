@@ -12,7 +12,7 @@ const { join, relative, resolve } = require('node:path');
 const root = resolve(__dirname, '..');
 const site = resolve(root, 'website/public');
 const replays = resolve(site, 'hunt/replays');
-const scenarios = ['cats', 'dogs', 'mice', 'striped'];
+const recordedScenarios = ['cats', 'dogs', 'mice', 'striped'];
 const variants = ['healthy', 'broken'];
 
 function once(text, old, next) {
@@ -45,7 +45,7 @@ function page() {
 
 function expected() {
   const files = { 'hunt.html': page() };
-  for (const scenario of scenarios) files[`hunt/rooms/${scenario}.html`] = room(scenario);
+  for (const scenario of [...recordedScenarios, 'cat-decoys']) files[`hunt/rooms/${scenario}.html`] = room(scenario);
   return files;
 }
 
@@ -66,7 +66,7 @@ const receiptSummary = r => JSON.parse(JSON.stringify({ status: r.status, valida
 const jevSummary = r => JSON.parse(JSON.stringify({ status: r.status, model: r.model, requestCount: r.requestCount, questionCount: r.questionCount, usage: r.usage }));
 
 function checkReplays(base = replays) {
-  for (const scenario of scenarios) for (const variant of variants) {
+  for (const scenario of recordedScenarios) for (const variant of variants) {
     const dir = join(base, `${scenario}-${variant}`), name = `${scenario}-${variant}`;
     const run = readJSON(join(dir, 'replay.json'));
     assert.equal(run.scenario, scenario, name);
@@ -119,7 +119,7 @@ async function importRuns(dirs) {
       const input = readJSON(join(dir, 'input.json')), summary = readJSON(join(dir, 'summary.json'));
       const record = readJSON(join(dir, 'jev-record.json')), progress = readJSON(join(dir, 'progress.json'));
       const variant = input.broken ? 'broken' : 'healthy', name = `${input.scenario}-${variant}`;
-      assert.ok(scenarios.includes(input.scenario) && input.live === true, `${dir}: only live runs of the four levels`);
+      assert.ok(recordedScenarios.includes(input.scenario) && input.live === true, `${dir}: only live runs of the four recorded scenarios`);
       const fixture = room(input.scenario, input.broken);
       assert.equal(input.fixtureSHA256, sha256(fixture), `${dir}: recorded against a different game`);
       // A planted bug must fail on an attributed assertion, never on setup or environment.
