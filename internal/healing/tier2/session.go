@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/healing"
+	"github.com/Quality-Max/9lives-runner/internal/jevcost"
 	"github.com/Quality-Max/9lives-runner/internal/runner"
 )
 
@@ -98,13 +99,14 @@ type Session struct {
 	Verified *RunResult `json:"verified"`
 	// Grounded is the grounded candidate's verification run, GroundedBy the
 	// proposer and GroundedDecision its recorded, unverified decision.
-	Grounded         *RunResult `json:"grounded,omitempty"`
-	GroundedBy       string     `json:"groundedBy,omitempty"`
-	GroundedDecision any        `json:"groundedDecision,omitempty"`
-	State            string     `json:"state"`
-	Applied          bool       `json:"applied"`
-	SavedPath        string     `json:"savedPath,omitempty"`
-	Reason           string     `json:"reason,omitempty"`
+	Grounded         *RunResult       `json:"grounded,omitempty"`
+	GroundedBy       string           `json:"groundedBy,omitempty"`
+	GroundedDecision any              `json:"groundedDecision,omitempty"`
+	JevUsage         *jevcost.Summary `json:"jevUsage,omitempty"`
+	State            string           `json:"state"`
+	Applied          bool             `json:"applied"`
+	SavedPath        string           `json:"savedPath,omitempty"`
+	Reason           string           `json:"reason,omitempty"`
 	// Provider is the Tier 2 provider's name ("" when healing was offline) and
 	// ProviderCalls how many proposals it was asked for.
 	Provider      string `json:"provider,omitempty"`

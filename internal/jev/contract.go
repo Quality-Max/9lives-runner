@@ -183,7 +183,7 @@ func parseResponse(raw []byte, contract Contract) (map[string]Answer, string, Us
 			return nil, "", Usage{}, invalid
 		}
 	}
-	if decode(raw, &r) != nil || !modelName.MatchString(r.Model) || len(r.Answers) != len(contract.Questions) {
+	if decode(raw, &r) != nil || !modelName.MatchString(r.Model) {
 		return nil, "", Usage{}, invalid
 	}
 	usage := Usage{}
@@ -192,6 +192,9 @@ func parseResponse(raw []byte, contract Contract) (map[string]Answer, string, Us
 			return nil, "", Usage{}, invalid
 		}
 		usage = Usage{InputTokens: *r.Usage.Input, OutputTokens: *r.Usage.Output, Available: true}
+	}
+	if len(r.Answers) != len(contract.Questions) {
+		return nil, "", usage, invalid
 	}
 	answers := make(map[string]Answer, len(r.Answers))
 	for id, q := range contract.Questions {
@@ -206,62 +209,62 @@ func parseResponse(raw []byte, contract Contract) (map[string]Answer, string, Us
 		case "score":
 			required = []string{"type", "score", "confidence", "legend", "probabilities"}
 		default:
-			return nil, "", Usage{}, invalid
+			return nil, "", usage, invalid
 		}
 		fields, err := responseFields(r.Answers[id], required)
 		if err != nil {
-			return nil, "", Usage{}, invalid
+			return nil, "", usage, invalid
 		}
 		if q.Type == "box" {
 			if _, err := responseFields(fields["box"], []string{"left", "top", "right", "bottom"}); err != nil {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 		}
 		var a Answer
 		if decode(r.Answers[id], &a) != nil || a.Type != q.Type {
-			return nil, "", Usage{}, invalid
+			return nil, "", usage, invalid
 		}
 		switch q.Type {
 		case "noul":
 			if a.Noul == nil || !probability(*a.Noul) {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 		case "choice":
 			if a.Confidence == nil || !probability(*a.Confidence) || q.Criteria[a.Choice] == "" || len(a.Probabilities) != len(q.Criteria) {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 			sum := 0.0
 			for key := range q.Criteria {
 				p, ok := a.Probabilities[key]
 				if !ok || !probability(p) {
-					return nil, "", Usage{}, invalid
+					return nil, "", usage, invalid
 				}
 				sum += p
 			}
 			if math.Abs(sum-1) > 0.001 {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 		case "box":
 			b := a.Box
 			if a.Confidence == nil || !probability(*a.Confidence) || b == nil || !probability(b.Left) || !probability(b.Top) || !probability(b.Right) || !probability(b.Bottom) || b.Left >= b.Right || b.Top >= b.Bottom {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 		case "score":
 			if a.Score == nil || math.IsNaN(*a.Score) || math.IsInf(*a.Score, 0) || *a.Score < 0 || *a.Score > float64(len(q.Levels)-1) || a.Confidence == nil || !probability(*a.Confidence) || len(a.Legend) != len(q.Levels) || len(a.Probabilities) != len(q.Levels) {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 			sum, weighted := 0.0, 0.0
 			for i, level := range q.Levels {
 				key := strconv.Itoa(i)
 				p, ok := a.Probabilities[key]
 				if !ok || !probability(p) || a.Legend[key] != level {
-					return nil, "", Usage{}, invalid
+					return nil, "", usage, invalid
 				}
 				sum += p
 				weighted += float64(i) * p
 			}
 			if math.Abs(sum-1) > 0.001 || math.Abs(weighted-*a.Score) > 0.02 {
-				return nil, "", Usage{}, invalid
+				return nil, "", usage, invalid
 			}
 		}
 		answers[id] = a
