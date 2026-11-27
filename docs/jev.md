@@ -144,7 +144,8 @@ goal that completes against a wrong business outcome still fails. The receipt
 records `jev` as the goal provider and each decision as usual, with the Jev
 requests it made (`requests`: one or two, zero when the engine-built options
 or observation did not fit a request) and the model Jev reported (`model`).
-Cost is not estimated; use the engine's decision and token budgets.
+For aggregate estimates, see [token usage and estimated savings](#token-usage-and-estimated-savings).
+The engine's decision and token budgets still apply.
 
 ## Qualification
 
@@ -165,7 +166,9 @@ not Jev quality measurements; live results are recorded with model, date and
 request counts when they are run.
 
 See the [0.8.0 locator repair validation report](reviews/jev-locator-repair-0.8.0.md)
-for the November 2026 held-out rerun and campaign check.
+for the earlier held-out run and campaign check. The
+[0.8.0 changelog](../CHANGELOG.md#what-the-held-out-run-verified) records the result
+from the merged build.
 
 ## Configuration and API key
 

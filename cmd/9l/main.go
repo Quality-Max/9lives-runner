@@ -33,7 +33,7 @@ import (
 )
 
 // Release builds set this with -ldflags "-X main.version=<version>".
-var version = "0.7.3"
+var version = "0.8.0"
 
 func main() {
 	code := run(os.Args[1:], os.Stdout, os.Stderr)

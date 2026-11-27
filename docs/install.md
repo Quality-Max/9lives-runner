@@ -1,6 +1,6 @@
 # Install the CLI and Playwright SDK
 
-The published npm package is [@9l/playwright 0.7.3](https://www.npmjs.com/package/@9l/playwright).
+The published npm package is [@9l/playwright 0.8.0](https://www.npmjs.com/package/@9l/playwright).
 It supplies TypeScript fixtures and the reporter. Install the Go `9l` CLI
 separately; the SDK does not bundle the runner or a browser.
 
@@ -9,14 +9,13 @@ separately; the SDK does not bundle the runner or a browser.
 From your Playwright project, with Node 24 (Node 22 minimum):
 
 ```sh
-npm install --save-dev @9l/playwright@0.7.3 @playwright/test@1.64.1
+npm install --save-dev @9l/playwright@0.8.0 @playwright/test@1.65.1
 npm exec playwright install chromium
 ```
 
 On Linux use `npm exec -- playwright install --with-deps chromium`.
 The SDK accepts `@playwright/test` `>=1.61.1 <2`. Use Playwright 1.61.1
-through 1.64.1 with the 0.7.3 CLI and Chromium. For Playwright 1.65.0 or 1.65.1,
-use the CLI and SDK from this checkout. See the [compatibility matrix](compatibility.md)
+through 1.65.1 with the 0.8.0 CLI and Chromium. See the [compatibility matrix](compatibility.md)
 and [SDK contract](sdk-bridge.md) for the source version pairing and limits.
 Preserve the existing project configuration and assertions.
 
@@ -34,7 +33,7 @@ If you have set a custom `GOBIN`, add that directory to `PATH` instead.
 For an exact reviewed source revision, replace `@latest` with its commit or
 published CLI version. The public Go install path has been exercised.
 
-### Playwright 1.65 from this checkout
+### CLI and SDK from this checkout
 
 Build the CLI and pack the SDK from the runner repository:
 
@@ -57,7 +56,7 @@ npm exec playwright install chromium
 ## Prebuilt CLI releases
 
 The [GitHub Releases page](https://github.com/Quality-Max/9lives-runner/releases)
-is the download location. CLI v0.7.3 is published for macOS, Linux and
+is the download location. CLI v0.8.0 is published for macOS, Linux and
 Windows; releases before v0.2.0 have no Windows assets. Download a
 specific version and the matching `SHA256SUMS` file. Go is not needed to run
 these executables.
@@ -71,14 +70,14 @@ these executables.
 | Windows, x86-64 | `9l-windows-amd64.zip` |
 | Windows, ARM64 | `9l-windows-arm64.zip` |
 
-For the published `v0.7.3`, using GitHub CLI, this example installs on Apple
+For the published `v0.8.0`, using GitHub CLI, this example installs on Apple
 Silicon. Choose your archive from the table:
 
 ```sh
 mkdir -p /tmp/9l-download
 cd /tmp/9l-download
 BUNDLE=9l-darwin-arm64
-gh release download v0.7.3 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
+gh release download v0.8.0 --repo Quality-Max/9lives-runner --pattern "$BUNDLE.tar.gz" --pattern SHA256SUMS
 grep -Ex "[0-9a-f]{64}  $BUNDLE\.tar\.gz" SHA256SUMS > selected.sha256
 test "$(grep -c '' selected.sha256)" = 1
 shasum -a 256 -c selected.sha256
@@ -121,10 +120,10 @@ Without `gh`, the checksum steps remain the verification.
 
 Choose the Windows ZIP for your CPU, download it with that release's
 `SHA256SUMS`, then verify and extract it in PowerShell. Windows assets start
-with v0.2.0; this example uses v0.7.3:
+with v0.2.0; this example uses v0.8.0:
 
 ```powershell
-$Version = 'v0.7.3'
+$Version = 'v0.8.0'
 $Bundle = '9l-windows-amd64' # use arm64 for Windows on ARM
 New-Item -ItemType Directory -Force 9l-download | Out-Null
 Set-Location 9l-download
