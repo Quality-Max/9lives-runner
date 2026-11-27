@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Quality-Max/9lives-runner/internal/healing/tier2"
@@ -429,6 +430,25 @@ func (s *service) prepare(r request) (response, *providerCall) {
 	return response{}, &providerCall{g: g, index: index, prompt: string(prompt), reserve: reserve, candidates: r.Candidates}
 }
 
+// providerRequests is the decision's provider request count, or nil when the
+// provider does not know it: unknown is never recorded as zero.
+func providerRequests(c tier2.Completion) *int {
+	if !c.RequestsAvailable || c.Requests < 0 {
+		return nil
+	}
+	n := c.Requests
+	return &n
+}
+
+// providerModel keeps a reported model name only when it is short and
+// printable, so provider text cannot fill a receipt.
+func providerModel(model string) string {
+	if len(model) > 128 || strings.IndexFunc(model, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
+		return ""
+	}
+	return model
+}
+
 // finish runs under s.mu with the provider's answer for a reserved decision.
 func (s *service) finish(ctx context.Context, call *providerCall, completion tier2.Completion, err error) response {
 	g, index, reserve := call.g, call.index, call.reserve
@@ -453,6 +473,7 @@ func (s *service) finish(ctx context.Context, call *providerCall, completion tie
 	}
 	entry := &g.receipt.Decisions[index]
 	entry.InputTokens, entry.OutputTokens, entry.UsageAvailable = completion.InputTokens, completion.OutputTokens, completion.UsageAvailable
+	entry.Requests, entry.Model = providerRequests(completion), providerModel(completion.Model)
 	if len(completion.Text) > 8192 || completion.InputTokens < 0 || completion.OutputTokens < 0 || completion.UsageAvailable && (completion.InputTokens > reserve-outputTokens || completion.OutputTokens > outputTokens) {
 		entry.Outcome = "budget_exhausted"
 		return g.stop("budget_exhausted")

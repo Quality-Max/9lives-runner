@@ -253,6 +253,42 @@ func TestProviderUsageAndErrorsAreSafe(t *testing.T) {
 	}
 }
 
+func TestDecisionRecordsProviderRequestsAndModel(t *testing.T) {
+	decide := func(completion tier2.Completion, err error) runner.GoalDecisionReceipt {
+		t.Helper()
+		p := &fakeProvider{run: func(context.Context, string) (tier2.Completion, error) { return completion, err }}
+		s := setup(t, p, Defaults())
+		s.handle(context.Background(), request{Op: "decide", GoalID: start(s)})
+		return s.Close()[0].Decisions[0]
+	}
+	complete := `{"action":"complete"}`
+	if d := decide(tier2.Completion{Text: complete, Requests: 2, RequestsAvailable: true, Model: "fixture-model"}, nil); d.Requests == nil || *d.Requests != 2 || d.Model != "fixture-model" {
+		t.Fatalf("reported count and model not recorded: %+v", d)
+	}
+	if d := decide(tier2.Completion{Text: complete, RequestsAvailable: true}, nil); d.Requests == nil || *d.Requests != 0 {
+		t.Fatalf("a decision made without asking lost its zero count: %+v", d)
+	}
+	// Unknown is never recorded as zero, and a failed call records nothing.
+	for _, d := range []runner.GoalDecisionReceipt{
+		decide(tier2.Completion{Text: complete, Requests: 3}, nil),
+		decide(tier2.Completion{Text: complete, Requests: -1, RequestsAvailable: true}, nil),
+		decide(tier2.Completion{Requests: 1, RequestsAvailable: true, Model: "fixture-model"}, errors.New("provider returned HTTP 503")),
+	} {
+		if d.Requests != nil || strings.Contains(d.Model, "fixture") && d.Outcome == "provider_error" {
+			t.Fatalf("unknown or failed request count recorded: %+v", d)
+		}
+	}
+	for _, model := range []string{strings.Repeat("m", 129), "model\n<script>"} {
+		if d := decide(tier2.Completion{Text: complete, Requests: 1, RequestsAvailable: true, Model: model}, nil); d.Model != "" || d.Requests == nil {
+			t.Fatalf("unbounded model name recorded: %+v", d)
+		}
+	}
+	raw, _ := json.Marshal(decide(tier2.Completion{Text: complete}, nil))
+	if strings.Contains(string(raw), `"requests"`) || strings.Contains(string(raw), `"model"`) {
+		t.Fatalf("unknown values were written: %s", raw)
+	}
+}
+
 func TestRawPolicyFlagCannotBeOverriddenByRedactedLabel(t *testing.T) {
 	s := setup(t, decision(`{"action":"click","targetId":"target-1"}`), Defaults())
 	c := control("[redacted] project")

@@ -154,7 +154,8 @@ JSON Schemas (draft 2020-12) are generated from the Go output types and
 checked by `go test ./cmd/9l`. Separately, `npm run smoke:contracts` uses
 Python `jsonschema==4.26.0` to validate real CLI, receipt and event documents
 against all eight schemas, and rejects invalid version, outcome, required
-field, receipt status and attribution-count mutations. CI requires this
+field, receipt status and attribution-count mutations and mistyped goal
+decision `requests` and `model` fields. CI requires this
 independent validation in the SDK job:
 
 | Output | Schema |

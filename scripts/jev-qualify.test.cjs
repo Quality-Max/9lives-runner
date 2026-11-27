@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { loadManifest, plannedRequests, renamed, summarize, percentile, parseArgs, goalScript } = require('./jev-qualify.cjs');
+const { loadManifest, plannedRequests, renamed, summarize, percentile, parseArgs, goalScript, goalRow } = require('./jev-qualify.cjs');
 
 const root = path.resolve(__dirname, '..');
 
@@ -74,6 +74,25 @@ test('unusable rows fail separately and are not scored', () => {
   assert.equal(s.goal.usage.requests, null);
   assert.deepEqual([s.goal.usage.inputTokens, s.goal.usage.outputTokens], [40, 4]);
   assert.equal(s.repair.usage.requests, 1);
+});
+
+test('goal rows total the Jev requests and models their decisions report', () => {
+  const c = { id: 'G01', lane: 'goal', partition: 'dev', label: { goal: ['completed'], test: 'passed' } };
+  const run = decisions => ({ code: 0, ms: 5, json: { receipts: [{ status: 'passed', validated: true, goals: [{ status: 'completed', decisions }] }] } });
+  const known = goalRow(c, { mode: 'jev' }, run([
+    { action: 'fill', requests: 2, model: 'jev-1.14.0', inputTokens: 900, outputTokens: 40, usageAvailable: true },
+    { action: 'complete', requests: 0, inputTokens: 0, outputTokens: 0, usageAvailable: true },
+  ]));
+  assert.deepEqual([known.jevRequests, known.model, known.usage.inputTokens, known.unusable], [2, 'jev-1.14.0', 900, null]);
+  // A decision whose provider call failed has no count: the total is unknown.
+  const failed = goalRow(c, { mode: 'jev' }, run([{ action: 'fill', requests: 1, model: 'jev-1.14.0' }, { action: 'none', outcome: 'provider_error', inputTokens: 0, outputTokens: 0, usageAvailable: false }]));
+  assert.equal(failed.jevRequests, null);
+  assert.equal(failed.model, 'jev-1.14.0');
+  const s = summarize([known, failed]);
+  assert.equal(s.goal.usage.requests, null);
+  assert.equal(summarize([known]).goal.usage.requests, 2);
+  // Without Jev, nothing is paid.
+  assert.equal(goalRow(c, { mode: 'validate' }, run([{ action: 'complete' }])).jevRequests, 0);
 });
 
 test('false greens and metrics are counted from the rows', () => {

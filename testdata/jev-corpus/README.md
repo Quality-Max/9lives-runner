@@ -39,9 +39,11 @@ budget) and the test verdict are exercised. A case that would be skipped
 fails validation. Probes sit beside the frozen manifest and change no case or
 label.
 
-Goal receipts record each decision's tokens but not how many Jev requests it
-made (zero to two) or the model, so paid goal rows report requests and model
-as unknown; the `--max-requests` cap still covers the worst case.
+Each goal decision records its tokens, the Jev requests it made (zero to two)
+and the model Jev reported, so paid goal rows report actual requests and
+models. A decision whose provider call failed records neither, which leaves
+that run's request total unknown; the `--max-requests` cap still covers the
+worst case.
 
 Faults that need a provider or a clock are qualified by offline Go tests, not
 by this browser corpus:

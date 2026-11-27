@@ -158,16 +158,22 @@ function goalCase(binary, c, options, receipts) {
   if (options.mode === 'jev') args.push('--goal-provider', 'jev');
   else if (script) args.push('--goal-script', script.file);
   else return { id: c.id, lane: c.lane, partition: c.partition, skipped: options.mode === 'offline' ? 'no goal provider without Jev' : 'no oracle or probe script' };
-  const r = run9l(binary, args);
+  return goalRow(c, options, run9l(binary, args), script);
+}
+
+// goalRow scores one goal run from the CLI's JSON result.
+function goalRow(c, options, r, script = null) {
   const receipt = r.json && r.json.receipts && r.json.receipts[0];
   const goal = receipt && receipt.goals && receipt.goals[0];
   const decisions = goal && Array.isArray(goal.decisions) ? goal.decisions : [];
-  // Goal receipts record each decision's tokens but neither how many Jev
-  // requests it made (zero to two) nor the model, so those stay unknown.
+  // Each decision records the Jev requests it made (zero to two) and the
+  // model, unless its provider call failed: then the total stays unknown.
   const usage = { inputTokens: decisions.reduce((n, d) => n + (d.inputTokens || 0), 0), outputTokens: decisions.reduce((n, d) => n + (d.outputTokens || 0), 0), available: decisions.length > 0 && decisions.every(d => d.usageAvailable) };
+  const requests = decisions.every(d => Number.isSafeInteger(d.requests) && d.requests >= 0) ? decisions.reduce((n, d) => n + d.requests, 0) : null;
+  const models = [...new Set(decisions.map(d => d.model).filter(m => typeof m === 'string' && m))];
   const row = { id: c.id, lane: c.lane, partition: c.partition, exit: r.code, ms: Math.round(r.ms), expectedGoal: c.label.goal, expectedTest: c.label.test, script: script && script.kind,
     goal: goal && goal.status, test: receipt && receipt.status, decisions: decisions.length, actions: decisions.map(d => d.action).join(','),
-    tokens: usage.inputTokens + usage.outputTokens, usage: options.mode === 'jev' ? usage : null, jevRequests: options.mode === 'jev' ? null : 0, model: null };
+    tokens: usage.inputTokens + usage.outputTokens, usage: options.mode === 'jev' ? usage : null, jevRequests: options.mode === 'jev' ? requests : 0, model: options.mode === 'jev' ? models.join(', ') || null : null };
   // Scoring needs a validated terminal receipt and the goal's own record.
   row.unusable = !r.json || !receipt ? `no run result (exit ${r.code})` : !receipt.validated || !['passed', 'failed'].includes(receipt.status) ? `the run did not complete (${receipt.status})` : !goal || typeof goal.status !== 'string' ? 'the receipt has no goal record' : null;
   row.goalCorrect = c.label.goal.includes(row.goal);
@@ -237,7 +243,7 @@ function summarize(rows) {
 
 function report(meta, rows, summary) {
   const pct = v => v == null ? 'n/a' : `${Math.round(v * 100)}%`;
-  const lines = [`# Jev qualification — ${meta.mode}`, '', `- Date: ${meta.date}`, `- Revision: ${meta.revision}`, `- Corpus: ${meta.corpus} (held-out ${meta.heldout.slice(0, 12)})`, `- Partition: ${meta.partition} · repeats: ${meta.repeat} · images: ${meta.images}`, `- Model: ${meta.models.join(', ') || (meta.mode === 'jev' ? 'not recorded' : 'none (no provider calls)')}${meta.mode === 'jev' && rows.some(r => r.lane === 'goal' && !r.skipped) ? ' (goal receipts record neither the model nor request counts)' : ''}`, ''];
+  const lines = [`# Jev qualification — ${meta.mode}`, '', `- Date: ${meta.date}`, `- Revision: ${meta.revision}`, `- Corpus: ${meta.corpus} (held-out ${meta.heldout.slice(0, 12)})`, `- Partition: ${meta.partition} · repeats: ${meta.repeat} · images: ${meta.images}`, `- Model: ${meta.models.join(', ') || (meta.mode === 'jev' ? 'not recorded' : 'none (no provider calls)')}`, ''];
   if (meta.mode !== 'jev') lines.push('**Policy/wiring evidence only.** No provider request was made; these results are not Jev quality measurements.', '');
   if (meta.mode === 'validate') {
     lines.push('| case | labels hold | evidence |', '|---|---|---|', ...rows.map(r => `| ${r.id} | ${r.ok ? 'yes' : '**no**'} | ${r.detail} |`));
@@ -290,7 +296,7 @@ function main() {
     }
   }
   const summary = options.mode === 'validate' ? null : summarize(rows);
-  const models = [...new Set(rows.map(r => r.model).filter(Boolean))];
+  const models = [...new Set(rows.flatMap(r => (r.model || '').split(', ')).filter(Boolean))];
   const meta = { version: '9l.jev-qualification/1', mode: options.mode, date: new Date().toISOString(), revision, corpus: manifest.version, heldout: manifest.heldoutSHA256, partition: options.partition, repeat: options.repeat, images: options.images, models, platform: `${process.platform}/${process.arch}` };
   fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ meta, summary, rows }, null, 2) + '\n');
   fs.writeFileSync(path.join(out, 'report.md'), report(meta, rows, summary));
@@ -299,7 +305,7 @@ function main() {
   if (failed) process.exitCode = 1;
 }
 
-module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile, parseArgs, goalScript };
+module.exports = { loadManifest, plannedRequests, sortKeys, renamed, summarize, percentile, parseArgs, goalScript, goalRow };
 if (require.main === module) {
   try { main(); } catch (error) { console.error(error.message); process.exitCode = 2; }
 }
