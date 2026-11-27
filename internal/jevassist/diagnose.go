@@ -126,7 +126,7 @@ func Diagnose(ctx context.Context, decider Decider, e Evidence, images string, l
 		return d
 	}
 	binding := e.binding()
-	text, truncated := e.observationText("")
+	text, truncated := e.observationText()
 	if truncated {
 		d.Limitations = append(d.Limitations, "the accessible snapshot was truncated to fit the request")
 	}

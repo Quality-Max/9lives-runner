@@ -446,31 +446,68 @@ func ExactLocatorSelectorReplacement(source, candidate, old, framework string) b
 // an assertion. Tier 2 checks this before asking a provider, so a proposal
 // that can never be admitted is not requested. The reason names the boundary.
 func EditableLocatorAction(source, selector, framework string) (bool, string) {
+	_, reason := editableLocatorMatch(source, selector, framework)
+	return reason == "", reason
+}
+
+// PlaywrightLocatorContext checks the same edit boundary and returns an
+// optional label from the next action. Only an adjacent fill after a click
+// provides a form hint. It does not include the value entered into the field.
+func PlaywrightLocatorContext(source, selector string) (label, reason string) {
+	m, reason := editableLocatorMatch(source, selector, "playwright")
+	if reason != "" {
+		return "", reason
+	}
+	tokens := m.tokens
+	action, open, _ := actionCall(tokens, m)
+	if action != "click" {
+		return "", ""
+	}
+	next := tokens[open].pair + 1
+	if next+5 >= len(tokens) || tokens[next].text != ";" || tokens[next+1].text != "await" ||
+		tokens[next+2].text != "page" || tokens[next+3].text != "." || tokens[next+4].text != "getByLabel" {
+		return "", ""
+	}
+	field, ok := parseGetByArguments(tokens, next+4)
+	if !ok || len(field.value) > 200 || strings.TrimSpace(field.value) == "" || !safeAttributeValue(field.value) {
+		return "", ""
+	}
+	target := literalMatch{
+		lineStart: strings.LastIndex(source[:tokens[next+2].start], "\n") + 1,
+		call:      next + 2, callEnd: tokens[next+5].pair, tokens: tokens,
+	}
+	if name, _, _ := actionCall(tokens, target); name == "fill" && directActionMatch(source, target) {
+		return field.value, ""
+	}
+	return "", ""
+}
+
+func editableLocatorMatch(source, selector, framework string) (literalMatch, string) {
 	if selector == "" {
-		return false, "the failure names no locator selector"
+		return literalMatch{}, "the failure names no locator selector"
 	}
 	locator, parsed := parseLocatorExpression(selector)
 	if !parsed {
-		return false, "the failed locator is not a page.locator(...) or single page.getBy*(...) call with literal arguments"
+		return literalMatch{}, "the failed locator is not a page.locator(...) or single page.getBy*(...) call with literal arguments"
 	}
 	form := locator.sourceForm()
 	matches, ok := sourceLocators(source, selector, framework)
 	switch {
 	case !ok:
-		return false, "the spec uses syntax outside the editable source subset (escaped identifiers, template interpolation, JSX or unbalanced brackets)"
+		return literalMatch{}, "the spec uses syntax outside the editable source subset (escaped identifiers, template interpolation, JSX or unbalanced brackets)"
 	case len(matches) == 0:
 		if locator.method == "locator" {
 			form = "page.locator(" + quoteSelector(locator.value) + ") or page.<action>(" + quoteSelector(locator.value) + ", ...)"
 		}
-		return false, "no " + form + " call in the spec matches the failed locator"
+		return literalMatch{}, "no " + form + " call in the spec matches the failed locator"
 	case len(matches) > 1:
-		return false, "the failed locator appears more than once as " + form
+		return literalMatch{}, "the failed locator appears more than once as " + form
 	case assertionOwnsMatch(source, matches[0], framework):
-		return false, "the failed locator is inside an assertion, which healing does not edit"
+		return literalMatch{}, "the failed locator is inside an assertion, which healing does not edit"
 	case !sourceArgumentContextSafe(matches[0]) || !directActionMatch(source, matches[0]):
-		return false, "the failed locator is not a direct `await " + form + ".<action>(...)` statement on one line"
+		return literalMatch{}, "the failed locator is not a direct `await " + form + ".<action>(...)` statement on one line"
 	}
-	return true, ""
+	return matches[0], ""
 }
 
 func quoteSelector(selector string) string {
