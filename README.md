@@ -17,7 +17,7 @@ passes after it (`9l confirm`). Coding agents get the same tools from
 Playwright's exit code reports Playwright's verdict. When an agent wrote the
 test, that verdict can be wrong in ways you will not see:
 
-- **A failing run can report green.** On Playwright 1.61.1 through 1.64.1,
+- **A failing run can report green.** On Playwright 1.61.1 through 1.65.1,
   `test.fail()` in an after hook turns a failed test into an expected
   failure, so the summary says it passed and the process exits 0, and
   `test.skip()` in an after hook reports a test that ran and passed as
@@ -125,7 +125,7 @@ shows recorded before/after receipts on one synthetic app.
 | Component | Qualified |
 | --- | --- |
 | CLI and `@9l/playwright` | 0.7.3, released together; install matching versions |
-| `@playwright/test` | 1.61.1 through 1.64.1 |
+| `@playwright/test` | 1.61.1 through 1.64.1 with 0.7.3, through 1.65.1 from this checkout |
 | Browser | Chromium; other engines are unqualified |
 | Node | 24 (22 minimum) |
 | Platforms | macOS, Linux and Windows on amd64 and arm64 |

@@ -258,7 +258,7 @@ Use the archive for the host's platform in the last line. Expect:
 - the binary printing `9l <version> (Go runner)`.
 
 Then install the published SDK into a clean project
-(`npm install --save-dev @9l/playwright@<version> @playwright/test@1.64.1`)
+(`npm install --save-dev @9l/playwright@<version> @playwright/test@1.65.1`)
 and run a checkout spec through the downloaded binary with
 `9l run <spec> --sdk --format json`. It must pass with a validated receipt,
 and a deliberately broken copy of the spec must fail.

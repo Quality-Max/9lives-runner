@@ -350,7 +350,7 @@ stays `unknown` because nothing is executed.
 | Absence assertion first after a fixed wait (`absence-after-wait`) | suspected | A slow application also passes it; assert a positive completion signal first. |
 | `test.skip`/`test.fixme` declaration, unconditional suite modifier or enclosing suite | demonstrated | Disabled syntax is present; review before relying on this test. |
 | Conditional or after-hook `test.skip(condition, reason)`/`test.fixme(...)` suite modifier | informational | Whether it skips this test is not evaluated; no concern is raised. |
-| `test.fail()` in an `afterEach`/`afterAll` hook (`after-hook-fail`) | demonstrated only for an unconditional `afterEach` call; suspected otherwise | Playwright 1.61.1 through 1.64.1 count a failed test as an expected failure and exit 0; a real failure reports green. |
+| `test.fail()` in an `afterEach`/`afterAll` hook (`after-hook-fail`) | demonstrated only for an unconditional `afterEach` call; suspected otherwise | Playwright 1.61.1 through 1.65.1 count a failed test as an expected failure and exit 0; a real failure reports green. |
 | Suite modifier whose condition reads `process.env` | suspected | The test may not run in some environments, such as CI; confirm a required run still executes it. |
 | Unknown requirement or unsupported analysis | unsupported | Supply reviewed intent or inspect manually. |
 
@@ -365,11 +365,11 @@ recognized test in that suite, including tests declared before them.
 ignored; any other condition, a modifier under a branch, or one in an
 `afterEach`/`afterAll` hook produces `conditional-skip` at the modifier's
 location. After hooks run once test bodies have run: Playwright 1.61.1 through
-1.64.1 report a passing test skipped from `afterEach` and only some results
+1.65.1 report a passing test skipped from `afterEach` and only some results
 skipped from `afterAll`, so neither disables the suite. Modifiers inside other functions
 cannot be attributed from source and are ignored. A `test.fail()` modifier
 with the same call shapes is reported only in an `afterEach`/`afterAll` hook,
-as `after-hook-fail` at the call: Playwright 1.61.1 through 1.64.1 apply it to
+as `after-hook-fail` at the call: Playwright 1.61.1 through 1.65.1 apply it to
 the test that has just run ([microsoft/playwright#43738](https://github.com/microsoft/playwright/issues/43738)),
 so a failed body becomes an expected failure and the run exits 0. Unconditional
 (`test.fail()`, `test.fail(true, reason)`) in an `afterEach` hook it is
@@ -400,7 +400,7 @@ and any other matcher negated with `.not`; negating an absence matcher, such as
 between the wait and the absence check counts as a completion signal. An
 unresolved helper in between might be one too, so the finding stays suspected.
 Async matcher detection follows the Playwright 1.61.1 API, whose matchers are
-unchanged through 1.64.1 (CI checks each release's type declarations),
+unchanged through 1.65.1 (CI checks each release's type declarations),
 including locator, page, API-response and function assertions, any
 matcher chained through `resolves` or `rejects`, and any matcher on
 `expect.poll(...)`, including one called on an `expect.configure(...)` chain.

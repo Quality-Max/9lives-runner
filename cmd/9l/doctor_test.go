@@ -28,7 +28,7 @@ func TestDoctorEmptyProjectAndMissingNode(t *testing.T) {
 	if code := run([]string{"doctor", "--sdk", "--format", "json"}, &out, &stderr); code != 2 {
 		t.Fatalf("doctor exit %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(out.String(), "npm install --save-dev @playwright/test@1.64.1") || !strings.Contains(out.String(), `"ready":false`) {
+	if !strings.Contains(out.String(), "npm install --save-dev @playwright/test@1.65.1") || !strings.Contains(out.String(), `"ready":false`) {
 		t.Fatalf("missing repair: %s", out.String())
 	}
 	files, err := os.ReadDir(".")

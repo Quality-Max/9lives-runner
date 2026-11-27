@@ -30,7 +30,7 @@
     "smoke:ios": "npm run build && node scripts/ios-smoke.cjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.61.1",
+    "@playwright/test": "1.65.1",
     "@types/node": "24.10.1",
     "typescript": "5.9.3"
   }

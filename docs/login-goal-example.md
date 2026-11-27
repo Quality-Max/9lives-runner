@@ -52,7 +52,7 @@ npm exec playwright install chromium
 export QA_BASE_URL=http://127.0.0.1:8000
 ```
 
-On Linux use `npm exec playwright install --with-deps chromium` if browser
+On Linux use `npm exec -- playwright install --with-deps chromium` if browser
 system dependencies are missing. Set `QA_BASE_URL` to your approved local or
 staging origin. Keep the normal Playwright assertions after the goal.
 

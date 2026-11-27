@@ -60,6 +60,12 @@ SDK versions.
   path, so every attachment there was dropped, which also left `9l heal`
   without its snapshot. Symlink escapes and traversal are still refused.
 
+### Changed
+
+- Pin the workspace, fixtures and demos to Playwright 1.65.1. Add 1.65.0
+  and 1.65.1 to the compatibility checks and doctor registry checks.
+  Keep the SDK's Playwright 1.61.1 minimum.
+
 ## 0.7.3 — 2026-11-26
 
 A patch on the 0.7.x line. iOS gains keyboard handling and answering system

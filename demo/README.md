@@ -70,7 +70,7 @@ npm exec playwright install chromium
 npm run demo:bank
 ```
 
-On Linux, use `npm exec playwright install --with-deps chromium` when installing
+On Linux, use `npm exec -- playwright install --with-deps chromium` when installing
 the browser. The commands are the same in a macOS, Linux or Windows shell;
 this particular bank replay was executed on macOS. The target is a live public
 site, so network access is required and future UI changes may change the result.
@@ -150,7 +150,7 @@ npm exec playwright install chromium
 npm run demo
 ```
 
-On Linux use `npm exec playwright install --with-deps chromium`.
+On Linux use `npm exec -- playwright install --with-deps chromium`.
 The command builds the local SDK and runs the existing
 [checkout fixture](../testdata/sdk/tests/checkout.spec.ts). It clicks **Place
 order** and asserts that the status becomes **Order confirmed: 1 item**.

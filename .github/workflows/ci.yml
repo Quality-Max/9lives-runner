@@ -96,6 +96,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Check the pinned Playwright version in every fixture
+        run: |
+          npm ci --prefix testdata/playwright
+          node scripts/select-playwright.cjs --check "$(node -p 'require("./package.json").devDependencies["@playwright/test"]')"
       - name: Verify committed parser against locked source and license
         run: node scripts/bundle-assessment-parser.cjs --check
       - run: python scripts/check-cli-archives_test.py
@@ -104,7 +108,7 @@ jobs:
         run: node scripts/assessment-portability-smoke.cjs
       - name: Assessment CLI provenance diagnostic
         run: go test ./cmd/9l -run '^TestAssessWarnsWhenRequestedProvenanceCannotBeCaptured$' -count=1
-      - run: npm exec playwright install --with-deps chromium
+      - run: npm exec -- playwright install --with-deps chromium
       - run: npm run smoke:demo
       - run: npm run smoke
       - run: npm run smoke:targets
@@ -124,9 +128,7 @@ jobs:
       - name: Qualify 9l confirm across Git revisions in real Chromium
         run: npm run smoke:confirm
       - name: Qualify headed visual mode in real Chromium (virtual display)
-        run: |
-          npm ci --prefix testdata/playwright
-          npm run smoke:visual
+        run: npm run smoke:visual
       - name: Qualify packed SDK in an isolated consumer
         run: npm run smoke:package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -205,14 +207,14 @@ jobs:
           if-no-files-found: error
 
   # The SDK peer range admits later Playwright 1.x releases. Qualify every
-  # published release up to 1.64.1 with the sdk job's checks; that job covers
-  # the 1.61.1 workspace pin and alone produces the publishable tarball.
+  # supported release alongside the sdk job, which covers the latest workspace
+  # pin and alone produces the publishable tarball.
   playwright-compat:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        playwright: ['1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1']
+        playwright: ['1.61.1', '1.62.0', '1.62.1', '1.63.0', '1.64.0', '1.64.1', '1.65.0']
     env:
       PLAYWRIGHT_VERSION: ${{ matrix.playwright }}
     steps:
@@ -233,7 +235,7 @@ jobs:
           node scripts/select-playwright.cjs --check "$PLAYWRIGHT_VERSION"
       - run: python scripts/check-cli-archives_test.py
       - run: npm test
-      - run: npm exec playwright install --with-deps chromium
+      - run: npm exec -- playwright install --with-deps chromium
       - name: Qualify setup diagnostics for this Playwright version
         env:
           NINELIVES_REQUIRE_BROWSER: '1'

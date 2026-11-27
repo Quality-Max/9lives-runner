@@ -1,6 +1,6 @@
 // Point every workspace and fixture pin at one @playwright/test release, or
 // check that each of them resolves exactly that release. CI uses this to
-// qualify releases in the SDK peer range beyond the workspace pin; a fixture
+// qualify releases in the SDK peer range alongside the workspace pin. A fixture
 // that silently kept its own nested copy would otherwise qualify nothing.
 //
 //   node scripts/select-playwright.cjs <version>          rewrite the pins
@@ -12,7 +12,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const manifests = ['package.json', 'testdata/sdk/package.json', 'testdata/assessment/package.json', 'testdata/healing-targets/package.json', 'testdata/playwright/package.json'];
 // Directories whose own resolution of @playwright/test must match.
-const consumers = ['.', 'packages/playwright', 'testdata/sdk', 'testdata/healing-targets', 'testdata/playwright'];
+const consumers = ['.', 'packages/playwright', 'testdata/sdk', 'testdata/assessment', 'testdata/healing-targets', 'testdata/playwright'];
 
 function usage() {
   console.error('usage: select-playwright.cjs [--check] <major.minor.patch>');
@@ -31,18 +31,19 @@ if (major !== 1 || minor < 61 || (minor === 61 && patch < 1)) {
   process.exit(2);
 }
 
-function installed(name, from) {
-  return JSON.parse(fs.readFileSync(require.resolve(`${name}/package.json`, {paths: [from]}), 'utf8')).version;
+function checkInstalled(name, from, consumer) {
+  const manifest = require.resolve(`${name}/package.json`, {paths: [from]});
+  const installed = JSON.parse(fs.readFileSync(manifest, 'utf8')).version;
+  assert.equal(installed, version, `${consumer} resolves ${name} ${installed}`);
+  return path.dirname(manifest);
 }
 
 if (check) {
   for (const consumer of consumers) {
     const dir = path.join(root, consumer);
-    const test = installed('@playwright/test', dir);
-    assert.equal(test, version, `${consumer} resolves @playwright/test ${test}`);
-    // @playwright/test re-exports the playwright package it depends on.
-    const core = installed('playwright', path.dirname(require.resolve('@playwright/test/package.json', {paths: [dir]})));
-    assert.equal(core, version, `${consumer} resolves playwright ${core}`);
+    const testDir = checkInstalled('@playwright/test', dir, consumer);
+    const playwrightDir = checkInstalled('playwright', testDir, consumer);
+    checkInstalled('playwright-core', playwrightDir, consumer);
   }
   console.log(`Playwright ${version} resolved from ${consumers.join(', ')}`);
 } else {
