@@ -1,0 +1,1 @@
+{"version": "9l.goal/1", "steps": [{"action": "fill", "label": "City", "parameter": "city"}, {"action": "fill", "label": "Postcode", "parameter": "postcode"}, {"action": "click", "label": "Save address"}, {"action": "complete"}]}

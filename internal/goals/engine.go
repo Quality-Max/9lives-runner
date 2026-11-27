@@ -32,6 +32,15 @@ type Provider interface {
 	Name() string
 	CompleteDecision(context.Context, string, string, int) (tier2.Completion, error)
 }
+
+// AttemptProvider binds a provider, such as Jev, to one attempt, so its client
+// and request budget never outlive or cross attempts. Start calls ForAttempt
+// and Close releases the bound provider.
+type AttemptProvider interface {
+	Provider
+	ForAttempt(context.Context, runner.AttemptIdentity) (Provider, func(), error)
+}
+
 type Limits struct {
 	MaxActions   int `json:"maxActions"`
 	MaxDecisions int `json:"maxDecisions"`
@@ -128,6 +137,7 @@ type service struct {
 	cost                         int64
 	deadline                     time.Time
 	closed                       bool
+	release                      func()
 }
 
 // ValidateBudget checks the attempt caps and prices. The CLI and Start share
@@ -152,12 +162,21 @@ func (f Factory) Start(parent context.Context, identity runner.AttemptIdentity) 
 	if err := f.ValidateBudget(); err != nil {
 		return nil, err
 	}
+	release := func() {}
+	if bound, ok := f.Provider.(AttemptProvider); ok {
+		provider, closeProvider, err := bound.ForAttempt(parent, identity)
+		if err != nil || provider == nil {
+			return nil, errors.New("goal provider unavailable for this attempt")
+		}
+		f.Provider, release = provider, closeProvider
+	}
 	listener, socket, directory, err := listenGoalTransport()
 	if err != nil {
+		release()
 		return nil, errors.New("goal transport unavailable")
 	}
 	ctx, cancel := context.WithCancel(parent)
-	s := &service{factory: f, identity: identity, ctx: ctx, cancel: cancel, directory: directory, socket: socket, deadline: time.Now().Add(time.Duration(f.Limits.TimeoutMS) * time.Millisecond)}
+	s := &service{factory: f, identity: identity, ctx: ctx, cancel: cancel, directory: directory, socket: socket, deadline: time.Now().Add(time.Duration(f.Limits.TimeoutMS) * time.Millisecond), release: release}
 	s.server = &http.Server{Handler: http.HandlerFunc(s.serve), ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: time.Duration(f.Limits.TimeoutMS) * time.Millisecond, MaxHeaderBytes: 4096}
 	go func() { _ = s.server.Serve(listener) }()
 	return s, nil
@@ -181,6 +200,7 @@ func (s *service) Environment() map[string]string {
 func (s *service) Close() []runner.GoalReceipt {
 	defer func() {
 		s.cancel()
+		s.release()
 		_ = s.server.Close()
 		if s.directory != "" {
 			_ = os.RemoveAll(s.directory)
